@@ -1,0 +1,6 @@
+[deps]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
+
+[compat]
+julia = "^1.6"
