@@ -5,6 +5,7 @@ export solve_powerflow!
 
 import PowerSystems
 import NLsolve
+import SparseArrays
 
 const PSY = PowerSystems
 
