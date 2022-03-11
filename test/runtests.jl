@@ -13,7 +13,6 @@ Aqua.test_ambiguities(PowerFlows)
 Aqua.test_stale_deps(PowerFlows)
 Aqua.test_deps_compat(PowerFlows)
 
-
 LOG_FILE = "power-systems.log"
 LOG_LEVELS = Dict(
     "Debug" => Logging.Debug,
@@ -21,7 +20,6 @@ LOG_LEVELS = Dict(
     "Warn" => Logging.Warn,
     "Error" => Logging.Error,
 )
-
 
 """
 Copied @includetests from https://github.com/ssfrr/TestSetExtensions.jl.
@@ -76,9 +74,9 @@ function run_tests()
         config = IS.LoggingConfiguration(logging_config_filename)
     else
         config = IS.LoggingConfiguration(
-            filename = LOG_FILE,
-            file_level = Logging.Info,
-            console_level = Logging.Error,
+            filename=LOG_FILE,
+            file_level=Logging.Info,
+            console_level=Logging.Error,
         )
     end
     console_logger = ConsoleLogger(config.console_stream, config.console_level)

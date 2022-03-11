@@ -7,8 +7,8 @@ function _write_nlsolve_pf_sol!(sys::System, nl_result)
         return get_available(x) && x.bus == bus && !isa(x, ElectricLoad)
     end
 
-    result = round.(nl_result.zero; digits = 7)
-    buses = enumerate(sort!(collect(get_components(PSY.Bus, sys)), by = x -> get_number(x)))
+    result = round.(nl_result.zero; digits=7)
+    buses = enumerate(sort!(collect(get_components(PSY.Bus, sys)), by=x -> get_number(x)))
 
     for (ix, bus) in buses
         if bus.bustype == PSY.BusTypes.REF
@@ -49,8 +49,8 @@ Return power flow results in dictionary of dataframes.
 """
 function _write_results(sys::System, nl_result)
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
-    result = round.(nl_result.zero; digits = 7)
-    buses = sort!(collect(get_components(PSY.Bus, sys)), by = x -> get_number(x))
+    result = round.(nl_result.zero; digits=7)
+    buses = sort!(collect(get_components(PSY.Bus, sys)), by=x -> get_number(x))
     N_BUS = length(buses)
     bus_map = Dict(buses .=> 1:N_BUS)
     sys_basepower = get_base_power(sys)
@@ -112,27 +112,27 @@ function _write_results(sys::System, nl_result)
     end
 
     bus_df = DataFrames.DataFrame(
-        bus_number = get_number.(buses),
-        Vm = Vm_vect,
-        θ = θ_vect,
-        P_gen = P_gen_vect,
-        P_load = P_load_vect,
-        P_net = P_gen_vect - P_load_vect,
-        Q_gen = Q_gen_vect,
-        Q_load = Q_load_vect,
-        Q_net = Q_gen_vect - Q_load_vect,
+        bus_number=get_number.(buses),
+        Vm=Vm_vect,
+        θ=θ_vect,
+        P_gen=P_gen_vect,
+        P_load=P_load_vect,
+        P_net=P_gen_vect - P_load_vect,
+        Q_gen=Q_gen_vect,
+        Q_load=Q_load_vect,
+        Q_net=Q_gen_vect - Q_load_vect,
     )
 
     branch_df = DataFrames.DataFrame(
-        line_name = get_name.(branches),
-        bus_from = get_number.(get_from.(get_arc.(branches))),
-        bus_to = get_number.(get_to.(get_arc.(branches))),
-        P_from_to = P_from_to_vect,
-        Q_from_to = Q_from_to_vect,
-        P_to_from = P_to_from_vect,
-        Q_to_from = Q_to_from_vect,
-        P_losses = P_from_to_vect + P_to_from_vect,
-        Q_losses = Q_from_to_vect + Q_to_from_vect,
+        line_name=get_name.(branches),
+        bus_from=get_number.(get_from.(get_arc.(branches))),
+        bus_to=get_number.(get_to.(get_arc.(branches))),
+        P_from_to=P_from_to_vect,
+        Q_from_to=Q_from_to_vect,
+        P_to_from=P_to_from_vect,
+        Q_to_from=Q_to_from_vect,
+        P_losses=P_from_to_vect + P_to_from_vect,
+        Q_losses=Q_from_to_vect + Q_to_from_vect,
     )
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
@@ -151,32 +151,30 @@ Supports passing NLsolve kwargs in the args. By default shows the solver trace.
 
 Arguments available for `nlsolve`:
 
-* `method` : See NLSolve.jl documentation for available solvers
-* `xtol`: norm difference in `x` between two successive iterates under which
-  convergence is declared. Default: `0.0`.
-* `ftol`: infinite norm of residuals under which convergence is declared.
-  Default: `1e-8`.
-* `iterations`: maximum number of iterations. Default: `1_000`.
-* `store_trace`: should a trace of the optimization algorithm's state be
-  stored? Default: `false`.
-* `show_trace`: should a trace of the optimization algorithm's state be shown
-  on `STDOUT`? Default: `false`.
-* `extended_trace`: should additifonal algorithm internals be added to the state
-  trace? Default: `false`.
-
+  - `method` : See NLSolve.jl documentation for available solvers
+  - `xtol`: norm difference in `x` between two successive iterates under which
+    convergence is declared. Default: `0.0`.
+  - `ftol`: infinite norm of residuals under which convergence is declared.
+    Default: `1e-8`.
+  - `iterations`: maximum number of iterations. Default: `1_000`.
+  - `store_trace`: should a trace of the optimization algorithm's state be
+    stored? Default: `false`.
+  - `show_trace`: should a trace of the optimization algorithm's state be shown
+    on `STDOUT`? Default: `false`.
+  - `extended_trace`: should additifonal algorithm internals be added to the state
+    trace? Default: `false`.
 
 ## Examples
+
 ```julia
 solve_powerflow!(sys)
 # Passing NLsolve arguments
-solve_powerflow!(sys, method = :newton)
+solve_powerflow!(sys, method=:newton)
 # Using Finite Differences
-solve_powerflow!(sys, finite_diff = true)
-
+solve_powerflow!(sys, finite_diff=true)
 ```
-
 """
-function solve_powerflow!(system::System; finite_diff = false, kwargs...)
+function solve_powerflow!(system::System; finite_diff=false, kwargs...)
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
     #Work in System per unit
@@ -199,17 +197,16 @@ Similar to solve_powerflow!(sys) but does not update the system struct with resu
 Returns the results in a dictionary of dataframes.
 
 ## Examples
+
 ```julia
 res = solve_powerflow(sys)
 # Passing NLsolve arguments
-res = solve_powerflow(sys, method = :newton)
+res = solve_powerflow(sys, method=:newton)
 # Using Finite Differences
-res = solve_powerflow(sys, finite_diff = true)
-
+res = solve_powerflow(sys, finite_diff=true)
 ```
-
 """
-function solve_powerflow(system::System; finite_diff = false, kwargs...)
+function solve_powerflow(system::System; finite_diff=false, kwargs...)
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
     #Work in System per unit
@@ -232,7 +229,7 @@ function _solve_powerflow(system::System, finite_diff::Bool; kwargs...)
     ybus_kwargs = (k for k in kwargs if first(k) ∈ ybus_kw)
     kwargs = (k for k in kwargs if first(k) ∉ ybus_kw)
 
-    buses = sort!(collect(get_components(PSY.Bus, system)), by = x -> get_number(x))
+    buses = sort!(collect(get_components(PSY.Bus, system)), by=x -> get_number(x))
     N_BUS = length(buses)
 
     # assumes the ordering in YPSY.Bus is the same as in the buses.

@@ -123,7 +123,12 @@ function _get_load_data(sys::System, b::PSY.Bus)
     return active_power, reactive_power
 end
 
-function _get_fixed_admittance_power(sys::System, b::PSY.Bus, result::AbstractVector, ix::Int)
+function _get_fixed_admittance_power(
+    sys::System,
+    b::PSY.Bus,
+    result::AbstractVector,
+    ix::Int,
+)
     active_power = 0.0
     reactive_power = 0.0
     for l in get_components(FixedAdmittance, sys)
