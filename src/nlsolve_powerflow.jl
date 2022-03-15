@@ -2,41 +2,49 @@
 """
 Updates system voltages and powers with power flow results
 """
-function _write_nlsolve_pf_sol!(sys::System, nl_result)
-    function _is_available_source(x, bus::PSY.PSY.PSY.PSY.PSY.PSY.PSY.PSY.PSY.PSY.PSY.Bus)
-        return get_available(x) && x.bus == bus && !isa(x, ElectricLoad)
+function _write_powerflow_solution!(sys::PSY.System, nl_result)
+    function _is_available_source(x, bus::PSY.Bus)
+        return PSY.get_available(x) && x.bus == bus && !isa(x, PSY.ElectricLoad)
     end
 
     result = round.(nl_result.zero; digits=7)
-    buses = enumerate(sort!(collect(get_components(PSY.Bus, sys)), by=x -> get_number(x)))
+    buses = enumerate(
+        sort!(collect(PSY.get_components(PSY.Bus, sys)), by=x -> PSY.get_number(x)),
+    )
 
     for (ix, bus) in buses
         if bus.bustype == PSY.BusTypes.REF
             P_gen = result[2 * ix - 1]
             Q_gen = result[2 * ix]
-            devices =
-                get_components(StaticInjection, sys, x -> _is_available_source(x, bus))
-            sum_basepower = sum(get_base_power.(devices))
+            devices = PSY.get_components(
+                PSY.StaticInjection,
+                sys,
+                x -> _is_available_source(x, bus),
+            )
+            sum_basepower = sum(PSY.get_base_power.(devices))
             for d in devices
-                part_factor = get_base_power(d) / sum_basepower
-                set_active_power!(d, P_gen * part_factor)
-                set_reactive_power!(d, Q_gen * part_factor)
+                part_factor = PSY.get_base_power(d) / sum_basepower
+                PSY.set_active_power!(d, P_gen * part_factor)
+                PSY.set_reactive_power!(d, Q_gen * part_factor)
             end
         elseif bus.bustype == PSY.BusTypes.PV
             Q_gen = result[2 * ix - 1]
             θ = result[2 * ix]
-            devices =
-                get_components(StaticInjection, sys, x -> _is_available_source(x, bus))
-            sum_basepower = sum(get_base_power.(devices))
+            devices = PSY.get_components(
+                PSY.StaticInjection,
+                sys,
+                x -> _is_available_source(x, bus),
+            )
+            sum_basepower = sum(PSY.get_base_power.(devices))
             for d in devices
-                set_reactive_power!(d, Q_gen * get_base_power(d) / sum_basepower)
+                PSY.set_reactive_power!(d, Q_gen * PSY.get_base_power(d) / sum_basepower)
             end
             bus.angle = θ
         elseif bus.bustype == PSY.BusTypes.PQ
             Vm = result[2 * ix - 1]
             θ = result[2 * ix]
-            set_magnitude!(bus, Vm)
-            set_angle!(bus, θ)
+            PSY.set_magnitude!(bus, Vm)
+            PSY.set_angle!(bus, θ)
         end
     end
 
@@ -47,14 +55,14 @@ end
 """
 Return power flow results in dictionary of dataframes.
 """
-function _write_results(sys::System, nl_result)
+function _write_results(sys::PSY.System, nl_result)
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
     result = round.(nl_result.zero; digits=7)
-    buses = sort!(collect(get_components(PSY.Bus, sys)), by=x -> get_number(x))
+    buses = sort!(collect(PSY.get_components(PSY.Bus, sys)), by=x -> PSY.get_number(x))
     N_BUS = length(buses)
     bus_map = Dict(buses .=> 1:N_BUS)
-    sys_basepower = get_base_power(sys)
-    sources = get_components(StaticInjection, sys, d -> !isa(d, ElectricLoad))
+    sys_basepower = PSY.get_base_power(sys)
+    sources = PSY.get_components(PSY.StaticInjection, sys, d -> !isa(d, PSY.ElectricLoad))
     Vm_vect = fill(0.0, N_BUS)
     θ_vect = fill(0.0, N_BUS)
     P_gen_vect = fill(0.0, N_BUS)
@@ -68,17 +76,17 @@ function _write_results(sys::System, nl_result)
         P_load_vect[ix] += P_admittance
         Q_load_vect[ix] += Q_admittance
         if bus.bustype == PSY.BusTypes.REF
-            Vm_vect[ix] = get_magnitude(bus)
-            θ_vect[ix] = get_angle(bus)
+            Vm_vect[ix] = PSY.get_magnitude(bus)
+            θ_vect[ix] = PSY.get_angle(bus)
             P_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix] * sys_basepower
         elseif bus.bustype == PSY.BusTypes.PV
-            Vm_vect[ix] = get_magnitude(bus)
+            Vm_vect[ix] = PSY.get_magnitude(bus)
             θ_vect[ix] = result[2 * ix]
             for gen in sources
-                !get_available(gen) && continue
+                !PSY.get_available(gen) && continue
                 if gen.bus == bus
-                    P_gen_vect[ix] += get_active_power(gen) * sys_basepower
+                    P_gen_vect[ix] += PSY.get_active_power(gen) * sys_basepower
                 end
             end
             Q_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
@@ -86,25 +94,25 @@ function _write_results(sys::System, nl_result)
             Vm_vect[ix] = result[2 * ix - 1]
             θ_vect[ix] = result[2 * ix]
             for gen in sources
-                !get_available(gen) && continue
+                !PSY.get_available(gen) && continue
                 if gen.bus == bus
-                    P_gen_vect[ix] += get_active_power(gen) * sys_basepower
-                    Q_gen_vect[ix] += get_reactive_power(gen) * sys_basepower
+                    P_gen_vect[ix] += PSY.get_active_power(gen) * sys_basepower
+                    Q_gen_vect[ix] += PSY.get_reactive_power(gen) * sys_basepower
                 end
             end
         end
     end
 
-    branches = get_components(ACBranch, sys)
+    branches = PSY.get_components(PSY.ACBranch, sys)
     N_BRANCH = length(branches)
     P_from_to_vect = fill(0.0, N_BRANCH)
     Q_from_to_vect = fill(0.0, N_BRANCH)
     P_to_from_vect = fill(0.0, N_BRANCH)
     Q_to_from_vect = fill(0.0, N_BRANCH)
     for (ix, b) in enumerate(branches)
-        !get_available(b) && continue
-        bus_f_ix = bus_map[get_arc(b).from]
-        bus_t_ix = bus_map[get_arc(b).to]
+        !PSY.get_available(b) && continue
+        bus_f_ix = bus_map[PSY.get_arc(b).from]
+        bus_t_ix = bus_map[PSY.get_arc(b).to]
         V_from = Vm_vect[bus_f_ix] * (cos(θ_vect[bus_f_ix]) + sin(θ_vect[bus_f_ix]) * 1im)
         V_to = Vm_vect[bus_t_ix] * (cos(θ_vect[bus_t_ix]) + sin(θ_vect[bus_t_ix]) * 1im)
         P_from_to_vect[ix], Q_from_to_vect[ix] = flow_func(b, V_from, V_to) .* sys_basepower
@@ -112,7 +120,7 @@ function _write_results(sys::System, nl_result)
     end
 
     bus_df = DataFrames.DataFrame(
-        bus_number=get_number.(buses),
+        bus_number=PSY.get_number.(buses),
         Vm=Vm_vect,
         θ=θ_vect,
         P_gen=P_gen_vect,
@@ -124,9 +132,9 @@ function _write_results(sys::System, nl_result)
     )
 
     branch_df = DataFrames.DataFrame(
-        line_name=get_name.(branches),
-        bus_from=get_number.(get_from.(get_arc.(branches))),
-        bus_to=get_number.(get_to.(get_arc.(branches))),
+        line_name=PSY.get_name.(branches),
+        bus_from=PSY.get_number.(PSY.get_from.(PSY.get_arc.(branches))),
+        bus_to=PSY.get_number.(PSY.get_to.(PSY.get_arc.(branches))),
         P_from_to=P_from_to_vect,
         Q_from_to=Q_from_to_vect,
         P_to_from=P_to_from_vect,
@@ -167,73 +175,73 @@ Arguments available for `nlsolve`:
 ## Examples
 
 ```julia
-solve_powerflow!(sys)
+run_powerflow!(sys)
 # Passing NLsolve arguments
-solve_powerflow!(sys, method=:newton)
+run_powerflow!(sys, method=:newton)
 # Using Finite Differences
-solve_powerflow!(sys, finite_diff=true)
+run_powerflow!(sys, finite_diff=true)
 ```
 """
-function solve_powerflow!(system::System; finite_diff=false, kwargs...)
+function run_powerflow!(system::PSY.System; finite_diff=false, kwargs...)
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
     #Work in System per unit
-    set_units_base_system!(system, "SYSTEM_BASE")
-    res = _solve_powerflow(system, finite_diff; kwargs...)
+    PSY.set_units_base_system!(system, "SYSTEM_BASE")
+    res = _run_powerflow(system, finite_diff; kwargs...)
     if res.f_converged
-        _write_pf_sol!(system, res)
+        _write_powerflow_solution!(system, res)
         @info("PowerFlow solve converged, the results have been stored in the system")
         #Restore original per unit base
-        set_units_base_system!(system, settings_unit_cache)
+        PSY.set_units_base_system!(system, settings_unit_cache)
         return res.f_converged
     end
     @error("The powerflow solver returned convergence = $(res.f_converged)")
-    set_units_base_system!(system, settings_unit_cache)
+    PSY.set_units_base_system!(system, settings_unit_cache)
     return res.f_converged
 end
 
 """
-Similar to solve_powerflow!(sys) but does not update the system struct with results.
+Similar to run_powerflow!(sys) but does not update the system struct with results.
 Returns the results in a dictionary of dataframes.
 
 ## Examples
 
 ```julia
-res = solve_powerflow(sys)
+res = run_powerflow(sys)
 # Passing NLsolve arguments
-res = solve_powerflow(sys, method=:newton)
+res = run_powerflow(sys, method=:newton)
 # Using Finite Differences
-res = solve_powerflow(sys, finite_diff=true)
+res = run_powerflow(sys, finite_diff=true)
 ```
 """
-function solve_powerflow(system::System; finite_diff=false, kwargs...)
+function run_powerflow(system::PSY.System; finite_diff=false, kwargs...)
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
     #Work in System per unit
-    set_units_base_system!(system, "SYSTEM_BASE")
-    res = _solve_powerflow(system, finite_diff; kwargs...)
+    PSY.set_units_base_system!(system, "SYSTEM_BASE")
+    res = _run_powerflow(system, finite_diff; kwargs...)
     if res.f_converged
         @info("PowerFlow solve converged, the results are exported in DataFrames")
         df_results = _write_results(system, res)
         #Restore original per unit base
-        set_units_base_system!(system, settings_unit_cache)
+        PSY.set_units_base_system!(system, settings_unit_cache)
         return df_results
     end
     @error("The powerflow solver returned convergence = $(res.f_converged)")
-    set_units_base_system!(system, settings_unit_cache)
+    PSY.set_units_base_system!(system, settings_unit_cache)
     return res.f_converged
 end
 
-function _solve_powerflow(system::System, finite_diff::Bool; kwargs...)
+function _run_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
     ybus_kw = [:check_connectivity, :connectivity_method]
     ybus_kwargs = (k for k in kwargs if first(k) ∈ ybus_kw)
     kwargs = (k for k in kwargs if first(k) ∉ ybus_kw)
 
-    buses = sort!(collect(get_components(PSY.Bus, system)), by=x -> get_number(x))
+    buses = sort!(collect(PSY.get_components(PSY.Bus, system)), by=x -> PSY.get_number(x))
     N_BUS = length(buses)
 
     # assumes the ordering in YPSY.Bus is the same as in the buses.
-    Yb = Ybus(system; ybus_kwargs...).data
+    Yb = PSY.Ybus(system; ybus_kwargs...).data
     a = collect(1:N_BUS)
     I, J, V = SparseArrays.findnz(Yb)
     neighbors = [Set{Int}([i]) for i in 1:N_BUS]
@@ -255,7 +263,7 @@ function _solve_powerflow(system::System, finite_diff::Bool; kwargs...)
         for ix_t in neighbors[ix_f]
             X_ix_t_fst = 2 * ix_t - 1
             X_ix_t_snd = 2 * ix_t
-            b = get_bustype(buses[ix_t])
+            b = PSY.get_bustype(buses[ix_t])
             #Set to 0.0 only on connected buses
             if b == PSY.BusTypes.REF
                 if ix_f == ix_t
@@ -317,35 +325,36 @@ function _solve_powerflow(system::System, finite_diff::Bool; kwargs...)
     θ = fill(0.0, N_BUS)
 
     state_variable_count = 1
-    sources = get_components(StaticInjection, system, d -> !isa(d, ElectricLoad))
+    sources =
+        PSY.get_components(PSY.StaticInjection, system, d -> !isa(d, PSY.ElectricLoad))
 
     for (ix, b) in enumerate(buses)
-        bus_angle = get_angle(b)::Float64
-        Vm[ix] = bus_voltage_magnitude = get_magnitude(b)::Float64
+        bus_angle = PSY.get_angle(b)::Float64
+        Vm[ix] = bus_voltage_magnitude = PSY.get_magnitude(b)::Float64
         P_GEN_BUS[ix] = 0.0
         Q_GEN_BUS[ix] = 0.0
-        get_ext(b)["neighbors"] = neighbors[ix]
+        PSY.get_ext(b)["neighbors"] = neighbors[ix]
         for gen in sources
-            !get_available(gen) && continue
+            !PSY.get_available(gen) && continue
             if gen.bus == b
-                P_GEN_BUS[ix] += get_active_power(gen)
-                Q_GEN_BUS[ix] += get_reactive_power(gen)
+                P_GEN_BUS[ix] += PSY.get_active_power(gen)
+                Q_GEN_BUS[ix] += PSY.get_reactive_power(gen)
             end
         end
 
         P_LOAD_BUS[ix], Q_LOAD_BUS[ix] = _get_load_data(system, b)
         if b.bustype == PSY.BusTypes.REF
-            injection_components = get_components(
-                StaticInjection,
+            injection_components = PSY.get_components(
+                PSY.StaticInjection,
                 system,
-                d -> get_available(d) && get_bus(d) == b,
+                d -> PSY.get_available(d) && PSY.get_bus(d) == b,
             )
             isempty(injection_components) && throw(
                 IS.ConflictingInputsError(
                     "The slack bus does not have any injection component. Power Flow can not proceed",
                 ),
             )
-            θ[ix] = get_angle(b)::Float64
+            θ[ix] = PSY.get_angle(b)::Float64
             x0[state_variable_count] = P_GEN_BUS[ix]
             x0[state_variable_count + 1] = Q_GEN_BUS[ix]
             state_variable_count += 2
@@ -363,7 +372,7 @@ function _solve_powerflow(system::System, finite_diff::Bool; kwargs...)
     end
 
     @assert state_variable_count - 1 == N_BUS * 2
-    bus_types = get_bustype.(buses)
+    bus_types = PSY.get_bustype.(buses)
     function pf!(F::Vector{Float64}, X::Vector{Float64})
         for (ix, b) in enumerate(bus_types)
             if b == PSY.BusTypes.REF
@@ -539,7 +548,7 @@ function _solve_powerflow(system::System, finite_diff::Bool; kwargs...)
     pf!(res, x0)
     if sum(res) > 10 * (N_BUS * 2)
         _, ix = findmax(res)
-        bus_no = get_number(buses[ix])
+        bus_no = PSY.get_number(buses[ix])
         @warn "Initial guess provided results in a large initial residual. Largest residual at bus $bus_no"
     end
 

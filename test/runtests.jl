@@ -3,6 +3,9 @@ using Logging
 using PowerSystems
 using PowerSystemCaseBuilder
 using PowerFlows
+using InfrastructureSystems
+using LinearAlgebra
+const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
 const PSY = PowerSystems
 
