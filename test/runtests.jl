@@ -5,6 +5,8 @@ using PowerSystemCaseBuilder
 using PowerFlows
 using InfrastructureSystems
 using LinearAlgebra
+using CSV
+using DataFrames
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
 const PSY = PowerSystems
@@ -15,6 +17,13 @@ Aqua.test_undefined_exports(PowerFlows)
 Aqua.test_ambiguities(PowerFlows)
 Aqua.test_stale_deps(PowerFlows)
 Aqua.test_deps_compat(PowerFlows)
+
+test_file_dir = isempty(dirname(@__FILE__)) ? "test" : dirname(@__FILE__)
+const TEST_FILES_DIR = test_file_dir
+DIFF_INF_TOLERANCE = 1e-4
+DIFF_L2_TOLERANCE = 1e-3
+
+include("test_utils/psse_results_compare.jl")
 
 LOG_FILE = "power-systems.log"
 LOG_LEVELS = Dict(

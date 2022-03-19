@@ -1,0 +1,232 @@
+Bus  Number,Bus  Name,Id,Term Node Num  ,Term Node Name  , Area Num, Area Name,Zone Num,Zone Name,Code,VSched (pu),Regulated Bus Number,In Service,PGen (MW),PMax (MW),PMin (MW),QGen (Mvar),QMax (Mvar),QMin (Mvar),Mbase (MVA),R Source (pu),X Source (pu),RTran (pu),XTran (pu),Gentap (pu),Owner 1,Fraction 1,Owner 2,Fraction 2,Owner 3,Fraction 3,Owner 4,Fraction 4,R (pu),Subtransient X (pu),Transient X (pu),Synchronous X (pu),R-Negative (pu),X-Negative (pu),R-Zero (pu),X-Zero (pu),Grounding Z units,Grounding R,Grounding X,Reference Angle (deg),Machine Control Mode,Renewable Machine Power factor
+1003,FOURCORN    230.00,DP,,,1,SOUTH,10,NEW MEXICO,-2,1,1003,1,19,89.3,0,0,0,0,94,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+1004,SAN JUAN    345.00,DP,,,1,SOUTH,10,NEW MEXICO,-2,1,1004,1,9,42.75,0,0,0,0,45,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+1032,FCNGN4CC    20.000,C,,,1,SOUTH,10,NEW MEXICO,2,1.017,1032,1,693,829.35,0,204.3555,1030,-1030,873,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1032,FCNGN4CC    20.000,G,,,1,SOUTH,10,NEW MEXICO,2,1.017,1032,1,856.0001,997.5001,0,252.4218,357,-357,1050,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1032,FCNGN4CC    20.000,S,,,1,SOUTH,10,NEW MEXICO,2,1.017,1032,1,520,606.1,0,153.3403,360,-360,638,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+1034,SJUAN G4    20.000,C,,,1,SOUTH,10,NEW MEXICO,2,1.0439,1034,1,1838,1846.8,0,187.126,2294,-2294,1944,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1034,SJUAN G4    20.000,G,,,1,SOUTH,10,NEW MEXICO,2,1.0439,1034,1,2565,2565,0,261.1416,918,-918,2700,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1034,SJUAN G4    20.000,S,,,1,SOUTH,10,NEW MEXICO,2,1.0439,1034,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+1034,SJUAN G4    20.000,W,,,1,SOUTH,10,NEW MEXICO,2,1.0439,1034,1,1590,1597.9,0,161.8773,800,-800,1682,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+1101,CORONADO    500.00,DP,,,1,SOUTH,3,ARIZONA,-2,1,1101,1,59,280.25,0,0,0,0,295,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+1131,CORONADO    20.000,C,,,1,SOUTH,3,ARIZONA,2,1.0108,1131,1,530,1204.6,0,36.8032,308,-308,1268,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1131,CORONADO    20.000,G,,,1,SOUTH,3,ARIZONA,2,1.0108,1131,1,2064,4687.3,0,143.3243,1916,-1916,4934,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1131,CORONADO    20.000,S,,,1,SOUTH,3,ARIZONA,2,1.0108,1131,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+1232,NAVAJO 2    20.000,C,,,1,SOUTH,3,ARIZONA,2,1.0808,1232,1,2678,4728.15,0,162.1396,1208,-1208,4977,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1232,NAVAJO 2    20.000,H,,,1,SOUTH,3,ARIZONA,2,1.0808,1232,1,637,1139.05,0,38.5672,628,-628,1199,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1232,NAVAJO 2    20.000,S,,,1,SOUTH,3,ARIZONA,2,1.0808,1232,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+1301,MEAD        500.00,DP,,,1,SOUTH,3,ARIZONA,-2,1,1301,1,35,167.2,0,0,0,0,176,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+1303,H ALLEN     345.00,DP,,,1,SOUTH,9,NEVADA,-2,1,1303,1,45,212.8,0,0,0,0,224,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+1331,HOOVER      20.000,G,,,1,SOUTH,3,ARIZONA,2,1.0451,1331,1,1971,2058.65,0,32.0874,841,-841,2167,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1331,HOOVER      20.000,H,,,1,SOUTH,3,ARIZONA,2,1.0451,1331,1,2113,2211.6,0,34.3992,1219,-1219,2328,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1331,HOOVER      20.000,S,,,1,SOUTH,3,ARIZONA,2,1.0451,1331,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+1333,H ALLEN     20.000,C,,,1,SOUTH,9,NEVADA,2,1.0088,1333,1,212,397.1,0,34.7405,303,-303,418,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1333,H ALLEN     20.000,G,,,1,SOUTH,9,NEVADA,2,1.0088,1333,1,3577,6660.45,0,586.1646,2746,-2746,7011,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1333,H ALLEN     20.000,S,,,1,SOUTH,9,NEVADA,2,1.0088,1333,1,1266,2301.85,0,207.46,1300,-1300,2423,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+1401,PALOVRDE    500.00,DP,,,1,SOUTH,3,ARIZONA,-2,1,1401,1,85,403.75,0,0,0,0,425,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+1402,WESTWING    500.00,DP,,,1,SOUTH,3,ARIZONA,-2,1,1402,1,70,331.55,0,0,0,0,349,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+1431,PALOVRD2    20.000,G,,,1,SOUTH,3,ARIZONA,2,1.0407,1431,1,4970,8711.5,0,787.8875,3559,-3559,9170,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1431,PALOVRD2    20.000,N,,,1,SOUTH,3,ARIZONA,2,1.0407,1431,1,2251,3999.5,0,356.848,2057,-2057,4210,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+1431,PALOVRD2    20.000,S,,,1,SOUTH,3,ARIZONA,2,1.0407,1431,1,1353,2298.05,0,214.4893,1000,-1000,2419,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2030,MEXICO      20.000,E,,,2,CALIFORNIA,7,MEXICO,2,1.0015,2030,1,684,664.05,0,86.4039,350,-350,699,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2030,MEXICO      20.000,G,,,2,CALIFORNIA,7,MEXICO,2,1.0015,2030,1,1813,2033,0,229.0208,1070,-1070,2140,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2130,IMPERIAL    20.000,E,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0358,2130,1,563,789.45,0,73.2802,254,-254,831,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2130,IMPERIAL    20.000,G,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0358,2130,1,394,556.7,0,51.2832,200,-200,586,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2130,IMPERIAL    20.000,H,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0358,2130,1,263,376.2,0,34.2322,250,-250,396,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2130,IMPERIAL    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0358,2130,1,76,109.25,0,9.8922,86,-86,115,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2202,MIGUEL      230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2202,1,61,289.75,0,0,0,0,305,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2203,MISSION     230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2203,1,67,320.15,0,0,0,0,337,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2233,MISSION     20.000,DG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0075,2233,1,215,983.2501,0,142.0995,304,-304,1035,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2233,MISSION     20.000,EG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0075,2233,1,393,1745.15,0,259.7447,611,-611,1837,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2233,MISSION     20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0075,2233,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2233,MISSION     20.000,TG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0075,2233,1,152,696.35,0,100.4611,206,-206,733,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2332,IMPRLVLY    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0356,2332,1,878,1266.35,0,126.5937,590,-590,1333,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2400,DEVERS      500.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2400,1,33,157.7,0,0,0,0,166,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2401,LUGO        500.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2401,1,35,165.3,0,0,0,0,174,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2402,MIRALOMA    500.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2402,1,43,202.35,0,0,0,0,213,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2403,VALLEY      500.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2403,1,41,196.65,0,0,0,0,207,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2405,SYLMAR S    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2405,1,33,154.85,0,0,0,0,163,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2406,EAGLROCK    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2406,1,29,137.75,0,0,0,0,145,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2407,LITEHIPE    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2407,1,68,324.9,0,0,0,0,342,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2408,MESA CAL    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2408,1,69,326.8,0,0,0,0,344,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2409,MIRALOMA    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2409,1,63,300.2,0,0,0,0,316,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2410,PARDEE      230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2410,1,62,295.45,0,0,0,0,311,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2411,VINCENT     230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2411,1,43,203.3,0,0,0,0,214,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2431,LUGO        20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.05,2431,1,500,1582.7,0,320.6003,800,-800,1666,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2434,VINCENT     20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.02,2434,1,500,1414.55,0,-224.9955,500,-500,1489,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2438,MESA CAL    20.000,EG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0098,2438,1,473,2177.4,0,22.4613,728,-728,2292,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2438,MESA CAL    20.000,ND,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0098,2438,1,0,0,-1006,0,0.5,0,100,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2438,MESA CAL    20.000,RG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0098,2438,1,1096,5178.45,0,52.0456,1902,-1902,5451,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2438,MESA CAL    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0098,2438,1,221,1088.7,0,10.4946,800,-800,1146,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2438,MESA CAL    20.000,SG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0098,2438,1,860.9999,3904.5,0,40.8862,2301,-2301,4110,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2438,MESA CAL    20.000,SH,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0098,2438,1,206,1387,0,9.7823,659,-659,1460,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2438,MESA CAL    20.000,SW,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0098,2438,1,664,3049.5,0,31.5313,561,-561,3210,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2438,MESA CAL    20.000,WG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0098,2438,1,1176,5526.15,0,55.8446,1910,-1910,5817,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2439,MIRALOMA    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0198,2439,1,1000,1582.7,0,-229.0295,800,-800,1666,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2502,SERRANO     230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2502,1,93,443.65,0,0,0,0,467,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2503,S.ONOFRE    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2503,1,73,345.8,0,0,0,0,364,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2533,S.ONOFRE    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.01,2533,1,1899,1899.05,0,218.4017,1100,-1100,1999,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2613,RIVER       230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2613,1,13,59.85,0,0,0,0,63,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2615,STA E       230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2615,1,32,150.1,0,0,0,0,158,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2618,STA J       230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,2618,1,35,165.3,0,0,0,0,174,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+2630,HAYNES3G    20.000,G,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0049,2630,1,2269,3749.65,0,184.5809,1346,-1346,3947,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2630,HAYNES3G    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0049,2630,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2631,OLIVE       20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.018,2631,1,232,494,0,57.7223,350,-350,520,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2634,INTERM1G    20.000,C,,,2,CALIFORNIA,2,CALIFORNIA,2,1.062,2634,1,1537,1537.1,0,425.5197,950,-950,1618,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2634,INTERM1G    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.062,2634,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+2637,OWENS G     20.000,H,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0153,2637,1,13,82.65,0,57.4786,110,-110,87,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+2638,CASTAI4G    20.000,H,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0202,2638,1,0,386.65,0,57.6818,100,-100,407,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3101,EMBRCDRD    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3101,1,13,63.65,0,0,0,0,67,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3103,SANMATEO    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3103,1,17,78.85,0,0,0,0,83,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3104,MARTIN      115.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3104,1,12,57.95,0,0,0,0,61,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3133,SANMATEO    20.000,NG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0011,3133,1,1,58.9,0,42,42,-42,62,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3133,SANMATEO    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0011,3133,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+3133,SANMATEO    20.000,SC,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0011,3133,1,0,0.1,0,187.0322,500,-500,500,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3135,POTRERO     20.000,MG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0004,3135,1,206,513.95,0,82.3501,239,-239,541,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3135,POTRERO     20.000,NG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0004,3135,1,14,36.1,0,5.5966,100,-100,38,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3135,POTRERO     20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0004,3135,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+3201,C.COSTA     230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3201,1,18,86.45,0,0,0,0,91,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3202,MORAGA      230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3202,1,23,110.2,0,0,0,0,116,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3203,NEWARK      230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3203,1,26,123.5,0,0,0,0,130,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3204,PITSBURG    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3204,1,26,125.4,0,0,0,0,132,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3205,SOBRANTE    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3205,1,22,102.6,0,0,0,0,108,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3234,PITSBURG    20.000,DG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0121,3234,1,104,168.15,0,12.2965,101,-101,177,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3234,PITSBURG    20.000,MG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0121,3234,1,2256,3660.35,0,266.7383,1244,-1244,3853,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3234,PITSBURG    20.000,NG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0121,3234,1,605,985.15,0,71.5322,382,-382,1037,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3234,PITSBURG    20.000,NW,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0121,3234,1,1016,1653,0,120.1268,150,-150,1740,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+3234,PITSBURG    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0121,3234,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+3302,JEFFERSN    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3302,1,14,64.6,0,0,0,0,68,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3303,METCALF     230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3303,1,25,116.85,0,0,0,0,123,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3304,MONTAVIS    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3304,1,21,99.75,0,0,0,0,105,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3305,RAVENSWD    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3305,1,17,80.75,0,0,0,0,85,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3333,METCALF     20.000,CG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0023,3333,1,560,961.4,0,350.9532,398,-398,1012,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3333,METCALF     20.000,NG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0023,3333,1,166,296.4,0,104.0326,202,-202,312,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3333,METCALF     20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0023,3333,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+3401,GREGG       230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3401,1,22,104.5,0,0,0,0,110,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3403,MC CALL     230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3403,1,20,96.9,0,0,0,0,102,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3404,PANOCHE     230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3404,1,17,81.7,0,0,0,0,86,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3405,WILSON      230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3405,1,18,83.6,0,0,0,0,88,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3432,HELMS PP    20.000,NP,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0007,3432,1,0,3558.7,-2841,130.2551,1568,-1568,3746,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3433,MC CALL     20.000,NG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0002,3433,1,360,874.95,0,15.9237,231,-231,921,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3433,MC CALL     20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0002,3433,1,745,1354.7,0,32.9531,939.0001,-939.0001,1426,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+3501,FULTON      230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3501,1,25,116.85,0,0,0,0,123,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3531,FULTON      20.000,CE,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0006,3531,1,763,1352.8,0,84.0837,1004,-1004,1424,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3531,FULTON      20.000,NE,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0006,3531,1,288,506.35,0,31.738,253,-253,533,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3531,FULTON      20.000,NH,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0006,3531,1,13,22.8,0,1.4326,13,-13,24,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3631,HUMBOLDT    20.000,NB,,,2,CALIFORNIA,2,CALIFORNIA,2,1.015,3631,1,30,91.2,0,-2.726,20,-20,96,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3631,HUMBOLDT    20.000,NG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.015,3631,1,67,199.5,0,-6.0881,74,-74,210,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3631,HUMBOLDT    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.015,3631,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+3731,SUMMIT      20.000,NH,,,1,SOUTH,9,NEVADA,2,1.0006,3731,1,222,230.85,0,112.475,200,-200,243,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3805,MIDWAY      230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3805,1,20,93.1,0,0,0,0,98,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3831,DIABLO1     20.000,NN,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0491,3831,1,2108,2206.85,0,35.1187,1175,-1175,2323,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3835,MIDWAY      20.000,ND,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0357,3835,1,0,0,-510,0,0.5,0,100,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3835,MIDWAY      20.000,NG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0357,3835,1,209,1923.75,0,81.327,662,-662,2025,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3835,MIDWAY      20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0357,3835,1,150,1266.35,0,58.3687,500,-500,1333,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+3836,MORROBAY    20.000,DG,,,2,CALIFORNIA,2,CALIFORNIA,2,1.019,3836,1,679,1422.15,0,-0.8329,476,-476,1497,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3836,MORROBAY    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.019,3836,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+3907,BELLOTA     230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3907,1,18,86.45,0,0,0,0,91,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3913,GOLDHILL    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3913,1,13,61.75,0,0,0,0,65,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3918,MOSSLAND    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3918,1,13,59.85,0,0,0,0,63,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3923,TESLA       230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3923,1,16,75.05,0,0,0,0,79,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3924,VACA-DIX    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,3924,1,13,62.7,0,0,0,0,66,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+3931,ROUND MT    20.000,NB,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0715,3931,1,235,538.65,0,51.2797,151,-151,567,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3931,ROUND MT    20.000,NH,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0715,3931,1,1212,2731.25,0,264.4722,1284,-1284,2875,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3932,MOSSLAND    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1,3932,1,1355,1354.7,0,-1.3813,1150,-1150,1426,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+3933,TESLA       20.000,CG,,,2,CALIFORNIA,2,CALIFORNIA,3,1.02,3933,1,2.9043,821.75,0,99.0087,363,-363,865,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3933,TESLA       20.000,NB,,,2,CALIFORNIA,2,CALIFORNIA,3,1.02,3933,1,1.1551,327.75,0,39.3785,77,-77,345,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3933,TESLA       20.000,ND,,,2,CALIFORNIA,2,CALIFORNIA,3,1.02,3933,1,0,0,-449,0,0.5,0,100,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3933,TESLA       20.000,NG,,,2,CALIFORNIA,2,CALIFORNIA,3,1.02,3933,1,6.4638,1830.65,0,220.3489,500,-500,1927,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3933,TESLA       20.000,NH,,,2,CALIFORNIA,2,CALIFORNIA,3,1.02,3933,1,9.3071,2587.8,0,317.2778,1256,-1256,2724,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+3933,TESLA       20.000,NW,,,2,CALIFORNIA,2,CALIFORNIA,3,1.02,3933,1,2.4833,703,0,84.6552,200,-200,740,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+3933,TESLA       20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,3,1.02,3933,1,4.4715,1266.35,0,152.4339,800,-800,1333,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4009,BIG EDDY    230.00,DP,,,3,NORTH,11,OREGON,-2,1,4009,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+4031,MALIN       20.000,G,,,3,NORTH,11,OREGON,2,1.0857,4031,1,992,2574.5,0,502,502,-502,2710,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4031,MALIN       20.000,H,,,3,NORTH,11,OREGON,2,1.0857,4031,1,348,904.4001,0,349.198,489,-489,952,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4031,MALIN       20.000,S,,,3,NORTH,11,OREGON,2,1.0857,4031,1,156,405.65,0,156.537,250,-250,427,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4031,MALIN       20.000,W,,,3,NORTH,11,OREGON,2,1.0857,4031,1,232,603.25,0,232.7986,240,-240,635,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4035,JOHN DAY    20.000,C,,,3,NORTH,11,OREGON,2,1.128,4035,1,193,609.9,0,120.6804,255,-255,642,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4035,JOHN DAY    20.000,G,,,3,NORTH,11,OREGON,2,1.128,4035,1,498,1573.2,0,307,307,-307,1656,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4035,JOHN DAY    20.000,H,,,3,NORTH,11,OREGON,2,1.128,4035,1,1074,3393.4,0,671.558,1836,-1836,3572,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4035,JOHN DAY    20.000,S,,,3,NORTH,11,OREGON,2,1.128,4035,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4035,JOHN DAY    20.000,W,,,3,NORTH,11,OREGON,2,1.128,4035,1,775,2449.1,0,484.5973,800,-800,2578,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4039,DALLES21    20.000,G,,,3,NORTH,13,WASHINGTON,2,1.137,4039,1,86,142.5,0,54.742,102,-102,150,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4039,DALLES21    20.000,H,,,3,NORTH,13,WASHINGTON,2,1.137,4039,1,1617,2697.05,0,1029.277,1459,-1459,2839,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4039,DALLES21    20.000,S,,,3,NORTH,13,WASHINGTON,2,1.137,4039,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4039,DALLES21    20.000,W,,,3,NORTH,13,WASHINGTON,2,1.137,4039,1,792,1225.5,0,500,500,-500,1290,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4131,COULEE      20.000,B,,,3,NORTH,13,WASHINGTON,2,1.1327,4131,1,500,675.45,0,65.7089,150,-150,711,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4131,COULEE      20.000,H,,,3,NORTH,13,WASHINGTON,2,1.1327,4131,1,8243,11982.35,0,1083.277,6482,-6482,12613,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4131,COULEE      20.000,W,,,3,NORTH,13,WASHINGTON,2,1.1327,4131,1,617,750.5,0,81.0848,120,-120,790,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4132,HANFORD     20.000,G,,,3,NORTH,13,WASHINGTON,2,1.0998,4132,1,2061,2061.5,0,258.8177,1473,-1473,2170,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4132,HANFORD     20.000,H,,,3,NORTH,13,WASHINGTON,2,1.0998,4132,1,4262,5262.05,0,535.2163,2847,-2847,5539,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4132,HANFORD     20.000,N,,,3,NORTH,13,WASHINGTON,2,1.0998,4132,1,1000,1140,0,125.5787,231,-231,1200,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4132,HANFORD     20.000,S,,,3,NORTH,13,WASHINGTON,2,1.0998,4132,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4132,HANFORD     20.000,W,,,3,NORTH,13,WASHINGTON,2,1.0998,4132,1,250,285,0,31.3947,160,-160,300,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4201,NORTH       500.00,DP,,,3,NORTH,13,WASHINGTON,-2,1,4201,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+4231,NORTH G3    20.000,C,,,3,NORTH,13,WASHINGTON,2,1.1216,4231,1,1110,1387,0,728,728,-728,1460,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4231,NORTH G3    20.000,G,,,3,NORTH,13,WASHINGTON,2,1.1216,4231,1,738,921.5,0,658.7545,659,-659,970,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4231,NORTH G3    20.000,H,,,3,NORTH,13,WASHINGTON,2,1.1216,4231,1,2674,3341.149,0,1808,1808,-1808,3517,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4231,NORTH G3    20.000,S,,,3,NORTH,13,WASHINGTON,2,1.1216,4231,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4232,WCASCADE    20.000,G,,,3,NORTH,13,WASHINGTON,2,1.0596,4232,1,387,828.4,0,-28.9977,592,-592,872,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4232,WCASCADE    20.000,H,,,3,NORTH,13,WASHINGTON,2,1.0596,4232,1,247,530.1,0,-18.5076,287,-287,558,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+4232,WCASCADE    20.000,S,,,3,NORTH,13,WASHINGTON,2,1.0596,4232,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+4232,WCASCADE    20.000,W,,,3,NORTH,13,WASHINGTON,2,1.0596,4232,1,352,660.25,0,-26.3752,108,-108,695,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+5031,CANAD G1    20.000,G,,,3,NORTH,4,BRITISH COLU,2,1.0444,5031,1,913,2517.5,0,-126.2184,605,-605,2650,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+5031,CANAD G1    20.000,H,,,3,NORTH,4,BRITISH COLU,2,1.0444,5031,1,6640,10209.65,0,-917.9523,4399,-4399,10747,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+5032,CMAIN GM    20.000,C,,,3,NORTH,1,ALBERTA,2,1.0613,5032,1,4052,12387.05,0,609.2057,2977,-2977,13039,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+5032,CMAIN GM    20.000,G,,,3,NORTH,1,ALBERTA,2,1.0613,5032,1,2995,9154.2,0,450.2891,2200,-2200,9636,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+5032,CMAIN GM    20.000,R,,,3,NORTH,1,ALBERTA,2,1.0613,5032,1,74,102.6,0,11.1257,54,-54,108,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+5032,CMAIN GM    20.000,S,,,3,NORTH,1,ALBERTA,2,1.0613,5032,1,3002,4189.69,0,451.3415,2205,-2205,4410.2,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+5032,CMAIN GM    20.000,W,,,3,NORTH,1,ALBERTA,2,1.0613,5032,1,368,513.95,0,55.3277,271,-271,541,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6104,BORAH       230.00,DP,,,3,NORTH,6,IDAHO,-2,1,6104,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+6132,MIDPOINT    20.000,B,,,3,NORTH,6,IDAHO,2,1.1322,6132,1,50,115.9,0,6.4087,20,-20,122,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6132,MIDPOINT    20.000,G,,,3,NORTH,6,IDAHO,2,1.1322,6132,1,1159,1208.4,0,147,147,-147,1272,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6132,MIDPOINT    20.000,H,,,3,NORTH,6,IDAHO,2,1.1322,6132,1,2214,2413.95,0,283.7766,1072,-1072,2541,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6132,MIDPOINT    20.000,S,,,3,NORTH,6,IDAHO,2,1.1322,6132,1,200,375.25,0,25.6347,75,-75,395,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6132,MIDPOINT    20.000,W,,,3,NORTH,6,IDAHO,2,1.1322,6132,1,559,924.35,0,71.6491,210,-210,973,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6204,GARRISON    230.00,DP,,,3,NORTH,8,MONTANA,-2,1,6204,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+6231,COLSTRP     20.000,C,,,3,NORTH,8,MONTANA,2,1.1197,6231,1,2340,2363.6,0,-46.8636,1256,-1256,2488,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6231,COLSTRP     20.000,G,,,3,NORTH,8,MONTANA,2,1.1197,6231,1,100,237.5,0,-2.0027,70,-70,250,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6231,COLSTRP     20.000,S,,,3,NORTH,8,MONTANA,2,1.1197,6231,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6235,MONTA G1    20.000,G,,,3,NORTH,8,MONTANA,2,1.0776,6235,1,100,214.7,0,-39.5813,64,-64,226,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6235,MONTA G1    20.000,H,,,3,NORTH,8,MONTANA,2,1.0776,6235,1,1156,2537.45,0,-347,347,-347,2671,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6235,MONTA G1    20.000,S,,,3,NORTH,8,MONTANA,2,1.0776,6235,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6235,MONTA G1    20.000,W,,,3,NORTH,8,MONTANA,2,1.0776,6235,1,312,684,0,-123.4935,195,-195,720,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6303,BRIDGER2    230.00,DP,,,3,NORTH,14,WYOMING,-2,1,6303,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+6333,BRIDGER     20.000,C,,,3,NORTH,14,WYOMING,2,1.1362,6333,1,3153,4364.3,0,1082.125,1671,-1671,4594,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6333,BRIDGER     20.000,S,,,3,NORTH,14,WYOMING,2,1.1362,6333,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6333,BRIDGER     20.000,W,,,3,NORTH,14,WYOMING,2,1.1362,6333,1,1022,1414.55,0,350,350,-350,1489,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6335,NAUGHT      20.000,C,,,3,NORTH,14,WYOMING,2,1.0651,6335,1,2527,2527,0,887.3387,968,-968,2660,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6335,NAUGHT      20.000,G,,,3,NORTH,14,WYOMING,2,1.0651,6335,1,328,397.1,0,115.1749,330,-330,418,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6335,NAUGHT      20.000,H,,,3,NORTH,14,WYOMING,2,1.0651,6335,1,285,287.85,0,100.0758,406,-406,303,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6335,NAUGHT      20.000,S,,,3,NORTH,14,WYOMING,2,1.0651,6335,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6401,TRACYSPP    345.00,DP,,,1,SOUTH,9,NEVADA,-2,1,6401,1,12,57,0,0,0,0,60,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+6433,VALMY       20.000,C,,,1,SOUTH,9,NEVADA,2,1.113,6433,1,192,371.45,0,123.0953,283,-283,391,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6433,VALMY       20.000,E,,,1,SOUTH,9,NEVADA,2,1.113,6433,1,368,713.45,0,59,59,-59,751,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6433,VALMY       20.000,G,,,1,SOUTH,9,NEVADA,2,1.113,6433,1,673,1300.55,0,431.4748,536,-536,1369,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6433,VALMY       20.000,S,,,1,SOUTH,9,NEVADA,2,1.113,6433,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6433,VALMY       20.000,W,,,1,SOUTH,9,NEVADA,2,1.113,6433,1,75,144.4,0,48.0841,50,-50,152,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6510,BENLOMND    230.00,DP,,,3,NORTH,12,UTAH,-2,1,6510,1,46,217.55,0,0,0,0,229,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+6533,EMERY       20.000,C,,,3,NORTH,12,UTAH,2,1.0679,6533,1,1465,3112.2,0,256.6741,1924,-1924,3276,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6533,EMERY       20.000,G,,,3,NORTH,12,UTAH,2,1.0679,6533,1,1348,3077.05,0,236.1752,880,-880,3239,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6533,EMERY       20.000,H,,,3,NORTH,12,UTAH,2,1.0679,6533,1,100,261.25,0,17.5204,75,-75,275,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+6533,EMERY       20.000,S,,,3,NORTH,12,UTAH,2,1.0679,6533,1,629,1336.65,0,110.2034,500,-500,1407,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+6533,EMERY       20.000,W,,,3,NORTH,12,UTAH,2,1.0679,6533,1,175,371.45,0,20,20,-20,391,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+7001,COLOEAST    345.00,DP,,,3,NORTH,5,COLORADO,-2,1,7001,1,70,331.55,0,0,0,0,349,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+7031,COLOEAST    20.000,C,,,3,NORTH,5,COLORADO,2,1.06,7031,1,1210,2970.65,0,527.925,1419,-1419,3127,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+7031,COLOEAST    20.000,G,,,3,NORTH,5,COLORADO,2,1.06,7031,1,2442,6028.7,0,1065.449,2092,-2092,6346,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+7031,COLOEAST    20.000,P,,,3,NORTH,5,COLORADO,2,1.06,7031,1,135,483.55,-509,58.9007,175,-175,509,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+7031,COLOEAST    20.000,S,,,3,NORTH,5,COLORADO,2,1.06,7031,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+7031,COLOEAST    20.000,SC,,,3,NORTH,5,COLORADO,2,1.06,7031,1,0,0.1,0,0,1000,-1000,100,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+7031,COLOEAST    20.000,W,,,3,NORTH,5,COLORADO,2,1.06,7031,1,1220,2950.7,0,532.288,1000,-1000,3106,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+7032,CRAIG       20.000,C,,,3,NORTH,5,COLORADO,2,1.01,7032,1,1175,1729.95,0,-384.7833,826,-826,1821,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+7032,CRAIG       20.000,G,,,3,NORTH,5,COLORADO,2,1.01,7032,1,957,1408.85,0,-313.3937,489,-489,1483,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+7032,CRAIG       20.000,H,,,3,NORTH,5,COLORADO,2,1.01,7032,1,434,638.4,0,-142.1242,346,-346,672,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+7032,CRAIG       20.000,S,,,3,NORTH,5,COLORADO,2,1.01,7032,1,476,701.1,0,-155.8782,230,-230,738,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+8003,COTWDWAP    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,8003,1,26,122.55,0,0,0,0,129,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+8004,RNCHSECO    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,8004,1,149,706.8,0,0,0,0,744,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+8005,TRACYPMP    230.00,DP,,,2,CALIFORNIA,2,CALIFORNIA,-2,1,8005,1,52,247,0,0,0,0,260,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Fixed Q based on WPF,1
+8033,COTWDWAP    20.000,H,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0776,8033,1,1156,1324.3,0,567.5692,786,-786,1394,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+8034,RNCHSECO    20.000,G,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0033,8034,1,2756,3566.3,0,607.8884,1280,-1280,3754,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+8034,RNCHSECO    20.000,H,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0033,8034,1,385,516.8,0,84.9191,344,-344,544,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,1
+8034,RNCHSECO    20.000,S,,,2,CALIFORNIA,2,CALIFORNIA,2,1.0033,8034,0,0,0.1,0,0,0,0,1,0,0.2,0,0,1,1,1,0,1,0,1,0,1,,,,,,,,,P.U. (Per Unit),,,,Renewable: Standard QT,
+,,,,,,,,,,,,1,,,,,,,,,,,,,,,,,,,,,,,,,,,,,P.U. (Per Unit),,,,Conventional Machine,

@@ -39,7 +39,7 @@ br = get_component(Line, pf_sys5_re, "6")
 PSY.set_x!(br, 20.0)
 PSY.set_r!(br, 2.0)
 
-@testset "Power Flow testing" begin
+@testset "NLsolve Power Flow testing" begin
     # This is a negative test. The data passed for sys5_re is known to be infeasible.
     @test_logs(
         (:error, "The powerflow solver returned convergence = false"),
@@ -96,4 +96,28 @@ PSY.set_r!(br, 2.0)
     df = run_powerflow(sys_3bus)
     @test isapprox(df["bus_results"].P_gen, p_gen_matpower_3bus, atol=1e-4)
     @test isapprox(df["bus_results"].Q_gen, q_gen_matpower_3bus, atol=1e-4)
+end
+
+@testset "Test 240 Case PSS/e results" begin
+    file = joinpath(TEST_FILES_DIR, "test_data", "WECC240_v04_DPV_RE20_v33_6302_xfmr_DPbuscode_PFadjusted_V32_noRemoteVctrl.raw")
+    system = System(file,
+    bus_name_formatter = x -> strip(string(x["name"])) * "-" * string(x["index"]),
+    runchecks = false)
+
+    pf_bus_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_bus_results.csv")
+    pf_gen_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_gen_results.csv")
+
+    pf = run_powerflow!(system)
+    @test pf
+    pf_result_df = run_powerflow(system)
+
+    v_diff, angle_diff = psse_bus_results_compare(pf_bus_result_file, pf_result_df)
+    p_diff, q_diff = psse_gen_results_compare(pf_gen_result_file, system)
+
+    @test norm(v_diff, Inf) < DIFF_INF_TOLERANCE
+    @test norm(v_diff, 2)/length(v_diff) < DIFF_L2_TOLERANCE
+    @test norm(angle_diff, Inf) < DIFF_INF_TOLERANCE
+    @test norm(angle_diff, 2)/length(v_diff) < DIFF_L2_TOLERANCE
+    @test norm(p_diff, Inf) < 1e-2 # Temporarily relaxed
+    @test norm(p_diff, 2)/length(v_diff) < DIFF_L2_TOLERANCE
 end
