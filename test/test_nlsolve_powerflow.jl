@@ -99,10 +99,16 @@ PSY.set_r!(br, 2.0)
 end
 
 @testset "Test 240 Case PSS/e results" begin
-    file = joinpath(TEST_FILES_DIR, "test_data", "WECC240_v04_DPV_RE20_v33_6302_xfmr_DPbuscode_PFadjusted_V32_noRemoteVctrl.raw")
-    system = System(file,
-    bus_name_formatter = x -> strip(string(x["name"])) * "-" * string(x["index"]),
-    runchecks = false)
+    file = joinpath(
+        TEST_FILES_DIR,
+        "test_data",
+        "WECC240_v04_DPV_RE20_v33_6302_xfmr_DPbuscode_PFadjusted_V32_noRemoteVctrl.raw",
+    )
+    system = System(
+        file,
+        bus_name_formatter=x -> strip(string(x["name"])) * "-" * string(x["index"]),
+        runchecks=false,
+    )
 
     pf_bus_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_bus_results.csv")
     pf_gen_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_gen_results.csv")
@@ -115,11 +121,11 @@ end
     p_diff, q_diff = psse_gen_results_compare(pf_gen_result_file, system)
 
     @test norm(v_diff, Inf) < DIFF_INF_TOLERANCE
-    @test norm(v_diff, 2)/length(v_diff) < DIFF_L2_TOLERANCE
+    @test norm(v_diff, 2) / length(v_diff) < DIFF_L2_TOLERANCE
     @test norm(angle_diff, Inf) < DIFF_INF_TOLERANCE
-    @test norm(angle_diff, 2)/length(v_diff) < DIFF_L2_TOLERANCE
+    @test norm(angle_diff, 2) / length(v_diff) < DIFF_L2_TOLERANCE
     @test norm(p_diff, Inf) < 1e-2 # Temporarily relaxed
-    @test norm(p_diff, 2)/length(v_diff) < DIFF_L2_TOLERANCE
+    @test norm(p_diff, 2) / length(v_diff) < DIFF_L2_TOLERANCE
     #@test norm(q_diff, Inf) < 1e-2 # Temporarily relaxed
     #@test norm(q_diff, 2)/length(v_diff) < DIFF_L2_TOLERANCE
 end
