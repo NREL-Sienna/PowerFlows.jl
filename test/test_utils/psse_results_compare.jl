@@ -1,8 +1,8 @@
 function psse_bus_results_compare(file_name, pf_results)
     pf_result_bus = CSV.read(file_name, DataFrame)
 
-    v_diff = []
-    angle_diff = []
+    v_diff = Float64[]
+    angle_diff = Float64[]
     for (ix, n) in enumerate(eachrow(pf_result_bus))
         push!(v_diff, pf_results["bus_results"][ix,"Vm"] - n."Voltage (pu)")
         push!(angle_diff, pf_results["bus_results"][ix, "θ"] - (n."Angle (deg)"*(π/180)))
@@ -13,8 +13,8 @@ end
 function psse_gen_results_compare(file_name, system::PSY.System)
     base_power = get_base_power(system)
     pf_result_gen = CSV.read(file_name, DataFrame)
-    p_diff = []
-    q_diff = []
+    p_diff = Float64[]
+    q_diff = Float64[]
     for row in eachrow(pf_result_gen)
         if ismissing(row."Bus  Number")
             continue
