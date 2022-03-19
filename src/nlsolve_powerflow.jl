@@ -1,153 +1,5 @@
 
 """
-Updates system voltages and powers with power flow results
-"""
-function _write_powerflow_solution!(sys::PSY.System, nl_result)
-    function _is_available_source(x, bus::PSY.Bus)
-        return PSY.get_available(x) && x.bus == bus && !isa(x, PSY.ElectricLoad)
-    end
-
-    result = round.(nl_result.zero; digits=7)
-    buses = enumerate(
-        sort!(collect(PSY.get_components(PSY.Bus, sys)), by=x -> PSY.get_number(x)),
-    )
-
-    for (ix, bus) in buses
-        if bus.bustype == PSY.BusTypes.REF
-            P_gen = result[2 * ix - 1]
-            Q_gen = result[2 * ix]
-            devices = PSY.get_components(
-                PSY.StaticInjection,
-                sys,
-                x -> _is_available_source(x, bus),
-            )
-            sum_basepower = sum(PSY.get_base_power.(devices))
-            for d in devices
-                part_factor = PSY.get_base_power(d) / sum_basepower
-                PSY.set_active_power!(d, P_gen * part_factor)
-                PSY.set_reactive_power!(d, Q_gen * part_factor)
-            end
-        elseif bus.bustype == PSY.BusTypes.PV
-            Q_gen = result[2 * ix - 1]
-            θ = result[2 * ix]
-            devices = PSY.get_components(
-                PSY.StaticInjection,
-                sys,
-                x -> _is_available_source(x, bus),
-            )
-            sum_basepower = sum(PSY.get_base_power.(devices))
-            for d in devices
-                PSY.set_reactive_power!(d, Q_gen * PSY.get_base_power(d) / sum_basepower)
-            end
-            bus.angle = θ
-        elseif bus.bustype == PSY.BusTypes.PQ
-            Vm = result[2 * ix - 1]
-            θ = result[2 * ix]
-            PSY.set_magnitude!(bus, Vm)
-            PSY.set_angle!(bus, θ)
-        end
-    end
-
-    _update_branch_flow!(sys)
-    return
-end
-
-"""
-Return power flow results in dictionary of dataframes.
-"""
-function _write_results(sys::PSY.System, nl_result)
-    @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
-    result = round.(nl_result.zero; digits=7)
-    buses = sort!(collect(PSY.get_components(PSY.Bus, sys)), by=x -> PSY.get_number(x))
-    N_BUS = length(buses)
-    bus_map = Dict(buses .=> 1:N_BUS)
-    sys_basepower = PSY.get_base_power(sys)
-    sources = PSY.get_components(PSY.StaticInjection, sys, d -> !isa(d, PSY.ElectricLoad))
-    Vm_vect = fill(0.0, N_BUS)
-    θ_vect = fill(0.0, N_BUS)
-    P_gen_vect = fill(0.0, N_BUS)
-    Q_gen_vect = fill(0.0, N_BUS)
-    P_load_vect = fill(0.0, N_BUS)
-    Q_load_vect = fill(0.0, N_BUS)
-
-    for (ix, bus) in enumerate(buses)
-        P_load_vect[ix], Q_load_vect[ix] = _get_load_data(sys, bus) .* sys_basepower
-        P_admittance, Q_admittance = _get_fixed_admittance_power(sys, bus, result, ix)
-        P_load_vect[ix] += P_admittance
-        Q_load_vect[ix] += Q_admittance
-        if bus.bustype == PSY.BusTypes.REF
-            Vm_vect[ix] = PSY.get_magnitude(bus)
-            θ_vect[ix] = PSY.get_angle(bus)
-            P_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
-            Q_gen_vect[ix] = result[2 * ix] * sys_basepower
-        elseif bus.bustype == PSY.BusTypes.PV
-            Vm_vect[ix] = PSY.get_magnitude(bus)
-            θ_vect[ix] = result[2 * ix]
-            for gen in sources
-                !PSY.get_available(gen) && continue
-                if gen.bus == bus
-                    P_gen_vect[ix] += PSY.get_active_power(gen) * sys_basepower
-                end
-            end
-            Q_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
-        elseif bus.bustype == PSY.BusTypes.PQ
-            Vm_vect[ix] = result[2 * ix - 1]
-            θ_vect[ix] = result[2 * ix]
-            for gen in sources
-                !PSY.get_available(gen) && continue
-                if gen.bus == bus
-                    P_gen_vect[ix] += PSY.get_active_power(gen) * sys_basepower
-                    Q_gen_vect[ix] += PSY.get_reactive_power(gen) * sys_basepower
-                end
-            end
-        end
-    end
-
-    branches = PSY.get_components(PSY.ACBranch, sys)
-    N_BRANCH = length(branches)
-    P_from_to_vect = fill(0.0, N_BRANCH)
-    Q_from_to_vect = fill(0.0, N_BRANCH)
-    P_to_from_vect = fill(0.0, N_BRANCH)
-    Q_to_from_vect = fill(0.0, N_BRANCH)
-    for (ix, b) in enumerate(branches)
-        !PSY.get_available(b) && continue
-        bus_f_ix = bus_map[PSY.get_arc(b).from]
-        bus_t_ix = bus_map[PSY.get_arc(b).to]
-        V_from = Vm_vect[bus_f_ix] * (cos(θ_vect[bus_f_ix]) + sin(θ_vect[bus_f_ix]) * 1im)
-        V_to = Vm_vect[bus_t_ix] * (cos(θ_vect[bus_t_ix]) + sin(θ_vect[bus_t_ix]) * 1im)
-        P_from_to_vect[ix], Q_from_to_vect[ix] = flow_func(b, V_from, V_to) .* sys_basepower
-        P_to_from_vect[ix], Q_to_from_vect[ix] = flow_func(b, V_to, V_from) .* sys_basepower
-    end
-
-    bus_df = DataFrames.DataFrame(
-        bus_number=PSY.get_number.(buses),
-        Vm=Vm_vect,
-        θ=θ_vect,
-        P_gen=P_gen_vect,
-        P_load=P_load_vect,
-        P_net=P_gen_vect - P_load_vect,
-        Q_gen=Q_gen_vect,
-        Q_load=Q_load_vect,
-        Q_net=Q_gen_vect - Q_load_vect,
-    )
-
-    branch_df = DataFrames.DataFrame(
-        line_name=PSY.get_name.(branches),
-        bus_from=PSY.get_number.(PSY.get_from.(PSY.get_arc.(branches))),
-        bus_to=PSY.get_number.(PSY.get_to.(PSY.get_arc.(branches))),
-        P_from_to=P_from_to_vect,
-        Q_from_to=Q_from_to_vect,
-        P_to_from=P_to_from_vect,
-        Q_to_from=Q_to_from_vect,
-        P_losses=P_from_to_vect + P_to_from_vect,
-        Q_losses=Q_from_to_vect + Q_to_from_vect,
-    )
-    DataFrames.sort!(branch_df, [:bus_from, :bus_to])
-
-    return Dict("bus_results" => bus_df, "flow_results" => branch_df)
-end
-
-"""
 Solves a the power flow into the system and writes the solution into the relevant structs.
 Updates generators active and reactive power setpoints and branches active and reactive
 power flows (calculated in the From - To direction) (see
@@ -189,7 +41,7 @@ function run_powerflow!(system::PSY.System; finite_diff=false, kwargs...)
     PSY.set_units_base_system!(system, "SYSTEM_BASE")
     res = _run_powerflow(system, finite_diff; kwargs...)
     if res.f_converged
-        _write_powerflow_solution!(system, res)
+        write_powerflow_solution!(system, res.zero)
         @info("PowerFlow solve converged, the results have been stored in the system")
         #Restore original per unit base
         PSY.set_units_base_system!(system, settings_unit_cache)
@@ -222,7 +74,7 @@ function run_powerflow(system::PSY.System; finite_diff=false, kwargs...)
     res = _run_powerflow(system, finite_diff; kwargs...)
     if res.f_converged
         @info("PowerFlow solve converged, the results are exported in DataFrames")
-        df_results = _write_results(system, res)
+        df_results = write_results(system, res.zero)
         #Restore original per unit base
         PSY.set_units_base_system!(system, settings_unit_cache)
         return df_results
