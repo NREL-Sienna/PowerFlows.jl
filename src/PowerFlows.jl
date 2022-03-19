@@ -13,6 +13,7 @@ import InfrastructureSystems
 const IS = InfrastructureSystems
 const PSY = PowerSystems
 
+include("definitions.jl")
 include("nlsolve_powerflow.jl")
 include("post_processing.jl")
 
