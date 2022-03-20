@@ -166,9 +166,7 @@ function _power_redistribution_ref(
     sum_basepower = sum(PSY.get_max_active_power.(devices))
     p_residual = P_gen
     units_at_limit = Vector{Int}()
-    @error P_gen
     for (ix, d) in enumerate(devices)
-        @info d.name
         p_limits = PSY.get_active_power_limits(d)
         part_factor = p_limits.max / sum_basepower
         p_frac = P_gen * part_factor
