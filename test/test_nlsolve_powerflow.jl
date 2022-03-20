@@ -125,8 +125,8 @@ end
     @test norm(v_diff, 2) / length(v_diff) < DIFF_L2_TOLERANCE
     @test norm(angle_diff, Inf) < DIFF_INF_TOLERANCE
     @test norm(angle_diff, 2) / length(angle_diff) < DIFF_L2_TOLERANCE
-    @test norm(p_diff, Inf) < DIFF_INF_TOLERANCE*base_power
+    @test norm(p_diff, Inf) < DIFF_INF_TOLERANCE * base_power
     @test norm(p_diff, 2) / length(p_diff) < DIFF_L2_TOLERANCE
-    @test sum(q_diff) < DIFF_INF_TOLERANCE*base_power
+    @test sum(q_diff) < DIFF_INF_TOLERANCE * base_power
     @test norm(q_diff, 2) / length(q_diff) < DIFF_L2_TOLERANCE
 end
