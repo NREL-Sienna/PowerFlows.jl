@@ -301,7 +301,6 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
     end
 
     if !isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
-        @error "Q not made 0.0. $(units_at_limit)"
         it = 0
         while !isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
             if length(devices) == length(units_at_limit) + 1
