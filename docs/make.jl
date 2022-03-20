@@ -16,7 +16,7 @@ deploydocs(
     repo="github.com/NREL-SIIP/PowerFlows.jl.git",
     target="build",
     branch="gh-pages",
-    devbranch="master",
+    devbranch="main",
     devurl="dev",
     push_preview=true,
     versions=["stable" => "v^", "v#.#"],
