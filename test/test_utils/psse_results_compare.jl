@@ -18,6 +18,7 @@ function psse_gen_results_compare(file_name, system::PSY.System)
     pf_result_gen = CSV.read(file_name, DataFrame)
     p_diff = Float64[]
     q_diff = Float64[]
+    names = String[]
     for row in eachrow(pf_result_gen)
         if ismissing(row."Bus  Number")
             continue
@@ -28,6 +29,7 @@ function psse_gen_results_compare(file_name, system::PSY.System)
         rp = get_reactive_power(gen)
         push!(p_diff, ap - row."PGen (MW)" / base_power)
         push!(q_diff, rp - row."QGen (Mvar)" / base_power)
+        push!(names, name)
     end
-    return p_diff, q_diff
+    return p_diff, q_diff, names
 end
