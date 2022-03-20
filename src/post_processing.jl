@@ -1,3 +1,6 @@
+function _is_available_source(x, bus::PSY.Bus)
+    return PSY.get_available(x) && x.bus == bus && !isa(x, PSY.ElectricLoad)
+end
 
 """
 Calculates the From - To complex power flow (Flow injected at the bus) of branch of type
@@ -143,15 +146,239 @@ function _get_fixed_admittance_power(
     return active_power, reactive_power
 end
 
+function _power_redistribution_ref(
+    sys::PSY.System,
+    P_gen::Float64,
+    Q_gen::Float64,
+    bus::PSY.Bus,
+)
+    devices_ =
+        PSY.get_components(PSY.StaticInjection, sys, x -> _is_available_source(x, bus))
+    if length(devices_) == 1
+        PSY.set_active_power!(first(devices), P_gen)
+        return
+    elseif length(devices_) > 1
+        devices = sort(collect(devices_); by=x -> PSY.get_max_active_power(x))
+    else
+        error("No devices in bus $(PSY.get_name(bus))")
+    end
+
+    sum_basepower = sum(PSY.get_max_active_power.(devices))
+    p_residual = P_gen
+    units_at_limit = Vector{Int}()
+    @error P_gen
+    for (ix, d) in enumerate(devices)
+        @info d.name
+        p_limits = PSY.get_active_power_limits(d)
+        part_factor = p_limits.max / sum_basepower
+        p_frac = P_gen * part_factor
+        @show p_set_point = clamp(p_frac, p_limits.min, p_limits.max)
+        if (p_frac >= p_limits.max + BOUNDS_TOLERANCE) ||
+           (p_frac <= p_limits.min - BOUNDS_TOLERANCE)
+            push!(units_at_limit, ix)
+            @warn "Unit $(PSY.get_name(d)) set at the limit $(p_set_point). P_max = $(p_limits.max) P_min = $(p_limits.min)"
+        end
+        PSY.set_active_power!(d, p_set_point)
+        p_residual -= p_set_point
+    end
+
+    if !isapprox(p_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+        removed_power = sum(PSY.get_max_active_power.(devices[units_at_limit]))
+        reallocated_p = 0.0
+        it = 0
+        while !isapprox(p_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+            if length(devices) == length(units_at_limit) + 1
+                @warn "all devices at the active Power Limit"
+                break
+            end
+            for (ix, d) in enumerate(devices)
+                @info d.name
+                ix ∈ units_at_limit && continue
+                p_limits = PSY.get_active_power_limits(d)
+                part_factor = p_limits.max / (sum_basepower - removed_power)
+                p_frac = p_residual * part_factor
+                current_p = PSY.get_active_power(d)
+                @show p_set_point = p_frac + current_p
+                if (p_set_point >= p_limits.max + BOUNDS_TOLERANCE) ||
+                   (p_set_point <= p_limits.min - BOUNDS_TOLERANCE)
+                    push!(units_at_limit, ix)
+                    @warn "Unit $(PSY.get_name(d)) set at the limit $(p_set_point). P_max = $(p_limits.max) P_min = $(p_limits.min)"
+                end
+                @show p_set_point = clamp(p_set_point, p_limits.min, p_limits.max)
+                PSY.set_active_power!(d, p_set_point)
+                reallocated_p += p_frac
+            end
+            p_residual -= reallocated_p
+            if isapprox(p_residual, 0, atol=ISAPPROX_ZERO_TOLERANCE)
+                break
+            end
+            it += 1
+            if it > 10
+                break
+            end
+        end
+        @show p_residual
+        if !isapprox(p_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+            @show units_at_limit
+            remaining_unit_index = setdiff(1:length(devices), units_at_limit)
+            @assert length(remaining_unit_index) == 1 remaining_unit_index
+            device = devices[remaining_unit_index[1]]
+            @debug "Remaining residual $q_residual, $(PSY.get_name(bus))"
+            p_set_point = PSY.get_active_power(device) + p_residual
+            PSY.set_active_power!(device, p_set_point)
+            p_limits = PSY.get_reactive_power_limits(device)
+            if (p_set_point >= p_limits.max + BOUNDS_TOLERANCE) ||
+               (p_set_point <= p_limits.min - BOUNDS_TOLERANCE)
+                @error "Unit $(PSY.get_name(device)) P=$(p_set_point) above limits. P_max = $(p_limits.max) P_min = $(p_limits.min)"
+            end
+        end
+    end
+    _reactive_power_redistribution_pv(sys, Q_gen, bus)
+    return
+end
+
+function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus::PSY.Bus)
+    @info PSY.get_name(bus)
+    @debug "Reactive Power Distribution $(PSY.get_name(bus))"
+    devices_ =
+        PSY.get_components(PSY.StaticInjection, sys, x -> _is_available_source(x, bus))
+
+    if length(devices_) == 1
+        @info "Only one generator in the bus"
+        PSY.set_reactive_power!(first(devices_), Q_gen)
+        return
+    elseif length(devices_) > 1
+        devices = sort(collect(devices_); by=x -> PSY.get_max_reactive_power(x))
+    else
+        error("No devices in bus $(PSY.get_name(bus))")
+    end
+
+    total_active_power = sum(PSY.get_active_power.(devices))
+
+    if isapprox(total_active_power, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+        @info "Total Active Power Output at the bus is $(total_active_power). Using Unit's Base Power"
+        sum_basepower = sum(PSY.get_base_power.(devices))
+        for d in devices
+            part_factor = PSY.get_base_power(d) / sum_basepower
+            PSY.set_reactive_power!(d, Q_gen * part_factor)
+        end
+        return
+    end
+
+    q_residual = Q_gen
+    units_at_limit = Vector{Int}()
+
+    for (ix, d) in enumerate(devices)
+        @info PSY.get_name(d)
+        q_limits = PSY.get_reactive_power_limits(d)
+        if isapprox(q_limits.max, 0.0, atol=BOUNDS_TOLERANCE) &&
+           isapprox(q_limits.min, 0.0, atol=BOUNDS_TOLERANCE)
+            push!(units_at_limit, ix)
+            @info "Unit $(PSY.get_name(d)) has no Q control capability. Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
+            continue
+        end
+
+        fraction = PSY.get_active_power(d) / total_active_power
+
+        if fraction == 0.0
+            PSY.set_reactive_power!(d, 0.0)
+            continue
+        else
+            @assert fraction > 0
+        end
+
+        q_frac = Q_gen * fraction
+        @show q_set_point = clamp(q_frac, q_limits.min, q_limits.max)
+
+        if (q_frac >= q_limits.max + BOUNDS_TOLERANCE) ||
+           (q_frac <= q_limits.min - BOUNDS_TOLERANCE)
+            push!(units_at_limit, ix)
+            @warn "Unit $(PSY.get_name(d)) set at the limit $(q_set_point). Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
+        end
+
+        PSY.set_reactive_power!(d, q_set_point)
+        @show q_residual -= q_set_point
+
+        if isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+            break
+        end
+    end
+
+    if !isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+        @error "Q not made 0.0. $(units_at_limit)"
+        it = 0
+        while !isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+            if length(devices) == length(units_at_limit) + 1
+                @warn "all devices at the limit"
+                break
+            end
+            removed_power = sum(PSY.get_active_power.(devices[units_at_limit]))
+            reallocated_q = 0.0
+            for (ix, d) in enumerate(devices)
+                @info "fixing" PSY.get_name(d)
+                ix ∈ units_at_limit && continue
+                q_limits = PSY.get_reactive_power_limits(d)
+
+                if removed_power < total_active_power
+                    fraction =
+                        PSY.get_active_power(d) / (total_active_power - removed_power)
+                elseif isapprox(removed_power, total_active_power)
+                    fraction = 1
+                else
+                    error("Remove power can't be larger than the total active power")
+                end
+
+                if fraction == 0.0
+                    continue
+                else
+                    PSY.InfrastructureSystems.@assert_op fraction > 0
+                end
+
+                @show current_q = PSY.get_reactive_power(d)
+                @show q_frac = q_residual * fraction
+                @show q_set_point = clamp(q_frac + current_q, q_limits.min, q_limits.max)
+                reallocated_q += q_frac
+                if (q_frac >= q_limits.max + BOUNDS_TOLERANCE) ||
+                   (q_frac <= q_limits.min - BOUNDS_TOLERANCE)
+                    push!(units_at_limit, ix)
+                    @warn "Unit $(PSY.get_name(d)) set at the limit $(q_set_point). Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
+                end
+
+                PSY.set_reactive_power!(d, q_set_point)
+            end
+            q_residual -= reallocated_q
+            if isapprox(q_residual, 0, atol=ISAPPROX_ZERO_TOLERANCE)
+                break
+            end
+            it += 1
+            if it > 1
+                break
+            end
+        end
+    end
+
+    if !isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+        @show units_at_limit
+        remaining_unit_index = setdiff(1:length(devices), units_at_limit)
+        @assert length(remaining_unit_index) == 1 remaining_unit_index
+        device = devices[remaining_unit_index[1]]
+        @debug "Remaining residual $q_residual, $(PSY.get_name(bus))"
+        q_set_point = PSY.get_reactive_power(device) + q_residual
+        PSY.set_reactive_power!(device, q_set_point)
+        q_limits = PSY.get_reactive_power_limits(device)
+        if (q_set_point >= q_limits.max + BOUNDS_TOLERANCE) ||
+           (q_set_point <= q_limits.min - BOUNDS_TOLERANCE)
+            @error "Unit $(PSY.get_name(device)) Q=$(q_set_point) above limits. Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
+        end
+    end
+
+    return
+end
 
 """
 Updates system voltages and powers with power flow results
 """
 function write_powerflow_solution!(sys::PSY.System, result::Vector{Float64})
-    function _is_available_source(x, bus::PSY.Bus)
-        return PSY.get_available(x) && x.bus == bus && !isa(x, PSY.ElectricLoad)
-    end
-
     buses = enumerate(
         sort!(collect(PSY.get_components(PSY.Bus, sys)), by=x -> PSY.get_number(x)),
     )
@@ -160,30 +387,11 @@ function write_powerflow_solution!(sys::PSY.System, result::Vector{Float64})
         if bus.bustype == PSY.BusTypes.REF
             P_gen = result[2 * ix - 1]
             Q_gen = result[2 * ix]
-            devices = PSY.get_components(
-                PSY.StaticInjection,
-                sys,
-                x -> _is_available_source(x, bus),
-            )
-            sum_basepower = sum(PSY.get_base_power.(devices))
-            for d in devices
-                part_factor = PSY.get_base_power(d) / sum_basepower
-                PSY.set_active_power!(d, P_gen * part_factor)
-                PSY.set_reactive_power!(d, Q_gen * part_factor)
-            end
+            _power_redistribution_ref(sys, P_gen, Q_gen, bus)
         elseif bus.bustype == PSY.BusTypes.PV
             Q_gen = result[2 * ix - 1]
-            θ = result[2 * ix]
-            devices = PSY.get_components(
-                PSY.StaticInjection,
-                sys,
-                x -> _is_available_source(x, bus),
-            )
-            sum_basepower = sum(PSY.get_base_power.(devices))
-            for d in devices
-                PSY.set_reactive_power!(d, Q_gen * PSY.get_base_power(d) / sum_basepower)
-            end
-            bus.angle = θ
+            bus.angle = result[2 * ix]
+            _reactive_power_redistribution_pv(sys, Q_gen, bus)
         elseif bus.bustype == PSY.BusTypes.PQ
             Vm = result[2 * ix - 1]
             θ = result[2 * ix]
