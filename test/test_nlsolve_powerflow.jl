@@ -129,5 +129,3 @@ end
     @test sum(q_diff) < 1e-2 # Temporarily relaxed
     @test norm(q_diff, 2) / length(v_diff) < DIFF_L2_TOLERANCE
 end
-
-plot(names, q_diff)
