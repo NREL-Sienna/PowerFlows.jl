@@ -172,7 +172,7 @@ function _power_redistribution_ref(
         p_limits = PSY.get_active_power_limits(d)
         part_factor = p_limits.max / sum_basepower
         p_frac = P_gen * part_factor
-        @show p_set_point = clamp(p_frac, p_limits.min, p_limits.max)
+        p_set_point = clamp(p_frac, p_limits.min, p_limits.max)
         if (p_frac >= p_limits.max + BOUNDS_TOLERANCE) ||
            (p_frac <= p_limits.min - BOUNDS_TOLERANCE)
             push!(units_at_limit, ix)
@@ -198,13 +198,13 @@ function _power_redistribution_ref(
                 part_factor = p_limits.max / (sum_basepower - removed_power)
                 p_frac = p_residual * part_factor
                 current_p = PSY.get_active_power(d)
-                @show p_set_point = p_frac + current_p
+                p_set_point = p_frac + current_p
                 if (p_set_point >= p_limits.max + BOUNDS_TOLERANCE) ||
                    (p_set_point <= p_limits.min - BOUNDS_TOLERANCE)
                     push!(units_at_limit, ix)
                     @warn "Unit $(PSY.get_name(d)) set at the limit $(p_set_point). P_max = $(p_limits.max) P_min = $(p_limits.min)"
                 end
-                @show p_set_point = clamp(p_set_point, p_limits.min, p_limits.max)
+                p_set_point = clamp(p_set_point, p_limits.min, p_limits.max)
                 PSY.set_active_power!(d, p_set_point)
                 reallocated_p += p_frac
             end
@@ -217,9 +217,7 @@ function _power_redistribution_ref(
                 break
             end
         end
-        @show p_residual
         if !isapprox(p_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
-            @show units_at_limit
             remaining_unit_index = setdiff(1:length(devices), units_at_limit)
             @assert length(remaining_unit_index) == 1 remaining_unit_index
             device = devices[remaining_unit_index[1]]
@@ -288,7 +286,7 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
         end
 
         q_frac = Q_gen * fraction
-        @show q_set_point = clamp(q_frac, q_limits.min, q_limits.max)
+        q_set_point = clamp(q_frac, q_limits.min, q_limits.max)
 
         if (q_frac >= q_limits.max + BOUNDS_TOLERANCE) ||
            (q_frac <= q_limits.min - BOUNDS_TOLERANCE)
@@ -297,7 +295,7 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
         end
 
         PSY.set_reactive_power!(d, q_set_point)
-        @show q_residual -= q_set_point
+        q_residual -= q_set_point
 
         if isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
             break
@@ -334,9 +332,9 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
                     PSY.InfrastructureSystems.@assert_op fraction > 0
                 end
 
-                @show current_q = PSY.get_reactive_power(d)
-                @show q_frac = q_residual * fraction
-                @show q_set_point = clamp(q_frac + current_q, q_limits.min, q_limits.max)
+                current_q = PSY.get_reactive_power(d)
+                q_frac = q_residual * fraction
+                q_set_point = clamp(q_frac + current_q, q_limits.min, q_limits.max)
                 reallocated_q += q_frac
                 if (q_frac >= q_limits.max + BOUNDS_TOLERANCE) ||
                    (q_frac <= q_limits.min - BOUNDS_TOLERANCE)
@@ -358,7 +356,6 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
     end
 
     if !isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
-        @show units_at_limit
         remaining_unit_index = setdiff(1:length(devices), units_at_limit)
         @assert length(remaining_unit_index) == 1 remaining_unit_index
         device = devices[remaining_unit_index[1]]
