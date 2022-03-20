@@ -20,8 +20,8 @@ Aqua.test_deps_compat(PowerFlows)
 
 test_file_dir = isempty(dirname(@__FILE__)) ? "test" : dirname(@__FILE__)
 const TEST_FILES_DIR = test_file_dir
-DIFF_INF_TOLERANCE = 1e-4
-DIFF_L2_TOLERANCE = 1e-3
+const DIFF_INF_TOLERANCE = 1e-4
+const DIFF_L2_TOLERANCE = 1e-3
 
 include("test_utils/psse_results_compare.jl")
 

@@ -117,15 +117,16 @@ end
     @test pf
     pf_result_df = run_powerflow(system)
 
-    v_diff, angle_diff = psse_bus_results_compare(pf_bus_result_file, pf_result_df)
+    v_diff, angle_diff, number = psse_bus_results_compare(pf_bus_result_file, pf_result_df)
     p_diff, q_diff, names = psse_gen_results_compare(pf_gen_result_file, system)
 
+    base_power = get_base_power(system)
     @test norm(v_diff, Inf) < DIFF_INF_TOLERANCE
     @test norm(v_diff, 2) / length(v_diff) < DIFF_L2_TOLERANCE
     @test norm(angle_diff, Inf) < DIFF_INF_TOLERANCE
     @test norm(angle_diff, 2) / length(v_diff) < DIFF_L2_TOLERANCE
-    @test norm(p_diff, Inf) < 1e-2 # Temporarily relaxed
+    @test norm(p_diff, Inf) < DIFF_INF_TOLERANCE*base_power
     @test norm(p_diff, 2) / length(v_diff) < DIFF_L2_TOLERANCE
-    @test sum(q_diff) < 1e-2 # Temporarily relaxed
+    @test sum(q_diff) < DIFF_INF_TOLERANCE*base_power
     @test norm(q_diff, 2) / length(v_diff) < DIFF_L2_TOLERANCE
 end
