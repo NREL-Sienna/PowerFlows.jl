@@ -3,14 +3,16 @@ function psse_bus_results_compare(file_name, pf_results)
 
     v_diff = Float64[]
     angle_diff = Float64[]
+    number = Int[]
     for (ix, n) in enumerate(eachrow(pf_result_bus))
         push!(v_diff, pf_results["bus_results"][ix, "Vm"] - n."Voltage (pu)")
         push!(
             angle_diff,
             pf_results["bus_results"][ix, "θ"] - (n."Angle (deg)" * (π / 180)),
         )
+        push!(number, pf_results["bus_results"][ix, "bus_number"])
     end
-    return v_diff, angle_diff
+    return v_diff, angle_diff, number
 end
 
 function psse_gen_results_compare(file_name, system::PSY.System)
