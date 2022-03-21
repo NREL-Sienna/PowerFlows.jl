@@ -2,7 +2,7 @@
 
 [![Main - CI](https://github.com/NREL-SIIP/PowerFlows.jl/actions/workflows/main-tests.yml/badge.svg)](https://github.com/NREL-SIIP/PowerFlows.jl/actions/workflows/main-tests.yml)
 [![codecov](https://codecov.io/gh/NREL-SIIP/PowerFlows.jl/branch/main/graph/badge.svg?token=W2GIoyXQcF)](https://codecov.io/gh/NREL-SIIP/PowerFlows.jl)
-[![Documentation](https://github.com/NREL-SIIP/PowerFlows.jl/actions/workflows/docs.yml/badge.svg)](https://github.com/NREL-SIIP/PowerFlows.jl/actions/workflows/docs.yml)
+[![Documentation](https://github.com/NREL-SIIP/PowerFlows.jl/actions/workflows/docs.yml/badge.svg)](https://nrel-siip.github.io/PowerFlows.jl/dev/)
 [<img src="https://img.shields.io/badge/slack-@SIIP/PF-blue.svg?logo=slack">](https://join.slack.com/t/nrel-siip/shared_invite/zt-glam9vdu-o8A9TwZTZqqNTKHa7q3BpQ)
 
 
