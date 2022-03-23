@@ -155,7 +155,9 @@ function _power_redistribution_ref(
     devices_ =
         PSY.get_components(PSY.StaticInjection, sys, x -> _is_available_source(x, bus))
     if length(devices_) == 1
-        PSY.set_active_power!(first(devices_), P_gen)
+        device = first(devices_)
+        PSY.set_active_power!(device, P_gen)
+        PSY.set_reactive_power!(device, Q_gen)
         return
     elseif length(devices_) > 1
         devices = sort(collect(devices_); by=x -> PSY.get_max_active_power(x))
