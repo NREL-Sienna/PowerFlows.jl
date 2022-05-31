@@ -148,7 +148,7 @@ function _get_fixed_admittance_power(
             Vm_squared =
                 b.bustype == PSY.BusTypes.PQ ? result[2 * ix - 1]^2 : PSY.get_magnitude(b)^2
             active_power += Vm_squared * real(PSY.get_Y(l))
-            reactive_power += Vm_squared * imag(PSY.get_Y(l))
+            reactive_power -= Vm_squared * imag(PSY.get_Y(l))
         end
     end
     return active_power, reactive_power
@@ -424,8 +424,8 @@ function write_results(sys::PSY.System, result::Vector{Float64})
     for (ix, bus) in enumerate(buses)
         P_load_vect[ix], Q_load_vect[ix] = _get_load_data(sys, bus) .* sys_basepower
         P_admittance, Q_admittance = _get_fixed_admittance_power(sys, bus, result, ix)
-        P_load_vect[ix] += P_admittance
-        Q_load_vect[ix] += Q_admittance
+        P_load_vect[ix] += P_admittance * sys_basepower
+        Q_load_vect[ix] += Q_admittance * sys_basepower
         if bus.bustype == PSY.BusTypes.REF
             Vm_vect[ix] = PSY.get_magnitude(bus)
             θ_vect[ix] = PSY.get_angle(bus)
