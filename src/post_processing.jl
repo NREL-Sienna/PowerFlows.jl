@@ -28,9 +28,17 @@ function flow_val(b::PSY.ACBranch)
     arc = PSY.get_arc(b)
     V_from = arc.from.magnitude * (cos(arc.from.angle) + sin(arc.from.angle) * 1im)
     V_to = arc.to.magnitude * (cos(arc.to.angle) + sin(arc.to.angle) * 1im)
-    I = V_from * (Y_t + (1im * PSY.get_b(b).from)) - V_to * Y_t
+    I = V_from * (Y_t) - V_to * Y_t
     flow = V_from * conj(I)
     return flow
+end
+
+"""
+Calculates the From - To complex power flow (Flow injected at the bus) of branch of type
+Line
+"""
+function flow_val(b::PSY.DynamicBranch)
+    return flow_val(b.branch)
 end
 
 """
