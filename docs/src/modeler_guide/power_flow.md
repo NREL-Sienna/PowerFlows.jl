@@ -42,14 +42,14 @@ system_data = build_system(PSITestSystems, "c_sys14")
    This utility is useful to initialize systems before serializing or checking the
    addition of new devices is still AC feasible.
 
-Solving the power  flow with mode 1:
+Solving the power flow with mode 1:
 
 ````@example generated_power_flow
 results = run_powerflow(system_data)
 results["bus_results"]
 ````
 
-Solving the power  flow with mode 2:
+Solving the power flow with mode 2:
 
 Before running the power flow command these are the values of the
 voltages:
