@@ -28,9 +28,17 @@ function flow_val(b::PSY.ACBranch)
     arc = PSY.get_arc(b)
     V_from = arc.from.magnitude * (cos(arc.from.angle) + sin(arc.from.angle) * 1im)
     V_to = arc.to.magnitude * (cos(arc.to.angle) + sin(arc.to.angle) * 1im)
-    I = V_from * (Y_t + (1im * PSY.get_b(b).from)) - V_to * Y_t
+    I = V_from * (Y_t) - V_to * Y_t
     flow = V_from * conj(I)
     return flow
+end
+
+"""
+Calculates the From - To complex power flow (Flow injected at the bus) of branch of type
+Line
+"""
+function flow_val(b::PSY.DynamicBranch)
+    return flow_val(b.branch)
 end
 
 """
@@ -140,7 +148,7 @@ function _get_fixed_admittance_power(
             Vm_squared =
                 b.bustype == PSY.BusTypes.PQ ? result[2 * ix - 1]^2 : PSY.get_magnitude(b)^2
             active_power += Vm_squared * real(PSY.get_Y(l))
-            reactive_power += Vm_squared * imag(PSY.get_Y(l))
+            reactive_power -= Vm_squared * imag(PSY.get_Y(l))
         end
     end
     return active_power, reactive_power
@@ -416,8 +424,8 @@ function write_results(sys::PSY.System, result::Vector{Float64})
     for (ix, bus) in enumerate(buses)
         P_load_vect[ix], Q_load_vect[ix] = _get_load_data(sys, bus) .* sys_basepower
         P_admittance, Q_admittance = _get_fixed_admittance_power(sys, bus, result, ix)
-        P_load_vect[ix] += P_admittance
-        Q_load_vect[ix] += Q_admittance
+        P_load_vect[ix] += P_admittance * sys_basepower
+        Q_load_vect[ix] += Q_admittance * sys_basepower
         if bus.bustype == PSY.BusTypes.REF
             Vm_vect[ix] = PSY.get_magnitude(bus)
             θ_vect[ix] = PSY.get_angle(bus)
