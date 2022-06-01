@@ -6,6 +6,7 @@ makedocs(
     sitename="PowerFlows.jl",
     pages=Any[
         "Welcome Page" => "index.md",
+        "Modeler Guide" => Any["modeler_guide/power_flow.md"],
         "Code Base Developer Guide" => Any["Developer Guide" => "code_base_developer_guide/developer.md",],
         "Public API Reference" => "api/public.md",
         "Internal API Reference" => "api/internal.md",
