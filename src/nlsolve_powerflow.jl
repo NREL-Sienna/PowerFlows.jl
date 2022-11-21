@@ -400,7 +400,7 @@ function _run_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
     pf!(res, x0)
     if sum(res) > 10 * (N_BUS * 2)
         _, ix = findmax(res)
-        bus_no = PSY.get_number(buses[ix])
+        bus_no = PSY.get_number(buses[(ix + 1) ÷ 2])
         @warn "Initial guess provided results in a large initial residual. Largest residual at bus $bus_no"
     end
 
