@@ -154,6 +154,14 @@ function _get_fixed_admittance_power(
     return active_power, reactive_power
 end
 
+function _get_limits_for_power_distribution(gen::PSY.StaticInjection)
+    return PSY.get_active_power_limits(gen)
+end
+
+function _get_limits_for_power_distribution(gen::PSY.RenewableDispatch)
+    return (min=0.0, max=PSY.get_max_active_power(gen))
+end
+
 function _power_redistribution_ref(
     sys::PSY.System,
     P_gen::Float64,
@@ -177,7 +185,7 @@ function _power_redistribution_ref(
     p_residual = P_gen
     units_at_limit = Vector{Int}()
     for (ix, d) in enumerate(devices)
-        p_limits = PSY.get_active_power_limits(d)
+        p_limits = _get_limits_for_power_distribution(d)
         part_factor = p_limits.max / sum_basepower
         p_frac = P_gen * part_factor
         p_set_point = clamp(p_frac, p_limits.min, p_limits.max)
@@ -191,6 +199,7 @@ function _power_redistribution_ref(
     end
 
     if !isapprox(p_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+        @debug "Ref Bus voltage residual $p_residual"
         removed_power = sum(PSY.get_max_active_power.(devices[units_at_limit]))
         reallocated_p = 0.0
         it = 0
