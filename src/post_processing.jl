@@ -170,6 +170,13 @@ function _power_redistribution_ref(
 )
     devices_ =
         PSY.get_components(PSY.StaticInjection, sys, x -> _is_available_source(x, bus))
+    sources = filter(x -> typeof(x) == PSY.Source, collect(devices_))
+    non_source_devices = filter(x -> typeof(x) !== PSY.Source, collect(devices_))
+    if length(sources) > 0 && length(non_source_devices) > 0
+        P_gen -= sum(PSY.get_active_power.(sources))
+        devices_ = setdiff(devices_, sources)
+        @warn "Found sources and non-source devices at the same bus. Active power re-distribution is not well defined for this case. Source active power will remain unchanged and remaining active power will be re-distributed among non-source devices."
+    end
     if length(devices_) == 1
         device = first(devices_)
         PSY.set_active_power!(device, P_gen)
@@ -255,7 +262,13 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
     @debug "Reactive Power Distribution $(PSY.get_name(bus))"
     devices_ =
         PSY.get_components(PSY.StaticInjection, sys, x -> _is_available_source(x, bus))
-
+    sources = filter(x -> typeof(x) == PSY.Source, collect(devices_))
+    non_source_devices = filter(x -> typeof(x) !== PSY.Source, collect(devices_))
+    if length(sources) > 0 && length(non_source_devices) > 0
+        Q_gen -= sum(PSY.get_reactive_power.(sources))
+        devices_ = setdiff(devices_, sources)
+        @warn "Found sources and non-source devices at the same bus. Reactive power re-distribution is not well defined for this case. Source reactive power will remain unchanged and remaining reactive power will be re-distributed among non-source devices."
+    end
     if length(devices_) == 1
         @debug "Only one generator in the bus"
         PSY.set_reactive_power!(first(devices_), Q_gen)
