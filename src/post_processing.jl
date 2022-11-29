@@ -176,6 +176,17 @@ function _power_redistribution_ref(
         P_gen -= sum(PSY.get_active_power.(sources))
         devices_ = setdiff(devices_, sources)
         @warn "Found sources and non-source devices at the same bus. Active power re-distribution is not well defined for this case. Source active power will remain unchanged and remaining active power will be re-distributed among non-source devices."
+    elseif length(sources) > 1 && length(non_source_devices) == 0
+        Psources = sum(PSY.get_active_power.(sources))
+        Qsources = sum(PSY.get_reactive_power.(sources))
+        if isapprox(Psources, P_gen; atol=0.001) && isapprox(Qsources, Q_gen; atol=0.001)
+            @warn "Only sources found at reference bus --- no redistribution of active or reactive power will take place"
+            return
+        else
+            error(
+                "Sources do not match P and/or Q requirements for reference bus. Total source P: $(Psources), Total source Q:$(Qsources) Bus P:$(P_gen), Bus Q:$(Q_gen)",
+            )
+        end
     end
     if length(devices_) == 1
         device = first(devices_)
@@ -268,6 +279,16 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
         Q_gen -= sum(PSY.get_reactive_power.(sources))
         devices_ = setdiff(devices_, sources)
         @warn "Found sources and non-source devices at the same bus. Reactive power re-distribution is not well defined for this case. Source reactive power will remain unchanged and remaining reactive power will be re-distributed among non-source devices."
+    elseif length(sources) > 1 && length(non_source_devices) == 0
+        Qsources = sum(PSY.get_active_power.(sources))
+        if isapprox(Qsources, Q_gen; atol=0.001)
+            @warn "Only sources found at PV bus --- no redistribution of reactive power will take place"
+            return
+        else
+            error(
+                "Sources do not match Q requirements for PV bus. Total source Q:$(Qsources), Bus Q:$(Q_gen)",
+            )
+        end
     end
     if length(devices_) == 1
         @debug "Only one generator in the bus"
