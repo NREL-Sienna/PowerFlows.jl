@@ -183,9 +183,8 @@ function _power_redistribution_ref(
             @warn "Only sources found at reference bus --- no redistribution of active or reactive power will take place"
             return
         else
-            error(
-                "Sources do not match P and/or Q requirements for reference bus. Total source P: $(Psources), Total source Q:$(Qsources) Bus P:$(P_gen), Bus Q:$(Q_gen)",
-            )
+            @warn "Total source P: $(Psources), Total source Q:$(Qsources) Bus P:$(P_gen), Bus Q:$(Q_gen)"
+            error("Sources do not match P and/or Q requirements for reference bus.")
         end
     end
     if length(devices_) == 1
@@ -285,9 +284,8 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
             @warn "Only sources found at PV bus --- no redistribution of reactive power will take place"
             return
         else
-            error(
-                "Sources do not match Q requirements for PV bus. Total source Q:$(Qsources), Bus Q:$(Q_gen)",
-            )
+            @warn "Total source Q:$(Qsources), Bus Q:$(Q_gen)"
+            error("Sources do not match Q requirements for PV bus.")
         end
     end
     if length(devices_) == 1
