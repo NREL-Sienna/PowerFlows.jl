@@ -190,7 +190,7 @@ function _power_redistribution_ref(
     if length(devices_) == 1
         device = first(devices_)
         PSY.set_active_power!(device, P_gen)
-        PSY.set_reactive_power!(device, Q_gen)
+        _reactive_power_redistribution_pv(sys, Q_gen, bus)
         return
     elseif length(devices_) > 1
         devices = sort(collect(devices_); by=x -> PSY.get_max_active_power(x))
@@ -279,7 +279,7 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
         devices_ = setdiff(devices_, sources)
         @warn "Found sources and non-source devices at the same bus. Reactive power re-distribution is not well defined for this case. Source reactive power will remain unchanged and remaining reactive power will be re-distributed among non-source devices."
     elseif length(sources) > 1 && length(non_source_devices) == 0
-        Qsources = sum(PSY.get_active_power.(sources))
+        Qsources = sum(PSY.get_reactive_power.(sources))
         if isapprox(Qsources, Q_gen; atol=0.001)
             @warn "Only sources found at PV bus --- no redistribution of reactive power will take place"
             return
