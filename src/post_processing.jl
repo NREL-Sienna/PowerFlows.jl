@@ -1,7 +1,3 @@
-function _is_available_source(x, bus::PSY.Bus)
-    return PSY.get_available(x) && x.bus == bus && !isa(x, PSY.ElectricLoad)
-end
-
 """
 Calculates the From - To complex power flow (Flow injected at the bus) of branch of type
 TapTransformer
@@ -169,7 +165,7 @@ function _power_redistribution_ref(
     bus::PSY.Bus,
 )
     devices_ =
-        PSY.get_components(PSY.StaticInjection, sys, x -> _is_available_source(x, bus))
+        PSY.get_components(PSY.StaticInjection, sys, x -> is_available_source(x, bus))
     sources = filter(x -> typeof(x) == PSY.Source, collect(devices_))
     non_source_devices = filter(x -> typeof(x) !== PSY.Source, collect(devices_))
     if length(sources) > 0 && length(non_source_devices) > 0
@@ -271,7 +267,7 @@ end
 function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus::PSY.Bus)
     @debug "Reactive Power Distribution $(PSY.get_name(bus))"
     devices_ =
-        PSY.get_components(PSY.StaticInjection, sys, x -> _is_available_source(x, bus))
+        PSY.get_components(PSY.StaticInjection, sys, x -> is_available_source(x, bus))
     sources = filter(x -> typeof(x) == PSY.Source, collect(devices_))
     non_source_devices = filter(x -> typeof(x) !== PSY.Source, collect(devices_))
     if length(sources) > 0 && length(non_source_devices) > 0

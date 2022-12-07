@@ -187,7 +187,7 @@ function _run_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
         Q_GEN_BUS[ix] = 0.0
         PSY.get_ext(b)["neighbors"] = neighbors[ix]
         for gen in sources
-            !PSY.get_available(gen) && continue
+            !(PSY.get_available(gen) && PSY.get_status(gen)) && continue
             if gen.bus == b
                 P_GEN_BUS[ix] += PSY.get_active_power(gen)
                 Q_GEN_BUS[ix] += PSY.get_reactive_power(gen)
@@ -199,7 +199,7 @@ function _run_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
             injection_components = PSY.get_components(
                 PSY.StaticInjection,
                 system,
-                d -> PSY.get_available(d) && PSY.get_bus(d) == b,
+                d -> is_available_source(d, b),
             )
             isempty(injection_components) && throw(
                 IS.ConflictingInputsError(
