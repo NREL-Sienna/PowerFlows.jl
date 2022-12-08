@@ -333,7 +333,7 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
         if (q_frac >= q_limits.max + BOUNDS_TOLERANCE) ||
            (q_frac <= q_limits.min - BOUNDS_TOLERANCE)
             push!(units_at_limit, ix)
-            @warn "Unit $(PSY.get_name(d)) set at the limit $(q_set_point). Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
+            @warn "Unit $(PSY.get_name(d)) set at the limit $(q_set_point). Q_max = $(q_limits.max) Q_min = $(q_limits.min) Q_frac = $(q_frac)"
         end
 
         PSY.set_reactive_power!(d, q_set_point)
@@ -379,7 +379,7 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
                 if (q_frac >= q_limits.max + BOUNDS_TOLERANCE) ||
                    (q_frac <= q_limits.min - BOUNDS_TOLERANCE)
                     push!(units_at_limit, ix)
-                    @warn "Unit $(PSY.get_name(d)) set at the limit $(q_set_point). Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
+                    @warn "Unit $(PSY.get_name(d)) set at the limit $(q_set_point). Q_max = $(q_limits.max) Q_min = $(q_limits.min) Q_frac = $(q_frac)"
                 end
 
                 PSY.set_reactive_power!(d, q_set_point)
