@@ -4,6 +4,7 @@
 [![codecov](https://codecov.io/gh/NREL-SIIP/PowerFlows.jl/branch/main/graph/badge.svg?token=W2GIoyXQcF)](https://codecov.io/gh/NREL-SIIP/PowerFlows.jl)
 [![Documentation](https://github.com/NREL-SIIP/PowerFlows.jl/actions/workflows/docs.yml/badge.svg)](https://nrel-siip.github.io/PowerFlows.jl/dev/)
 [<img src="https://img.shields.io/badge/slack-@SIIP/PF-blue.svg?logo=slack">](https://join.slack.com/t/nrel-siip/shared_invite/zt-glam9vdu-o8A9TwZTZqqNTKHa7q3BpQ)
+[![PowerFlows Downloads](https://shields.io/endpoint?url=https://pkgs.genieframework.com/api/v1/badge/PowerFlows)](https://pkgs.genieframework.com?packages=PowerFlows)
 
 This package is under development at the moment. The current version is a port of the existing Power Flow solve in `PowerSystems.jl`.
 
