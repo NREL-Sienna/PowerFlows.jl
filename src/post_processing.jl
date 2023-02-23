@@ -130,7 +130,6 @@ function _get_total_p(l::PSY.StandardLoad)
     return PSY.get_constant_active_power(l)
 end
 
-
 function _get_total_q(l::PSY.StandardLoad)
     return PSY.get_constant_reactive_power(l)
 end
