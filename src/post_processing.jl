@@ -118,17 +118,34 @@ function _update_branch_flow!(sys::PSY.System)
     end
 end
 
+function _get_total_p(l::PSY.PowerLoad)
+    return PSY.get_active_power(l)
+end
+
+function _get_total_q(l::PSY.PowerLoad)
+    return PSY.get_reactive_power(l)
+end
+
+function _get_total_p(l::PSY.StandardLoad)
+    return PSY.get_constant_active_power(l)
+end
+
+
+function _get_total_q(l::PSY.StandardLoad)
+    return PSY.get_constant_reactive_power(l)
+end
+
 """
 Obtain total load on bus b
 """
 function _get_load_data(sys::PSY.System, b::PSY.Bus)
     active_power = 0.0
     reactive_power = 0.0
-    for l in PSY.get_components(PSY.ElectricLoad, sys, x -> !isa(x, PSY.FixedAdmittance))
+    for l in PSY.get_components(x -> !isa(x, PSY.FixedAdmittance), PSY.ElectricLoad, sys)
         !PSY.get_available(l) && continue
         if (l.bus == b)
-            active_power += PSY.get_active_power(l)
-            reactive_power += PSY.get_reactive_power(l)
+            active_power += _get_total_p(l)
+            reactive_power += _get_total_q(l)
         end
     end
     return active_power, reactive_power
@@ -169,7 +186,7 @@ function _power_redistribution_ref(
     bus::PSY.Bus,
 )
     devices_ =
-        PSY.get_components(PSY.StaticInjection, sys, x -> _is_available_source(x, bus))
+        PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
     sources = filter(x -> typeof(x) == PSY.Source, collect(devices_))
     non_source_devices = filter(x -> typeof(x) !== PSY.Source, collect(devices_))
     if length(sources) > 0 && length(non_source_devices) > 0
@@ -271,7 +288,7 @@ end
 function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus::PSY.Bus)
     @debug "Reactive Power Distribution $(PSY.get_name(bus))"
     devices_ =
-        PSY.get_components(PSY.StaticInjection, sys, x -> _is_available_source(x, bus))
+        PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
     sources = filter(x -> typeof(x) == PSY.Source, collect(devices_))
     non_source_devices = filter(x -> typeof(x) !== PSY.Source, collect(devices_))
     if length(sources) > 0 && length(non_source_devices) > 0
@@ -454,7 +471,7 @@ function write_results(sys::PSY.System, result::Vector{Float64})
     N_BUS = length(buses)
     bus_map = Dict(buses .=> 1:N_BUS)
     sys_basepower = PSY.get_base_power(sys)
-    sources = PSY.get_components(PSY.StaticInjection, sys, d -> !isa(d, PSY.ElectricLoad))
+    sources = PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, sys)
     Vm_vect = fill(0.0, N_BUS)
     θ_vect = fill(0.0, N_BUS)
     P_gen_vect = fill(0.0, N_BUS)

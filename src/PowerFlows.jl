@@ -9,9 +9,11 @@ import LinearAlgebra
 import NLsolve
 import SparseArrays
 import InfrastructureSystems
+import PowerNetworkMatrices
 
 const IS = InfrastructureSystems
 const PSY = PowerSystems
+const PNM = PowerNetworkMatrices
 
 include("definitions.jl")
 include("nlsolve_powerflow.jl")
