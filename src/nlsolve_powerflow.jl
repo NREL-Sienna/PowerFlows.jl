@@ -93,7 +93,7 @@ function _run_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
     N_BUS = length(buses)
 
     # assumes the ordering in YPSY.Bus is the same as in the buses.
-    Yb = PSY.Ybus(system; ybus_kwargs...).data
+    Yb = PNM.Ybus(system; ybus_kwargs...).data
     a = collect(1:N_BUS)
     I, J, V = SparseArrays.findnz(Yb)
     neighbors = [Set{Int}([i]) for i in 1:N_BUS]
@@ -178,7 +178,7 @@ function _run_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
 
     state_variable_count = 1
     sources =
-        PSY.get_components(PSY.StaticInjection, system, d -> !isa(d, PSY.ElectricLoad))
+        PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, system)
 
     for (ix, b) in enumerate(buses)
         bus_angle = PSY.get_angle(b)::Float64
@@ -197,9 +197,9 @@ function _run_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
         P_LOAD_BUS[ix], Q_LOAD_BUS[ix] = _get_load_data(system, b)
         if b.bustype == PSY.BusTypes.REF
             injection_components = PSY.get_components(
+                d -> PSY.get_available(d) && PSY.get_bus(d) == b,
                 PSY.StaticInjection,
                 system,
-                d -> PSY.get_available(d) && PSY.get_bus(d) == b,
             )
             isempty(injection_components) && throw(
                 IS.ConflictingInputsError(
