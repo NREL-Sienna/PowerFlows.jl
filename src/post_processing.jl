@@ -138,6 +138,14 @@ function _get_total_q(l::PSY.StandardLoad)
            PSY.get_impedance_reactive_power(l)
 end
 
+function _get_total_p(l::PSY.ExponentialLoad)
+    return PSY.get_active_power(l)
+end
+
+function _get_total_q(l::PSY.ExponentialLoad)
+    return PSY.get_reactive_power(l)
+end
+
 """
 Obtain total load on bus b
 """
