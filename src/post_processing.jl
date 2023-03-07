@@ -127,11 +127,23 @@ function _get_total_q(l::PSY.PowerLoad)
 end
 
 function _get_total_p(l::PSY.StandardLoad)
-    return PSY.get_constant_active_power(l)
+    return PSY.get_constant_active_power(l) +
+           PSY.get_current_active_power(l) +
+           PSY.get_impedance_active_power(l)
 end
 
 function _get_total_q(l::PSY.StandardLoad)
-    return PSY.get_constant_reactive_power(l)
+    return PSY.get_constant_reactive_power(l) +
+           PSY.get_current_reactive_power(l) +
+           PSY.get_impedance_reactive_power(l)
+end
+
+function _get_total_p(l::PSY.ExponentialLoad)
+    return PSY.get_active_power(l)
+end
+
+function _get_total_q(l::PSY.ExponentialLoad)
+    return PSY.get_reactive_power(l)
 end
 
 """
