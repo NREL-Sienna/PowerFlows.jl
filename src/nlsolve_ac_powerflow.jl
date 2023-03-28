@@ -34,7 +34,7 @@ run_powerflow!(sys, method=:newton)
 run_powerflow!(sys, finite_diff=true)
 ```
 """
-function run_powerflow!(system::PSY.System; finite_diff=false, kwargs...)
+function run_powerflow!(system::PSY.System; finite_diff = false, kwargs...)
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
     #Work in System per unit
@@ -66,7 +66,7 @@ res = run_powerflow(sys, method=:newton)
 res = run_powerflow(sys, finite_diff=true)
 ```
 """
-function run_powerflow(system::PSY.System; finite_diff=false, kwargs...)
+function run_powerflow(system::PSY.System; finite_diff = false, kwargs...)
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
     #Work in System per unit
@@ -89,7 +89,7 @@ function _run_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
     ybus_kwargs = (k for k in kwargs if first(k) ∈ ybus_kw)
     kwargs = (k for k in kwargs if first(k) ∉ ybus_kw)
 
-    buses = sort!(collect(PSY.get_components(PSY.Bus, system)), by=x -> PSY.get_number(x))
+    buses = sort!(collect(PSY.get_components(PSY.Bus, system)); by = x -> PSY.get_number(x))
     N_BUS = length(buses)
 
     # assumes the ordering in YPSY.Bus is the same as in the buses.
