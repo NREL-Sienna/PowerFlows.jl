@@ -16,7 +16,9 @@ const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
 
 include("definitions.jl")
-include("nlsolve_powerflow.jl")
+include("PowerFlowData.jl")
+include("dc_powerflow.jl")
+include("nlsolve_ac_powerflow.jl")
 include("post_processing.jl")
 
 end
