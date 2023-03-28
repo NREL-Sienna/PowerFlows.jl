@@ -187,7 +187,7 @@ function _get_limits_for_power_distribution(gen::PSY.StaticInjection)
 end
 
 function _get_limits_for_power_distribution(gen::PSY.RenewableDispatch)
-    return (min=0.0, max=PSY.get_max_active_power(gen))
+    return (min = 0.0, max = PSY.get_max_active_power(gen))
 end
 
 function _power_redistribution_ref(
@@ -207,7 +207,8 @@ function _power_redistribution_ref(
     elseif length(sources) > 1 && length(non_source_devices) == 0
         Psources = sum(PSY.get_active_power.(sources))
         Qsources = sum(PSY.get_reactive_power.(sources))
-        if isapprox(Psources, P_gen; atol=0.001) && isapprox(Qsources, Q_gen; atol=0.001)
+        if isapprox(Psources, P_gen; atol = 0.001) &&
+           isapprox(Qsources, Q_gen; atol = 0.001)
             @warn "Only sources found at reference bus --- no redistribution of active or reactive power will take place"
             return
         else
@@ -221,7 +222,7 @@ function _power_redistribution_ref(
         _reactive_power_redistribution_pv(sys, Q_gen, bus)
         return
     elseif length(devices_) > 1
-        devices = sort(collect(devices_); by=x -> PSY.get_max_active_power(x))
+        devices = sort(collect(devices_); by = x -> PSY.get_max_active_power(x))
     else
         error("No devices in bus $(PSY.get_name(bus))")
     end
@@ -243,12 +244,12 @@ function _power_redistribution_ref(
         p_residual -= p_set_point
     end
 
-    if !isapprox(p_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+    if !isapprox(p_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
         @debug "Ref Bus voltage residual $p_residual"
         removed_power = sum(PSY.get_max_active_power.(devices[units_at_limit]))
         reallocated_p = 0.0
         it = 0
-        while !isapprox(p_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+        while !isapprox(p_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
             if length(devices) == length(units_at_limit) + 1
                 @warn "all devices at the active Power Limit"
                 break
@@ -270,7 +271,7 @@ function _power_redistribution_ref(
                 reallocated_p += p_frac
             end
             p_residual -= reallocated_p
-            if isapprox(p_residual, 0, atol=ISAPPROX_ZERO_TOLERANCE)
+            if isapprox(p_residual, 0; atol = ISAPPROX_ZERO_TOLERANCE)
                 break
             end
             it += 1
@@ -278,7 +279,7 @@ function _power_redistribution_ref(
                 break
             end
         end
-        if !isapprox(p_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+        if !isapprox(p_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
             remaining_unit_index = setdiff(1:length(devices), units_at_limit)
             @assert length(remaining_unit_index) == 1 remaining_unit_index
             device = devices[remaining_unit_index[1]]
@@ -308,7 +309,7 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
         @warn "Found sources and non-source devices at the same bus. Reactive power re-distribution is not well defined for this case. Source reactive power will remain unchanged and remaining reactive power will be re-distributed among non-source devices."
     elseif length(sources) > 1 && length(non_source_devices) == 0
         Qsources = sum(PSY.get_reactive_power.(sources))
-        if isapprox(Qsources, Q_gen; atol=0.001)
+        if isapprox(Qsources, Q_gen; atol = 0.001)
             @warn "Only sources found at PV bus --- no redistribution of reactive power will take place"
             return
         else
@@ -321,14 +322,14 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
         PSY.set_reactive_power!(first(devices_), Q_gen)
         return
     elseif length(devices_) > 1
-        devices = sort(collect(devices_); by=x -> PSY.get_max_reactive_power(x))
+        devices = sort(collect(devices_); by = x -> PSY.get_max_reactive_power(x))
     else
         error("No devices in bus $(PSY.get_name(bus))")
     end
 
     total_active_power = sum(PSY.get_active_power.(devices))
 
-    if isapprox(total_active_power, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+    if isapprox(total_active_power, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
         @debug "Total Active Power Output at the bus is $(total_active_power). Using Unit's Base Power"
         sum_basepower = sum(PSY.get_base_power.(devices))
         for d in devices
@@ -343,8 +344,8 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
 
     for (ix, d) in enumerate(devices)
         q_limits = PSY.get_reactive_power_limits(d)
-        if isapprox(q_limits.max, 0.0, atol=BOUNDS_TOLERANCE) &&
-           isapprox(q_limits.min, 0.0, atol=BOUNDS_TOLERANCE)
+        if isapprox(q_limits.max, 0.0; atol = BOUNDS_TOLERANCE) &&
+           isapprox(q_limits.min, 0.0; atol = BOUNDS_TOLERANCE)
             push!(units_at_limit, ix)
             @info "Unit $(PSY.get_name(d)) has no Q control capability. Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
             continue
@@ -371,14 +372,14 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
         PSY.set_reactive_power!(d, q_set_point)
         q_residual -= q_set_point
 
-        if isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+        if isapprox(q_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
             break
         end
     end
 
-    if !isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+    if !isapprox(q_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
         it = 0
-        while !isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+        while !isapprox(q_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
             if length(devices) == length(units_at_limit) + 1
                 @debug "Only one device not at the limit in Bus"
                 break
@@ -417,7 +418,7 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
                 PSY.set_reactive_power!(d, q_set_point)
             end
             q_residual -= reallocated_q
-            if isapprox(q_residual, 0, atol=ISAPPROX_ZERO_TOLERANCE)
+            if isapprox(q_residual, 0; atol = ISAPPROX_ZERO_TOLERANCE)
                 break
             end
             it += 1
@@ -427,7 +428,7 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
         end
     end
 
-    if !isapprox(q_residual, 0.0, atol=ISAPPROX_ZERO_TOLERANCE)
+    if !isapprox(q_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
         remaining_unit_index = setdiff(1:length(devices), units_at_limit)
         @assert length(remaining_unit_index) == 1 remaining_unit_index
         device = devices[remaining_unit_index[1]]
@@ -449,7 +450,7 @@ Updates system voltages and powers with power flow results
 """
 function write_powerflow_solution!(sys::PSY.System, result::Vector{Float64})
     buses = enumerate(
-        sort!(collect(PSY.get_components(PSY.Bus, sys)), by=x -> PSY.get_number(x)),
+        sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x)),
     )
 
     for (ix, bus) in buses
@@ -478,7 +479,7 @@ Return power flow results in dictionary of dataframes.
 """
 function write_results(sys::PSY.System, result::Vector{Float64})
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
-    buses = sort!(collect(PSY.get_components(PSY.Bus, sys)), by=x -> PSY.get_number(x))
+    buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x))
     N_BUS = length(buses)
     bus_map = Dict(buses .=> 1:N_BUS)
     sys_basepower = PSY.get_base_power(sys)
@@ -539,28 +540,28 @@ function write_results(sys::PSY.System, result::Vector{Float64})
         P_to_from_vect[ix], Q_to_from_vect[ix] = flow_func(b, V_to, V_from) .* sys_basepower
     end
 
-    bus_df = DataFrames.DataFrame(
-        bus_number=PSY.get_number.(buses),
-        Vm=Vm_vect,
-        θ=θ_vect,
-        P_gen=P_gen_vect,
-        P_load=P_load_vect,
-        P_net=P_gen_vect - P_load_vect,
-        Q_gen=Q_gen_vect,
-        Q_load=Q_load_vect,
-        Q_net=Q_gen_vect - Q_load_vect,
+    bus_df = DataFrames.DataFrame(;
+        bus_number = PSY.get_number.(buses),
+        Vm = Vm_vect,
+        θ = θ_vect,
+        P_gen = P_gen_vect,
+        P_load = P_load_vect,
+        P_net = P_gen_vect - P_load_vect,
+        Q_gen = Q_gen_vect,
+        Q_load = Q_load_vect,
+        Q_net = Q_gen_vect - Q_load_vect,
     )
 
-    branch_df = DataFrames.DataFrame(
-        line_name=PSY.get_name.(branches),
-        bus_from=PSY.get_number.(PSY.get_from.(PSY.get_arc.(branches))),
-        bus_to=PSY.get_number.(PSY.get_to.(PSY.get_arc.(branches))),
-        P_from_to=P_from_to_vect,
-        Q_from_to=Q_from_to_vect,
-        P_to_from=P_to_from_vect,
-        Q_to_from=Q_to_from_vect,
-        P_losses=P_from_to_vect + P_to_from_vect,
-        Q_losses=Q_from_to_vect + Q_to_from_vect,
+    branch_df = DataFrames.DataFrame(;
+        line_name = PSY.get_name.(branches),
+        bus_from = PSY.get_number.(PSY.get_from.(PSY.get_arc.(branches))),
+        bus_to = PSY.get_number.(PSY.get_to.(PSY.get_arc.(branches))),
+        P_from_to = P_from_to_vect,
+        Q_from_to = Q_from_to_vect,
+        P_to_from = P_to_from_vect,
+        Q_to_from = Q_to_from_vect,
+        P_losses = P_from_to_vect + P_to_from_vect,
+        Q_losses = Q_from_to_vect + Q_to_from_vect,
     )
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
