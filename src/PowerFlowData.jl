@@ -12,7 +12,7 @@ end
 
 function PowerFlowData(::ACPowerFlow, sys::PSY.System)
     bus_ix = Dict{Int, Int}()
-    branch_ix = Dict{Int, Int}()
+    branch_ix = Dict{String, Int}()
     bus_activepower_injection = Vector{Float64}()
     bus_reactivepower_injection = Vector{Float64}()
     bus_type = Vector{PSY.BusTypes}()
@@ -53,8 +53,8 @@ function PowerFlowData(
 )
     bus_ix = Dict{Int, Int}()
     branch_ix = Dict{Int, Int}()
-    bus_p_injection = Vector{Float64}()
-    bus_q_injection = Vector{Float64}()
+    bus_activepower_injection = Vector{Float64}()
+    bus_reactivepower_injection = Vector{Float64}()
     bus_type = Vector{PSY.BusTypes}()
     bus_magnitude = Vector{Float64}()
     bus_angle = Vector{Float64}()
@@ -62,7 +62,7 @@ function PowerFlowData(
     network_matrix = power_network_matrix
     for (ix, bus) in enumerate(PSY.get_components(PSY.Bus, sys))
         bus_ix[PSY.get_number(bus)] = ix
-        bus_p_injection[ix] = PSY.get_active_power_injection(bus)
+        bus_activepower_injection[ix] = PSY.get_active_power_injection(bus)
         bus_type[ix] = PSY.get_bustype(bus)
         bus_angle[ix] = PSY.get_angle(bus)
     end
@@ -73,8 +73,8 @@ function PowerFlowData(
     return PowerFlowData(
         bus_ix,
         branch_ix,
-        bus_p_injection,
-        bus_q_injection,
+        bus_activepower_injection,
+        bus_reactivepower_injection,
         bus_type,
         bus_magnitude,
         bus_angle,

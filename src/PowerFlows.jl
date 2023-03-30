@@ -2,6 +2,7 @@ module PowerFlows
 
 export run_powerflow
 export run_powerflow!
+export PowerFlowData
 
 import DataFrames
 import PowerSystems
