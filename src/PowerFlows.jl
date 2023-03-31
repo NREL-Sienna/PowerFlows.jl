@@ -3,6 +3,7 @@ module PowerFlows
 export run_powerflow
 export run_powerflow!
 export PowerFlowData
+export DCPowerFlow
 
 import DataFrames
 import PowerSystems

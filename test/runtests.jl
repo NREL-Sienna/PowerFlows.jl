@@ -2,6 +2,7 @@ using Test
 using Logging
 using PowerSystems
 using PowerSystemCaseBuilder
+import PowerNetworkMatrices
 using PowerFlows
 using InfrastructureSystems
 using LinearAlgebra
@@ -10,6 +11,7 @@ using DataFrames
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
 const PSY = PowerSystems
+const PNM = PowerNetworkMatrices
 
 import Aqua
 Aqua.test_unbound_args(PowerFlows)
