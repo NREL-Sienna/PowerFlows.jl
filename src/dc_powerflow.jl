@@ -12,8 +12,8 @@ function solve_powerflow(
     data::PowerFlowData,
     bus_activepower_injection::Vector{Float64})
     data.branch_flow_values[:] .= _get_dc_flows(data.power_network_matrix,
-                                                data.aux_power_network_matrix,
-                                                power_injection)
+        data.aux_power_network_matrix,
+        power_injection)
     return data.branch_flow_values
 end
 
@@ -21,7 +21,7 @@ function _get_dc_flows(
     power_network_matrix::PNM.PTDF,
     aux_power_network_matrix::Nothing,
     power_injection::Vector{Float64})
-    data.branch_flow_values[:] .= power_network_matrix.data*power_injection
+    data.branch_flow_values[:] .= power_network_matrix.data * power_injection
 end
 
 function _get_dc_flows(
@@ -35,7 +35,8 @@ end
 # get active power injected in a certain bus
 function get_active_power_injection(sys::PSY.System, bus::PSY.Bus)
     # get the components connected to the considered bus
-    comp_ = [d for d in PSY.get_components(PSY.StaticInjection, sys) if PSY.get_bus(d) == bus]
+    comp_ =
+        [d for d in PSY.get_components(PSY.StaticInjection, sys) if PSY.get_bus(d) == bus]
     # return the total injection at the cosndiered bus
     if length(comp_) > 0
         return sum(PSY.get_active_power(d) for d in comp_)

@@ -1,4 +1,7 @@
-struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+struct PowerFlowData{
+    M <: PNM.PowerNetworkMatrix,
+    N <: Union{PNM.PowerNetworkMatrix, Nothing},
+}
     n_buses::Int
     n_branches::Int
     bus_lookup::Dict{Int, Int}
@@ -54,12 +57,12 @@ function PowerFlowData(
     ::DCPowerFlow,
     sys::PSY.System,
     power_network_matrix::Union{PNM.PTDF, PNM.ABA_Matrix},
-    aux_power_network_matrix::Union{PNM.BA_Matrix, Nothing} = nothing
+    aux_power_network_matrix::Union{PNM.BA_Matrix, Nothing} = nothing,
 )
 
     # get number of buses and branches
     n_buses = length(PSY.get_components(PSY.Bus, sys))
-    n_branches =  length(PSY.get_components(PSY.Branch, sys))
+    n_branches = length(PSY.get_components(PSY.Branch, sys))
 
     # Initizalize data
     bus_ix = Dict{Int, Int}()
@@ -98,6 +101,6 @@ function PowerFlowData(
         bus_angle,
         branch_flow_values,
         power_network_matrix,
-        aux_power_network_matrix
+        aux_power_network_matrix,
     )
 end
