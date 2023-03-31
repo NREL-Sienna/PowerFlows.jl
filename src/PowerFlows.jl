@@ -4,6 +4,7 @@ export run_powerflow
 export run_powerflow!
 export PowerFlowData
 export DCPowerFlow
+export solve_powerflow!
 
 import DataFrames
 import PowerSystems

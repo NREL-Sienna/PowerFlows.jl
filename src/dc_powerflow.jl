@@ -7,29 +7,45 @@ Evaluates the power flowing on each system's branch and updates the PowerFlowDat
 - `data::PowerFlowData`:
         PowerFlowData structure containig all the information related to the system power flow
 """
-function solve_powerflow(
+function solve_powerflow!(
     ::DCPowerFlow,
     data::PowerFlowData,
-    bus_activepower_injection::Vector{Float64})
-    data.branch_flow_values[:] .= _get_dc_flows(data.power_network_matrix,
-        data.aux_power_network_matrix,
+    power_injection::Vector{Float64})
+    out_ = _get_dc_flows(data.network_matrix,
+        data.aux_network_matrix,
         power_injection)
-    return data.branch_flow_values
+    data.bus_angle[:] .= out_[1]
+    data.branch_flow_values[:] .= out_[2]
 end
 
 function _get_dc_flows(
     power_network_matrix::PNM.PTDF,
-    aux_power_network_matrix::Nothing,
+    aux_network_matrix::PNM.ABA_Matrix,
     power_injection::Vector{Float64})
-    data.branch_flow_values[:] .= power_network_matrix.data * power_injection
+    thetas = zeros(length(power_injection))
+    thetas[setdiff(1:end, aux_network_matrix.ref_bus_positions)] =
+        aux_network_matrix.K \
+        power_injection[setdiff(1:end, aux_network_matrix.ref_bus_positions)]
+    flows = power_network_matrix.data * power_injection
+    out_ = (thetas, flows)
+
+    return out_
 end
 
 function _get_dc_flows(
     power_network_matrix::PNM.ABA_Matrix,
-    aux_power_network_matrix::PNM.BA_Matrix,
+    aux_network_matrix::PNM.BA_Matrix,
     power_injection::Vector{Float64})
-    thetas = power_network_matrix.K \ power_injection[setdiff(1:end, BA.ref_bus_positions)]
-    data.branch_flow_values[:] .= aux_power_network_matrix.data * thetas
+    thetas = zeros(length(power_injection))
+    thetas[setdiff(1:end, aux_network_matrix.ref_bus_positions)] =
+        power_network_matrix.K \
+        power_injection[setdiff(1:end, aux_network_matrix.ref_bus_positions)]
+    flows =
+        aux_network_matrix.data *
+        thetas[setdiff(1:end, aux_network_matrix.ref_bus_positions)]
+    out_ = (thetas, flows)
+
+    return out_
 end
 
 # get active power injected in a certain bus

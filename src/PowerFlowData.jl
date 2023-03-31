@@ -1,7 +1,4 @@
-struct PowerFlowData{
-    M <: PNM.PowerNetworkMatrix,
-    N <: Union{PNM.PowerNetworkMatrix, Nothing},
-}
+struct PowerFlowData{M, N <: PNM.PowerNetworkMatrix}
     n_buses::Int
     n_branches::Int
     bus_lookup::Dict{Int, Int}
@@ -13,7 +10,7 @@ struct PowerFlowData{
     bus_angle::Vector{Float64}
     branch_flow_values::Vector{Float64}
     network_matrix::M
-    aux_power_network_matrix::N
+    aux_network_matrix::N
 end
 
 function PowerFlowData(::ACPowerFlow, sys::PSY.System)
@@ -57,12 +54,12 @@ function PowerFlowData(
     ::DCPowerFlow,
     sys::PSY.System,
     power_network_matrix::Union{PNM.PTDF, PNM.ABA_Matrix},
-    aux_power_network_matrix::Union{PNM.BA_Matrix, Nothing} = nothing,
+    aux_network_matrix::Union{PNM.BA_Matrix, PNM.ABA_Matrix},
 )
 
     # get number of buses and branches
     n_buses = length(PSY.get_components(PSY.Bus, sys))
-    n_branches = length(PSY.get_components(PSY.Branch, sys))
+    n_branches = length(PSY.get_components(PSY.ACBranch, sys))  # ! PSY.Branch or PSY.ACBranch ???
 
     # Initizalize data
     bus_ix = Dict{Int, Int}()
@@ -82,8 +79,8 @@ function PowerFlowData(
         bus_angle[ix] = PSY.get_angle(bus)
     end
 
-    # get lines' flows
-    for (ix, branch) in enumerate(PSY.get_components(PSY.Branch, sys))
+    # get lines' flows # ! PSY.Branch or PSY.ACBranch ???
+    for (ix, branch) in enumerate(PSY.get_components(PSY.ACBranch, sys))
         branch_ix[PSY.get_name(branch)] = ix
         # active power flow saved in branch
         branch_flow_values[ix] = PSY.get_active_power_flow(branch)
@@ -101,6 +98,6 @@ function PowerFlowData(
         bus_angle,
         branch_flow_values,
         power_network_matrix,
-        aux_power_network_matrix,
+        aux_network_matrix,
     )
 end
