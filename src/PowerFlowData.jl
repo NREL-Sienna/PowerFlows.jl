@@ -1,6 +1,7 @@
 struct PowerFlowData{M, N <: PNM.PowerNetworkMatrix}
     n_buses::Int
     n_branches::Int
+    ref_buses::Vector{Int}
     bus_lookup::Dict{Int, Int}
     branch_lookup::Dict{Union{String, Int}, Int}
     bus_activepower_injection::Vector{Float64}
@@ -9,7 +10,7 @@ struct PowerFlowData{M, N <: PNM.PowerNetworkMatrix}
     bus_magnitude::Vector{Float64}
     bus_angle::Vector{Float64}
     branch_flow_values::Vector{Float64}
-    network_matrix::M
+    power_network_matrix::M
     aux_network_matrix::N
 end
 
@@ -57,26 +58,40 @@ function PowerFlowData(
     aux_network_matrix::Union{PNM.BA_Matrix, PNM.ABA_Matrix},
 )
 
+    # get number of slack buses
+    if typeof(power_network_matrix) == PNM.ABA_Matrix
+        ref_buses = power_network_matrix.ref_bus_positions
+        n_ref_buses = length(power_network_matrix.ref_bus_positions)
+    else
+        ref_buses = aux_network_matrix.ref_bus_positions
+        n_ref_buses = length(aux_network_matrix.ref_bus_positions)
+    end
+
     # get number of buses and branches
     n_buses = length(PSY.get_components(PSY.Bus, sys))
     n_branches = length(PSY.get_components(PSY.ACBranch, sys))  # ! PSY.Branch or PSY.ACBranch ???
 
     # Initizalize data
+    # ! IMPORTANT: data related to ref buses is avoided
     bus_ix = Dict{Int, Int}()
     branch_ix = Dict{Union{String, Int}, Int}()
-    bus_activepower_injection = Vector{Float64}(undef, n_buses)
-    bus_reactivepower_injection = Vector{Float64}(undef, n_buses)
-    bus_type = Vector{Any}(undef, n_buses) # !!! should be PSY.BusTypes !!!
-    bus_magnitude = Vector{Float64}(undef, n_buses)
-    bus_angle = Vector{Float64}(undef, n_buses)
+    bus_activepower_injection = Vector{Float64}(undef, n_buses - n_ref_buses)
+    bus_reactivepower_injection = Vector{Float64}(undef, n_buses - n_ref_buses)
+    bus_type = Vector{Any}(undef, n_buses - n_ref_buses) # !!! should be PSY.BusTypes !!!
+    bus_magnitude = Vector{Float64}(undef, n_buses - n_ref_buses)
+    bus_angle = Vector{Float64}(undef, n_buses - n_ref_buses)
     branch_flow_values = Vector{Float64}(undef, n_branches)
 
     # get all the buse values (injection, angle, voltage, etc...)
+    # ! IMPORTANT: no info related to ref buses
     for (ix, bus) in enumerate(PSY.get_components(PSY.Bus, sys))
-        bus_ix[PSY.get_number(bus)] = ix
-        bus_activepower_injection[ix] = get_active_power_injection(sys, bus)
-        bus_type[ix] = PSY.get_bustype(bus)
-        bus_angle[ix] = PSY.get_angle(bus)
+        if ix ∉ ref_buses
+            check_ = sum(ix .> ref_buses)
+            bus_ix[PSY.get_number(bus)] = ix
+            bus_activepower_injection[ix - check_] = get_active_power_injection(sys, bus)
+            bus_type[ix - check_] = PSY.get_bustype(bus)
+            bus_angle[ix - check_] = PSY.get_angle(bus)
+        end
     end
 
     # get lines' flows # ! PSY.Branch or PSY.ACBranch ???
@@ -89,6 +104,7 @@ function PowerFlowData(
     return PowerFlowData(
         n_buses,
         n_branches,
+        ref_buses,
         bus_ix,
         branch_ix,
         bus_activepower_injection,

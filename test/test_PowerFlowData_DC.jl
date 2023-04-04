@@ -33,7 +33,7 @@
         )
     end
 
-    for b in 1:(pfd_1.n_buses)
+    for b in 1:(pfd_1.n_buses - length(pfd_1.ref_buses))
         @test isapprox(pfd_1.bus_angle[b], pfd_2.bus_angle[b], atol = 1e-8)
     end
 end

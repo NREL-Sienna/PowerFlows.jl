@@ -11,41 +11,18 @@ function solve_powerflow!(
     ::DCPowerFlow,
     data::PowerFlowData,
     power_injection::Vector{Float64})
-    out_ = _get_dc_flows(data.network_matrix,
-        data.aux_network_matrix,
-        power_injection)
-    data.bus_angle[:] .= out_[1]
-    data.branch_flow_values[:] .= out_[2]
-end
-
-function _get_dc_flows(
-    power_network_matrix::PNM.PTDF,
-    aux_network_matrix::PNM.ABA_Matrix,
-    power_injection::Vector{Float64})
-    thetas = zeros(length(power_injection))
-    thetas[setdiff(1:end, aux_network_matrix.ref_bus_positions)] =
-        aux_network_matrix.K \
-        power_injection[setdiff(1:end, aux_network_matrix.ref_bus_positions)]
-    flows = power_network_matrix.data * power_injection
-    out_ = (thetas, flows)
-
-    return out_
-end
-
-function _get_dc_flows(
-    power_network_matrix::PNM.ABA_Matrix,
-    aux_network_matrix::PNM.BA_Matrix,
-    power_injection::Vector{Float64})
-    thetas = zeros(length(power_injection))
-    thetas[setdiff(1:end, aux_network_matrix.ref_bus_positions)] =
-        power_network_matrix.K \
-        power_injection[setdiff(1:end, aux_network_matrix.ref_bus_positions)]
-    flows =
-        aux_network_matrix.data *
-        thetas[setdiff(1:end, aux_network_matrix.ref_bus_positions)]
-    out_ = (thetas, flows)
-
-    return out_
+    if typeof(data.power_network_matrix) <: PNM.PTDF &&
+       typeof(data.aux_network_matrix) <: PNM.ABA_Matrix
+        data.bus_angle[:] .= data.aux_network_matrix.K \ power_injection
+        ref_buses = data.aux_network_matrix.ref_bus_positions
+        # ! setdiff still present since ptdf has also the columns related to the reference buses
+        data.branch_flow_values[:] .=
+            data.power_network_matrix.data[:, setdiff(1:end, ref_buses)] * power_injection
+    elseif typeof(data.power_network_matrix) <: PNM.ABA_Matrix &&
+           typeof(data.aux_network_matrix) <: PNM.BA_Matrix
+        data.bus_angle[:] .= data.power_network_matrix.K \ power_injection
+        data.branch_flow_values[:] .= data.aux_network_matrix.data * data.bus_angle[:]
+    end
 end
 
 # get active power injected in a certain bus
