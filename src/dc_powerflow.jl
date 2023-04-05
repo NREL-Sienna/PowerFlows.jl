@@ -12,14 +12,21 @@ function solve_powerflow!(
     data::PowerFlowData,
     power_network_matrix::PNM.PTDF,
     aux_network_matrix::PNM.ABA_Matrix,
-    power_injection::Vector{Float64}
+    power_injection::Vector{Float64};
+    parallel = false
     )
 
     data.bus_angle[:] .= aux_network_matrix.K \ power_injection
     ref_buses = aux_network_matrix.ref_bus_positions
     # ! setdiff still present since ptdf has also the columns related to the reference buses
     matrix_data = @view power_network_matrix.data[:, setdiff(1:end, ref_buses)]
-    data.branch_flow_values[:] .= matrix_data * power_injection
+    if parallel
+        @threads for i in axes(matrix_data, 1)
+            data.branch_flow_values[i] = matrix_data[i, :]' * power_injection
+        end
+    else
+        data.branch_flow_values[:] .= matrix_data * power_injection
+    end
 end
 
 function solve_powerflow!(

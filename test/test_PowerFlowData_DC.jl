@@ -20,9 +20,9 @@ const PNM = PowerNetworkMatrices
     # load test sytem
 
     # sys = PSB.build_system(PSITestSystems, "test_RTS_GMLC_sys")
-    # sys = PSY.System("ACTIVSg2000.m")
+    sys = PSY.System("ACTIVSg2000.m")
     # sys = PSY.System("case_ACTIVSg10k.m")
-    sys = System("case_ACTIVSg70k.m"; runchecks=false)
+    # sys = System("case_ACTIVSg70k.m"; runchecks=false)
 
     # get BA, ABA and PTDF matrix
     BA = PNM.BA_Matrix(sys)
@@ -46,6 +46,7 @@ const PNM = PowerNetworkMatrices
 
     # with PTDF
     @benchmark solve_powerflow!(DCPowerFlow(), pfd_1, pfd_1.power_network_matrix, pfd_1.aux_network_matrix, power_injections_1)
+    @benchmark solve_powerflow!(DCPowerFlow(), pfd_1, pfd_1.power_network_matrix, pfd_1.aux_network_matrix, power_injections_1; parallel=true)
     solve_powerflow!(DCPowerFlow(), pfd_1, pfd_1.power_network_matrix, pfd_1.aux_network_matrix, power_injections_1)
 
     # with ABA
@@ -120,6 +121,18 @@ BenchmarkTools.Trial: 10000 samples with 9 evaluations.
   31.8 μs       Histogram: log(frequency) by time        49 μs <
 
  Memory estimate: 43.06 KiB, allocs estimate: 30.
+
+ - with @threads
+ BenchmarkTools.Trial: 252 samples with 1 evaluation.
+ Range (min … max):  15.311 ms … 27.607 ms  ┊ GC (min … max):  0.00% … 20.76%
+ Time  (median):     18.372 ms              ┊ GC (median):     0.00%
+ Time  (mean ± σ):   19.843 ms ±  4.201 ms  ┊ GC (mean ± σ):  11.68% ± 11.51%
+
+  ▄▇█▂                                                         
+  ████▆▄▄▃▃▂▃▃▂▃▃▃▃▄▄▃▃▂▁▃▃▁▁▁▂▁▁▁▃▄▁▂▄▃▃▃▃▄▃▄▃▄▇▅▆▄▆▅▂▄▃▂▄▁▃ ▃
+  15.3 ms         Histogram: frequency by time        27.1 ms <
+
+ Memory estimate: 49.42 MiB, allocs estimate: 3253.
 
 * case_ACTIVSg10k *
 - with ptdf

@@ -13,6 +13,7 @@ import NLsolve
 import SparseArrays
 import InfrastructureSystems
 import PowerNetworkMatrices
+import Base.Threads: @threads
 
 const IS = InfrastructureSystems
 const PSY = PowerSystems
