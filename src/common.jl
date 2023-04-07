@@ -122,12 +122,12 @@ function my_mul_mt!(
 end
 
 function my_mul_mt!(y::Vector{Float64}, A::Matrix{Float64}, x::Vector{Float64})
-    @tturbo for i in eachindex(𝐲)
-        yi = 0.0
-        for j in eachindex(𝐱)
-            yi += A[i, j] * x[j]
+    @tturbo for i in eachindex(y)
+        temp = 0.0
+        for j in eachindex(x)
+            temp += A[i, j] * x[j]
         end
-        y[i] = 𝐲i
+        y[i] = temp
     end
     return
 end
