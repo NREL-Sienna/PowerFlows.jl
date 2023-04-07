@@ -12,19 +12,18 @@ function solve_powerflow!(
     sys::PSY.System;
     parallel = false,
 )
-    power_network_matrix::PNM.PTDF,
-    aux_network_matrix::PNM.ABA_Matrix, data = PowerFlow
-
-    ref_buses = aux_network_matrix.ref_bus_positions
-    # ! setdiff still present since ptdf has also the columns related to the reference buses
-    matrix_data = @view power_network_matrix.data[:, setdiff(1:end, ref_buses)]
+    data = PowerFlowData(PTDFDCPowerFlow(), sys)
+    power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
+    matrix_data = data.power_network_matrix.data
     if parallel
         my_mul_mt!(data.branch_flow_values, matrix_data, power_injection)
     else
-        my_mul_single!(data.branch_flow_values, matrix_data, power_injection)
+        data.branch_flow_values[:] = matrix_data*power_injection
     end
 
-    ldiv!(data.bus_angle, aux_network_matrix.K, power_injection)
+    # pending make this parallel
+    # Not working yet BA doesn't have the same dimensions as PowerInjection
+    #data.bus_angle[:] = data.aux_network_matrix.data \ power_injection
     return
 end
 
@@ -33,11 +32,14 @@ function solve_powerflow!(
     sys::PSY.System;
     parallel = false,
 )
-    data::PowerFlowData,
-    power_network_matrix::PNM.ABA_Matrix,
-    aux_network_matrix::PNM.BA_Matrix,
-    power_injection::Vector{Float64}
+    data = PowerFlowData(DCPowerFlow(), sys)
+
+    # pending make this parallel
     data.bus_angle[:] .= power_network_matrix.K \ power_injection
-    data.branch_flow_values[:] .= aux_network_matrix.data * data.bus_angle
+    if parallel
+        my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
+    else
+        data.branch_flow_values[:] = aux_network_matrix.data * data.bus_angle
+    end
     return
 end
