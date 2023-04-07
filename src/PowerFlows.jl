@@ -4,6 +4,8 @@ export run_powerflow
 export run_powerflow!
 export PowerFlowData
 export DCPowerFlow
+export ACPowerFlow
+export PTDFDCPowerFlow
 export solve_powerflow!
 
 import DataFrames
@@ -14,11 +16,14 @@ import SparseArrays
 import InfrastructureSystems
 import PowerNetworkMatrices
 import Base.Threads: @threads
+import SparseArrays: SparseMatrixCSC
+import LoopVectorization: @tturbo
 
 const IS = InfrastructureSystems
 const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
 
+include("common.jl")
 include("definitions.jl")
 include("powerflow_types.jl")
 include("PowerFlowData.jl")
