@@ -2,12 +2,13 @@ using Test
 using Logging
 using PowerSystems
 using PowerSystemCaseBuilder
-import PowerNetworkMatrices
+using PowerNetworkMatrices
 using PowerFlows
 using InfrastructureSystems
 using LinearAlgebra
 using CSV
 using DataFrames
+
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
 const PSY = PowerSystems
