@@ -118,34 +118,6 @@ function _update_branch_flow!(sys::PSY.System)
     end
 end
 
-function _get_total_p(l::PSY.PowerLoad)
-    return PSY.get_active_power(l)
-end
-
-function _get_total_q(l::PSY.PowerLoad)
-    return PSY.get_reactive_power(l)
-end
-
-function _get_total_p(l::PSY.StandardLoad)
-    return PSY.get_constant_active_power(l) +
-           PSY.get_current_active_power(l) +
-           PSY.get_impedance_active_power(l)
-end
-
-function _get_total_q(l::PSY.StandardLoad)
-    return PSY.get_constant_reactive_power(l) +
-           PSY.get_current_reactive_power(l) +
-           PSY.get_impedance_reactive_power(l)
-end
-
-function _get_total_p(l::PSY.ExponentialLoad)
-    return PSY.get_active_power(l)
-end
-
-function _get_total_q(l::PSY.ExponentialLoad)
-    return PSY.get_reactive_power(l)
-end
-
 """
 Obtain total load on bus b
 """
@@ -155,8 +127,8 @@ function _get_load_data(sys::PSY.System, b::PSY.Bus)
     for l in PSY.get_components(x -> !isa(x, PSY.FixedAdmittance), PSY.ElectricLoad, sys)
         !PSY.get_available(l) && continue
         if (l.bus == b)
-            active_power += _get_total_p(l)
-            reactive_power += _get_total_q(l)
+            active_power += get_total_p(l)
+            reactive_power += get_total_q(l)
         end
     end
     return active_power, reactive_power
