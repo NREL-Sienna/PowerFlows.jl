@@ -23,11 +23,14 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
     n_branches = length(branches)
 
     bus_lookup = power_network_matrix.lookup[2]
-    branch_lookup = PNM.make_ax_ref(branches)
+    branch_lookup =
+        Dict{String, Int}(PSY.get_name(b) => ix for (ix, b) in enumerate(branches))
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
     bus_angle = Vector{Float64}(undef, n_buses)
     bus_magnitude = Vector{Float64}(undef, n_buses)
-    temp_bus_map = Dict{Int, String}(PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys))
+    temp_bus_map = Dict{Int, String}(
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
+    )
 
     for (ix, bus_no) in bus_lookup
         bus_name = temp_bus_map[bus_no]
@@ -43,7 +46,12 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
 
     bus_activepower_withdrawals = Vector{Float64}(undef, n_buses)
     bus_reactivepower_withdrawals = Vector{Float64}(undef, n_buses)
-    get_withdrawals!(bus_activepower_withdrawals, bus_reactivepower_withdrawals, bus_lookup, sys)
+    get_withdrawals!(
+        bus_activepower_withdrawals,
+        bus_reactivepower_withdrawals,
+        bus_lookup,
+        sys,
+    )
 
     return PowerFlowData(
         bus_lookup,
@@ -67,14 +75,16 @@ function PowerFlowData(::DCPowerFlow, sys::PSY.System)
     aux_network_matrix = PNM.BA_Matrix(sys)
 
     # get number of buses and branches
-    n_buses = length(axes(power_network_matrix, 2))
+    n_buses = length(axes(power_network_matrix, 2)) + 1
     n_branches = length(axes(power_network_matrix, 1))
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
     bus_angle = Vector{Float64}(undef, n_buses)
-    temp_bus_map = Dict{Int, String}(PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys))
+    temp_bus_map = Dict{Int, String}(
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
+    )
 
     for (ix, bus_no) in bus_lookup
         bus_name = temp_bus_map[bus_no]
@@ -89,7 +99,12 @@ function PowerFlowData(::DCPowerFlow, sys::PSY.System)
 
     bus_activepower_withdrawals = Vector{Float64}(undef, n_buses)
     bus_reactivepower_withdrawals = Vector{Float64}(undef, n_buses)
-    get_withdrawals!(bus_activepower_withdrawals, bus_reactivepower_withdrawals, bus_lookup, sys)
+    get_withdrawals!(
+        bus_activepower_withdrawals,
+        bus_reactivepower_withdrawals,
+        bus_lookup,
+        sys,
+    )
 
     return PowerFlowData(
         bus_lookup,
@@ -109,16 +124,19 @@ end
 
 function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
     power_network_matrix = PNM.PTDF(sys)
+    aux_network_matrix = PNM.ABA_Matrix(sys)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 2))
     n_branches = length(axes(power_network_matrix, 1))
 
-    bus_lookup = power_network_matrix.lookup[1]
-    branch_lookup = power_network_matrix.lookup[2]
+    bus_lookup = power_network_matrix.lookup[2]
+    branch_lookup = power_network_matrix.lookup[1]
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
     bus_angle = Vector{Float64}(undef, n_buses)
-    temp_bus_map = Dict{Int, String}(PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys))
+    temp_bus_map = Dict{Int, String}(
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
+    )
 
     for (ix, bus_no) in bus_lookup
         bus_name = temp_bus_map[bus_no]
@@ -133,7 +151,12 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
 
     bus_activepower_withdrawals = Vector{Float64}(undef, n_buses)
     bus_reactivepower_withdrawals = Vector{Float64}(undef, n_buses)
-    get_withdrawals!(bus_activepower_withdrawals, bus_reactivepower_withdrawals, bus_lookup, sys)
+    get_withdrawals!(
+        bus_activepower_withdrawals,
+        bus_reactivepower_withdrawals,
+        bus_lookup,
+        sys,
+    )
 
     return PowerFlowData(
         bus_lookup,
