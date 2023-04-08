@@ -73,6 +73,7 @@ end
 function PowerFlowData(::DCPowerFlow, sys::PSY.System)
     power_network_matrix = PNM.ABA_Matrix(sys)
     aux_network_matrix = PNM.BA_Matrix(sys)
+    # check the maps betwen the 2 matrices match
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 2)) + 1
@@ -125,6 +126,7 @@ end
 function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
     power_network_matrix = PNM.PTDF(sys)
     aux_network_matrix = PNM.ABA_Matrix(sys)
+    # check the maps betwen the 2 matrices match
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 2))

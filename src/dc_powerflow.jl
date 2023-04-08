@@ -33,9 +33,10 @@ function solve_powerflow!(
     parallel = false,
 )
     data = PowerFlowData(DCPowerFlow(), sys)
-
+    power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
+    matrix_data = data.power_network_matrix.data
     # pending make this parallel
-    data.bus_angle[:] .= power_network_matrix.K \ power_injection
+    data.bus_angle[:] .= matrix_data \ power_injection
     if parallel
         my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
     else
