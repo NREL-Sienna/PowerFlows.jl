@@ -23,7 +23,12 @@ function solve_powerflow!(
 
     # pending make this parallel
     # Not working yet BA doesn't have the same dimensions as PowerInjection
-    #data.bus_angle[:] = data.aux_network_matrix.data \ power_injection
+    if parallel
+        # to be added
+    else
+        p_inj = @view power_injection[setdiff(1:end, data.aux_network_matrix.ref_bus_positions)]
+        data.bus_angle[:] = data.aux_network_matrix.data \ p_inj
+    end
     return
 end
 
