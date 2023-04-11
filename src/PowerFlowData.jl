@@ -91,7 +91,11 @@ function PowerFlowData(::DCPowerFlow, sys::PSY.System)
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)
-        bus_angle[ix] = PSY.get_angle(bus)
+        if bus_type[ix] == PSY.BusTypes.REF
+            bus_angle[ix] = 0.0
+        else
+            bus_angle[ix] = PSY.get_angle(bus)
+        end
     end
 
     bus_activepower_injection = zeros(Float64, n_buses)
