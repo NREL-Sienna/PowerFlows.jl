@@ -71,23 +71,23 @@ end
 
 # version with full PTDF
 function PowerFlowData(::DCPowerFlow, sys::PSY.System)
-    power_network_matrix = PNM.ABA_Matrix(sys)
+    power_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
     aux_network_matrix = PNM.BA_Matrix(sys)
     # check the maps betwen the 2 matrices match
 
     # get number of buses and branches
-    n_buses = length(axes(power_network_matrix, 2)) + 1
-    n_branches = length(axes(power_network_matrix, 1))
+    n_buses = length(axes(power_network_matrix, 2))
+    n_branches = length(axes(aux_network_matrix, 1))
 
     bus_lookup = power_network_matrix.lookup[2]
-    branch_lookup = power_network_matrix.lookup[1]
+    branch_lookup = aux_network_matrix.lookup[1]
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
     bus_angle = Vector{Float64}(undef, n_buses)
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
 
-    for (ix, bus_no) in bus_lookup
+    for (bus_no, ix) in bus_lookup
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)
@@ -117,7 +117,7 @@ function PowerFlowData(::DCPowerFlow, sys::PSY.System)
         bus_type,
         ones(Float64, n_buses),
         bus_angle,
-        Vector{Float64}(undef, n_branches),
+        zeros(n_branches),
         power_network_matrix,
         aux_network_matrix,
     )
@@ -125,7 +125,7 @@ end
 
 function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
     power_network_matrix = PNM.PTDF(sys)
-    aux_network_matrix = PNM.ABA_Matrix(sys)
+    aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
     # check the maps betwen the 2 matrices match
 
     # get number of buses and branches
@@ -140,7 +140,7 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
 
-    for (ix, bus_no) in bus_lookup
+    for (bus_no, ix) in bus_lookup
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)

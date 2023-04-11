@@ -21,15 +21,14 @@ function solve_powerflow!(
         data.branch_flow_values[:] = matrix_data*power_injection
     end
 
-    # pending make this parallel
-    # Not working yet BA doesn't have the same dimensions as PowerInjection
     if parallel
         # to be added
     else
-        p_inj = @view power_injection[setdiff(1:end, data.aux_network_matrix.ref_bus_positions)]
-        data.bus_angle[:] = data.aux_network_matrix.data \ p_inj
+        valid_ix = setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
+        p_inj = power_injection[valid_ix]
+        data.bus_angle[valid_ix] = data.aux_network_matrix.K \ p_inj
     end
-    return
+    return data
 end
 
 function solve_powerflow!(
@@ -39,13 +38,18 @@ function solve_powerflow!(
 )
     data = PowerFlowData(DCPowerFlow(), sys)
     power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
-    matrix_data = data.power_network_matrix.data
-    # pending make this parallel
-    data.bus_angle[:] .= matrix_data \ power_injection
+    matrix_data = data.power_network_matrix.K
+    aux_network_matrix = data.aux_network_matrix
+
+    # pending make this parallel and non-allocating
+    data.aux_network_matrix.ref_bus_positions
+    valid_ix = setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
+    data.bus_angle[valid_ix] = matrix_data \ power_injection[valid_ix]
     if parallel
         my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
     else
-        data.branch_flow_values[:] = aux_network_matrix.data * data.bus_angle
+        #data.branch_flow_values[:] = aux_network_matrix.data*data.bus_angle
+        my_mul_single!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
     end
-    return
+    return data
 end
