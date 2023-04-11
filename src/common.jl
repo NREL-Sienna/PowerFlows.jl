@@ -68,7 +68,7 @@ function my_transpose_mul_single!(
 )
     for i in eachindex(y) # for each branch
         tmp = 0.0
-        for j in nzrange(A, i) # non zero bus indices
+        for j in SparseArrays.nzrange(A, i) # non zero bus indices
             tmp += A.nzval[j] * x[A.rowval[j]]
         end
         y[i] = tmp
@@ -83,7 +83,7 @@ function my_transpose_mul_mt!(
 )
     Threads.@threads for i in eachindex(y) # for each branch
         tmp = 0.0
-        for j in nzrange(A, i) # non zero bus indices
+        for j in SparseArrays.nzrange(A, i) # non zero bus indices
             tmp += A.nzval[j] * x[A.rowval[j]]
         end
         y[i] = tmp
@@ -96,12 +96,11 @@ function my_mul_single!(
     A::SparseMatrixCSC{Float64, Int64},
     x::Vector{Float64},
 )
-    for i in eachindex(y) # for each bus
-        tmp = 0.0
-        for j in A.colptr[i]:(A.colptr[i + 1] - 1) # non zero bus indices
-            tmp += A.nzval[j] * x[A.rowval[j]]
+    for j in eachindex(x)
+        val = x[j]
+        for k in A.colptr[j]:(A.colptr[j + 1] - 1)
+            y[A.rowval[k]] += A.nzval[k] * val
         end
-        y[i] = tmp
     end
     return
 end
@@ -111,12 +110,16 @@ function my_mul_mt!(
     A::SparseMatrixCSC{Float64, Int64},
     x::Vector{Float64},
 )
-    Threads.@threads for i in eachindex(y) # for each bus
-        tmp = 0.0
-        for j in A.colptr[i]:(A.colptr[i + 1] - 1) # non zero bus indices
-            tmp += A.nzval[j] * x[A.rowval[j]]
+    Threads.@threads for i in eachindex(y)
+        @inbounds for j in eachindex(x)
+            tmp = 0.0
+            val = x[j]
+            iszero(val) && continue
+            for k in A.colptr[j]:(A.colptr[j + 1] - 1)
+                tmp += A.nzval[k] * val
+            end
+            y[i] += tmp
         end
-        y[i] = tmp
     end
     return
 end
