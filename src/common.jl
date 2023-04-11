@@ -110,15 +110,10 @@ function my_mul_mt!(
     A::SparseMatrixCSC{Float64, Int64},
     x::Vector{Float64},
 )
-    Threads.@threads for i in eachindex(y)
-        @inbounds for j in eachindex(x)
-            tmp = 0.0
-            val = x[j]
-            iszero(val) && continue
-            for k in A.colptr[j]:(A.colptr[j + 1] - 1)
-                tmp += A.nzval[k] * val
-            end
-            y[i] += tmp
+    Threads.@threads for j in eachindex(x)
+        val = x[j]
+        for k in A.colptr[j]:(A.colptr[j + 1] - 1)
+            y[A.rowval[k]] += A.nzval[k] * val
         end
     end
     return
