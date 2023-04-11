@@ -61,50 +61,6 @@ function get_withdrawals!(
 end
 
 ################################## Matrix Methods ##########################################
-function my_transpose_mul_single!(
-    y::Vector{Float64},
-    A::SparseMatrixCSC{Float64, Int64},
-    x::Vector{Float64},
-)
-    for i in eachindex(y) # for each branch
-        tmp = 0.0
-        for j in SparseArrays.nzrange(A, i) # non zero bus indices
-            tmp += A.nzval[j] * x[A.rowval[j]]
-        end
-        y[i] = tmp
-    end
-    return
-end
-
-function my_transpose_mul_mt!(
-    y::Vector{Float64},
-    A::SparseMatrixCSC{Float64, Int64},
-    x::Vector{Float64},
-)
-    Threads.@threads for i in eachindex(y) # for each branch
-        tmp = 0.0
-        for j in SparseArrays.nzrange(A, i) # non zero bus indices
-            tmp += A.nzval[j] * x[A.rowval[j]]
-        end
-        y[i] = tmp
-    end
-    return
-end
-
-function my_mul_single!(
-    y::Vector{Float64},
-    A::SparseMatrixCSC{Float64, Int64},
-    x::Vector{Float64},
-)
-    for j in eachindex(x)
-        val = x[j]
-        for k in A.colptr[j]:(A.colptr[j + 1] - 1)
-            y[A.rowval[k]] += A.nzval[k] * val
-        end
-    end
-    return
-end
-
 function my_mul_mt!(
     y::Vector{Float64},
     A::SparseMatrixCSC{Float64, Int64},
