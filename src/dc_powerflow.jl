@@ -18,7 +18,7 @@ function solve_powerflow!(
     if parallel
         my_mul_mt!(data.branch_flow_values, matrix_data, power_injection)
     else
-        data.branch_flow_values[:] = matrix_data*power_injection
+        LinearAlgebra.mul!(data.branch_flow_values, matrix_data, power_injection)
     end
 
     if parallel
@@ -48,7 +48,6 @@ function solve_powerflow!(
     if parallel
         my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
     else
-        #data.branch_flow_values[:] = aux_network_matrix.data*data.bus_angle
         my_mul_single!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
     end
     return data
