@@ -26,8 +26,8 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
     branch_lookup =
         Dict{String, Int}(PSY.get_name(b) => ix for (ix, b) in enumerate(branches))
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
-    bus_angle = Vector{Float64}(undef, n_buses)
-    bus_magnitude = Vector{Float64}(undef, n_buses)
+    bus_angle = zeros(Float64, n_buses)
+    bus_magnitude = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
@@ -40,12 +40,12 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
         bus_magnitude[ix] = PSY.get_magnitude(bus)
     end
 
-    bus_activepower_injection = Vector{Float64}(undef, n_buses)
-    bus_reactivepower_injection = Vector{Float64}(undef, n_buses)
+    bus_activepower_injection = zeros(Float64, n_buses)
+    bus_reactivepower_injection = zeros(Float64, n_buses)
     get_injections!(bus_activepower_injection, bus_reactivepower_injection, bus_lookup, sys)
 
-    bus_activepower_withdrawals = Vector{Float64}(undef, n_buses)
-    bus_reactivepower_withdrawals = Vector{Float64}(undef, n_buses)
+    bus_activepower_withdrawals = zeros(Float64, n_buses)
+    bus_reactivepower_withdrawals = zeros(Float64, n_buses)
     get_withdrawals!(
         bus_activepower_withdrawals,
         bus_reactivepower_withdrawals,
@@ -63,7 +63,7 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
         bus_type,
         bus_magnitude,
         bus_angle,
-        Vector{Float64}(undef, n_branches),
+        zeros(n_branches),
         power_network_matrix,
         nothing,
     )
@@ -82,7 +82,7 @@ function PowerFlowData(::DCPowerFlow, sys::PSY.System)
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = aux_network_matrix.lookup[1]
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
-    bus_angle = Vector{Float64}(undef, n_buses)
+    bus_angle = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
@@ -94,12 +94,12 @@ function PowerFlowData(::DCPowerFlow, sys::PSY.System)
         bus_angle[ix] = PSY.get_angle(bus)
     end
 
-    bus_activepower_injection = Vector{Float64}(undef, n_buses)
-    bus_reactivepower_injection = Vector{Float64}(undef, n_buses)
+    bus_activepower_injection = zeros(Float64, n_buses)
+    bus_reactivepower_injection = zeros(Float64, n_buses)
     get_injections!(bus_activepower_injection, bus_reactivepower_injection, bus_lookup, sys)
 
-    bus_activepower_withdrawals = Vector{Float64}(undef, n_buses)
-    bus_reactivepower_withdrawals = Vector{Float64}(undef, n_buses)
+    bus_activepower_withdrawals = zeros(Float64, n_buses)
+    bus_reactivepower_withdrawals = zeros(Float64, n_buses)
     get_withdrawals!(
         bus_activepower_withdrawals,
         bus_reactivepower_withdrawals,
@@ -135,7 +135,7 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
-    bus_angle = Vector{Float64}(undef, n_buses)
+    bus_angle = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
@@ -144,15 +144,19 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)
-        bus_angle[ix] = PSY.get_angle(bus)
+        if bus_type[ix] == PSY.BusTypes.REF
+            bus_angle[ix] = 0.0
+        else
+            bus_angle[ix] = PSY.get_angle(bus)
+        end
     end
 
-    bus_activepower_injection = Vector{Float64}(undef, n_buses)
-    bus_reactivepower_injection = Vector{Float64}(undef, n_buses)
+    bus_activepower_injection = zeros(Float64, n_buses)
+    bus_reactivepower_injection = zeros(Float64, n_buses)
     get_injections!(bus_activepower_injection, bus_reactivepower_injection, bus_lookup, sys)
 
-    bus_activepower_withdrawals = Vector{Float64}(undef, n_buses)
-    bus_reactivepower_withdrawals = Vector{Float64}(undef, n_buses)
+    bus_activepower_withdrawals = zeros(Float64, n_buses)
+    bus_reactivepower_withdrawals = zeros(Float64, n_buses)
     get_withdrawals!(
         bus_activepower_withdrawals,
         bus_reactivepower_withdrawals,
@@ -168,9 +172,9 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
         bus_activepower_withdrawals,
         bus_reactivepower_withdrawals,
         bus_type,
+        ones(Float64, n_buses),
         bus_angle,
-        bus_angle,
-        Vector{Float64}(undef, n_branches),
+        zeros(Float64, n_branches),
         power_network_matrix,
         aux_network_matrix,
     )
