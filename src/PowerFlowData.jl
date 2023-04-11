@@ -76,7 +76,7 @@ function PowerFlowData(::DCPowerFlow, sys::PSY.System)
     # check the maps betwen the 2 matrices match
 
     # get number of buses and branches
-    n_buses = length(axes(power_network_matrix, 2))
+    n_buses = length(axes(aux_network_matrix, 2))
     n_branches = length(axes(aux_network_matrix, 1))
 
     bus_lookup = power_network_matrix.lookup[2]
