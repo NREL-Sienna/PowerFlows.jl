@@ -10,69 +10,18 @@ using CSV
 using DataFrames
 using SparseArrays
 using Plots
+using SuiteSparse
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
 const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
-
-function my_transpose_mul_la!(y::Vector{Float64}, A::SparseMatrixCSC{Float64,Int64}, x::Vector{Float64})
-    y[:] .= transpose(A)*x
-    return
-end
-
-function my_transpose_mul_single!(y::Vector{Float64}, A::SparseMatrixCSC{Float64,Int64}, x::Vector{Float64})
-    for i in eachindex(y) # for each branch
-        tmp = 0.0
-        for j in nzrange(A, i) # non zero bus indices
-            tmp += A.nzval[j] * x[A.rowval[j]]
-        end
-        y[i] = tmp
-    end
-    return
-end
-
-function my_transpose_mul_mt!(y::Vector{Float64}, A::SparseMatrixCSC{Float64,Int64}, x::Vector{Float64})
-    Threads.@threads for i in eachindex(y) # for each branch
-        tmp = 0.0
-        for j in nzrange(A, i) # non zero bus indices
-            tmp += A.nzval[j] * x[A.rowval[j]]
-        end
-        y[i] = tmp
-    end
-    return
-end
-
-function my_mul_la!(y::Vector{Float64}, A::SparseMatrixCSC{Float64,Int64}, x::Vector{Float64})
-    mul!(y, A, x)
-    return
-end
-
-function my_mul_single!(y::Vector{Float64}, A::SparseMatrixCSC{Float64,Int64}, x::Vector{Float64})
-    for i in eachindex(y) # for each bus
-        tmp = 0.0
-        for j in A.colptr[i]:(A.colptr[i+1]-1) # non zero bus indices
-            tmp += A.nzval[j] * x[A.rowval[j]]
-        end
-        y[i] = tmp
-    end
-    return
-end
-
-function my_mul_mt!(y::Vector{Float64}, A::SparseMatrixCSC{Float64,Int64}, x::Vector{Float64})
-    Threads.@threads for i in eachindex(y) # for each bus
-        tmp = 0.0
-        for j in A.colptr[i]:(A.colptr[i+1]-1) # non zero bus indices
-            tmp += A.nzval[j] * x[A.rowval[j]]
-        end
-        y[i] = tmp
-    end
-    return
-end
+const PF = PowerFlows
 
 # get system
 
 sys = System("ACTIVSg2000.m")
+# sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
 # use function
 PowerFlowData(DCPowerFlow(), sys)
@@ -81,8 +30,8 @@ PowerFlowData(DCPowerFlow(), sys)
 # function step by step ######################################################
 
 # first get the matrices
-power_network_matrix = PNM.ABA_Matrix(sys)
 aux_network_matrix = PNM.BA_Matrix(sys)
+power_network_matrix = PNM.ABA_Matrix(sys; factorize=true)
 
 # check if the maps betwen the 2 matrices match
 
@@ -115,7 +64,9 @@ temp_bus_map = Dict{Int, String}(
     PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
 )
 
-# ! this does not work since there is a mismatch between lookup and dictionary
+power_network_matrix.lookup[2].vals
+
+# ! this does not work since there is a mismatch between lookup and temp_bus_map
 for (ix, bus_no) in bus_lookup
     bus_name = temp_bus_map[bus_no]
     bus = PSY.get_component(PSY.Bus, sys, bus_name)
@@ -125,14 +76,102 @@ end
 
 #! this is a problem also for "get_injections" and "get_withdrawals" functions
 
+# consider lookup from the power_network_matrix
+bus_activepower_injection = zeros(n_buses)          # !
+bus_reactivepower_injection = zeros(n_buses)        # !
+PF.get_injections!(bus_activepower_injection, bus_reactivepower_injection, bus_lookup, sys)
+
+bus_activepower_withdrawals = zeros(n_buses)        # !
+bus_reactivepower_withdrawals = zeros(n_buses)      # !
+PF.get_withdrawals!(
+    bus_activepower_withdrawals,
+    bus_reactivepower_withdrawals,
+    bus_lookup,
+    sys,
+)
+
 ##############################################################################
 # test matrix multiplication: Sparse #########################################
 
-# # get the power injections
-# power_injection = # ! to be done
+# get the power injections
+power_injection = bus_activepower_injection - bus_activepower_withdrawals
 
-# # get the angles
-# data.bus_angle[:] .= matrix_data \ power_injection
+# get the angles
+bus_angle = power_network_matrix.K \ power_injection[setdiff(1:end, power_network_matrix.ref_bus_positions)]
 
-# # get the flows
-# data.branch_flow_values[:] = aux_network_matrix.data * data.bus_angle
+# get the flows
+branch_flow_values = aux_network_matrix.data * bus_angle
+
+# consider using for loop: my_transpose_mul_single!
+y = zeros(length(branch_flow_values))
+A = aux_network_matrix.data
+x = bus_angle
+for i in eachindex(y) # for each branch
+    tmp = 0.0
+    @show i
+    for j in nzrange(A, i) # non zero bus indices
+        @show A.rowval[j]
+        tmp += A.nzval[j] * x[A.rowval[j]]
+    end
+    y[i] = tmp
+end
+
+# try to understand why...
+
+i = 1                   # first branch --> select the first row of A
+j_range = nzrange(A, i) # row range of non zeros for COLUMN i
+
+# in fact I can see that...
+
+isapprox([i for i in A[:, i] if i != 0], [A.nzval[k] for k in j_range], atol=1e-6)
+
+# ...thus I am getting the column of A and not the row!
+
+# IMPORTANT: nzrange(A, i) tells you the row range of the non zeros, not the indices of the corresponding nzval
+
+# --> in fact...
+i = 10
+j_range = nzrange(A, i)
+@assert [A.nzval[i] for i in j_range] == [i for i in A[:, i] if i != 0]
+
+# now consider my_mul_single!
+y = zeros(length(branch_flow_values))
+A = aux_network_matrix.data
+x = bus_angle
+for i in eachindex(y)
+    tmp = 0.0
+    for j in A.colptr[i]:(A.colptr[i + 1] - 1) # non zero bus indices
+        tmp += A.nzval[j] * x[A.rowval[j]]
+    end
+    y[i] = tmp
+end
+
+# try to understand why...
+i = 1
+j_range2 = A.colptr[i]:(A.colptr[i + 1] - 1)
+j_range == j_range2 # A.colptr[i]:(A.colptr[i + 1] - 1) == nzrange(A, i)
+
+# --> can be checked
+for i in eachindex(y)
+    jj1 = nzrange(A, i)
+    jj2 = A.colptr[i]:(A.colptr[i + 1] - 1)
+    if jj1 != jj2
+        error("ranges are different")
+    end
+end
+
+
+# SOLUTION --> finally try transpose 
+
+A_t = sparse(transpose(A))
+
+for i in eachindex(y) # for each branch
+    tmp = 0.0
+    for j in nzrange(A_t, i) # non zero bus indices
+        tmp += A_t.nzval[j] * x[A_t.rowval[j]]
+    end
+    y[i] = tmp
+end
+
+# check
+@assert isapprox(branch_flow_values, y, atol = 1e-6)
