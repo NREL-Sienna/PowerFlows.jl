@@ -1,3 +1,16 @@
+const PTDFPowerFlowData = PowerFlowData{
+    PNM.PTDF{
+        Tuple{Vector{String}, Vector{Int64}},
+        Tuple{Dict{String, Int64}, Dict{Int64, Int64}},
+        Matrix{Float64},
+    },
+    PNM.ABA_Matrix{
+        Tuple{Vector{Int64}, Vector{Int64}},
+        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
+        PNM.KLU.KLUFactorization{Float64, Int64},
+    },
+}
+
 """
 Evaluates the power flowing on each system's branch and updates the PowerFlowData structure.
 
@@ -8,11 +21,9 @@ Evaluates the power flowing on each system's branch and updates the PowerFlowDat
         PowerFlowData structure containig all the information related to the system power flow
 """
 function solve_powerflow!(
-    ::PTDFDCPowerFlow,
-    sys::PSY.System;
-    parallel = false,
+    data::PTDFPowerFlowData,
+    parallel::Bool,
 )
-    data = PowerFlowData(PTDFDCPowerFlow(), sys)
     power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
     matrix_data = data.power_network_matrix.data
     if parallel
@@ -21,15 +32,24 @@ function solve_powerflow!(
         LinearAlgebra.mul!(data.branch_flow_values, matrix_data, power_injection)
     end
 
-    if parallel
-        # to be added
-    else
-        valid_ix =
-            setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
-        p_inj = power_injection[valid_ix]
-        data.bus_angle[valid_ix] = data.aux_network_matrix.K \ p_inj
-    end
+    #if parallel
+    # to be added
+    #else
+    valid_ix =
+        setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
+    p_inj = power_injection[valid_ix]
+    data.bus_angle[valid_ix] = data.aux_network_matrix.K \ p_inj
+    #end
     return data
+end
+
+function solve_powerflow!(
+    ::PTDFDCPowerFlow,
+    sys::PSY.System;
+    parallel = false,
+)
+    data = PowerFlowData(PTDFDCPowerFlow(), sys)
+    return solve_powerflow!(data, parallel)
 end
 
 function solve_powerflow!(
