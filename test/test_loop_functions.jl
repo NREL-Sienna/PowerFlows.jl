@@ -31,13 +31,14 @@ PowerFlowData(DCPowerFlow(), sys)
 
 # first get the matrices
 aux_network_matrix = PNM.BA_Matrix(sys)
-power_network_matrix = PNM.ABA_Matrix(sys; factorize=true)
+power_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
 
 # check if the maps betwen the 2 matrices match
 
 # this is the way values are evaluated in BA_Matrix
 line_ax = [PSY.get_name(branch) for branch in branches]
-bus_ax = [PSY.get_number(bus) for bus in setdiff(buses, aux_network_matrix.ref_bus_positions)]
+bus_ax =
+    [PSY.get_number(bus) for bus in setdiff(buses, aux_network_matrix.ref_bus_positions)]
 lookup = (PNM.make_ax_ref(line_ax), PNM.make_ax_ref(bus_ax))
 # ! they are different
 @assert length(setdiff(aux_network_matrix.lookup[1].vals, lookup[1].vals)) == 0
@@ -53,7 +54,9 @@ lookup1 = (PNM.make_ax_ref(line_ax), PNM.make_ax_ref(bus_ax))
 @assert length(setdiff(power_network_matrix.lookup[2].vals, lookup[2].vals)) == 0
 
 # get number of buses and branches
-n_buses = length(axes(power_network_matrix.data, 2)) + length(power_network_matrix.ref_bus_positions)
+n_buses =
+    length(axes(power_network_matrix.data, 2)) +
+    length(power_network_matrix.ref_bus_positions)
 n_branches = length(axes(aux_network_matrix.data, 1))
 
 bus_lookup = power_network_matrix.lookup[2]
@@ -97,7 +100,9 @@ PF.get_withdrawals!(
 power_injection = bus_activepower_injection - bus_activepower_withdrawals
 
 # get the angles
-bus_angle = power_network_matrix.K \ power_injection[setdiff(1:end, power_network_matrix.ref_bus_positions)]
+bus_angle =
+    power_network_matrix.K \
+    power_injection[setdiff(1:end, power_network_matrix.ref_bus_positions)]
 
 # get the flows
 branch_flow_values = aux_network_matrix.data * bus_angle
@@ -123,7 +128,7 @@ j_range = nzrange(A, i) # row range of non zeros for COLUMN i
 
 # in fact I can see that...
 
-isapprox([i for i in A[:, i] if i != 0], [A.nzval[k] for k in j_range], atol=1e-6)
+isapprox([i for i in A[:, i] if i != 0], [A.nzval[k] for k in j_range]; atol = 1e-6)
 
 # ...thus I am getting the column of A and not the row!
 
@@ -159,7 +164,6 @@ for i in eachindex(y)
         error("ranges are different")
     end
 end
-
 
 # SOLUTION --> finally try transpose 
 

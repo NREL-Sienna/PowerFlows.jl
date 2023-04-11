@@ -24,7 +24,8 @@ function solve_powerflow!(
     if parallel
         # to be added
     else
-        valid_ix = setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
+        valid_ix =
+            setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
         p_inj = power_injection[valid_ix]
         data.bus_angle[valid_ix] = data.aux_network_matrix.K \ p_inj
     end
@@ -48,7 +49,11 @@ function solve_powerflow!(
     if parallel
         my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
     else
-        my_mul_single!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
+        LinearAlgebra.mul!(
+            data.branch_flow_values,
+            aux_network_matrix.data,
+            power_injection,
+        )
     end
     return data
 end
