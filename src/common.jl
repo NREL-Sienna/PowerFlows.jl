@@ -66,23 +66,70 @@ function my_mul_mt!(
     A::SparseMatrixCSC{Float64, Int64},
     x::Vector{Float64},
 )
+    for i in 1:size(A, 2)
+        row_idx = A.rowval[A.colptr[i]:(A.colptr[i + 1] - 1)]
+        y[i] = LinearAlgebra.dot(A.nzval[A.colptr[i]:(A.colptr[i + 1] - 1)], x[row_idx])
+    end
+    return
+end
+
+function my_mul_mt_1!(
+    y::Vector{Float64},
+    A::SparseMatrixCSC{Float64, Int64},
+    x::Vector{Float64},
+)
     copyto!(y, zeros(Float64, size(y)))
-    Threads.@threads for j in eachindex(x)
-        val = x[j]
-        for k in A.colptr[j]:(A.colptr[j + 1] - 1)
-            y[A.rowval[k]] += A.nzval[k] * val
+    for i in 1:size(A, 2)
+        for j in A.colptr[i]:(A.colptr[i + 1] - 1)
+            y[i] += A.nzval[j] * x[A.rowval[j]]
         end
     end
     return
 end
 
-function my_mul_mt!(y::Vector{Float64}, A::Matrix{Float64}, x::Vector{Float64})
-    Threads.@threads for i in eachindex(y)
+function my_mul_mt_2!(
+    y::Vector{Float64},
+    A::SparseMatrixCSC{Float64, Int64},
+    x::Vector{Float64},
+)
+    y[:] .= transpose(A) * x
+    return
+end
+
+# dense case #################################################################
+
+function my_mul_mt!(
+    y::Vector{Float64},
+    A::Matrix{Float64},
+    x::Vector{Float64}
+)
+    for i in eachindex(y)
+        y[i] = LinearAlgebra.dot(A[:, i], x)
+    end
+    return
+end
+
+function my_mul_mt_1!(
+    y::Vector{Float64},
+    A::Matrix{Float64},
+    x::Vector{Float64}
+)
+    copyto!(y, zeros(Float64, size(y)))
+    for i in eachindex(y)
         temp = 0.0
         for j in eachindex(x)
-            temp += A[i, j] * x[j]
+            temp += A[j, i] * x[j]
         end
         y[i] = temp
     end
+    return
+end
+
+function my_mul_mt_2!(
+    y::Vector{Float64},
+    A::Matrix{Float64},
+    x::Vector{Float64},
+)
+    y[:] .= transpose(A) * x
     return
 end

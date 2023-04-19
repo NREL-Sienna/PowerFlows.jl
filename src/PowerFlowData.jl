@@ -133,11 +133,11 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
     # check the maps betwen the 2 matrices match
 
     # get number of buses and branches
-    n_buses = length(axes(power_network_matrix, 2))
-    n_branches = length(axes(power_network_matrix, 1))
+    n_buses = length(axes(power_network_matrix, 1))
+    n_branches = length(axes(power_network_matrix, 2))
 
-    bus_lookup = power_network_matrix.lookup[2]
-    branch_lookup = power_network_matrix.lookup[1]
+    bus_lookup = power_network_matrix.lookup[1]
+    branch_lookup = power_network_matrix.lookup[2]
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
     bus_angle = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(

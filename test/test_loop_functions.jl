@@ -11,6 +11,7 @@ using DataFrames
 using SparseArrays
 using Plots
 using SuiteSparse
+using BenchmarkTools
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
@@ -20,162 +21,247 @@ const PF = PowerFlows
 
 # get system
 
-sys = System("ACTIVSg2000.m")
+# sys = System("ACTIVSg2000.m")
+# sys = System("case_ACTIVSg10k.m")
+sys = System("case_ACTIVSg70k.m"; runchecks=false)
 # sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
-# use function
-PowerFlowData(DCPowerFlow(), sys)
+##############################################################################
+# CASE 1: ABA and BA matrices ################################################
+data = PowerFlowData(DCPowerFlow(), sys)
+data_1 = PowerFlowData(DCPowerFlow(), sys)
+data_2 = PowerFlowData(DCPowerFlow(), sys)
+power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
+matrix_data = data.power_network_matrix.K       # LU factorization of ABA
+aux_network_matrix = data.aux_network_matrix    # BA matrix
+valid_ix = setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
+data.bus_angle[valid_ix] = matrix_data \ power_injection[valid_ix]
+
+# comparison
+@benchmark PF.my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
+@benchmark PF.my_mul_mt_1!(data_1.branch_flow_values, aux_network_matrix.data, data.bus_angle)
+@benchmark PF.my_mul_mt_2!(data_2.branch_flow_values, aux_network_matrix.data, data.bus_angle)
+
+PF.my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
+PF.my_mul_mt_1!(data_1.branch_flow_values, aux_network_matrix.data, data.bus_angle)
+PF.my_mul_mt_2!(data_2.branch_flow_values, aux_network_matrix.data, data.bus_angle)
+
+isapprox(data.branch_flow_values, data_2.branch_flow_values, atol = 1e-5)
+isapprox(data.branch_flow_values, data_1.branch_flow_values, atol = 1e-6)
+isapprox(data_1.branch_flow_values, data_2.branch_flow_values, atol = 1e-6)
+isapprox(data_1.branch_flow_values, data.branch_flow_values, atol = 1e-6)
+
+sum(abs.(data.branch_flow_values - data_2.branch_flow_values))
+sum(abs.(data.branch_flow_values - data_1.branch_flow_values))
+sum(abs.(data_2.branch_flow_values - data_1.branch_flow_values))
+
+"""
+2k
+BenchmarkTools.Trial: 9657 samples with 1 evaluation.
+ Range (min … max):  457.083 μs …   8.791 ms  ┊ GC (min … max): 0.00% … 92.32%
+ Time  (median):     471.500 μs               ┊ GC (median):    0.00%
+ Time  (mean ± σ):   516.253 μs ± 591.795 μs  ┊ GC (mean ± σ):  8.18% ±  6.71%
+
+    ▂▅▇▅▂█▄  ▂▅▆▅▃                                               
+  ▂▄███████████████▆▅▄▃▂▂▂▂▂▂▂▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁ ▃
+  457 μs           Histogram: frequency by time          540 μs <
+
+ Memory estimate: 752.05 KiB, allocs estimate: 9622.
+
+ BenchmarkTools.Trial: 10000 samples with 1 evaluation.
+ Range (min … max):  11.750 μs …  6.811 ms  ┊ GC (min … max): 0.00% … 99.21%
+ Time  (median):     12.500 μs              ┊ GC (median):    0.00%
+ Time  (mean ± σ):   14.217 μs ± 68.014 μs  ┊ GC (mean ± σ):  4.75% ±  0.99%
+
+    ▅██▆▄                                                      
+  ▁▄██████▅▄▃▃▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▂▂▃▃▃▃▂▃▂▃▃▂▂▂▂▁▁▁▁▁▁ ▂
+  11.8 μs         Histogram: frequency by time          19 μs <
+
+ Memory estimate: 25.75 KiB, allocs estimate: 6.
+
+ BenchmarkTools.Trial: 10000 samples with 4 evaluations.
+ Range (min … max):   7.083 μs …  1.733 ms  ┊ GC (min … max):  0.00% … 98.88%
+ Time  (median):      9.396 μs              ┊ GC (median):     0.00%
+ Time  (mean ± σ):   11.256 μs ± 44.899 μs  ┊ GC (mean ± σ):  10.49% ±  2.62%
+
+  ▂▇█▇▅▃▁        ▁▂▁▁               ▄▆▇▇▆▅▅▃▂▁▁               ▃
+  ████████████████████▇▄▆▅▁▅▅▅▅▁▃▃▄████████████████▇▆▆▇▆▅▁▅▇▇ █
+  7.08 μs      Histogram: log(frequency) by time      15.6 μs <
+
+ Memory estimate: 25.75 KiB, allocs estimate: 6.
+
+10k
+BenchmarkTools.Trial: 2464 samples with 1 evaluation.
+ Range (min … max):  1.820 ms … 11.215 ms  ┊ GC (min … max): 0.00% … 81.53%
+ Time  (median):     1.869 ms              ┊ GC (median):    0.00%
+ Time  (mean ± σ):   2.027 ms ±  1.191 ms  ┊ GC (mean ± σ):  7.49% ± 10.45%
+
+  █▂                                                          
+  ██▆▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▇ █
+  1.82 ms      Histogram: log(frequency) by time     11.2 ms <
+
+ Memory estimate: 2.91 MiB, allocs estimate: 38122.
+
+ BenchmarkTools.Trial: 10000 samples with 1 evaluation.
+ Range (min … max):  46.833 μs …  3.458 ms  ┊ GC (min … max): 0.00% … 97.19%
+ Time  (median):     48.458 μs              ┊ GC (median):    0.00%
+ Time  (mean ± σ):   50.596 μs ± 75.877 μs  ┊ GC (mean ± σ):  3.31% ±  2.17%
+
+         ▂▃█▅▄▃ ▁                                              
+  ▁▁▂▂▃▅█████████▆▅▄▄▄▃▃▃▃▃▂▂▂▂▂▂▂▂▂▂▂▂▂▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁ ▂
+  46.8 μs         Histogram: frequency by time        54.7 μs <
+
+ Memory estimate: 100.00 KiB, allocs estimate: 6.
+
+ BenchmarkTools.Trial: 10000 samples with 1 evaluation.
+ Range (min … max):  27.667 μs …  3.601 ms  ┊ GC (min … max): 0.00% … 97.15%
+ Time  (median):     29.042 μs              ┊ GC (median):    0.00%
+ Time  (mean ± σ):   33.599 μs ± 69.904 μs  ┊ GC (mean ± σ):  4.55% ±  2.19%
+
+  ▃▇█▇▅▃▃▃▁               ▁▁                   ▁▁▁▁▁ ▁ ▁▁     ▂
+  █████████▇▆▇▇▇▅▆▆▇▇▇▇▆████████▅▅▅▄▅▅▆▆▆▄▄▄▇████████████████ █
+  27.7 μs      Histogram: log(frequency) by time        55 μs <
+
+ Memory estimate: 100.00 KiB, allocs estimate: 6.
+
+70k
+BenchmarkTools.Trial: 353 samples with 1 evaluation.
+ Range (min … max):  12.757 ms … 32.898 ms  ┊ GC (min … max): 0.00% … 58.64%
+ Time  (median):     13.106 ms              ┊ GC (median):    0.00%
+ Time  (mean ± σ):   14.217 ms ±  4.491 ms  ┊ GC (mean ± σ):  7.59% ± 13.57%
+
+  ██▂                                                       ▁  
+  ███▄▁▄▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▆█ ▆
+  12.8 ms      Histogram: log(frequency) by time      32.7 ms <
+
+ Memory estimate: 20.19 MiB, allocs estimate: 264625.
+
+ BenchmarkTools.Trial: 10000 samples with 1 evaluation.
+ Range (min … max):  320.167 μs …   9.202 ms  ┊ GC (min … max): 0.00% … 95.58%
+ Time  (median):     326.167 μs               ┊ GC (median):    0.00%
+ Time  (mean ± σ):   345.778 μs ± 172.046 μs  ┊ GC (mean ± σ):  1.90% ±  3.79%
+
+  ▅█▇▅▄▂▂▁                                            ▁▁        ▁
+  █████████▇▇▇▇▆▅▅▅▄▄▄▄▄▄▄▆▇█▇█▇▇▅▅▅▅▂▄▃▃▂▂▄▄▄▂▄▆▆█▇▇█████▇▆▆▇▆ █
+  320 μs        Histogram: log(frequency) by time        496 μs <
+
+ Memory estimate: 689.81 KiB, allocs estimate: 6.
+
+ BenchmarkTools.Trial: 10000 samples with 1 evaluation.
+ Range (min … max):  190.500 μs …   3.536 ms  ┊ GC (min … max): 0.00% … 87.92%
+ Time  (median):     196.917 μs               ┊ GC (median):    0.00%
+ Time  (mean ± σ):   206.381 μs ± 133.642 μs  ┊ GC (mean ± σ):  2.65% ±  3.91%
+
+   ▇█▆▄▃▁ ▁                                                     ▂
+  ██████████▇▇▅▃▄▄▃▄▄▃▃▃▁▄▃▁▁▁▁▁▁▁▁▁▁▁▁▃▁▁▁▁▁▁▁▁▁▁▁▁▁▁▄▆▆▇▆▇▆▆▇ █
+  190 μs        Histogram: log(frequency) by time        347 μs <
+
+ Memory estimate: 689.81 KiB, allocs estimate: 6.
+
+WINNER: my_mul_mt_1! and my_mul_mt_2! (basically the same functions)
+
+"""
 
 ##############################################################################
-# function step by step ######################################################
+# CASE 2: PTDF and ABA MATRICES ##############################################
 
-# first get the matrices
-aux_network_matrix = PNM.BA_Matrix(sys)
-power_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
+data = PowerFlowData(PTDFDCPowerFlow(), sys)
+data_1 = deepcopy(data)
+data_2 = deepcopy(data)
 
-# check if the maps betwen the 2 matrices match
+power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
+matrix_data = data.power_network_matrix.data
 
-# this is the way values are evaluated in BA_Matrix
-line_ax = [PSY.get_name(branch) for branch in branches]
-bus_ax =
-    [PSY.get_number(bus) for bus in setdiff(buses, aux_network_matrix.ref_bus_positions)]
-lookup = (PNM.make_ax_ref(line_ax), PNM.make_ax_ref(bus_ax))
-# ! they are different
-@assert length(setdiff(aux_network_matrix.lookup[1].vals, lookup[1].vals)) == 0
-@assert length(setdiff(aux_network_matrix.lookup[2].vals, lookup[2].vals)) == 0
+@benchmark PF.my_mul_mt!(data.branch_flow_values, matrix_data, power_injection)
+@benchmark PF.my_mul_mt_1!(data_1.branch_flow_values, matrix_data, power_injection)
+@benchmark PF.my_mul_mt_2!(data_2.branch_flow_values, matrix_data, power_injection)
 
-# and this is how values are evaluated in ABA_Matrix
-line_ax1 = [PSY.get_name(branch) for branch in branches]
-bus_ax1 = [PSY.get_number(bus) for bus in buses]
-axes1 = (line_ax, setdiff(bus_ax, power_network_matrix.ref_bus_positions))
-lookup1 = (PNM.make_ax_ref(line_ax), PNM.make_ax_ref(bus_ax))
-# ! they are different
-@assert length(setdiff(power_network_matrix.lookup[1].vals, lookup[1].vals)) == 0
-@assert length(setdiff(power_network_matrix.lookup[2].vals, lookup[2].vals)) == 0
+PF.my_mul_mt!(data.branch_flow_values, matrix_data, power_injection)
+PF.my_mul_mt_1!(data_1.branch_flow_values, matrix_data, power_injection)
+PF.my_mul_mt_2!(data_2.branch_flow_values, matrix_data, power_injection)
 
-# get number of buses and branches
-n_buses =
-    length(axes(power_network_matrix.data, 2)) +
-    length(power_network_matrix.ref_bus_positions)
-n_branches = length(axes(aux_network_matrix.data, 1))
+isapprox(data.branch_flow_values, data_2.branch_flow_values, atol = 1e-5)
+isapprox(data.branch_flow_values, data_1.branch_flow_values, atol = 1e-6)
+isapprox(data_1.branch_flow_values, data_2.branch_flow_values, atol = 1e-6)
+isapprox(data_1.branch_flow_values, data.branch_flow_values, atol = 1e-6)
 
-bus_lookup = power_network_matrix.lookup[2]
-branch_lookup = power_network_matrix.lookup[1]
-bus_type = Vector{Any}(undef, n_buses) # error with PSY.BusTypes
-bus_angle = Vector{Float64}(undef, n_buses)
-temp_bus_map = Dict{Int, String}(
-    PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
-)
+sum(abs.(data.branch_flow_values - data_2.branch_flow_values))
+sum(abs.(data.branch_flow_values - data_1.branch_flow_values))
+sum(abs.(data_2.branch_flow_values - data_1.branch_flow_values))
 
-power_network_matrix.lookup[2].vals
+"""
+2k
+BenchmarkTools.Trial: 350 samples with 1 evaluation.
+ Range (min … max):   6.203 ms … 26.308 ms  ┊ GC (min … max):  0.00% … 41.79%
+ Time  (median):     15.606 ms              ┊ GC (median):     0.00%
+ Time  (mean ± σ):   14.296 ms ±  5.526 ms  ┊ GC (mean ± σ):  17.18% ± 21.12%
 
-# ! this does not work since there is a mismatch between lookup and temp_bus_map
-for (ix, bus_no) in bus_lookup
-    bus_name = temp_bus_map[bus_no]
-    bus = PSY.get_component(PSY.Bus, sys, bus_name)
-    bus_type[ix] = PSY.get_bustype(bus)
-    bus_angle[ix] = PSY.get_angle(bus)
-end
+  ▆▁▂              ▁    ▁ ▁▂ ▃█▂     ▁                         
+  █████▅▅██▅▄▅█▁▁▆██▇▆▆▁█▇██▄███▄▄▁▁▅█▆▅▅▇▄▅▁▅▇█▇▆█▅▄▅▅▇▇▇▅▅▆ ▆
+  6.2 ms       Histogram: log(frequency) by time        26 ms <
 
-#! this is a problem also for "get_injections" and "get_withdrawals" functions
+ Memory estimate: 49.31 MiB, allocs estimate: 3207.
 
-# consider lookup from the power_network_matrix
-bus_activepower_injection = zeros(n_buses)          # !
-bus_reactivepower_injection = zeros(n_buses)        # !
-PF.get_injections!(bus_activepower_injection, bus_reactivepower_injection, bus_lookup, sys)
+ BenchmarkTools.Trial: 864 samples with 1 evaluation.
+ Range (min … max):  5.767 ms … 5.839 ms  ┊ GC (min … max): 0.00% … 0.00%
+ Time  (median):     5.777 ms             ┊ GC (median):    0.00%
+ Time  (mean ± σ):   5.778 ms ± 9.854 μs  ┊ GC (mean ± σ):  0.00% ± 0.00%
 
-bus_activepower_withdrawals = zeros(n_buses)        # !
-bus_reactivepower_withdrawals = zeros(n_buses)      # !
-PF.get_withdrawals!(
-    bus_activepower_withdrawals,
-    bus_reactivepower_withdrawals,
-    bus_lookup,
-    sys,
-)
+   ▅▂    █▅                                                  
+  ▃██▃▂▂▅██▃▂▂▄▅▇▅▃▄▆█▆▄▃▄▃▃▃▄▄▂▃▃▃▃▃▄▃▃▃▃▃▂▂▃▃▂▂▃▂▂▂▂▁▂▂▁▂ ▃
+  5.77 ms        Histogram: frequency by time       5.81 ms <
 
-##############################################################################
-# test matrix multiplication: Sparse #########################################
+ Memory estimate: 25.34 KiB, allocs estimate: 3.
 
-# get the power injections
-power_injection = bus_activepower_injection - bus_activepower_withdrawals
+ BenchmarkTools.Trial: 8292 samples with 1 evaluation.
+ Range (min … max):  504.208 μs …   6.224 ms  ┊ GC (min … max): 0.00% … 0.00%
+ Time  (median):     528.208 μs               ┊ GC (median):    0.00%
+ Time  (mean ± σ):   592.610 μs ± 199.911 μs  ┊ GC (mean ± σ):  0.00% ± 0.00%
 
-# get the angles
-bus_angle =
-    power_network_matrix.K \
-    power_injection[setdiff(1:end, power_network_matrix.ref_bus_positions)]
+  ▆█▄▃▃▃▃▃▂▂▂                                                   ▁
+  ████████████▇▇▆▆▆▆▅▅▆▆▆▆▅▅▅▆▅▄▅▅▅▆▅▆▆▆▆▆▆▇▇▆▆▆▄▅▄▅▄▅▄▄▄▅▄▄▄▃▂ █
+  504 μs        Histogram: log(frequency) by time       1.52 ms <
 
-# get the flows
-branch_flow_values = aux_network_matrix.data * bus_angle
+ Memory estimate: 25.34 KiB, allocs estimate: 3.
 
-# consider using for loop: my_transpose_mul_single!
-y = zeros(length(branch_flow_values))
-A = aux_network_matrix.data
-x = bus_angle
-for i in eachindex(y) # for each branch
-    tmp = 0.0
-    @show i
-    for j in nzrange(A, i) # non zero bus indices
-        @show A.rowval[j]
-        tmp += A.nzval[j] * x[A.rowval[j]]
-    end
-    y[i] = tmp
-end
+10k
+BenchmarkTools.Trial: 21 samples with 1 evaluation.
+ Range (min … max):  145.487 ms … 322.271 ms  ┊ GC (min … max):  0.00% … 11.74%
+ Time  (median):     239.008 ms               ┊ GC (median):    14.15%
+ Time  (mean ± σ):   238.210 ms ±  64.406 ms  ┊ GC (mean ± σ):   8.99% ±  6.84%
 
-# try to understand why...
+  ▃                                                    █    ▃    
+  █▇▇▁▁▇▁▁▁▁▁▁▁▁▇▁▁▁▁▇▇▁▁▁▁▇▇▁▁▁▁▁▇▁▇▁▁▁▁▁▁▁▁▁▁▁▁▇▇▁▁▁▁█▁▁▇▁█▁▇ ▁
+  145 ms           Histogram: frequency by time          322 ms <
 
-i = 1                   # first branch --> select the first row of A
-j_range = nzrange(A, i) # row range of non zeros for COLUMN i
+ Memory estimate: 969.97 MiB, allocs estimate: 25413.
 
-# in fact I can see that...
+ BenchmarkTools.Trial: 43 samples with 1 evaluation.
+ Range (min … max):  117.694 ms … 120.529 ms  ┊ GC (min … max): 0.00% … 0.00%
+ Time  (median):     118.031 ms               ┊ GC (median):    0.00%
+ Time  (mean ± σ):   118.224 ms ± 497.927 μs  ┊ GC (mean ± σ):  0.00% ± 0.00%
 
-isapprox([i for i in A[:, i] if i != 0], [A.nzval[k] for k in j_range]; atol = 1e-6)
+    █▆▁▃      ▁ ▁      ▃                                         
+  ▄▁████▇▄▁▄▁▁█▄█▇▄▇▄▁▁█▁▁▁▁▇▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▄ ▁
+  118 ms           Histogram: frequency by time          121 ms <
 
-# ...thus I am getting the column of A and not the row!
+ Memory estimate: 99.59 KiB, allocs estimate: 3.
 
-# IMPORTANT: nzrange(A, i) tells you the row range of the non zeros, not the indices of the corresponding nzval
+ BenchmarkTools.Trial: 473 samples with 1 evaluation.
+ Range (min … max):   9.640 ms …  13.237 ms  ┊ GC (min … max): 0.00% … 0.00%
+ Time  (median):     10.545 ms               ┊ GC (median):    0.00%
+ Time  (mean ± σ):   10.546 ms ± 362.557 μs  ┊ GC (mean ± σ):  0.00% ± 0.00%
 
-# --> in fact...
-i = 10
-j_range = nzrange(A, i)
-@assert [A.nzval[i] for i in j_range] == [i for i in A[:, i] if i != 0]
+                          ▁▃▅▆▄█▇█▃▃ ▁                          
+  ▂▃▂▃▂▂▂▃▄▄▅▃▃▄▃▆▅▅▅▆▆▇▆███████████▇██▄▆▄▆▅▃▄▂▄▁▂▃▂▂▃▂▁▂▂▂▄▂▂ ▄
+  9.64 ms         Histogram: frequency by time         11.5 ms <
 
-# now consider my_mul_single!
-y = zeros(length(branch_flow_values))
-A = aux_network_matrix.data
-x = bus_angle
-for i in eachindex(y)
-    tmp = 0.0
-    for j in A.colptr[i]:(A.colptr[i + 1] - 1) # non zero bus indices
-        tmp += A.nzval[j] * x[A.rowval[j]]
-    end
-    y[i] = tmp
-end
+ Memory estimate: 99.59 KiB, allocs estimate: 3.
 
-# try to understand why...
-i = 1
-j_range2 = A.colptr[i]:(A.colptr[i + 1] - 1)
-j_range == j_range2 # A.colptr[i]:(A.colptr[i + 1] - 1) == nzrange(A, i)
+70k
 
-# --> can be checked
-for i in eachindex(y)
-    jj1 = nzrange(A, i)
-    jj2 = A.colptr[i]:(A.colptr[i + 1] - 1)
-    if jj1 != jj2
-        error("ranges are different")
-    end
-end
+"""
 
-# SOLUTION --> finally try transpose 
-
-A_t = sparse(transpose(A))
-
-for i in eachindex(y) # for each branch
-    tmp = 0.0
-    for j in nzrange(A_t, i) # non zero bus indices
-        tmp += A_t.nzval[j] * x[A_t.rowval[j]]
-    end
-    y[i] = tmp
-end
-
-# check
-@assert isapprox(branch_flow_values, y, atol = 1e-6)
+valid_ix = setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
+p_inj = power_injection[valid_ix]
+data.bus_angle[valid_ix] = data.aux_network_matrix.K \ p_inj

@@ -22,7 +22,7 @@ Evaluates the power flowing on each system's branch and updates the PowerFlowDat
 """
 function solve_powerflow!(
     data::PTDFPowerFlowData,
-    parallel::Bool,
+    parallel::Bool, # TODO still to implement
 )
     power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
     matrix_data = data.power_network_matrix.data
@@ -44,6 +44,33 @@ function solve_powerflow!(
 end
 
 function solve_powerflow!(
+    data::DCPowerFlow,
+    parallel::Bool, # TODO still to implement
+)
+
+    power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
+    matrix_data = data.power_network_matrix.K
+    aux_network_matrix = data.aux_network_matrix
+
+    # pending make this parallel and non-allocating
+    valid_ix = setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
+    data.bus_angle[valid_ix] = matrix_data \ power_injection[valid_ix]
+
+    # evaluate
+    # if parallel
+    my_mul_mt_1!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
+    # else
+    #     LinearAlgebra.mul!(
+    #         data.branch_flow_values,
+    #         aux_network_matrix.data,
+    #         power_injection,
+    #     )
+    # end
+    return data
+
+end
+
+function solve_powerflow!(
     ::PTDFDCPowerFlow,
     sys::PSY.System;
     parallel = false,
@@ -55,25 +82,8 @@ end
 function solve_powerflow!(
     ::DCPowerFlow,
     sys::PSY.System;
-    parallel = false,
+    parallel = false,   # TODO still to implement
 )
     data = PowerFlowData(DCPowerFlow(), sys)
-    power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
-    matrix_data = data.power_network_matrix.K
-    aux_network_matrix = data.aux_network_matrix
-
-    # pending make this parallel and non-allocating
-    data.aux_network_matrix.ref_bus_positions
-    valid_ix = setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
-    data.bus_angle[valid_ix] = matrix_data \ power_injection[valid_ix]
-    if parallel
-        my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
-    else
-        LinearAlgebra.mul!(
-            data.branch_flow_values,
-            aux_network_matrix.data,
-            power_injection,
-        )
-    end
-    return data
+    return solve_powerflow!(data, parallel)
 end
