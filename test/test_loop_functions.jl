@@ -180,14 +180,14 @@ PF.my_mul_mt!(data.branch_flow_values, matrix_data, power_injection)
 PF.my_mul_mt_1!(data_1.branch_flow_values, matrix_data, power_injection)
 PF.my_mul_mt_2!(data_2.branch_flow_values, matrix_data, power_injection)
 
-isapprox(data.branch_flow_values, data_2.branch_flow_values, atol = 1e-5)
-isapprox(data.branch_flow_values, data_1.branch_flow_values, atol = 1e-6)
-isapprox(data_1.branch_flow_values, data_2.branch_flow_values, atol = 1e-6)
-isapprox(data_1.branch_flow_values, data.branch_flow_values, atol = 1e-6)
+@show isapprox(data.branch_flow_values, data_2.branch_flow_values, atol = 1e-5)
+@show isapprox(data.branch_flow_values, data_1.branch_flow_values, atol = 1e-6)
+@show isapprox(data_1.branch_flow_values, data_2.branch_flow_values, atol = 1e-6)
+@show isapprox(data_1.branch_flow_values, data.branch_flow_values, atol = 1e-6)
 
-sum(abs.(data.branch_flow_values - data_2.branch_flow_values))
-sum(abs.(data.branch_flow_values - data_1.branch_flow_values))
-sum(abs.(data_2.branch_flow_values - data_1.branch_flow_values))
+@show sum(abs.(data.branch_flow_values - data_2.branch_flow_values))
+@show sum(abs.(data.branch_flow_values - data_1.branch_flow_values))
+@show sum(abs.(data_2.branch_flow_values - data_1.branch_flow_values))
 
 """
 2k
@@ -259,9 +259,23 @@ BenchmarkTools.Trial: 21 samples with 1 evaluation.
  Memory estimate: 99.59 KiB, allocs estimate: 3.
 
 70k
+BenchmarkTools.Trial: 1 sample with 1 evaluation.
+ Single result which took 178.662 s (1.87% GC) to evaluate,
+ with a memory estimate of 46.01 GiB, over 176415 allocations.
+
+BenchmarkTools.Trial: 1 sample with 1 evaluation.
+ Single result which took 143.211 s (0.00% GC) to evaluate,
+ with a memory estimate of 689.41 KiB, over 3 allocations.
+
+BenchmarkTools.Trial: 1 sample with 1 evaluation.
+ Single result which took 57.566 s (0.00% GC) to evaluate,
+ with a memory estimate of 689.41 KiB, over 3 allocations.
 
 """
 
 valid_ix = setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
 p_inj = power_injection[valid_ix]
 data.bus_angle[valid_ix] = data.aux_network_matrix.K \ p_inj
+
+##############################################################################
+# CASE 3: VirtualPTDF and ABA MATRICES #######################################
