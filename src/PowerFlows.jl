@@ -6,6 +6,7 @@ export PowerFlowData
 export DCPowerFlow
 export ACPowerFlow
 export PTDFDCPowerFlow
+export vPTDFDCPowerFlow
 export solve_powerflow!
 
 import DataFrames

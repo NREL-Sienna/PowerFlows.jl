@@ -7,7 +7,7 @@ struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N}
     bus_reactivepower_withdrawals::Vector{Float64}
     bus_type::Vector{PSY.BusTypes}
     bus_magnitude::Vector{Float64}
-    bus_angle::Vector{Float64}
+    bus_angles::Vector{Float64}
     branch_flow_values::Vector{Float64}
     power_network_matrix::M
     aux_network_matrix::N
@@ -138,6 +138,62 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
 
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
+    bus_type = Vector{PSY.BusTypes}(undef, n_buses)
+    bus_angle = zeros(Float64, n_buses)
+    temp_bus_map = Dict{Int, String}(
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
+    )
+
+    for (bus_no, ix) in bus_lookup
+        bus_name = temp_bus_map[bus_no]
+        bus = PSY.get_component(PSY.Bus, sys, bus_name)
+        bus_type[ix] = PSY.get_bustype(bus)
+        if bus_type[ix] == PSY.BusTypes.REF
+            bus_angle[ix] = 0.0
+        else
+            bus_angle[ix] = PSY.get_angle(bus)
+        end
+    end
+
+    bus_activepower_injection = zeros(Float64, n_buses)
+    bus_reactivepower_injection = zeros(Float64, n_buses)
+    get_injections!(bus_activepower_injection, bus_reactivepower_injection, bus_lookup, sys)
+
+    bus_activepower_withdrawals = zeros(Float64, n_buses)
+    bus_reactivepower_withdrawals = zeros(Float64, n_buses)
+    get_withdrawals!(
+        bus_activepower_withdrawals,
+        bus_reactivepower_withdrawals,
+        bus_lookup,
+        sys,
+    )
+
+    return PowerFlowData(
+        bus_lookup,
+        branch_lookup,
+        bus_activepower_injection,
+        bus_reactivepower_injection,
+        bus_activepower_withdrawals,
+        bus_reactivepower_withdrawals,
+        bus_type,
+        ones(Float64, n_buses),
+        bus_angle,
+        zeros(Float64, n_branches),
+        power_network_matrix,
+        aux_network_matrix,
+    )
+end
+
+function PowerFlowData(::vPTDFDCPowerFlow, sys::PSY.System)
+    power_network_matrix = PNM.VirtualPTDF(sys) # evaluates an empty virtual PTDF
+    aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
+
+    # get number of buses and branches
+    n_buses = length(axes(power_network_matrix, 2))
+    n_branches = length(axes(power_network_matrix, 1))
+
+    bus_lookup = power_network_matrix.lookup[2]
+    branch_lookup = power_network_matrix.lookup[1]
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
     bus_angle = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(

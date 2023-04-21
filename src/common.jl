@@ -60,20 +60,12 @@ function get_withdrawals!(
     return
 end
 
-################################## Matrix Methods ##########################################
-function my_mul_mt!(
-    y::Vector{Float64},
-    A::SparseMatrixCSC{Float64, Int64},
-    x::Vector{Float64},
-)
-    for i in 1:size(A, 2)
-        row_idx = A.rowval[A.colptr[i]:(A.colptr[i + 1] - 1)]
-        y[i] = LinearAlgebra.dot(A.nzval[A.colptr[i]:(A.colptr[i + 1] - 1)], x[row_idx])
-    end
-    return
-end
+##############################################################################
+# Matrix Methods #############################################################
 
-function my_mul_mt_1!(
+# sparse case (ABA and BA)
+
+function my_mul_mt!(
     y::Vector{Float64},
     A::SparseMatrixCSC{Float64, Int64},
     x::Vector{Float64},
@@ -87,49 +79,53 @@ function my_mul_mt_1!(
     return
 end
 
-function my_mul_mt_2!(
-    y::Vector{Float64},
-    A::SparseMatrixCSC{Float64, Int64},
-    x::Vector{Float64},
-)
-    y[:] .= transpose(A) * x
-    return
-end
-
-# dense case #################################################################
+# dense case (PTDF and ABA)
 
 function my_mul_mt!(
     y::Vector{Float64},
     A::Matrix{Float64},
-    x::Vector{Float64}
-)
-    for i in eachindex(y)
-        y[i] = LinearAlgebra.dot(A[:, i], x)
-    end
-    return
-end
-
-function my_mul_mt_1!(
-    y::Vector{Float64},
-    A::Matrix{Float64},
-    x::Vector{Float64}
-)
-    copyto!(y, zeros(Float64, size(y)))
-    for i in eachindex(y)
-        temp = 0.0
-        for j in eachindex(x)
-            temp += A[j, i] * x[j]
-        end
-        y[i] = temp
-    end
-    return
-end
-
-function my_mul_mt_2!(
-    y::Vector{Float64},
-    A::Matrix{Float64},
     x::Vector{Float64},
 )
     y[:] .= transpose(A) * x
+    return
+end
+
+# virtual case: all lines
+
+function my_mul_mt!(
+    y::Vector{Float64},
+    A::PNM.VirtualPTDF,
+    x::Vector{Float64},
+)
+    for i in eachindex(y)
+        name_ = A.axes[1][i]
+        y[i] = LinearAlgebra.dot(A[name_, :], x)
+    end
+    return
+end
+
+# virtual case: selected lines
+
+function my_mul_mt!(
+    y::Vector{Float64},
+    A::PNM.VirtualPTDF,
+    x::Vector{Float64},
+    lines::Vector{String},
+)
+    for name_ in lines
+        y[A.lookup[1][name_]] = LinearAlgebra.dot(A[name_, :], x)
+    end
+    return
+end
+
+# single line
+
+function my_mul_mt!(
+    y::Vector{Float64},
+    A::PNM.VirtualPTDF,
+    x::Vector{Float64},
+    line::String,
+)
+    y[A.lookup[1][line]] = LinearAlgebra.dot(A[line, :], x)
     return
 end
