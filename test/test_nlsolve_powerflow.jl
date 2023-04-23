@@ -44,21 +44,24 @@ PSY.set_r!(br, 2.0)
     @test_logs(
         (:error, "The powerflow solver returned convergence = false"),
         match_mode = :any,
-        @test !run_powerflow!(pf_sys5_re; finite_diff = true)
+        @test !solve_powerflow!(pf_sys5_re; finite_diff = true)
     )
     #Compare results between finite diff methods and Jacobian method
-    res_finite_diff = run_powerflow(
+    res_finite_diff = solve_powerflow(
+        ACPowerFlow(),
         PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false);
         finite_diff = true,
     )
     res_jacobian =
-        run_powerflow(
-            PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false),
+        solve_powerflow(
+            ACPowerFlow(),
+            PSB.build_system(PSB.PSITestSystems,
+                "c_sys14"; add_forecasts = false),
         )
     @test LinearAlgebra.norm(
         res_finite_diff["bus_results"].Vm - res_jacobian["bus_results"].Vm,
     ) <= 1e-6
-    @test run_powerflow!(
+    @test solve_powerflow!(
         PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false),
         finite_diff = true,
         method = :newton,
@@ -68,15 +71,15 @@ PSY.set_r!(br, 2.0)
     branch = first(PSY.get_components(Line, sys))
     dyn_branch = DynamicBranch(branch)
     add_component!(sys, dyn_branch)
-    @test dyn_pf = run_powerflow!(sys)
-    dyn_pf = run_powerflow(sys)
+    @test dyn_pf = solve_powerflow!(sys)
+    dyn_pf = solve_powerflow(ACPowerFlow(), sys)
     @test LinearAlgebra.norm(dyn_pf["bus_results"].Vm - res_jacobian["bus_results"].Vm) <=
           1e-6
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
     PSY.set_available!(line, false)
-    run_powerflow!(sys)
+    solve_powerflow!(sys)
     @test PSY.get_active_power_flow(line) == 0.0
     test_bus = get_component(PSY.Bus, sys, "Bus 4")
     @test isapprox(PSY.get_magnitude(test_bus), 1.002; atol = 1e-3)
@@ -84,19 +87,19 @@ PSY.set_r!(br, 2.0)
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
     PSY.set_available!(line, false)
-    res = run_powerflow(sys)
+    res = solve_powerflow(ACPowerFlow(), sys)
     @test res["flow_results"].P_from_to[4] == 0.0
     @test res["flow_results"].P_to_from[4] == 0.0
 
     # Investigate why this test is failing
     #sys = PSB.build_system(PSB.PSYTestSystems, "psse_240_parsing_sys")
-    #@test run_powerflow!(sys)
+    #@test solve_powerflow!(sys)
 
     sys_3bus = PSB.build_system(PSB.PSYTestSystems, "psse_3bus_gen_cls_sys")
     bus_103 = get_component(PSY.Bus, sys_3bus, "BUS 3")
     fix_shunt = PSY.FixedAdmittance("FixAdmBus3", true, bus_103, 0.0 + 0.2im)
     add_component!(sys_3bus, fix_shunt)
-    df = run_powerflow(sys_3bus)
+    df = solve_powerflow(ACPowerFlow(), sys_3bus)
     @test isapprox(df["bus_results"].P_gen, p_gen_matpower_3bus, atol = 1e-4)
     @test isapprox(df["bus_results"].Q_gen, q_gen_matpower_3bus, atol = 1e-4)
 end
@@ -116,9 +119,9 @@ end
     pf_bus_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_bus_results.csv")
     pf_gen_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_gen_results.csv")
 
-    pf = run_powerflow!(system)
+    pf = solve_powerflow!(system)
     @test pf
-    pf_result_df = run_powerflow(system)
+    pf_result_df = solve_powerflow(ACPowerFlow(), system)
 
     v_diff, angle_diff, number = psse_bus_results_compare(pf_bus_result_file, pf_result_df)
     p_diff, q_diff, names = psse_gen_results_compare(pf_gen_result_file, system)

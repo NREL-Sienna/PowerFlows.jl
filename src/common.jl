@@ -104,7 +104,7 @@ function my_mul_mt!(
     return
 end
 
-# virtual case: selected lines
+# virtual case: selected lines (not used yet)
 
 function my_mul_mt!(
     y::Vector{Float64},
@@ -118,7 +118,7 @@ function my_mul_mt!(
     return
 end
 
-# single line
+# virtual case: single line (not used yet)
 
 function my_mul_mt!(
     y::Vector{Float64},

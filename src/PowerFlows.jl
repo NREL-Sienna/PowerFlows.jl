@@ -1,13 +1,12 @@
 module PowerFlows
 
-export run_powerflow
-export run_powerflow!
+export solve_powerflow
+export solve_powerflow!
 export PowerFlowData
 export DCPowerFlow
 export ACPowerFlow
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
-export solve_powerflow!
 
 import DataFrames
 import PowerSystems
