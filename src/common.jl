@@ -60,21 +60,72 @@ function get_withdrawals!(
     return
 end
 
-################################## Matrix Methods ##########################################
+##############################################################################
+# Matrix Methods #############################################################
+
+# sparse case (ABA and BA)
+
 function my_mul_mt!(
     y::Vector{Float64},
     A::SparseMatrixCSC{Float64, Int64},
     x::Vector{Float64},
 )
     copyto!(y, zeros(Float64, size(y)))
-    lk = ReentrantLock()
-    Threads.@threads for j in eachindex(x)
-        val = x[j]
-        lock(lk) do
-            for k in A.colptr[j]:(A.colptr[j + 1] - 1)
-                y[A.rowval[k]] += A.nzval[k] * val
-            end
+    for i in 1:size(A, 2)
+        for j in A.colptr[i]:(A.colptr[i + 1] - 1)
+            y[i] += A.nzval[j] * x[A.rowval[j]]
         end
     end
+    return
+end
+
+# dense case (PTDF and ABA)
+
+function my_mul_mt!(
+    y::Vector{Float64},
+    A::Matrix{Float64},
+    x::Vector{Float64},
+)
+    y[:] .= transpose(A) * x
+    return
+end
+
+# virtual case: all lines
+
+function my_mul_mt!(
+    y::Vector{Float64},
+    A::PNM.VirtualPTDF,
+    x::Vector{Float64},
+)
+    for i in eachindex(y)
+        name_ = A.axes[1][i]
+        y[i] = LinearAlgebra.dot(A[name_, :], x)
+    end
+    return
+end
+
+# virtual case: selected lines
+
+function my_mul_mt!(
+    y::Vector{Float64},
+    A::PNM.VirtualPTDF,
+    x::Vector{Float64},
+    lines::Vector{String},
+)
+    for name_ in lines
+        y[A.lookup[1][name_]] = LinearAlgebra.dot(A[name_, :], x)
+    end
+    return
+end
+
+# single line
+
+function my_mul_mt!(
+    y::Vector{Float64},
+    A::PNM.VirtualPTDF,
+    x::Vector{Float64},
+    line::String,
+)
+    y[A.lookup[1][line]] = LinearAlgebra.dot(A[line, :], x)
     return
 end
