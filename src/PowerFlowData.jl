@@ -9,6 +9,7 @@ struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N}
     bus_magnitude::Vector{Float64}
     bus_angle::Vector{Float64}
     branch_flow_values::Vector{Float64}
+    valid_ix::Vector{Int}
     power_network_matrix::M
     aux_network_matrix::N
 end
@@ -63,6 +64,7 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
         bus_type,
         bus_magnitude,
         bus_angle,
+        setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
         zeros(n_branches),
         power_network_matrix,
         nothing,
@@ -122,6 +124,7 @@ function PowerFlowData(::DCPowerFlow, sys::PSY.System)
         ones(Float64, n_buses),
         bus_angle,
         zeros(n_branches),
+        setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
         power_network_matrix,
         aux_network_matrix,
     )
@@ -179,6 +182,7 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
         ones(Float64, n_buses),
         bus_angle,
         zeros(Float64, n_branches),
+        setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
         power_network_matrix,
         aux_network_matrix,
     )

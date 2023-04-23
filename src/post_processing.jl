@@ -162,6 +162,10 @@ function _get_limits_for_power_distribution(gen::PSY.RenewableDispatch)
     return (min = 0.0, max = PSY.get_max_active_power(gen))
 end
 
+function _get_limits_for_power_distribution(gen::PSY.Storage)
+    return (min = 0.0, max = PSY.get_output_active_power_limits(gen).max)
+end
+
 function _power_redistribution_ref(
     sys::PSY.System,
     P_gen::Float64,
@@ -194,12 +198,12 @@ function _power_redistribution_ref(
         _reactive_power_redistribution_pv(sys, Q_gen, bus)
         return
     elseif length(devices_) > 1
-        devices = sort(collect(devices_); by = x -> PSY.get_max_active_power(x))
+        devices = sort(collect(devices_); by = x -> _get_limits_for_power_distribution(x).max)
     else
         error("No devices in bus $(PSY.get_name(bus))")
     end
 
-    sum_basepower = sum(PSY.get_max_active_power.(devices))
+    sum_basepower = sum([g.max for g in _get_limits_for_power_distribution.(devices)])
     p_residual = P_gen
     units_at_limit = Vector{Int}()
     for (ix, d) in enumerate(devices)
@@ -218,7 +222,7 @@ function _power_redistribution_ref(
 
     if !isapprox(p_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
         @debug "Ref Bus voltage residual $p_residual"
-        removed_power = sum(PSY.get_max_active_power.(devices[units_at_limit]))
+        removed_power = sum([g.max for g in _get_limits_for_power_distribution.(devices[units_at_limit])])
         reallocated_p = 0.0
         it = 0
         while !isapprox(p_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)

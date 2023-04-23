@@ -67,22 +67,14 @@ function my_mul_mt!(
     x::Vector{Float64},
 )
     copyto!(y, zeros(Float64, size(y)))
+    lk = ReentrantLock()
     Threads.@threads for j in eachindex(x)
         val = x[j]
-        for k in A.colptr[j]:(A.colptr[j + 1] - 1)
-            y[A.rowval[k]] += A.nzval[k] * val
+        lock(lk) do
+            for k in A.colptr[j]:(A.colptr[j + 1] - 1)
+                y[A.rowval[k]] += A.nzval[k] * val
+            end
         end
-    end
-    return
-end
-
-function my_mul_mt!(y::Vector{Float64}, A::Matrix{Float64}, x::Vector{Float64})
-    Threads.@threads for i in eachindex(y)
-        temp = 0.0
-        for j in eachindex(x)
-            temp += A[i, j] * x[j]
-        end
-        y[i] = temp
     end
     return
 end
