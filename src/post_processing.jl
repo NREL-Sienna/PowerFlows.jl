@@ -460,13 +460,10 @@ end
 
 # returns list of branches names and buses numbers: PTDF case
 function _get_branches_buses(data::PTDFPowerFlowData)
-    return axes(data.aux_network_matrix)[2], axes(data.aux_network_matrix)[1]
+    return axes(data.power_network_matrix)[2], axes(data.power_network_matrix)[1]
 end
 
 # ! missing version for virtual PTDF
-# function _get_branches_buses(data::vPTDFPowerFlowData)
-#     return axes(data.aux_network_matrix)[2], axes(data.aux_network_matrix)[1]
-# end
 
 """
 Return power flow results in dictionary of dataframes.
