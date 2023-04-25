@@ -14,9 +14,6 @@ const PSB = PowerSystemCaseBuilder
 const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
 
-# ! temp 
-const PF = PowerFlows
-
 import Aqua
 Aqua.test_unbound_args(PowerFlows)
 Aqua.test_undefined_exports(PowerFlows)
