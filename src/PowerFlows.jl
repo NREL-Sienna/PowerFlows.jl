@@ -27,7 +27,7 @@ include("common.jl")
 include("definitions.jl")
 include("powerflow_types.jl")
 include("PowerFlowData.jl")
-include("dc_powerflow.jl")
+include("solve_dc_powerflow.jl")
 include("nlsolve_ac_powerflow.jl")
 include("post_processing.jl")
 

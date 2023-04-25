@@ -11,6 +11,8 @@ const PTDFPowerFlowData = PowerFlowData{
     },
 }
 
+const vPTDFPowerFlowData = PowerFlowData{}
+
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
         Tuple{Vector{Int64}, Vector{Int64}},
@@ -31,65 +33,57 @@ Evaluates the power flowing on each system's branch and updates the PowerFlowDat
 - `data::PowerFlowData`:
         PowerFlowData structure containig all the information related to the system power flow
 """
+# TODO consider adding argument "parallel::Bool", still to implement
 function solve_powerflow!(
     data::PTDFPowerFlowData,
-    parallel::Bool, # TODO still to implement
 )
+    # get net power injections
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
     matrix_data = data.power_network_matrix.data
 
-    # if parallel
+    # evaluate flows
     my_mul_mt!(data.branch_flow_values, matrix_data, power_injection)
-    # else
-    #     LinearAlgebra.mul!(data.branch_flow_values, matrix_data, power_injection)
-    # end
+    p_inj = power_injection[data.valid_ix]
+    # evaluate bus angles
+    data.bus_angles[data.valid_ix] = data.aux_network_matrix.K \ p_inj
 
-    valid_ix =
-        setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
-    p_inj = power_injection[valid_ix]
-    data.bus_angle[valid_ix] = data.aux_network_matrix.K \ p_inj
-    return data
+    return
 end
 
+# TODO consider adding argument "parallel::Bool", still to implement
 function solve_powerflow!(
     data::ABAPowerFlowData,
-    parallel::Bool, # TODO still to implement
 )
+    # get net power injections
     power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
     matrix_data = data.power_network_matrix.K
     aux_network_matrix = data.aux_network_matrix
+    # evaluate bus angles
+    data.bus_angles[data.valid_ix] = matrix_data \ power_injection[data.valid_ix]
+    # evaluate flows
+    my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angles)
 
-    # pending make this parallel and non-allocating
-    valid_ix = setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
-    data.bus_angle[valid_ix] = matrix_data \ power_injection[valid_ix]
-
-    # evaluate
-    # if parallel
-    my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angle)
-    # else
-    #     LinearAlgebra.mul!(
-    #         data.branch_flow_values,
-    #         aux_network_matrix.data,
-    #         power_injection,
-    #     )
-    # end
-    return data
+    return
 end
 
-function solve_powerflow!(
+# TODO consider adding argument "parallel::Bool", still to implement
+function solve_powerflow(
     ::PTDFDCPowerFlow,
     sys::PSY.System;
-    parallel::Bool = false,
 )
     data = PowerFlowData(PTDFDCPowerFlow(), sys)
-    return solve_powerflow!(data, parallel)
+    solve_powerflow!(data)
+    return write_results(data, sys)
 end
 
-function solve_powerflow!(
+# TODO consider adding argument "parallel::Bool", still to implement
+function solve_powerflow(
     ::DCPowerFlow,
     sys::PSY.System;
-    parallel::Bool = false,   # TODO still to implement
 )
     data = PowerFlowData(DCPowerFlow(), sys)
-    return solve_powerflow!(data, parallel)
+    solve_powerflow!(data)
+    return write_results(data, sys)
 end
+
+# ! missing version for virtual PTDF

@@ -182,6 +182,7 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
         ones(Float64, n_buses),
         bus_angle,
         zeros(Float64, n_branches),
+        setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
         power_network_matrix,
         aux_network_matrix,
     )

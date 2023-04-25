@@ -2,6 +2,15 @@
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
+    # get indices
+    buses = collect(PSY.get_components(PSY.Bus, sys))
+    idx = sortperm(buses; by = x -> PSY.get_number(x))
+
+    # get sorted indices for branches
+    branches = collect(PSY.get_components(PSY.get_available, PSY.ACBranch, sys))
+    from_bus = [PSY.get_number(PSY.get_arc(x).from) for x in branches]
+    idx2 = sortperm(from_bus)
+
     # get reference values: flows and angles
     data = PowerFlowData(DCPowerFlow(), sys)
     power_injection =
@@ -17,9 +26,13 @@
     ref_flow_values = transpose(aux_network_matrix.data) * ref_bus_angles
 
     # CASE 1: ABA and BA matrices 
-    solved_data_ABA = solve_powerflow!(DCPowerFlow(), sys)
-    @test isapprox(solved_data_ABA.branch_flow_values, ref_flow_values, atol = 1e-6)
-    @test isapprox(solved_data_ABA.bus_angles, ref_bus_angles, atol = 1e-6)
+    solved_data_ABA = solve_powerflow(DCPowerFlow(), sys)
+    @test isapprox(
+        solved_data_ABA["flow_results"].P_from_to + solved_data_ABA["flow_results"].P_to_from,
+        ref_flow_values,
+        atol = 1e-6
+        )
+    @test isapprox(solved_data_ABA["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 
     # CASE 2: PTDF and ABA MATRICES
     solved_data_PTDF = solve_powerflow!(PTDFDCPowerFlow(), sys)
@@ -28,6 +41,7 @@
 
     # CASE 3: VirtualPTDF and ABA MATRICES
     solved_data_vPTDF1 = PowerFlowData(vPTDFDCPowerFlow(), sys)
+    # ! missing solve_powerflow! for this case
     @test isapprox(solved_data_vPTDF1.branch_flow_values, ref_flow_values, atol = 1e-6)
     @test isapprox(solved_data_vPTDF1.bus_angles, ref_bus_angles, atol = 1e-6)
 

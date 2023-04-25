@@ -456,7 +456,77 @@ end
 """
 Return power flow results in dictionary of dataframes.
 """
-function write_results(sys::PSY.System, result::Vector{Float64})
+function write_results(
+    data::Union{PTDFPowerFlowData, ABAPowerFlowData},
+    sys::PSY.System
+    )
+
+    @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
+
+    # get sorted indices for buses
+    buses = collect(PSY.get_components(PSY.Bus, sys))
+    idx = sortperm(buses; by = x -> PSY.get_number(x))
+
+    # get sorted indices for branches
+    branches = collect(PSY.get_components(PSY.get_available, PSY.ACBranch, sys))
+    from_bus = [PSY.get_number(PSY.get_arc(x).from) for x in branches]
+    to_bus = [PSY.get_number(PSY.get_arc(x).to) for x in branches]
+    idx2 = sortperm(from_bus)
+    
+    # get injections and withdrawals
+    P_gen_vect = data.bus_activepower_injection[idx]
+    Q_gen_vect = data.bus_reactivepower_injection[idx]
+    P_load_vect = data.bus_activepower_withdrawals[idx]
+    Q_load_vect = data.bus_reactivepower_withdrawals[idx]
+
+    # get flows on each line
+    P_from_to_vect = zeros(length(branches))
+    Q_from_to_vect = zeros(length(branches))
+    P_to_from_vect = zeros(length(branches))
+    Q_to_from_vect = zeros(length(branches))
+    for i in 1:length(branches)
+        if data.branch_flow_values[i] >= 0
+            P_from_to_vect[i] = data.branch_flow_values[i]
+            P_to_from_vect[i] = 0
+        else
+            P_from_to_vect[i] = 0
+            P_to_from_vect[i] = data.branch_flow_values[i]
+        end
+    end
+
+    bus_df = DataFrames.DataFrame(;
+        bus_number = PSY.get_number.(buses[idx]),
+        Vm = data.bus_magnitude[idx],
+        θ = data.bus_angles[idx],
+        P_gen = P_gen_vect,
+        P_load = P_load_vect,
+        P_net = P_gen_vect - P_load_vect,
+        Q_gen = Q_gen_vect,
+        Q_load = Q_load_vect,
+        Q_net = Q_gen_vect - Q_load_vect,
+    )
+
+    branch_df = DataFrames.DataFrame(;
+        line_name = PSY.get_name.(branches[idx2]),
+        bus_from = from_bus[idx2],
+        bus_to = to_bus[idx2],
+        P_from_to = P_from_to_vect,
+        Q_from_to = Q_from_to_vect,
+        P_to_from = P_to_from_vect,
+        Q_to_from = Q_to_from_vect,
+        P_losses = zeros(length(branches)),
+        Q_losses = zeros(length(branches)),
+    )
+
+    return Dict("bus_results" => bus_df, "flow_results" => branch_df)
+end
+
+function write_results(
+    ::ACPowerFlow,
+    sys::PSY.System,
+    result::Vector{Float64}
+    )
+
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
     buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x))
     N_BUS = length(buses)
