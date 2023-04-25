@@ -458,18 +458,16 @@ function _get_branches_buses(data::ABAPowerFlowData)
     return axes(data.aux_network_matrix)[1], axes(data.aux_network_matrix)[2]
 end
 
-# returns list of branches names and buses numbers: PTDF case
-function _get_branches_buses(data::PTDFPowerFlowData)
-    return axes(data.power_network_matrix)[2], axes(data.power_network_matrix)[1]
+# returns list of branches names and buses numbers: PTDF and virtual PTDF case
+function _get_branches_buses(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData})
+    return PNM.get_branch_ax(data.power_network_matrix), PNM.get_bus_ax(data.power_network_matrix)
 end
-
-# ! missing version for virtual PTDF
 
 """
 Return power flow results in dictionary of dataframes.
 """
 function write_results(
-    data::Union{PTDFPowerFlowData, ABAPowerFlowData},
+    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
     sys::PSY.System
     )
 

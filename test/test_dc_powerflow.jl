@@ -47,11 +47,12 @@
     @test isapprox(solved_data_PTDF["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 
     # CASE 3: VirtualPTDF and ABA MATRICES
-    solved_data_vPTDF1 = PowerFlowData(vPTDFDCPowerFlow(), sys)
-    # ! missing solve_powerflow! for this case
-    @test isapprox(solved_data_vPTDF1.branch_flow_values, ref_flow_values, atol = 1e-6)
-    @test isapprox(solved_data_vPTDF1.bus_angles, ref_bus_angles, atol = 1e-6)
-
-    # TODO CASE 3: VirtualPTDF and ABA MATRICES (partial number of lines)
+    solved_data_vPTDF = solve_powerflow(vPTDFDCPowerFlow(), sys)
+    @test isapprox(
+        solved_data_vPTDF["flow_results"].P_from_to + solved_data_vPTDF["flow_results"].P_to_from,
+        ref_flow_values, 
+        atol = 1e-6
+        )
+    @test isapprox(solved_data_vPTDF["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 
 end
