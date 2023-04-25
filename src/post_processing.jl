@@ -479,7 +479,7 @@ function write_results(
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
     
     # get bus and branches
-    branches, buses = PF._get_branches_buses(data)
+    branches, buses = _get_branches_buses(data)
 
     # get branches from/to buses
     from_bus = Vector{Int}(undef, length(branches))
@@ -491,10 +491,10 @@ function write_results(
     end
 
     # get injections and withdrawals
-    P_gen_vect = data.bus_activepower_injection[idx]
-    Q_gen_vect = data.bus_reactivepower_injection[idx]
-    P_load_vect = data.bus_activepower_withdrawals[idx]
-    Q_load_vect = data.bus_reactivepower_withdrawals[idx]
+    P_gen_vect = data.bus_activepower_injection
+    Q_gen_vect = data.bus_reactivepower_injection
+    P_load_vect = data.bus_activepower_withdrawals
+    Q_load_vect = data.bus_reactivepower_withdrawals
 
     # get flows on each line
     P_from_to_vect = zeros(length(branches))
@@ -522,7 +522,7 @@ function write_results(
         Q_load = Q_load_vect,
         Q_net = Q_gen_vect - Q_load_vect,
     )
-    sort!(bus_df, :bus_number)
+    DataFrames.sort!(bus_df, :bus_number)
 
     branch_df = DataFrames.DataFrame(;
         line_name = branches,
@@ -535,7 +535,7 @@ function write_results(
         P_losses = zeros(length(branches)),
         Q_losses = zeros(length(branches)),
     )
-    sort!(branch_df, [:bus_from, :bus_to])
+    DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
     return Dict("bus_results" => bus_df, "flow_results" => branch_df)
 end
