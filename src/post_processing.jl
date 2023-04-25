@@ -460,7 +460,8 @@ end
 
 # returns list of branches names and buses numbers: PTDF and virtual PTDF case
 function _get_branches_buses(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData})
-    return PNM.get_branch_ax(data.power_network_matrix), PNM.get_bus_ax(data.power_network_matrix)
+    return PNM.get_branch_ax(data.power_network_matrix),
+    PNM.get_bus_ax(data.power_network_matrix)
 end
 
 """
@@ -468,11 +469,10 @@ Return power flow results in dictionary of dataframes.
 """
 function write_results(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
-    sys::PSY.System
-    )
-
+    sys::PSY.System,
+)
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
-    
+
     # get bus and branches
     branches, buses = _get_branches_buses(data)
 
@@ -538,9 +538,8 @@ end
 function write_results(
     ::ACPowerFlow,
     sys::PSY.System,
-    result::Vector{Float64}
-    )
-
+    result::Vector{Float64},
+)
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
     buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x))
     N_BUS = length(buses)
