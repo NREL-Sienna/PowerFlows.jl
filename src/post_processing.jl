@@ -453,6 +453,21 @@ function write_powerflow_solution!(sys::PSY.System, result::Vector{Float64})
     return
 end
 
+# returns list of branches names and buses numbers: ABA case
+function _get_branches_buses(data::ABAPowerFlowData)
+    return axes(data.aux_network_matrix)[1], axes(data.aux_network_matrix)[2]
+end
+
+# returns list of branches names and buses numbers: PTDF case
+function _get_branches_buses(data::PTDFPowerFlowData)
+    return axes(data.aux_network_matrix)[2], axes(data.aux_network_matrix)[1]
+end
+
+# ! missing version for virtual PTDF
+# function _get_branches_buses(data::vPTDFPowerFlowData)
+#     return axes(data.aux_network_matrix)[2], axes(data.aux_network_matrix)[1]
+# end
+
 """
 Return power flow results in dictionary of dataframes.
 """
@@ -462,17 +477,19 @@ function write_results(
     )
 
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
-
-    # get sorted indices for buses
-    buses = collect(PSY.get_components(PSY.Bus, sys))
-    idx = sortperm(buses; by = x -> PSY.get_number(x))
-
-    # get sorted indices for branches
-    branches = collect(PSY.get_components(PSY.get_available, PSY.ACBranch, sys))
-    from_bus = [PSY.get_number(PSY.get_arc(x).from) for x in branches]
-    to_bus = [PSY.get_number(PSY.get_arc(x).to) for x in branches]
-    idx2 = sortperm(from_bus)
     
+    # get bus and branches
+    branches, buses = PF._get_branches_buses(data)
+
+    # get branches from/to buses
+    from_bus = Vector{Int}(undef, length(branches))
+    to_bus = Vector{Int}(undef, length(branches))
+    for (i, branch) in enumerate(branches)
+        br = PSY.get_component(PSY.ACBranch, sys, branch)
+        from_bus[i] = PSY.get_number(PSY.get_arc(br).from)
+        to_bus[i] = PSY.get_number(PSY.get_arc(br).to)
+    end
+
     # get injections and withdrawals
     P_gen_vect = data.bus_activepower_injection[idx]
     Q_gen_vect = data.bus_reactivepower_injection[idx]
@@ -495,9 +512,9 @@ function write_results(
     end
 
     bus_df = DataFrames.DataFrame(;
-        bus_number = PSY.get_number.(buses[idx]),
-        Vm = data.bus_magnitude[idx],
-        θ = data.bus_angles[idx],
+        bus_number = buses,
+        Vm = data.bus_magnitude,
+        θ = data.bus_angles,
         P_gen = P_gen_vect,
         P_load = P_load_vect,
         P_net = P_gen_vect - P_load_vect,
@@ -505,11 +522,12 @@ function write_results(
         Q_load = Q_load_vect,
         Q_net = Q_gen_vect - Q_load_vect,
     )
+    sort!(bus_df, :bus_number)
 
     branch_df = DataFrames.DataFrame(;
-        line_name = PSY.get_name.(branches[idx2]),
-        bus_from = from_bus[idx2],
-        bus_to = to_bus[idx2],
+        line_name = branches,
+        bus_from = from_bus,
+        bus_to = to_bus,
         P_from_to = P_from_to_vect,
         Q_from_to = Q_from_to_vect,
         P_to_from = P_to_from_vect,
@@ -517,6 +535,7 @@ function write_results(
         P_losses = zeros(length(branches)),
         Q_losses = zeros(length(branches)),
     )
+    sort!(branch_df, [:bus_from, :bus_to])
 
     return Dict("bus_results" => bus_df, "flow_results" => branch_df)
 end
