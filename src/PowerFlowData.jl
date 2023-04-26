@@ -15,10 +15,13 @@ struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N}
 end
 
 function PowerFlowData(::ACPowerFlow, sys::PSY.System)
+
     power_network_matrix = PNM.Ybus(sys)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 1))
+    buses = PNM.get_buses(sys)
+    ref_bus_positions = PNM.find_slack_positions(buses)
 
     branches = PNM.get_ac_branches(sys)
     n_branches = length(branches)
@@ -27,7 +30,7 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
     branch_lookup =
         Dict{String, Int}(PSY.get_name(b) => ix for (ix, b) in enumerate(branches))
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
-    bus_angle = zeros(Float64, n_buses)
+    bus_angles = zeros(Float64, n_buses)
     bus_magnitude = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
@@ -37,7 +40,7 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)
-        bus_angle[ix] = PSY.get_angle(bus)
+        bus_angles[ix] = PSY.get_angle(bus)
         bus_magnitude[ix] = PSY.get_magnitude(bus)
     end
 
@@ -63,12 +66,13 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
         bus_reactivepower_withdrawals,
         bus_type,
         bus_magnitude,
-        bus_angle,
-        setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
+        bus_angles,
         zeros(n_branches),
+        setdiff(1:n_buses, ref_bus_positions),
         power_network_matrix,
         nothing,
     )
+
 end
 
 # version with full PTDF

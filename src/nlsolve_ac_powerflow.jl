@@ -79,7 +79,7 @@ function solve_powerflow(
     res = _solve_powerflow(system, finite_diff; kwargs...)
     if res.f_converged
         @info("PowerFlow solve converged, the results are exported in DataFrames")
-        df_results = write_results(system, res.zero)
+        df_results = write_results(ACPowerFlow(), system, res.zero)
         #Restore original per unit base
         PSY.set_units_base_system!(system, settings_unit_cache)
         return df_results

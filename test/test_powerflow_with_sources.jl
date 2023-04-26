@@ -32,13 +32,13 @@
         X_th = 1e-5,
     )
     add_component!(sys, s2)
-    @test run_powerflow!(sys, finite_diff = true)
+    @test solve_powerflow!(sys, finite_diff = true)
 
     #Create power mismatch, test for error 
     set_active_power!(get_component(Source, sys, "source_1"), -0.4)
     @test_throws ErrorException(
         "Sources do not match P and/or Q requirements for reference bus.",
-    ) run_powerflow!(sys, finite_diff = true)
+    ) solve_powerflow!(sys, finite_diff = true)
 end
 
 @testset "Multiple sources at PV" begin
@@ -111,11 +111,11 @@ end
     )
     add_component!(sys, s3)
 
-    @test run_powerflow!(sys, finite_diff = true)
+    @test solve_powerflow!(sys, finite_diff = true)
 
     #Create power mismatch, test for error 
     set_reactive_power!(get_component(Source, sys, "source_3"), -0.5)
-    @test_throws ErrorException("Sources do not match Q requirements for PV bus.") run_powerflow!(
+    @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_powerflow!(
         sys,
         finite_diff = true,
     )
@@ -168,7 +168,7 @@ end
     )
     add_component!(sys, g1)
 
-    @test run_powerflow!(sys, finite_diff = true)
+    @test solve_powerflow!(sys, finite_diff = true)
     @test isapprox(
         get_active_power(get_component(Source, sys, "source_1")),
         0.5;
@@ -263,7 +263,7 @@ end
     )
     add_component!(sys, g1)
 
-    @test run_powerflow!(sys, finite_diff = true)
+    @test solve_powerflow!(sys, finite_diff = true)
     @test isapprox(
         get_active_power(get_component(Source, sys, "source_2")),
         0.5;

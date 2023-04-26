@@ -3,4 +3,5 @@
     PowerFlowData(ACPowerFlow(), sys)
     PowerFlowData(DCPowerFlow(), sys)
     PowerFlowData(PTDFDCPowerFlow(), sys)
+    PowerFlowData(vPTDFDCPowerFlow(), sys)
 end
