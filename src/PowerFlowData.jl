@@ -15,7 +15,6 @@ struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N}
 end
 
 function PowerFlowData(::ACPowerFlow, sys::PSY.System)
-
     power_network_matrix = PNM.Ybus(sys)
 
     # get number of buses and branches
@@ -72,7 +71,6 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
         power_network_matrix,
         nothing,
     )
-
 end
 
 # version with full PTDF
