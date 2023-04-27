@@ -2,14 +2,17 @@ using Test
 using Logging
 using PowerSystems
 using PowerSystemCaseBuilder
+using PowerNetworkMatrices
 using PowerFlows
 using InfrastructureSystems
 using LinearAlgebra
 using CSV
 using DataFrames
+
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
 const PSY = PowerSystems
+const PNM = PowerNetworkMatrices
 
 import Aqua
 Aqua.test_unbound_args(PowerFlows)
@@ -85,10 +88,10 @@ function run_tests()
     if logging_config_filename !== nothing
         config = IS.LoggingConfiguration(logging_config_filename)
     else
-        config = IS.LoggingConfiguration(
-            filename=LOG_FILE,
-            file_level=Logging.Info,
-            console_level=Logging.Error,
+        config = IS.LoggingConfiguration(;
+            filename = LOG_FILE,
+            file_level = Logging.Info,
+            console_level = Logging.Error,
         )
     end
     console_logger = ConsoleLogger(config.console_stream, config.console_level)

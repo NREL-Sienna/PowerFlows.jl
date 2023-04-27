@@ -3,7 +3,7 @@ name: Format Check
 on:
   push:
     branches:
-      - 'main'
+      - 'master'
       - 'release-'
     tags: '*'
   pull_request:
@@ -21,10 +21,10 @@ jobs:
         with:
           version: ${{ matrix.julia-version }}
 
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v2
       - name: Install JuliaFormatter and format
         run: |
-          julia  -e 'include(".github/workflows/formatter/formatter_code.jl")'
+          julia  -e 'include("scripts/formatter/formatter_code.jl")'
       - uses: reviewdog/action-suggester@v1
         if: github.event_name == 'pull_request'
         with:

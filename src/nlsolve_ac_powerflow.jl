@@ -27,19 +27,19 @@ Arguments available for `nlsolve`:
 ## Examples
 
 ```julia
-run_powerflow!(sys)
+solve_powerflow!(sys)
 # Passing NLsolve arguments
-run_powerflow!(sys, method=:newton)
+solve_powerflow!(sys, method=:newton)
 # Using Finite Differences
-run_powerflow!(sys, finite_diff=true)
+solve_powerflow!(sys, finite_diff=true)
 ```
 """
-function run_powerflow!(system::PSY.System; finite_diff=false, kwargs...)
+function solve_powerflow!(system::PSY.System; finite_diff = false, kwargs...)
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
     #Work in System per unit
     PSY.set_units_base_system!(system, "SYSTEM_BASE")
-    res = _run_powerflow(system, finite_diff; kwargs...)
+    res = _solve_powerflow(system, finite_diff; kwargs...)
     if res.f_converged
         write_powerflow_solution!(system, res.zero)
         @info("PowerFlow solve converged, the results have been stored in the system")
@@ -53,28 +53,33 @@ function run_powerflow!(system::PSY.System; finite_diff=false, kwargs...)
 end
 
 """
-Similar to run_powerflow!(sys) but does not update the system struct with results.
+Similar to solve_powerflow!(sys) but does not update the system struct with results.
 Returns the results in a dictionary of dataframes.
 
 ## Examples
 
 ```julia
-res = run_powerflow(sys)
+res = solve_powerflow(sys)
 # Passing NLsolve arguments
-res = run_powerflow(sys, method=:newton)
+res = solve_powerflow(sys, method=:newton)
 # Using Finite Differences
-res = run_powerflow(sys, finite_diff=true)
+res = solve_powerflow(sys, finite_diff=true)
 ```
 """
-function run_powerflow(system::PSY.System; finite_diff=false, kwargs...)
+function solve_powerflow(
+    ::ACPowerFlow,
+    system::PSY.System;
+    finite_diff = false,
+    kwargs...,
+)
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
     #Work in System per unit
     PSY.set_units_base_system!(system, "SYSTEM_BASE")
-    res = _run_powerflow(system, finite_diff; kwargs...)
+    res = _solve_powerflow(system, finite_diff; kwargs...)
     if res.f_converged
         @info("PowerFlow solve converged, the results are exported in DataFrames")
-        df_results = write_results(system, res.zero)
+        df_results = write_results(ACPowerFlow(), system, res.zero)
         #Restore original per unit base
         PSY.set_units_base_system!(system, settings_unit_cache)
         return df_results
@@ -84,12 +89,12 @@ function run_powerflow(system::PSY.System; finite_diff=false, kwargs...)
     return res.f_converged
 end
 
-function _run_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
+function _solve_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
     ybus_kw = [:check_connectivity, :connectivity_method]
     ybus_kwargs = (k for k in kwargs if first(k) ∈ ybus_kw)
     kwargs = (k for k in kwargs if first(k) ∉ ybus_kw)
 
-    buses = sort!(collect(PSY.get_components(PSY.Bus, system)), by=x -> PSY.get_number(x))
+    buses = sort!(collect(PSY.get_components(PSY.Bus, system)); by = x -> PSY.get_number(x))
     N_BUS = length(buses)
 
     # assumes the ordering in YPSY.Bus is the same as in the buses.
