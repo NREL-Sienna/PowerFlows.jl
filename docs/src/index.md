@@ -19,7 +19,7 @@ The latest stable release of PowerFlows can be installed using the Julia package
 For the current development version, "checkout" this package with
 
 ```julia
-] add PowerFlows#master
+] add PowerFlows#main
 ```
 
 ------------

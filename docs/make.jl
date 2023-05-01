@@ -14,7 +14,7 @@ makedocs(;
 )
 
 deploydocs(;
-    repo = "github.com/NREL-SIIP/PowerFlows.jl.git",
+    repo = "github.com/NREL-Sienna/PowerFlows.jl.git",
     target = "build",
     branch = "gh-pages",
     devbranch = "main",
