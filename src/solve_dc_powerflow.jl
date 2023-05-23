@@ -34,6 +34,7 @@ Evaluates the power flowing on each system's branch and updates the PowerFlowDat
         PowerFlowData structure containig all the information related to the system power flow
 """
 # TODO consider adding argument "parallel::Bool", still to implement
+# TODO missing iteration over columns
 function solve_powerflow!(
     data::PTDFPowerFlowData,
 )
@@ -52,6 +53,7 @@ function solve_powerflow!(
 end
 
 # TODO consider adding argument "parallel::Bool", still to implement
+# TODO missing iteration over columns
 function solve_powerflow!(
     data::vPTDFPowerFlowData,
 )
@@ -70,18 +72,36 @@ function solve_powerflow!(
 end
 
 # TODO consider adding argument "parallel::Bool", still to implement
+function solve_powerflow_for!(
+    data::ABAPowerFlowData,
+)
+    # get matrices
+    matrix_data = data.power_network_matrix.K
+    aux_network_matrix = data.aux_network_matrix
+    for i in axes(data.bus_activepower_injection, 2)
+        # get net power injections
+        power_injection = data.bus_activepower_injection[:, i] - data.bus_activepower_withdrawals[:, i]
+        # evaluate bus angles
+        data.bus_angles[data.valid_ix, i] .= matrix_data \ power_injection[data.valid_ix]
+        # evaluate flows
+        data.branch_flow_values[:, i] .= my_mul_mt(aux_network_matrix.data, @view data.bus_angles[:, i])
+    end
+    return
+end
+
+# ! reference function for ABAPowerFlowData type
 function solve_powerflow!(
     data::ABAPowerFlowData,
 )
-    # get net power injections
-    power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
+    # get matrices
     matrix_data = data.power_network_matrix.K
     aux_network_matrix = data.aux_network_matrix
+    # get net power injections
+    power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
     # evaluate bus angles
     data.bus_angles[data.valid_ix] = matrix_data \ power_injection[data.valid_ix]
     # evaluate flows
     my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angles)
-
     return
 end
 
@@ -92,7 +112,7 @@ function solve_powerflow(
 )
     data = PowerFlowData(PTDFDCPowerFlow(), sys)
     solve_powerflow!(data)
-    return write_results(data, sys)
+    return write_results(data, sys) # TODO missing iteration over columns
 end
 
 # TODO consider adding argument "parallel::Bool", still to implement
@@ -102,7 +122,7 @@ function solve_powerflow(
 )
     data = PowerFlowData(DCPowerFlow(), sys)
     solve_powerflow!(data)
-    return write_results(data, sys)
+    return write_results(data, sys) # TODO missing iteration over columns
 end
 
 # TODO consider adding argument "parallel::Bool", still to implement
@@ -112,5 +132,5 @@ function solve_powerflow(
 )
     data = PowerFlowData(vPTDFDCPowerFlow(), sys)
     solve_powerflow!(data)
-    return write_results(data, sys)
+    return write_results(data, sys) # TODO missing iteration over columns
 end

@@ -13,6 +13,7 @@ import PowerSystems
 import LinearAlgebra
 import NLsolve
 import SparseArrays
+import SharedArrays: SharedArray
 import InfrastructureSystems
 import PowerNetworkMatrices
 import Base.Threads: @threads

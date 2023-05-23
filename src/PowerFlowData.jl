@@ -1,14 +1,14 @@
 struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N}
     bus_lookup::Dict{Int, Int}
     branch_lookup::Dict{String, Int}
-    bus_activepower_injection::Vector{Float64}
-    bus_reactivepower_injection::Vector{Float64}
-    bus_activepower_withdrawals::Vector{Float64}
-    bus_reactivepower_withdrawals::Vector{Float64}
+    bus_activepower_injection::Union{Vector{Float64}, Matrix{Float64}, SharedArray{Float64}}
+    bus_reactivepower_injection::Union{Vector{Float64}, Matrix{Float64}, SharedArray{Float64}}
+    bus_activepower_withdrawals::Union{Vector{Float64}, Matrix{Float64}, SharedArray{Float64}}
+    bus_reactivepower_withdrawals::Union{Vector{Float64}, Matrix{Float64}, SharedArray{Float64}}
     bus_type::Vector{PSY.BusTypes}
-    bus_magnitude::Vector{Float64}
-    bus_angles::Vector{Float64}
-    branch_flow_values::Vector{Float64}
+    bus_magnitude::Union{Vector{Float64}, Matrix{Float64}, SharedArray{Float64}}
+    bus_angles::Union{Vector{Float64}, Matrix{Float64}, SharedArray{Float64}}
+    branch_flow_values::Union{Vector{Float64}, Matrix{Float64}, SharedArray{Float64}}
     valid_ix::Vector{Int}
     power_network_matrix::M
     aux_network_matrix::N
@@ -59,14 +59,14 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
     return PowerFlowData(
         bus_lookup,
         branch_lookup,
-        bus_activepower_injection,
-        bus_reactivepower_injection,
-        bus_activepower_withdrawals,
-        bus_reactivepower_withdrawals,
+        Matrix(bus_activepower_injection),
+        Matrix(bus_reactivepower_injection),
+        Matrix(bus_activepower_withdrawals),
+        Matrix(bus_reactivepower_withdrawals),
         bus_type,
-        bus_magnitude,
-        bus_angles,
-        zeros(n_branches),
+        Matrix(bus_magnitude),
+        Matrix(bus_angles),
+        zeros(n_branches, 1),
         setdiff(1:n_buses, ref_bus_positions),
         power_network_matrix,
         nothing,
@@ -74,7 +74,7 @@ function PowerFlowData(::ACPowerFlow, sys::PSY.System)
 end
 
 # version with full PTDF
-function PowerFlowData(::DCPowerFlow, sys::PSY.System)
+function PowerFlowData(::DCPowerFlow, sys::PSY.System, timesteps::Int, shared::Bool=false)
     power_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
     aux_network_matrix = PNM.BA_Matrix(sys)
     # check the maps betwen the 2 matrices match
@@ -115,6 +115,89 @@ function PowerFlowData(::DCPowerFlow, sys::PSY.System)
         sys,
     )
 
+    # initialize data
+    if shared
+        init_1 = SharedArray{Float64}(n_buses, timesteps)
+        init_2 = SharedArray{Float64}(n_branches, timesteps)
+    else
+        init_1 = zeros(n_buses, timesteps)
+        init_2 = zeros(n_branches, timesteps)
+    end
+    bus_activepower_injection_1 = deepcopy(init_1)
+    bus_reactivepower_injection_1 = deepcopy(init_1)
+    bus_activepower_withdrawals_1 = deepcopy(init_1)
+    bus_reactivepower_withdrawals_1 = deepcopy(init_1)
+    bus_magnitude_1 = deepcopy(init_1)
+    bus_angle_1 = deepcopy(init_1)
+    branch_flow_values_1 = deepcopy(init_2)
+
+    # substitue initial values for initial timestep
+    bus_activepower_injection_1[:, 1] .= bus_activepower_injection
+    bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
+    bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
+    bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
+    bus_magnitude_1[:, 1] .= ones(Float64, n_buses)
+    bus_angle_1[:, 1] .= bus_angle
+    branch_flow_values_1[:, 1] .= zeros(n_branches)
+
+    return PowerFlowData(
+        bus_lookup,
+        branch_lookup,
+        bus_activepower_injection_1,
+        bus_reactivepower_injection_1,
+        bus_activepower_withdrawals_1,
+        bus_reactivepower_withdrawals_1,
+        bus_type,
+        bus_magnitude_1,
+        bus_angle_1,
+        branch_flow_values_1,
+        setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
+        power_network_matrix,
+        aux_network_matrix,
+    )
+end
+
+function PowerFlowData(::DCPowerFlow, sys::PSY.System)
+    power_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
+    aux_network_matrix = PNM.BA_Matrix(sys)
+    # check the maps betwen the 2 matrices match
+
+    # get number of buses and branches
+    n_buses = length(axes(aux_network_matrix, 2))
+    n_branches = length(axes(aux_network_matrix, 1))
+
+    bus_lookup = power_network_matrix.lookup[2]
+    branch_lookup = aux_network_matrix.lookup[1]
+    bus_type = Vector{PSY.BusTypes}(undef, n_buses)
+    bus_angles = zeros(Float64, n_buses)
+    temp_bus_map = Dict{Int, String}(
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
+    )
+
+    for (bus_no, ix) in bus_lookup
+        bus_name = temp_bus_map[bus_no]
+        bus = PSY.get_component(PSY.Bus, sys, bus_name)
+        bus_type[ix] = PSY.get_bustype(bus)
+        if bus_type[ix] == PSY.BusTypes.REF
+            bus_angles[ix] = 0.0
+        else
+            bus_angles[ix] = PSY.get_angle(bus)
+        end
+    end
+
+    bus_activepower_injection = zeros(Float64, n_buses)
+    bus_reactivepower_injection = zeros(Float64, n_buses)
+    get_injections!(bus_activepower_injection, bus_reactivepower_injection, bus_lookup, sys)
+
+    bus_activepower_withdrawals = zeros(Float64, n_buses)
+    bus_reactivepower_withdrawals = zeros(Float64, n_buses)
+    get_withdrawals!(
+        bus_activepower_withdrawals,
+        bus_reactivepower_withdrawals,
+        bus_lookup,
+        sys,
+    )
+
     return PowerFlowData(
         bus_lookup,
         branch_lookup,
@@ -124,14 +207,16 @@ function PowerFlowData(::DCPowerFlow, sys::PSY.System)
         bus_reactivepower_withdrawals,
         bus_type,
         ones(Float64, n_buses),
-        bus_angle,
+        bus_angles,
         zeros(n_branches),
         setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
         power_network_matrix,
         aux_network_matrix,
     )
+
 end
 
+# TODO: apply mods here too (elements in PowerFlowData struct must be matrices)
 function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
     power_network_matrix = PNM.PTDF(sys)
     aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
@@ -144,7 +229,7 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
-    bus_angle = zeros(Float64, n_buses)
+    bus_angles = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
@@ -154,9 +239,9 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)
         if bus_type[ix] == PSY.BusTypes.REF
-            bus_angle[ix] = 0.0
+            bus_angles[ix] = 0.0
         else
-            bus_angle[ix] = PSY.get_angle(bus)
+            bus_angles[ix] = PSY.get_angle(bus)
         end
     end
 
@@ -190,6 +275,7 @@ function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
     )
 end
 
+# TODO: apply mods here too (elements in PowerFlowData struct must be matrices)
 function PowerFlowData(::vPTDFDCPowerFlow, sys::PSY.System)
     power_network_matrix = PNM.VirtualPTDF(sys) # evaluates an empty virtual PTDF
     aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)

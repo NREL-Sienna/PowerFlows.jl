@@ -79,6 +79,22 @@ function my_mul_mt!(
     return
 end
 
+# sparse case (ABA and BA), no implace and for matrix views (used in for loop, 
+# multiple timesteps)
+
+function my_mul_mt(
+    A::SparseMatrixCSC{Float64, Int64},
+    x::SubArray{Float64},
+)
+    y = zeros(Float64, size(A, 2))
+    for i in 1:size(A, 2)
+        for j in A.colptr[i]:(A.colptr[i + 1] - 1)
+            y[i] += A.nzval[j] * x[A.rowval[j]]
+        end
+    end
+    return y
+end
+
 # dense case (PTDF and ABA)
 
 function my_mul_mt!(
