@@ -11,6 +11,7 @@ const PTDFPowerFlowData = PowerFlowData{
     },
 }
 
+# TODO: still to implement
 const vPTDFPowerFlowData = PowerFlowData{}
 
 const ABAPowerFlowData = PowerFlowData{
@@ -28,12 +29,9 @@ const ABAPowerFlowData = PowerFlowData{
 Evaluates the power flowing on each system's branch and updates the PowerFlowData structure.
 
 # Arguments:
-- `::DCPowerFlow`:
-        type of power flow analysis
-- `data::PowerFlowData`:
-        PowerFlowData structure containig all the information related to the system power flow
+- `data::PTDFPowerFlowData`:
+        PTDFPowerFlowData structure containig all the information related to the system power flow
 """
-# TODO consider adding argument "parallel::Bool", still to implement
 # TODO missing iteration over columns
 function solve_powerflow!(
     data::PTDFPowerFlowData,
@@ -52,7 +50,6 @@ function solve_powerflow!(
     return
 end
 
-# TODO consider adding argument "parallel::Bool", still to implement
 # TODO missing iteration over columns
 function solve_powerflow!(
     data::vPTDFPowerFlowData,
@@ -71,7 +68,6 @@ function solve_powerflow!(
     return
 end
 
-# TODO consider adding argument "parallel::Bool", still to implement
 function solve_powerflow_for!(
     data::ABAPowerFlowData,
 )
@@ -105,7 +101,6 @@ function solve_powerflow!(
     return
 end
 
-# TODO consider adding argument "parallel::Bool", still to implement
 function solve_powerflow(
     ::PTDFDCPowerFlow,
     sys::PSY.System;
@@ -115,7 +110,6 @@ function solve_powerflow(
     return write_results(data, sys) # TODO missing iteration over columns
 end
 
-# TODO consider adding argument "parallel::Bool", still to implement
 function solve_powerflow(
     ::DCPowerFlow,
     sys::PSY.System;
@@ -125,7 +119,6 @@ function solve_powerflow(
     return write_results(data, sys) # TODO missing iteration over columns
 end
 
-# TODO consider adding argument "parallel::Bool", still to implement
 function solve_powerflow(
     ::vPTDFDCPowerFlow,
     sys::PSY.System;
