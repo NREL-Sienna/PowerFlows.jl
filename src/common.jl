@@ -70,12 +70,7 @@ function my_mul_mt!(
     A::SparseMatrixCSC{Float64, Int64},
     x::Vector{Float64},
 )
-    copyto!(y, zeros(Float64, size(y)))
-    for i in 1:size(A, 2)
-        for j in A.colptr[i]:(A.colptr[i + 1] - 1)
-            y[i] += A.nzval[j] * x[A.rowval[j]]
-        end
-    end
+    y[:] .= transpose(A) * x
     return
 end
 
