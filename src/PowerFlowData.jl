@@ -377,15 +377,15 @@ function PowerFlowData(
     end
 
     # get the network matrices
-    power_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
-    aux_network_matrix = PNM.BA_Matrix(sys)
+    power_network_matrix = PNM.PTDF(sys)
+    aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
 
     # get number of buses and branches
-    n_buses = length(axes(aux_network_matrix, 2))
-    n_branches = length(axes(aux_network_matrix, 1))
+    n_buses = length(axes(power_network_matrix, 1))
+    n_branches = length(axes(power_network_matrix, 2))
 
-    bus_lookup = power_network_matrix.lookup[2]
-    branch_lookup = aux_network_matrix.lookup[1]
+    bus_lookup = power_network_matrix.lookup[1]
+    branch_lookup = power_network_matrix.lookup[2]
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(

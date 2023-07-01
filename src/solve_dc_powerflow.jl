@@ -11,7 +11,7 @@ const PTDFPowerFlowData = PowerFlowData{
     },
 }
 
-# TODO: still to implement
+# ? change this to have a more detailed definition ?
 const vPTDFPowerFlowData = PowerFlowData{}
 
 const ABAPowerFlowData = PowerFlowData{
@@ -25,6 +25,89 @@ const ABAPowerFlowData = PowerFlowData{
         Tuple{Dict{String, Int64}, Dict{Int64, Int64}}},
 }
 
+# SINGLE PERIOD: method based on ABA and BA matrices
+function _solve_powerflows_single!(
+    data::ABAPowerFlowData
+)
+    # get net power injections
+    power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
+    # evaluate bus angles
+    data.bus_angles[data.valid_ix] = data.power_network_matrix.K \ power_injection[data.valid_ix]
+    # evaluate flows
+    my_mul_mt!(data.branch_flow_values, data.aux_network_matrix.data, data.bus_angles)
+    return
+end
+
+# SINGLE PERIOD: method based on PTDF matrix
+function _solve_powerflows_single!(
+    data::PTDFPowerFlowData
+)
+    # get net power injections
+    power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
+    # evaluate flows
+    my_mul_mt!(data.branch_flow_values, data.power_network_matrix.data, power_injection)
+    # evaluate bus angles
+    p_inj = power_injection[data.valid_ix]
+    data.bus_angles[data.valid_ix] = data.aux_network_matrix.K \ p_inj
+    return
+end
+
+# SINGLE PERIOD: method based on Virtual PTDF
+function _solve_powerflows_single!(
+    data::vPTDFPowerFlowData
+)
+    # get net power injections
+    power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
+    # evaluate flows (next line evaluates both both PTDF rows and line flows)
+    my_mul_mt!(data.branch_flow_values, data.power_network_matrix, power_injection)
+    # evaluate bus angles
+    p_inj = power_injection[data.valid_ix]
+    data.bus_angles[data.valid_ix] = data.aux_network_matrix.K \ p_inj
+    return
+end
+
+# MULTI PERIOD: method based on ABA and BA matrices
+function _solve_powerflows_multi!(
+    data::ABAPowerFlowData
+)
+    # get net injections
+    power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
+    # save angles and power flows
+    data.bus_angles[data.valid_ix, :] .= data.power_network_matrix.K \ @view power_injection[data.valid_ix, :]
+    data.branch_flow_values .= data.aux_network_matrix.data' * data.bus_angles
+    return
+end
+
+# MULTI PERIOD: method based on PTDF matrix
+function _solve_powerflows_multi!(
+    data::PTDFPowerFlowData
+)
+    # get net power injections
+    power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
+    # evaluate flows
+    data.branch_flow_values .= data.power_network_matrix.data' * power_injection
+    # evaluate bus angles
+    p_inj = power_injection[data.valid_ix, :]
+    data.bus_angles[data.valid_ix, :] .= data.aux_network_matrix.K \ p_inj
+    return
+end
+
+# MULTI PERIOD: method based on Virtual PTDF
+function _solve_powerflows_multi!(
+    data::vPTDFPowerFlowData
+)
+    # get net power injections
+    power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
+    for i in axes(power_injection, 2)
+        # evaluate flows (next line evaluates both both PTDF rows and line flows)
+        data.branch_flow_values[:, i] .= my_mul_mt(data.power_network_matrix, power_injection[:, i])
+        # evaluate bus angles
+        p_inj = power_injection[data.valid_ix, i]
+        data.bus_angles[data.valid_ix, i] .= data.aux_network_matrix.K \ p_inj
+    end
+    return
+end
+
 """
 Evaluates the power flowing on each system's branch and updates the PowerFlowData structure.
 
@@ -32,72 +115,53 @@ Evaluates the power flowing on each system's branch and updates the PowerFlowDat
 - `data::PTDFPowerFlowData`:
         PTDFPowerFlowData structure containig all the information related to the system power flow
 """
-# TODO missing iteration over columns
 function solve_powerflow!(
     data::PTDFPowerFlowData,
 )
-    # get net power injections
-    power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
-    matrix_data = data.power_network_matrix.data
-
-    # evaluate flows
-    # for vPTDFDCPowerFlow case, evaluates both PTDF rows and line flows
-    my_mul_mt!(data.branch_flow_values, matrix_data, power_injection)
-    p_inj = power_injection[data.valid_ix]
-    # evaluate bus angles
-    data.bus_angles[data.valid_ix] = data.aux_network_matrix.K \ p_inj
-
-    return
-end
-
-# TODO missing iteration over columns
-function solve_powerflow!(
-    data::vPTDFPowerFlowData,
-)
-    # get net power injections
-    power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
-    matrix_data = data.power_network_matrix
-
-    # evaluate flows
-    # for vPTDFDCPowerFlow case, evaluates both PTDF rows and line flows
-    my_mul_mt!(data.branch_flow_values, matrix_data, power_injection)
-    p_inj = power_injection[data.valid_ix]
-    # evaluate bus angles
-    data.bus_angles[data.valid_ix] = data.aux_network_matrix.K \ p_inj
-
-    return
-end
-
-function solve_powerflow_for!(
-    data::ABAPowerFlowData,
-)
-    # get matrices
-    matrix_data = data.power_network_matrix.K
-    aux_network_matrix = data.aux_network_matrix
-    for i in axes(data.bus_activepower_injection, 2)
-        # get net power injections
-        power_injection = data.bus_activepower_injection[:, i] - data.bus_activepower_withdrawals[:, i]
-        # evaluate bus angles
-        data.bus_angles[data.valid_ix, i] .= matrix_data \ power_injection[data.valid_ix]
-        # evaluate flows
-        data.branch_flow_values[:, i] .= my_mul_mt(aux_network_matrix.data, @view data.bus_angles[:, i])
+    if length(data.timestep_map) == 1
+        _solve_powerflows_single!(data::PTDFPowerFlowData)
+    else
+        _solve_powerflows_multi!(data::PTDFPowerFlowData)
     end
     return
 end
 
-# ! reference function for ABAPowerFlowData type
+"""
+Evaluates the power flowing on each system's branch and updates the PowerFlowData structure.
+
+# Arguments:
+- `data::vPTDFPowerFlowData`:
+        vPTDFPowerFlowData structure containig all the information related to the system power flow
+"""
+function solve_powerflow!(
+    data::vPTDFPowerFlowData,
+)
+    if length(data.timestep_map) == 1
+        _solve_powerflows_single!(data::vPTDFPowerFlowData)
+    else
+        _solve_powerflows_multi!(data::vPTDFPowerFlowData)
+    end
+    return
+end
+
+# TODO: solve just for some lines with vPTDF
+
+"""
+Evaluates the power flowing on each system's branch and updates the PowerFlowData structure.
+
+# Arguments:
+- `data::ABAPowerFlowData`:
+        ABAPowerFlowData structure containig all the information related to the system power flow
+"""
+# DC flow: ABA and BA case
 function solve_powerflow!(
     data::ABAPowerFlowData,
 )
-    # get matrices
-    matrix_data = data.power_network_matrix.K
-    aux_network_matrix = data.aux_network_matrix
-    # get net power injections
-    power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
-    # evaluate bus angles
-    data.bus_angles[data.valid_ix] = matrix_data \ power_injection[data.valid_ix]
-    # evaluate flows
-    my_mul_mt!(data.branch_flow_values, aux_network_matrix.data, data.bus_angles)
+    if length(data.timestep_map) == 1
+        _solve_powerflows_single!(data::ABAPowerFlowData)
+    else
+        _solve_powerflows_multi!(data::ABAPowerFlowData)
+    end
     return
 end
 
