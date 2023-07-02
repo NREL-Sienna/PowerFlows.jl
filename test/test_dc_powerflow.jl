@@ -1,7 +1,7 @@
 # TODO:
 # - get_active_power(::StandardLoad) not working
 
-@testset "power flows evaluation: ABA, PTDF, VirtualPTDF" begin
+@testset "SINGLE PERIOD power flows evaluation: ABA, PTDF, VirtualPTDF" begin
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 

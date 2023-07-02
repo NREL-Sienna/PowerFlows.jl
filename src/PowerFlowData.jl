@@ -1,3 +1,6 @@
+# ! NOTE: bus_magnitude saved as a matrix like for angles and line flows. Is it correct? 
+# ! or just keep a vector?
+
 struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N, S <: Union{String, Char}}
     bus_lookup::Dict{Int, Int}
     branch_lookup::Dict{String, Int}

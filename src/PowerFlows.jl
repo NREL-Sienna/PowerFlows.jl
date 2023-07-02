@@ -7,6 +7,7 @@ export DCPowerFlow
 export ACPowerFlow
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
+export write_results
 
 import DataFrames
 import PowerSystems
@@ -16,9 +17,7 @@ import SparseArrays
 import SharedArrays: SharedArray
 import InfrastructureSystems
 import PowerNetworkMatrices
-import Base.Threads: @threads
 import SparseArrays: SparseMatrixCSC
-import LoopVectorization: @tturbo
 
 const IS = InfrastructureSystems
 const PSY = PowerSystems

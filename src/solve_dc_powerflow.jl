@@ -171,7 +171,7 @@ function solve_powerflow(
 )
     data = PowerFlowData(PTDFDCPowerFlow(), sys)
     solve_powerflow!(data)
-    return write_results(data, sys) # TODO missing iteration over columns
+    return write_results(data, sys)
 end
 
 function solve_powerflow(
@@ -180,7 +180,7 @@ function solve_powerflow(
 )
     data = PowerFlowData(DCPowerFlow(), sys)
     solve_powerflow!(data)
-    return write_results(data, sys) # TODO missing iteration over columns
+    return write_results(data, sys)
 end
 
 function solve_powerflow(
@@ -189,5 +189,5 @@ function solve_powerflow(
 )
     data = PowerFlowData(vPTDFDCPowerFlow(), sys)
     solve_powerflow!(data)
-    return write_results(data, sys) # TODO missing iteration over columns
+    return write_results(data, sys)
 end

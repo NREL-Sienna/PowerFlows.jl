@@ -464,32 +464,20 @@ function _get_branches_buses(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData})
     PNM.get_bus_ax(data.power_network_matrix)
 end
 
-"""
-Return power flow results in dictionary of dataframes.
-"""
-function write_results(
-    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
-    sys::PSY.System,
+function _allocate_results_data(
+    branches::Vector{String},
+    buses::Vector{Int64},
+    from_bus::Vector{Int64},
+    to_bus::Vector{Int64},
+    bus_magnitude::Vector{Float64},
+    bus_angles::Vector{Float64},
+    P_gen_vect::Vector{Float64},
+    Q_gen_vect::Vector{Float64},
+    P_load_vect::Vector{Float64},
+    Q_load_vect::Vector{Float64},
+    branch_flow_values::Vector{Float64},
+
 )
-    @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
-
-    # get bus and branches
-    branches, buses = _get_branches_buses(data)
-
-    # get branches from/to buses
-    from_bus = Vector{Int}(undef, length(branches))
-    to_bus = Vector{Int}(undef, length(branches))
-    for (i, branch) in enumerate(branches)
-        br = PSY.get_component(PSY.ACBranch, sys, branch)
-        from_bus[i] = PSY.get_number(PSY.get_arc(br).from)
-        to_bus[i] = PSY.get_number(PSY.get_arc(br).to)
-    end
-
-    # get injections and withdrawals
-    P_gen_vect = data.bus_activepower_injection
-    Q_gen_vect = data.bus_reactivepower_injection
-    P_load_vect = data.bus_activepower_withdrawals
-    Q_load_vect = data.bus_reactivepower_withdrawals
 
     # get flows on each line
     P_from_to_vect = zeros(length(branches))
@@ -497,19 +485,19 @@ function write_results(
     P_to_from_vect = zeros(length(branches))
     Q_to_from_vect = zeros(length(branches))
     for i in 1:length(branches)
-        if data.branch_flow_values[i] >= 0
-            P_from_to_vect[i] = data.branch_flow_values[i]
+        if branch_flow_values[i] >= 0
+            P_from_to_vect[i] = branch_flow_values[i]
             P_to_from_vect[i] = 0
         else
             P_from_to_vect[i] = 0
-            P_to_from_vect[i] = data.branch_flow_values[i]
+            P_to_from_vect[i] = branch_flow_values[i]
         end
     end
 
     bus_df = DataFrames.DataFrame(;
         bus_number = buses,
-        Vm = data.bus_magnitude,
-        θ = data.bus_angles,
+        Vm = bus_magnitude,
+        θ = bus_angles,
         P_gen = P_gen_vect,
         P_load = P_load_vect,
         P_net = P_gen_vect - P_load_vect,
@@ -533,6 +521,68 @@ function write_results(
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
     return Dict("bus_results" => bus_df, "flow_results" => branch_df)
+
+end
+
+"""
+Return power flow results in dictionary of dataframes.
+"""
+function write_results(
+    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
+    sys::PSY.System,
+)
+    @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
+
+    ### non time-dependent variables
+
+    # get bus and branches
+    branches, buses = _get_branches_buses(data)
+
+    # get branches from/to buses
+    from_bus = Vector{Int}(undef, length(branches))
+    to_bus = Vector{Int}(undef, length(branches))
+    for (i, branch) in enumerate(branches)
+        br = PSY.get_component(PSY.ACBranch, sys, branch)
+        from_bus[i] = PSY.get_number(PSY.get_arc(br).from)
+        to_bus[i] = PSY.get_number(PSY.get_arc(br).to)
+    end
+
+    if length(data.timestep_map) == 1
+        result_dict = _allocate_results_data(
+            branches,
+            buses,
+            from_bus,
+            to_bus,
+            data.bus_magnitude,
+            data.bus_angles,
+            data.bus_activepower_injection,
+            data.bus_reactivepower_injection,
+            data.bus_activepower_withdrawals,
+            data.bus_reactivepower_withdrawals,
+            data.branch_flow_values,
+        )
+        return result_dict
+    else
+        result_dict = Dict{Union{String, Char}, Dict{String, DataFrames.DataFrame}}()
+        for i in 1:length(data.timestep_map)
+            temp_dict = _allocate_results_data(
+                branches,
+                buses,
+                from_bus,
+                to_bus,
+                data.bus_magnitude[:, i],
+                data.bus_angles[:, i],
+                data.bus_activepower_injection[:, i],
+                data.bus_reactivepower_injection[:, i],
+                data.bus_activepower_withdrawals[:, i],
+                data.bus_reactivepower_withdrawals[:, i],
+                data.branch_flow_values[:, i],
+            )
+            result_dict[data.timestep_map[i]] = temp_dict
+        end
+        return result_dict
+    end
+    return
 end
 
 function write_results(
