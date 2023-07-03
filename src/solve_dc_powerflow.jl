@@ -27,12 +27,13 @@ const ABAPowerFlowData = PowerFlowData{
 
 # SINGLE PERIOD: method based on ABA and BA matrices
 function _solve_powerflows_single!(
-    data::ABAPowerFlowData
+    data::ABAPowerFlowData,
 )
     # get net power injections
     power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
     # evaluate bus angles
-    data.bus_angles[data.valid_ix] = data.power_network_matrix.K \ power_injection[data.valid_ix]
+    data.bus_angles[data.valid_ix] =
+        data.power_network_matrix.K \ power_injection[data.valid_ix]
     # evaluate flows
     my_mul_mt!(data.branch_flow_values, data.aux_network_matrix.data, data.bus_angles)
     return
@@ -40,7 +41,7 @@ end
 
 # SINGLE PERIOD: method based on PTDF matrix
 function _solve_powerflows_single!(
-    data::PTDFPowerFlowData
+    data::PTDFPowerFlowData,
 )
     # get net power injections
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
@@ -54,7 +55,7 @@ end
 
 # SINGLE PERIOD: method based on Virtual PTDF
 function _solve_powerflows_single!(
-    data::vPTDFPowerFlowData
+    data::vPTDFPowerFlowData,
 )
     # get net power injections
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
@@ -68,19 +69,20 @@ end
 
 # MULTI PERIOD: method based on ABA and BA matrices
 function _solve_powerflows_multi!(
-    data::ABAPowerFlowData
+    data::ABAPowerFlowData,
 )
     # get net injections
     power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
     # save angles and power flows
-    data.bus_angles[data.valid_ix, :] .= data.power_network_matrix.K \ @view power_injection[data.valid_ix, :]
+    data.bus_angles[data.valid_ix, :] .=
+        data.power_network_matrix.K \ @view power_injection[data.valid_ix, :]
     data.branch_flow_values .= data.aux_network_matrix.data' * data.bus_angles
     return
 end
 
 # MULTI PERIOD: method based on PTDF matrix
 function _solve_powerflows_multi!(
-    data::PTDFPowerFlowData
+    data::PTDFPowerFlowData,
 )
     # get net power injections
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
@@ -94,13 +96,14 @@ end
 
 # MULTI PERIOD: method based on Virtual PTDF
 function _solve_powerflows_multi!(
-    data::vPTDFPowerFlowData
+    data::vPTDFPowerFlowData,
 )
     # get net power injections
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
     for i in axes(power_injection, 2)
         # evaluate flows (next line evaluates both both PTDF rows and line flows)
-        data.branch_flow_values[:, i] .= my_mul_mt(data.power_network_matrix, power_injection[:, i])
+        data.branch_flow_values[:, i] .=
+            my_mul_mt(data.power_network_matrix, power_injection[:, i])
         # evaluate bus angles
         p_inj = power_injection[data.valid_ix, i]
         data.bus_angles[data.valid_ix, i] .= data.aux_network_matrix.K \ p_inj

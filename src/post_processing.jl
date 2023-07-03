@@ -475,9 +475,7 @@ function _allocate_results_data(
     Q_gen_vect::Vector{Float64},
     P_load_vect::Vector{Float64},
     Q_load_vect::Vector{Float64},
-    branch_flow_values::Vector{Float64},
-
-)
+    branch_flow_values::Vector{Float64})
 
     # get flows on each line
     P_from_to_vect = zeros(length(branches))
@@ -521,7 +519,6 @@ function _allocate_results_data(
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
     return Dict("bus_results" => bus_df, "flow_results" => branch_df)
-
 end
 
 """

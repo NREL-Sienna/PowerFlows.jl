@@ -137,7 +137,6 @@ function PowerFlowData(::DCPowerFlow, sys::PSY.System)
         power_network_matrix,
         aux_network_matrix,
     )
-
 end
 
 # SINGLE PERIOD: DC Power Flow Data based on PTDF matrix
@@ -276,7 +275,7 @@ function PowerFlowData(
     if timesteps != 0
         if length(timestep_names) == 0
             timestep_names = [string(i) for i in 1:timesteps]
-        elseif  length(timestep_names) != timesteps
+        elseif length(timestep_names) != timesteps
             error("timestep_names field must have same length as timesteps")
         end
     end
@@ -374,7 +373,7 @@ function PowerFlowData(
     if timesteps != 0
         if length(timestep_names) == 0
             timestep_names = [string(i) for i in 1:timesteps]
-        elseif  length(timestep_names) != timesteps
+        elseif length(timestep_names) != timesteps
             error("timestep_names field must have same length as timesteps")
         end
     end
@@ -472,7 +471,7 @@ function PowerFlowData(
     if timesteps != 0
         if length(timestep_names) == 0
             timestep_names = [string(i) for i in 1:timesteps]
-        elseif  length(timestep_names) != timesteps
+        elseif length(timestep_names) != timesteps
             error("timestep_names field must have same length as timesteps")
         end
     end
