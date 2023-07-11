@@ -2,10 +2,10 @@
 
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    injections = CSV.read("test_data/c_sys14_injections.csv", DataFrame; header = 0)
-    withdrawals = CSV.read("test_data/c_sys14_withdrawals.csv", DataFrame; header = 0)
-    flows = CSV.read("test_data/c_sys14_flows.csv", DataFrame; header = 0)
-    angles = CSV.read("test_data/c_sys14_angles.csv", DataFrame; header = 0)
+    injections = CSV.read("test/test_data/c_sys14_injections.csv", DataFrame; header = 0)
+    withdrawals = CSV.read("test/test_data/c_sys14_withdrawals.csv", DataFrame; header = 0)
+    flows = CSV.read("test/test_data/c_sys14_flows.csv", DataFrame; header = 0)
+    angles = CSV.read("test/test_data/c_sys14_angles.csv", DataFrame; header = 0)
 
     ##############################################################################
 
@@ -18,24 +18,24 @@
     # allocate data from csv
     injs = Matrix(injections)
     withs = Matrix(withdrawals)
+
     data_1.bus_activepower_injection .= deepcopy(injs)
     data_1.bus_activepower_withdrawals .= deepcopy(withs)
+
     data_2.bus_activepower_injection .= deepcopy(injs)
     data_2.bus_activepower_withdrawals .= deepcopy(withs)
+
     data_3.bus_activepower_injection .= deepcopy(injs)
     data_3.bus_activepower_withdrawals .= deepcopy(withs)
 
     # case 1: get power flows with ABA method and write results
-    solve_powerflow!(data_1)
-    results_1 = write_results(data_1, sys)
+    results_1 = solve_powerflow(data_1, sys)
 
     # case 2: get power flows PTDF method and write results
-    solve_powerflow!(data_2)
-    results_2 = write_results(data_2, sys)
+    results_2 = solve_powerflow(data_2, sys)
 
     # case 3: get power flows Virtual PTDF method and write results
-    solve_powerflow!(data_3)
-    results_3 = write_results(data_3, sys)
+    results_3 = solve_powerflow(data_3, sys)
 
     # check results
 

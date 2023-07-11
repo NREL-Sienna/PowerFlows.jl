@@ -544,44 +544,45 @@ function write_results(
         to_bus[i] = PSY.get_number(PSY.get_arc(br).to)
     end
 
-    if length(data.timestep_map) == 1
-        result_dict = _allocate_results_data(
+    # if length(data.timestep_map) == 1
+    #     result_dict = _allocate_results_data(
+    #         branches,
+    #         buses,
+    #         from_bus,
+    #         to_bus,
+    #         data.bus_magnitude,
+    #         data.bus_angles,
+    #         data.bus_activepower_injection,
+    #         data.bus_reactivepower_injection,
+    #         data.bus_activepower_withdrawals,
+    #         data.bus_reactivepower_withdrawals,
+    #         data.branch_flow_values,
+    #     )
+    #     return result_dict
+    # else
+    result_dict = Dict{Union{String, Char}, Dict{String, DataFrames.DataFrame}}()
+    for i in 1:length(data.timestep_map)
+        temp_dict = _allocate_results_data(
             branches,
             buses,
             from_bus,
             to_bus,
-            data.bus_magnitude,
-            data.bus_angles,
-            data.bus_activepower_injection,
-            data.bus_reactivepower_injection,
-            data.bus_activepower_withdrawals,
-            data.bus_reactivepower_withdrawals,
-            data.branch_flow_values,
+            data.bus_magnitude[:, 1],
+            data.bus_angles[:, i],
+            data.bus_activepower_injection[:, i],
+            data.bus_reactivepower_injection[:, i],
+            data.bus_activepower_withdrawals[:, i],
+            data.bus_reactivepower_withdrawals[:, i],
+            data.branch_flow_values[:, i],
         )
-        return result_dict
-    else
-        result_dict = Dict{Union{String, Char}, Dict{String, DataFrames.DataFrame}}()
-        for i in 1:length(data.timestep_map)
-            temp_dict = _allocate_results_data(
-                branches,
-                buses,
-                from_bus,
-                to_bus,
-                data.bus_magnitude[:, i],
-                data.bus_angles[:, i],
-                data.bus_activepower_injection[:, i],
-                data.bus_reactivepower_injection[:, i],
-                data.bus_activepower_withdrawals[:, i],
-                data.bus_reactivepower_withdrawals[:, i],
-                data.branch_flow_values[:, i],
-            )
-            result_dict[data.timestep_map[i]] = temp_dict
-        end
-        return result_dict
+        result_dict[data.timestep_map[i]] = temp_dict
     end
-    return
+    return result_dict
+    # end
+    # return
 end
 
+# TODO: multi-period still to implement
 function write_results(
     ::ACPowerFlow,
     sys::PSY.System,

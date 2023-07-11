@@ -25,50 +25,50 @@ const ABAPowerFlowData = PowerFlowData{
         Tuple{Dict{String, Int64}, Dict{Int64, Int64}}},
 }
 
-# SINGLE PERIOD: method based on ABA and BA matrices
-function _solve_powerflows_single!(
-    data::ABAPowerFlowData,
-)
-    # get net power injections
-    power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
-    # evaluate bus angles
-    data.bus_angles[data.valid_ix] =
-        data.power_network_matrix.K \ power_injection[data.valid_ix]
-    # evaluate flows
-    my_mul_mt!(data.branch_flow_values, data.aux_network_matrix.data, data.bus_angles)
-    return
-end
+# # SINGLE PERIOD: method based on ABA and BA matrices
+# function _solve_powerflows_single!(
+#     data::ABAPowerFlowData,
+# )
+#     # get net power injections
+#     power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
+#     # evaluate bus angles
+#     data.bus_angles[data.valid_ix] =
+#         data.power_network_matrix.K \ power_injection[data.valid_ix]
+#     # evaluate flows
+#     my_mul_mt!(data.branch_flow_values, data.aux_network_matrix.data, data.bus_angles)
+#     return
+# end
 
-# SINGLE PERIOD: method based on PTDF matrix
-function _solve_powerflows_single!(
-    data::PTDFPowerFlowData,
-)
-    # get net power injections
-    power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
-    # evaluate flows
-    my_mul_mt!(data.branch_flow_values, data.power_network_matrix.data, power_injection)
-    # evaluate bus angles
-    p_inj = power_injection[data.valid_ix]
-    data.bus_angles[data.valid_ix] = data.aux_network_matrix.K \ p_inj
-    return
-end
+# # SINGLE PERIOD: method based on PTDF matrix
+# function _solve_powerflows_single!(
+#     data::PTDFPowerFlowData,
+# )
+#     # get net power injections
+#     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
+#     # evaluate flows
+#     my_mul_mt!(data.branch_flow_values, data.power_network_matrix.data, power_injection)
+#     # evaluate bus angles
+#     p_inj = power_injection[data.valid_ix]
+#     data.bus_angles[data.valid_ix] = data.aux_network_matrix.K \ p_inj
+#     return
+# end
 
-# SINGLE PERIOD: method based on Virtual PTDF
-function _solve_powerflows_single!(
-    data::vPTDFPowerFlowData,
-)
-    # get net power injections
-    power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
-    # evaluate flows (next line evaluates both both PTDF rows and line flows)
-    my_mul_mt!(data.branch_flow_values, data.power_network_matrix, power_injection)
-    # evaluate bus angles
-    p_inj = power_injection[data.valid_ix]
-    data.bus_angles[data.valid_ix] = data.aux_network_matrix.K \ p_inj
-    return
-end
+# # SINGLE PERIOD: method based on Virtual PTDF
+# function _solve_powerflows_single!(
+#     data::vPTDFPowerFlowData,
+# )
+#     # get net power injections
+#     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
+#     # evaluate flows (next line evaluates both both PTDF rows and line flows)
+#     my_mul_mt!(data.branch_flow_values, data.power_network_matrix, power_injection)
+#     # evaluate bus angles
+#     p_inj = power_injection[data.valid_ix]
+#     data.bus_angles[data.valid_ix] = data.aux_network_matrix.K \ p_inj
+#     return
+# end
 
-# MULTI PERIOD: method based on ABA and BA matrices
-function _solve_powerflows_multi!(
+# method based on ABA and BA matrices
+function _solve_powerflows!(
     data::ABAPowerFlowData,
 )
     # get net injections
@@ -80,8 +80,8 @@ function _solve_powerflows_multi!(
     return
 end
 
-# MULTI PERIOD: method based on PTDF matrix
-function _solve_powerflows_multi!(
+# method based on PTDF matrix
+function _solve_powerflows!(
     data::PTDFPowerFlowData,
 )
     # get net power injections
@@ -94,8 +94,8 @@ function _solve_powerflows_multi!(
     return
 end
 
-# MULTI PERIOD: method based on Virtual PTDF
-function _solve_powerflows_multi!(
+# method based on Virtual PTDF
+function _solve_powerflows!(
     data::vPTDFPowerFlowData,
 )
     # get net power injections
@@ -121,11 +121,11 @@ Evaluates the power flowing on each system's branch and updates the PowerFlowDat
 function solve_powerflow!(
     data::PTDFPowerFlowData,
 )
-    if length(data.timestep_map) == 1
-        _solve_powerflows_single!(data::PTDFPowerFlowData)
-    else
-        _solve_powerflows_multi!(data::PTDFPowerFlowData)
-    end
+    # if length(data.timestep_map) == 1
+    #     _solve_powerflows_single!(data::PTDFPowerFlowData)
+    # else
+    _solve_powerflows!(data::PTDFPowerFlowData)
+    # end
     return
 end
 
@@ -139,11 +139,11 @@ Evaluates the power flowing on each system's branch and updates the PowerFlowDat
 function solve_powerflow!(
     data::vPTDFPowerFlowData,
 )
-    if length(data.timestep_map) == 1
-        _solve_powerflows_single!(data::vPTDFPowerFlowData)
-    else
-        _solve_powerflows_multi!(data::vPTDFPowerFlowData)
-    end
+    # if length(data.timestep_map) == 1
+    #     _solve_powerflows_single!(data::vPTDFPowerFlowData)
+    # else
+    _solve_powerflows!(data::vPTDFPowerFlowData)
+    # end
     return
 end
 
@@ -160,13 +160,15 @@ Evaluates the power flowing on each system's branch and updates the PowerFlowDat
 function solve_powerflow!(
     data::ABAPowerFlowData,
 )
-    if length(data.timestep_map) == 1
-        _solve_powerflows_single!(data::ABAPowerFlowData)
-    else
-        _solve_powerflows_multi!(data::ABAPowerFlowData)
-    end
+    # if length(data.timestep_map) == 1
+    #     _solve_powerflows_single!(data::ABAPowerFlowData)
+    # else
+    _solve_powerflows!(data::ABAPowerFlowData)
+    # end
     return
 end
+
+# SINGLE PERIOD ##############################################################
 
 function solve_powerflow(
     ::PTDFDCPowerFlow,
@@ -191,6 +193,32 @@ function solve_powerflow(
     sys::PSY.System;
 )
     data = PowerFlowData(vPTDFDCPowerFlow(), sys)
+    solve_powerflow!(data)
+    return write_results(data, sys)
+end
+
+# MULTI PERIOD ###############################################################
+
+function solve_powerflow(
+    data::PTDFPowerFlowData,
+    sys::PSY.System;
+)
+    solve_powerflow!(data)
+    return write_results(data, sys)
+end
+
+function solve_powerflow(
+    data::ABAPowerFlowData,
+    sys::PSY.System;
+)
+    solve_powerflow!(data)
+    return write_results(data, sys)
+end
+
+function solve_powerflow(
+    data::vPTDFPowerFlowData,
+    sys::PSY.System;
+)
     solve_powerflow!(data)
     return write_results(data, sys)
 end
