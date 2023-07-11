@@ -522,7 +522,15 @@ function _allocate_results_data(
 end
 
 """
-Return power flow results in dictionary of dataframes.
+Returns a dictionary containing the DC power flow results. Each key conresponds
+to the name of the considered time periods, storing a DataFrame with the OPF
+results.
+
+# Arguments:
+- `data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}`:
+        PowerFlowData strcuture containing power flows and bus angles.
+- `sys::PSY.System`:
+        container storing the systam information.
 """
 function write_results(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
@@ -583,6 +591,20 @@ function write_results(
 end
 
 # TODO: multi-period still to implement
+"""
+Returns a dictionary containing the AC power flow results.
+
+WARNING: single-period evalution only is suppoerted at the moment. Resulting
+dictionary will therefore feature just one key linked to one DataFrame.
+
+# Arguments:
+- `::ACPowerFlow`:
+        use ACPowerFlow() storing AC power flow results.
+- `sys::PSY.System`:
+        container storing the systam information.
+- `result::Vector{Float64}`:
+        vector containing the reults for one single time-period.
+"""
 function write_results(
     ::ACPowerFlow,
     sys::PSY.System,
