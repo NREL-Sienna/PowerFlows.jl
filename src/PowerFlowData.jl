@@ -1,6 +1,53 @@
-# ! NOTE: bus_magnitude saved as a matrix like for angles and line flows. Is it correct? 
-# ! or just keep a vector?
+"""
+Structure containing all the data required for the evaluation of the power 
+flows and angles, as well as these ones.
 
+# Arguments:
+- `bus_lookup::Dict{Int, Int}`:
+        dictionary linking the system's bus number with the rows of either 
+        "power_network_matrix" or "aux_network_matrix".
+- `branch_lookup::Dict{String, Int}`:
+        dictionary linking the branch name with the column name of either the 
+        "power_network_matrix" or "aux_network_matrix".
+- `bus_activepower_injection::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus active power injection. b: number of 
+        buses, t: number of time period.
+- `bus_reactivepower_injection::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus reactive power injection. b: number 
+        of buses, t: number of time period.
+- `bus_activepower_withdrawals::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus reactive power withdrawals. b: 
+        number of buses, t: number of time period.
+- `bus_reactivepower_withdrawals::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus reactive power withdrawals. b: 
+        number of buses, t: number of time period.
+- `bus_type::Vector{PSY.BusTypes}`:
+        vector containing type of buses present in the system, ordered 
+        according to "bus_lookup".
+- `bus_magnitude::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus magnitudes, ordered according to 
+        "bus_lookup". b: number of buses, t: number of time period.
+- `bus_angles::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus angles, ordered according to 
+        "bus_lookup". b: number of buses, t: number of time period.
+- `branch_flow_values::Matrix{Float64}`:
+        "(br, t)" matrix containing the power flows, ordered according to 
+        "branch_lookup". br: number of branches, t: number of time period.
+- `timestep_map::Dict{Int, S}`:
+        dictonary mapping the number of the time periods (corresponding to the 
+        column number of the previosly mentioned matrices) and their actual 
+        names.
+- `valid_ix::Vector{Int}`:
+        vector containing the indeces related to those buses that are not slack
+        ones.
+- `power_network_matrix::M`:
+        matrix used for the evaluation of either the power flows or bus angles, 
+        depending on the method considered.
+- `aux_network_matrix::N`:
+        matrix used for the evaluation of either the power flows or bus angles, 
+        depending on the method considered.
+
+"""
 struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N, S <: Union{String, Char}}
     bus_lookup::Dict{Int, Int}
     branch_lookup::Dict{String, Int}
@@ -20,6 +67,28 @@ end
 
 # AC Power Flow Data
 # TODO -> MULTI PERIOD: AC Power Flow Data
+"""
+Function for the definition of the PowerFlowData strucure given the System
+data, number of time periods to consider and their names.
+Calling this function will not evaluate the power flows and angles.
+NOTE: use it for AC power flow computations.
+
+# Arguments:
+- `::ACPowerFlow`:
+        use ACPowerFlow() to evaluate the AC OPF.
+- `sys::PSY.System`:
+        container storing the system data to consider in the PowerFlowData
+        structure.
+- `timesteps::Int`:
+        number of time periods to consider in the PowerFlowData structure. It 
+        defines the number of columns of the matrices used to store data.
+        Default value = 1.
+- `timestep_names::Vector{String}`:
+        names of the time periods defines by the argmunet "timesteps". Default
+        value = String[].
+
+WARNING: functions for the evaluation of the multi-period AC OPF still to be implemented.
+"""
 function PowerFlowData(
     ::ACPowerFlow,
     sys::PSY.System,
@@ -130,6 +199,27 @@ function PowerFlowData(
 end
 
 # DC Power Flow Data based on ABA and BA matrices
+"""
+Function for the definition of the PowerFlowData strucure given the System
+data, number of time periods to consider and their names.
+Calling this function will not evaluate the power flows and angles.
+NOTE: use it for DC power flow computations.
+
+# Arguments:
+- `::DCPowerFlow`:
+        use DCPowerFlow() to store the ABA matrix as power_network_matrix and 
+        the BA matrix as aux_network_matrix.
+- `sys::PSY.System`:
+        container storing the system data to consider in the PowerFlowData
+        structure.
+- `timesteps::Int`:
+        number of time periods to consider in the PowerFlowData structure. It 
+        defines the number of columns of the matrices used to store data.
+        Default value = 1.
+- `timestep_names::Vector{String}`:
+        names of the time periods defines by the argmunet "timesteps". Default
+        value = String[].
+"""
 function PowerFlowData(
     ::DCPowerFlow,
     sys::PSY.System,
@@ -235,6 +325,27 @@ function PowerFlowData(
 end
 
 # DC Power Flow Data with PTDF matrix
+"""
+Function for the definition of the PowerFlowData strucure given the System
+data, number of time periods to consider and their names.
+Calling this function will not evaluate the power flows and angles.
+NOTE: use it for DC power flow computations.
+
+# Arguments:
+- `::PTDFDCPowerFlow`:
+        use PTDFDCPowerFlow() to store the PTDF matrix as power_network_matrix 
+        and the ABA matrix as aux_network_matrix.
+- `sys::PSY.System`:
+        container storing the system data to consider in the PowerFlowData
+        structure.
+- `timesteps::Int`:
+        number of time periods to consider in the PowerFlowData structure. It 
+        defines the number of columns of the matrices used to store data.
+        Default value = 1.
+- `timestep_names::Vector{String}`:
+        names of the time periods defines by the argmunet "timesteps". Default
+        value = String[].
+"""
 function PowerFlowData(
     ::PTDFDCPowerFlow,
     sys::PSY.System,
@@ -340,6 +451,27 @@ function PowerFlowData(
 end
 
 # DC Power Flow Data with virtual PTDF matrix
+"""
+Function for the definition of the PowerFlowData strucure given the System
+data, number of time periods to consider and their names.
+Calling this function will not evaluate the power flows and angles.
+NOTE: use it for DC power flow computations.
+
+# Arguments:
+- `::PTDFDCPowerFlow`:
+        use vPTDFDCPowerFlow() to store the Virtual PTDF matrix as 
+        power_network_matrix and the ABA matrix as aux_network_matrix.
+- `sys::PSY.System`:
+        container storing the system data to consider in the PowerFlowData
+        structure.
+- `timesteps::Int`:
+        number of time periods to consider in the PowerFlowData structure. It 
+        defines the number of columns of the matrices used to store data.
+        Default value = 1.
+- `timestep_names::Vector{String}`:
+        names of the time periods defines by the argmunet "timesteps". Default
+        value = String[].
+"""
 function PowerFlowData(
     ::vPTDFDCPowerFlow,
     sys::PSY.System,
@@ -443,185 +575,3 @@ function PowerFlowData(
         aux_network_matrix,
     )
 end
-
-# # SINGLE PERIOD: DC Power Flow Data based on ABA and BA matrices
-# function PowerFlowData(::DCPowerFlow, sys::PSY.System)
-#     power_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
-#     aux_network_matrix = PNM.BA_Matrix(sys)
-#     # check the maps betwen the 2 matrices match
-
-#     # get number of buses and branches
-#     n_buses = length(axes(aux_network_matrix, 2))
-#     n_branches = length(axes(aux_network_matrix, 1))
-
-#     bus_lookup = power_network_matrix.lookup[2]
-#     branch_lookup = aux_network_matrix.lookup[1]
-#     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
-#     bus_angles = zeros(Float64, n_buses)
-#     temp_bus_map = Dict{Int, String}(
-#         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
-#     )
-
-#     for (bus_no, ix) in bus_lookup
-#         bus_name = temp_bus_map[bus_no]
-#         bus = PSY.get_component(PSY.Bus, sys, bus_name)
-#         bus_type[ix] = PSY.get_bustype(bus)
-#         if bus_type[ix] == PSY.BusTypes.REF
-#             bus_angles[ix] = 0.0
-#         else
-#             bus_angles[ix] = PSY.get_angle(bus)
-#         end
-#     end
-
-#     bus_activepower_injection = zeros(Float64, n_buses)
-#     bus_reactivepower_injection = zeros(Float64, n_buses)
-#     _get_injections!(bus_activepower_injection, bus_reactivepower_injection, bus_lookup, sys)
-
-#     bus_activepower_withdrawals = zeros(Float64, n_buses)
-#     bus_reactivepower_withdrawals = zeros(Float64, n_buses)
-#     _get_withdrawals!(
-#         bus_activepower_withdrawals,
-#         bus_reactivepower_withdrawals,
-#         bus_lookup,
-#         sys,
-#     )
-
-#     return PowerFlowData(
-#         bus_lookup,
-#         branch_lookup,
-#         bus_activepower_injection,
-#         bus_reactivepower_injection,
-#         bus_activepower_withdrawals,
-#         bus_reactivepower_withdrawals,
-#         bus_type,
-#         ones(Float64, n_buses),
-#         bus_angles,
-#         zeros(n_branches),
-#         Dict(zip([1], "1")),
-#         setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
-#         power_network_matrix,
-#         aux_network_matrix,
-#     )
-# end
-
-# # SINGLE PERIOD: DC Power Flow Data based on PTDF matrix
-# function PowerFlowData(::PTDFDCPowerFlow, sys::PSY.System)
-
-#     # get the network matrices
-#     power_network_matrix = PNM.PTDF(sys)
-#     aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
-
-#     # get number of buses and branches
-#     n_buses = length(axes(power_network_matrix, 1))
-#     n_branches = length(axes(power_network_matrix, 2))
-
-#     bus_lookup = power_network_matrix.lookup[1]
-#     branch_lookup = power_network_matrix.lookup[2]
-#     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
-#     bus_angles = zeros(Float64, n_buses)
-#     temp_bus_map = Dict{Int, String}(
-#         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
-#     )
-
-#     for (bus_no, ix) in bus_lookup
-#         bus_name = temp_bus_map[bus_no]
-#         bus = PSY.get_component(PSY.Bus, sys, bus_name)
-#         bus_type[ix] = PSY.get_bustype(bus)
-#         if bus_type[ix] == PSY.BusTypes.REF
-#             bus_angles[ix] = 0.0
-#         else
-#             bus_angles[ix] = PSY.get_angle(bus)
-#         end
-#     end
-
-#     bus_activepower_injection = zeros(Float64, n_buses)
-#     bus_reactivepower_injection = zeros(Float64, n_buses)
-#     _get_injections!(bus_activepower_injection, bus_reactivepower_injection, bus_lookup, sys)
-
-#     bus_activepower_withdrawals = zeros(Float64, n_buses)
-#     bus_reactivepower_withdrawals = zeros(Float64, n_buses)
-#     _get_withdrawals!(
-#         bus_activepower_withdrawals,
-#         bus_reactivepower_withdrawals,
-#         bus_lookup,
-#         sys,
-#     )
-
-#     return PowerFlowData(
-#         bus_lookup,
-#         branch_lookup,
-#         bus_activepower_injection,
-#         bus_reactivepower_injection,
-#         bus_activepower_withdrawals,
-#         bus_reactivepower_withdrawals,
-#         bus_type,
-#         ones(Float64, n_buses),
-#         bus_angles,
-#         zeros(Float64, n_branches),
-#         Dict(zip([1], "1")),
-#         setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
-#         power_network_matrix,
-#         aux_network_matrix,
-#     )
-# end
-
-# # SINGLE PERIOD: DC Power Flow Data based on virutual PTDF matrix
-# function PowerFlowData(::vPTDFDCPowerFlow, sys::PSY.System)
-
-#     # get the network matrices
-#     power_network_matrix = PNM.VirtualPTDF(sys) # evaluates an empty virtual PTDF
-#     aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
-
-#     # get number of buses and branches
-#     n_buses = length(axes(power_network_matrix, 2))
-#     n_branches = length(axes(power_network_matrix, 1))
-
-#     bus_lookup = power_network_matrix.lookup[2]
-#     branch_lookup = power_network_matrix.lookup[1]
-#     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
-#     bus_angles = zeros(Float64, n_buses)
-#     temp_bus_map = Dict{Int, String}(
-#         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
-#     )
-
-#     for (bus_no, ix) in bus_lookup
-#         bus_name = temp_bus_map[bus_no]
-#         bus = PSY.get_component(PSY.Bus, sys, bus_name)
-#         bus_type[ix] = PSY.get_bustype(bus)
-#         if bus_type[ix] == PSY.BusTypes.REF
-#             bus_angles[ix] = 0.0
-#         else
-#             bus_angles[ix] = PSY.get_angle(bus)
-#         end
-#     end
-
-#     bus_activepower_injection = zeros(Float64, n_buses)
-#     bus_reactivepower_injection = zeros(Float64, n_buses)
-#     _get_injections!(bus_activepower_injection, bus_reactivepower_injection, bus_lookup, sys)
-
-#     bus_activepower_withdrawals = zeros(Float64, n_buses)
-#     bus_reactivepower_withdrawals = zeros(Float64, n_buses)
-#     _get_withdrawals!(
-#         bus_activepower_withdrawals,
-#         bus_reactivepower_withdrawals,
-#         bus_lookup,
-#         sys,
-#     )
-
-#     return PowerFlowData(
-#         bus_lookup,
-#         branch_lookup,
-#         bus_activepower_injection,
-#         bus_reactivepower_injection,
-#         bus_activepower_withdrawals,
-#         bus_reactivepower_withdrawals,
-#         bus_type,
-#         ones(Float64, n_buses),
-#         bus_angles,
-#         zeros(Float64, n_branches),
-#         Dict(zip([1], "1")),
-#         setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
-#         power_network_matrix,
-#         aux_network_matrix,
-#     )
-# end
