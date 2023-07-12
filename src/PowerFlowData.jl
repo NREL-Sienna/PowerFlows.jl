@@ -161,13 +161,13 @@ function PowerFlowData(
     init_2 = zeros(n_branches, timesteps)
 
     # define fields as matrices whose number of columns is eqault to the number of timesteps
-    bus_activepower_injection_1 = similar(init_1)
-    bus_reactivepower_injection_1 = similar(init_1)
-    bus_activepower_withdrawals_1 = similar(init_1)
-    bus_reactivepower_withdrawals_1 = similar(init_1)
-    bus_magnitude_1 = similar(init_1)
-    bus_angles_1 = similar(init_1)
-    branch_flow_values_1 = similar(init_2)
+    bus_activepower_injection_1 = deepcopy(init_1)
+    bus_reactivepower_injection_1 = deepcopy(init_1)
+    bus_activepower_withdrawals_1 = deepcopy(init_1)
+    bus_reactivepower_withdrawals_1 = deepcopy(init_1)
+    bus_magnitude_1 = deepcopy(init_1)
+    bus_angles_1 = deepcopy(init_1)
+    branch_flow_values_1 = deepcopy(init_2)
 
     # initial values related to first timestep allocated in the first column
     bus_activepower_injection_1[:, 1] .= bus_activepower_injection
@@ -287,13 +287,13 @@ function PowerFlowData(
     init_2 = zeros(n_branches, timesteps)
 
     # define fields as matrices whose number of columns is eqault to the number of timesteps
-    bus_activepower_injection_1 = similar(init_1)
-    bus_reactivepower_injection_1 = similar(init_1)
-    bus_activepower_withdrawals_1 = similar(init_1)
-    bus_reactivepower_withdrawals_1 = similar(init_1)
+    bus_activepower_injection_1 = deepcopy(init_1)
+    bus_reactivepower_injection_1 = deepcopy(init_1)
+    bus_activepower_withdrawals_1 = deepcopy(init_1)
+    bus_reactivepower_withdrawals_1 = deepcopy(init_1)
     bus_magnitude_1 = zeros(n_buses, 1)
-    bus_angles_1 = similar(init_1)
-    branch_flow_values_1 = similar(init_2)
+    bus_angles_1 = deepcopy(init_1)
+    branch_flow_values_1 = deepcopy(init_2)
 
     # initial values related to first timestep allocated in the first column
     bus_activepower_injection_1[:, 1] .= bus_activepower_injection
@@ -413,13 +413,13 @@ function PowerFlowData(
     init_2 = zeros(n_branches, timesteps)
 
     # define fields as matrices whose number of columns is eqault to the number of timesteps
-    bus_activepower_injection_1 = similar(init_1)
-    bus_reactivepower_injection_1 = similar(init_1)
-    bus_activepower_withdrawals_1 = similar(init_1)
-    bus_reactivepower_withdrawals_1 = similar(init_1)
+    bus_activepower_injection_1 = deepcopy(init_1)
+    bus_reactivepower_injection_1 = deepcopy(init_1)
+    bus_activepower_withdrawals_1 = deepcopy(init_1)
+    bus_reactivepower_withdrawals_1 = deepcopy(init_1)
     bus_magnitude_1 = zeros(n_buses, 1)
-    bus_angles_1 = similar(init_1)
-    branch_flow_values_1 = similar(init_2)
+    bus_angles_1 = deepcopy(init_1)
+    branch_flow_values_1 = deepcopy(init_2)
 
     # initial values related to first timestep allocated in the first column
     bus_activepower_injection_1[:, 1] .= bus_activepower_injection
@@ -539,13 +539,13 @@ function PowerFlowData(
     init_2 = zeros(n_branches, timesteps)
 
     # define fields as matrices whose number of columns is eqault to the number of timesteps
-    bus_activepower_injection_1 = similar(init_1)
-    bus_reactivepower_injection_1 = similar(init_1)
-    bus_activepower_withdrawals_1 = similar(init_1)
-    bus_reactivepower_withdrawals_1 = similar(init_1)
+    bus_activepower_injection_1 = deepcopy(init_1)
+    bus_reactivepower_injection_1 = deepcopy(init_1)
+    bus_activepower_withdrawals_1 = deepcopy(init_1)
+    bus_reactivepower_withdrawals_1 = deepcopy(init_1)
     bus_magnitude_1 = zeros(n_buses, 1)
-    bus_angles_1 = similar(init_1)
-    branch_flow_values_1 = similar(init_2)
+    bus_angles_1 = deepcopy(init_1)
+    branch_flow_values_1 = deepcopy(init_2)
 
     # initial values related to first timestep allocated in the first column
     bus_activepower_injection_1[:, 1] .= bus_activepower_injection
