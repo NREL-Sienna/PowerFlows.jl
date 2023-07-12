@@ -576,7 +576,7 @@ end
 """
 Returns a dictionary containing the AC power flow results.
 
-WARNING: single-period evalution only is suppoerted at the moment. Resulting
+Only single-period evaluation is supported at the moment for AC Power flows. Resulting
 dictionary will therefore feature just one key linked to one DataFrame.
 
 # Arguments:
