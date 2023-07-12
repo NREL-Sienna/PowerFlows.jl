@@ -130,13 +130,11 @@ function PowerFlowData(
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)
-        bus_angles[ix] = PSY.get_angle(bus)
-        # ! shouldn't it be like this?
-        # ! if bus_type[ix] == PSY.BusTypes.REF
-        # !    bus_angles[ix] = 0.0
-        # ! else
-        # !     bus_angles[ix] = PSY.get_angle(bus)
-        # ! end
+        if bus_type[ix] == PSY.BusTypes.REF
+            bus_angles[ix] = 0.0
+        else
+            bus_angles[ix] = PSY.get_angle(bus)
+        end
         bus_magnitude[ix] = PSY.get_magnitude(bus)
     end
 
