@@ -63,58 +63,6 @@ end
 ##############################################################################
 # Matrix Methods #############################################################
 
-# # sparse case (ABA and BA)
-
-# function my_mul_mt!(
-#     y::Vector{Float64},
-#     A::SparseMatrixCSC{Float64, Int64},
-#     x::Vector{Float64},
-# )
-#     y[:] .= transpose(A) * x
-#     return
-# end
-
-# # sparse case (ABA and BA), no implace and for matrix views (used in for loop, 
-# # multiple timesteps)
-
-# function my_mul_mt(
-#     A::SparseMatrixCSC{Float64, Int64},
-#     x::SubArray{Float64},
-# )
-#     y = zeros(Float64, size(A, 2))
-#     for i in 1:size(A, 2)
-#         for j in A.colptr[i]:(A.colptr[i + 1] - 1)
-#             y[i] += A.nzval[j] * x[A.rowval[j]]
-#         end
-#     end
-#     return y
-# end
-
-# # dense case (PTDF and ABA)
-
-# function my_mul_mt!(
-#     y::Vector{Float64},
-#     A::Matrix{Float64},
-#     x::Vector{Float64},
-# )
-#     y[:] .= transpose(A) * x
-#     return
-# end
-
-# # virtual case: all lines
-
-# function my_mul_mt!(
-#     y::Vector{Float64},
-#     A::PNM.VirtualPTDF,
-#     x::Vector{Float64},
-# )
-#     for i in eachindex(y)
-#         name_ = A.axes[1][i]
-#         y[i] = LinearAlgebra.dot(A[name_, :], x)
-#     end
-#     return
-# end
-
 function my_mul_mt(
     A::PNM.VirtualPTDF,
     x::Vector{Float64},
@@ -126,29 +74,3 @@ function my_mul_mt(
     end
     return y
 end
-
-# # virtual case: selected lines (not used yet)
-
-# function my_mul_mt!(
-#     y::Vector{Float64},
-#     A::PNM.VirtualPTDF,
-#     x::Vector{Float64},
-#     lines::Vector{String},
-# )
-#     for name_ in lines
-#         y[A.lookup[1][name_]] = LinearAlgebra.dot(A[name_, :], x)
-#     end
-#     return
-# end
-
-# # virtual case: single line (not used yet)
-
-# function my_mul_mt!(
-#     y::Vector{Float64},
-#     A::PNM.VirtualPTDF,
-#     x::Vector{Float64},
-#     line::String,
-# )
-#     y[A.lookup[1][line]] = LinearAlgebra.dot(A[line, :], x)
-#     return
-# end
