@@ -455,7 +455,7 @@ end
 
 # returns list of branches names and buses numbers: ABA case
 function _get_branches_buses(data::ABAPowerFlowData)
-    return axes(data.aux_network_matrix)[1], axes(data.aux_network_matrix)[2]
+    return axes(data.aux_network_matrix)[2], axes(data.aux_network_matrix)[1]
 end
 
 # returns list of branches names and buses numbers: PTDF and virtual PTDF case

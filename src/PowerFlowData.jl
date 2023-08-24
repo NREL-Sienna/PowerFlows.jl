@@ -226,12 +226,10 @@ function PowerFlowData(
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
-    if timesteps != 0
-        if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:timesteps]
-        elseif length(timestep_names) != timesteps
-            error("timestep_names field must have same length as timesteps")
-        end
+    if length(timestep_names) == 0
+        timestep_names = [string(i) for i in 1:timesteps]
+    elseif length(timestep_names) != timesteps
+        error("timestep_names field must have same length as timesteps")
     end
 
     # get the network matrices
@@ -239,11 +237,11 @@ function PowerFlowData(
     aux_network_matrix = PNM.BA_Matrix(sys)
 
     # get number of buses and branches
-    n_buses = length(axes(aux_network_matrix, 2))
-    n_branches = length(axes(aux_network_matrix, 1))
+    n_buses = length(axes(aux_network_matrix, 1))
+    n_branches = length(axes(aux_network_matrix, 2))
 
-    bus_lookup = power_network_matrix.lookup[2]
-    branch_lookup = aux_network_matrix.lookup[1]
+    bus_lookup = aux_network_matrix.lookup[1]
+    branch_lookup = aux_network_matrix.lookup[2]
     bus_type = Vector{PSY.BusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
     bus_magnitude = zeros(Float64, n_buses)
