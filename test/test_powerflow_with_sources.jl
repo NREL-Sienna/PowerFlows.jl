@@ -1,9 +1,9 @@
 @testset "Multiple sources at ref" begin
     sys = System(100.0)
-    b = Bus(;
+    b = ACBus(;
         number = 1,
         name = "01",
-        bustype = BusTypes.REF,
+        bustype = ACBusTypes.REF,
         angle = 0.0,
         magnitude = 1.1,
         voltage_limits = (0.0, 2.0),
@@ -43,20 +43,20 @@ end
 
 @testset "Multiple sources at PV" begin
     sys = System(100.0)
-    b1 = Bus(;
+    b1 = ACBus(;
         number = 1,
         name = "01",
-        bustype = BusTypes.REF,
+        bustype = ACBusTypes.REF,
         angle = 0.0,
         magnitude = 1.1,
         voltage_limits = (0.0, 2.0),
         base_voltage = 230,
     )
     add_component!(sys, b1)
-    b2 = Bus(;
+    b2 = ACBus(;
         number = 2,
         name = "02",
-        bustype = BusTypes.PV,
+        bustype = ACBusTypes.PV,
         angle = 0.0,
         magnitude = 1.1,
         voltage_limits = (0.0, 2.0),
@@ -123,10 +123,10 @@ end
 
 @testset "Source + non-source at Ref" begin
     sys = System(100.0)
-    b = Bus(;
+    b = ACBus(;
         number = 1,
         name = "01",
-        bustype = BusTypes.REF,
+        bustype = ACBusTypes.REF,
         angle = 0.0,
         magnitude = 1.1,
         voltage_limits = (0.0, 2.0),
@@ -159,7 +159,7 @@ end
         operation_cost = ThreePartCost(nothing),
         base_power = 100.0,
         time_limits = nothing,
-        prime_mover = PrimeMovers.OT,
+        prime_mover_type = PrimeMovers.OT,
         fuel = ThermalFuels.OTHER,
         services = Device[],
         dynamic_injector = nothing,
@@ -183,20 +183,20 @@ end
 
 @testset "Source + non-source at PV" begin
     sys = System(100.0)
-    b1 = Bus(;
+    b1 = ACBus(;
         number = 1,
         name = "01",
-        bustype = BusTypes.REF,
+        bustype = ACBusTypes.REF,
         angle = 0.0,
         magnitude = 1.1,
         voltage_limits = (0.0, 2.0),
         base_voltage = 230,
     )
     add_component!(sys, b1)
-    b2 = Bus(;
+    b2 = ACBus(;
         number = 2,
         name = "02",
-        bustype = BusTypes.PV,
+        bustype = ACBusTypes.PV,
         angle = 0.0,
         magnitude = 1.1,
         voltage_limits = (0.0, 2.0),
@@ -254,7 +254,7 @@ end
         operation_cost = ThreePartCost(nothing),
         base_power = 100.0,
         time_limits = nothing,
-        prime_mover = PrimeMovers.OT,
+        prime_mover_type = PrimeMovers.OT,
         fuel = ThermalFuels.OTHER,
         services = Device[],
         dynamic_injector = nothing,

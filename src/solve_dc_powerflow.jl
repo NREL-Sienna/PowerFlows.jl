@@ -21,8 +21,8 @@ const ABAPowerFlowData = PowerFlowData{
         PNM.KLU.KLUFactorization{Float64, Int64},
     },
     PNM.BA_Matrix{
-        Tuple{Vector{String}, Vector{Int64}},
-        Tuple{Dict{String, Int64}, Dict{Int64, Int64}}},
+        Tuple{Vector{Int64}, Vector{String}},
+        Tuple{Dict{Int64, Int64}, Dict{String, Int64}}},
 }
 
 # # method based on ABA and BA matrices
