@@ -1,5 +1,4 @@
 @testset "MULTI-PERIOD power flows evaluation: ABA, PTDF, VirtualPTDF" begin
-
     MAIN_DIR = dirname(@__DIR__)
 
     # get system
