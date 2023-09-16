@@ -146,7 +146,11 @@ function _get_fixed_admittance_power(
         !PSY.get_available(l) && continue
         if (l.bus == b)
             Vm_squared =
-                b.bustype == PSY.BusTypes.PQ ? result[2 * ix - 1]^2 : PSY.get_magnitude(b)^2
+                if b.bustype == PSY.ACBusTypes.PQ
+                    result[2 * ix - 1]^2
+                else
+                    PSY.get_magnitude(b)^2
+                end
             active_power += Vm_squared * real(PSY.get_Y(l))
             reactive_power -= Vm_squared * imag(PSY.get_Y(l))
         end
@@ -433,15 +437,15 @@ function write_powerflow_solution!(sys::PSY.System, result::Vector{Float64})
     )
 
     for (ix, bus) in buses
-        if bus.bustype == PSY.BusTypes.REF
+        if bus.bustype == PSY.ACBusTypes.REF
             P_gen = result[2 * ix - 1]
             Q_gen = result[2 * ix]
             _power_redistribution_ref(sys, P_gen, Q_gen, bus)
-        elseif bus.bustype == PSY.BusTypes.PV
+        elseif bus.bustype == PSY.ACBusTypes.PV
             Q_gen = result[2 * ix - 1]
             bus.angle = result[2 * ix]
             _reactive_power_redistribution_pv(sys, Q_gen, bus)
-        elseif bus.bustype == PSY.BusTypes.PQ
+        elseif bus.bustype == PSY.ACBusTypes.PQ
             Vm = result[2 * ix - 1]
             θ = result[2 * ix]
             PSY.set_magnitude!(bus, Vm)
@@ -460,6 +464,8 @@ end
 
 # returns list of branches names and buses numbers: PTDF and virtual PTDF case
 function _get_branches_buses(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData})
+    PNM.get_branch_ax(data.power_network_matrix)
+    PNM.get_bus_ax(data.power_network_matrix)
     return PNM.get_branch_ax(data.power_network_matrix),
     PNM.get_bus_ax(data.power_network_matrix)
 end
@@ -610,12 +616,12 @@ function write_results(
         P_admittance, Q_admittance = _get_fixed_admittance_power(sys, bus, result, ix)
         P_load_vect[ix] += P_admittance * sys_basepower
         Q_load_vect[ix] += Q_admittance * sys_basepower
-        if bus.bustype == PSY.BusTypes.REF
+        if bus.bustype == PSY.ACBusTypes.REF
             Vm_vect[ix] = PSY.get_magnitude(bus)
             θ_vect[ix] = PSY.get_angle(bus)
             P_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix] * sys_basepower
-        elseif bus.bustype == PSY.BusTypes.PV
+        elseif bus.bustype == PSY.ACBusTypes.PV
             Vm_vect[ix] = PSY.get_magnitude(bus)
             θ_vect[ix] = result[2 * ix]
             for gen in sources
@@ -625,7 +631,7 @@ function write_results(
                 end
             end
             Q_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
-        elseif bus.bustype == PSY.BusTypes.PQ
+        elseif bus.bustype == PSY.ACBusTypes.PQ
             Vm_vect[ix] = result[2 * ix - 1]
             θ_vect[ix] = result[2 * ix]
             for gen in sources

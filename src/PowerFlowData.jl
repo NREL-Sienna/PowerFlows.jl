@@ -21,7 +21,7 @@ flows and angles, as well as these ones.
 - `bus_reactivepower_withdrawals::Matrix{Float64}`:
         "(b, t)" matrix containing the bus reactive power withdrawals. b: 
         number of buses, t: number of time period.
-- `bus_type::Vector{PSY.BusTypes}`:
+- `bus_type::Vector{PSY.ACBusTypes}`:
         vector containing type of buses present in the system, ordered 
         according to "bus_lookup".
 - `bus_magnitude::Matrix{Float64}`:
@@ -55,7 +55,7 @@ struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N, S <: Union{String, Char}}
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
     bus_reactivepower_withdrawals::Matrix{Float64}
-    bus_type::Vector{PSY.BusTypes}
+    bus_type::Vector{PSY.ACBusTypes}
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
     branch_flow_values::Matrix{Float64}
@@ -119,7 +119,7 @@ function PowerFlowData(
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup =
         Dict{String, Int}(PSY.get_name(b) => ix for (ix, b) in enumerate(branches))
-    bus_type = Vector{PSY.BusTypes}(undef, n_buses)
+    bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
     bus_magnitude = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
@@ -130,7 +130,7 @@ function PowerFlowData(
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)
-        if bus_type[ix] == PSY.BusTypes.REF
+        if bus_type[ix] == PSY.ACBusTypes.REF
             bus_angles[ix] = 0.0
         else
             bus_angles[ix] = PSY.get_angle(bus)
@@ -242,18 +242,18 @@ function PowerFlowData(
 
     bus_lookup = aux_network_matrix.lookup[1]
     branch_lookup = aux_network_matrix.lookup[2]
-    bus_type = Vector{PSY.BusTypes}(undef, n_buses)
+    bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
     bus_magnitude = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
 
     for (bus_no, ix) in bus_lookup
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)
-        if bus_type[ix] == PSY.BusTypes.REF
+        if bus_type[ix] == PSY.ACBusTypes.REF
             bus_angles[ix] = 0.0
         else
             bus_angles[ix] = PSY.get_angle(bus)
@@ -292,6 +292,8 @@ function PowerFlowData(
     bus_magnitude_1 = zeros(n_buses, 1)
     bus_angles_1 = deepcopy(init_1)
     branch_flow_values_1 = deepcopy(init_2)
+
+    # @show size(bus_activepower_injection_1)
 
     # initial values related to first timestep allocated in the first column
     bus_activepower_injection_1[:, 1] .= bus_activepower_injection
@@ -368,7 +370,7 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
-    bus_type = Vector{PSY.BusTypes}(undef, n_buses)
+    bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
     bus_magnitude = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
@@ -379,7 +381,7 @@ function PowerFlowData(
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)
-        if bus_type[ix] == PSY.BusTypes.REF
+        if bus_type[ix] == PSY.ACBusTypes.REF
             bus_angles[ix] = 0.0
         else
             bus_angles[ix] = PSY.get_angle(bus)
@@ -494,7 +496,7 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
-    bus_type = Vector{PSY.BusTypes}(undef, n_buses)
+    bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
     bus_magnitude = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
@@ -505,7 +507,7 @@ function PowerFlowData(
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)
-        if bus_type[ix] == PSY.BusTypes.REF
+        if bus_type[ix] == PSY.ACBusTypes.REF
             bus_angles[ix] = 0.0
         else
             bus_angles[ix] = PSY.get_angle(bus)

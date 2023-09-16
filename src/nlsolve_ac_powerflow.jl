@@ -122,7 +122,7 @@ function _solve_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
             X_ix_t_snd = 2 * ix_t
             b = PSY.get_bustype(buses[ix_t])
             #Set to 0.0 only on connected buses
-            if b == PSY.BusTypes.REF
+            if b == PSY.ACBusTypes.REF
                 if ix_f == ix_t
                     #Active PF w/r Local Active Power
                     push!(J0_I, F_ix_f_r)
@@ -133,7 +133,7 @@ function _solve_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
                     push!(J0_J, X_ix_t_snd)
                     push!(J0_V, 0.0)
                 end
-            elseif b == PSY.BusTypes.PV
+            elseif b == PSY.ACBusTypes.PV
                 #Active PF w/r Angle
                 push!(J0_I, F_ix_f_r)
                 push!(J0_J, X_ix_t_snd)
@@ -148,7 +148,7 @@ function _solve_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
                     push!(J0_J, X_ix_t_fst)
                     push!(J0_V, 0.0)
                 end
-            elseif b == PSY.BusTypes.PQ
+            elseif b == PSY.ACBusTypes.PQ
                 #Active PF w/r VoltageMag
                 push!(J0_I, F_ix_f_r)
                 push!(J0_J, X_ix_t_fst)
@@ -200,7 +200,7 @@ function _solve_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
         end
 
         P_LOAD_BUS[ix], Q_LOAD_BUS[ix] = _get_load_data(system, b)
-        if b.bustype == PSY.BusTypes.REF
+        if b.bustype == PSY.ACBusTypes.REF
             injection_components = PSY.get_components(
                 d -> PSY.get_available(d) && PSY.get_bus(d) == b,
                 PSY.StaticInjection,
@@ -215,11 +215,11 @@ function _solve_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
             x0[state_variable_count] = P_GEN_BUS[ix]
             x0[state_variable_count + 1] = Q_GEN_BUS[ix]
             state_variable_count += 2
-        elseif b.bustype == PSY.BusTypes.PV
+        elseif b.bustype == PSY.ACBusTypes.PV
             x0[state_variable_count] = Q_GEN_BUS[ix]
             x0[state_variable_count + 1] = bus_angle
             state_variable_count += 2
-        elseif b.bustype == PSY.BusTypes.PQ
+        elseif b.bustype == PSY.ACBusTypes.PQ
             x0[state_variable_count] = bus_voltage_magnitude
             x0[state_variable_count + 1] = bus_angle
             state_variable_count += 2
@@ -232,16 +232,16 @@ function _solve_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
     bus_types = PSY.get_bustype.(buses)
     function pf!(F::Vector{Float64}, X::Vector{Float64})
         for (ix, b) in enumerate(bus_types)
-            if b == PSY.BusTypes.REF
+            if b == PSY.ACBusTypes.REF
                 # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
                 P_net[ix] = X[2 * ix - 1] - P_LOAD_BUS[ix]
                 Q_net[ix] = X[2 * ix] - Q_LOAD_BUS[ix]
-            elseif b == PSY.BusTypes.PV
+            elseif b == PSY.ACBusTypes.PV
                 # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
                 P_net[ix] = P_GEN_BUS[ix] - P_LOAD_BUS[ix]
                 Q_net[ix] = X[2 * ix - 1] - Q_LOAD_BUS[ix]
                 θ[ix] = X[2 * ix]
-            elseif b == PSY.BusTypes.PQ
+            elseif b == PSY.ACBusTypes.PQ
                 # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
                 P_net[ix] = P_GEN_BUS[ix] - P_LOAD_BUS[ix]
                 Q_net[ix] = Q_GEN_BUS[ix] - Q_LOAD_BUS[ix]
@@ -286,7 +286,7 @@ function _solve_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
                 X_ix_t_snd = 2 * ix_t
                 b = bus_types[ix_t]
 
-                if b == PSY.BusTypes.REF
+                if b == PSY.ACBusTypes.REF
                     # State variables are Active and Reactive Power Generated
                     # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - x[2*i-1]
                     # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
@@ -295,7 +295,7 @@ function _solve_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
                         J[F_ix_f_r, X_ix_t_fst] = -1.0
                         J[F_ix_f_i, X_ix_t_snd] = -1.0
                     end
-                elseif b == PSY.BusTypes.PV
+                elseif b == PSY.ACBusTypes.PV
                     # State variables are Reactive Power Generated and Voltage Angle
                     # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - p_gen[i]
                     # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
@@ -334,7 +334,7 @@ function _solve_powerflow(system::PSY.System, finite_diff::Bool; kwargs...)
                             Vm[ix_t] *
                             (g_ij * -cos(θ[ix_f] - θ[ix_t]) - b_ij * sin(θ[ix_f] - θ[ix_t]))
                     end
-                elseif b == PSY.BusTypes.PQ
+                elseif b == PSY.ACBusTypes.PQ
                     # State variables are Voltage Magnitude and Voltage Angle
                     # Everything appears in everything
                     if ix_f == ix_t
