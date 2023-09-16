@@ -226,12 +226,10 @@ function PowerFlowData(
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
-    if timesteps != 0
-        if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:timesteps]
-        elseif length(timestep_names) != timesteps
-            error("timestep_names field must have same length as timesteps")
-        end
+    if length(timestep_names) == 0
+        timestep_names = [string(i) for i in 1:timesteps]
+    elseif length(timestep_names) != timesteps
+        error("timestep_names field must have same length as timesteps")
     end
 
     # get the network matrices
