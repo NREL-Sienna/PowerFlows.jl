@@ -146,7 +146,11 @@ function _get_fixed_admittance_power(
         !PSY.get_available(l) && continue
         if (l.bus == b)
             Vm_squared =
-                b.bustype == PSY.ACBusTypes.PQ ? result[2 * ix - 1]^2 : PSY.get_magnitude(b)^2
+                if b.bustype == PSY.ACBusTypes.PQ
+                    result[2 * ix - 1]^2
+                else
+                    PSY.get_magnitude(b)^2
+                end
             active_power += Vm_squared * real(PSY.get_Y(l))
             reactive_power -= Vm_squared * imag(PSY.get_Y(l))
         end
