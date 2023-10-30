@@ -60,6 +60,21 @@ function _get_withdrawals!(
     return
 end
 
+# TODO: Might need changes if we have SwitchedAdmittances
+function _get_reactive_power_bound!(
+    bus_reactivepower_bounds::Vector{Vector{Float64}},
+    bus_lookup::Dict{Int, Int},
+    sys::PSY.System)
+    sources = PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, sys)
+    for source in sources
+        !PSY.get_available(source) && continue
+        bus = PSY.get_bus(source)
+        bus_ix = bus_lookup[PSY.get_number(bus)]
+        reactive_power_limits = PSY.get_reactive_power_limits(source)
+        bus_reactivepower_bounds[bus_ix][1] += min(0, reactive_power_limits.min)
+        bus_reactivepower_bounds[bus_ix][2] += max(0, reactive_power_limits.max)
+    end
+end
 ##############################################################################
 # Matrix Methods #############################################################
 
