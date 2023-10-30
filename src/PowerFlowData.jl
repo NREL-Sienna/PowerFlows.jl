@@ -68,7 +68,6 @@ struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N, S <: Union{String, String}}
     power_network_matrix::M
     aux_network_matrix::N
     neighbors::Vector{Set{Int}}
-    x0::Matrix{Float64}
 end
 
 # AC Power Flow Data
@@ -86,46 +85,6 @@ function _calculate_neighbors(
         push!(neighbors[J[nz]], I[nz])
     end
     return neighbors
-end
-
-function _calculate_x0(n::Int,
-    bus_types::Vector{PSY.ACBusTypes},
-    bus_angles::Matrix{Float64},
-    bus_magnitude::Matrix{Float64},
-    bus_activepower_injection::Matrix{Float64},
-    bus_reactivepower_injection::Matrix{Float64},
-    bus_activepower_withdrawals::Matrix{Float64},
-    bus_reactivepower_withdrawals::Matrix{Float64})
-    n_buses = length(bus_types)
-    x0 = Array{Float64}(undef, 2 * n_buses, n)
-    for i_n in 1:n
-        state_variable_count = 1
-        for (ix, b) in enumerate(bus_types)
-            if b == PSY.ACBusTypes.REF
-                x0[state_variable_count, i_n] =
-                    bus_activepower_injection[ix, i_n] -
-                    bus_activepower_withdrawals[ix, i_n]
-                x0[state_variable_count + 1, i_n] =
-                    bus_reactivepower_injection[ix, i_n] -
-                    bus_reactivepower_withdrawals[ix, i_n]
-                state_variable_count += 2
-            elseif b == PSY.ACBusTypes.PV
-                x0[state_variable_count, i_n] =
-                    bus_reactivepower_injection[ix, i_n] -
-                    bus_reactivepower_withdrawals[ix, i_n]
-                x0[state_variable_count + 1, i_n] = bus_angles[ix, i_n]
-                state_variable_count += 2
-            elseif b == PSY.ACBusTypes.PQ
-                x0[state_variable_count, i_n] = bus_magnitude[ix, i_n]
-                x0[state_variable_count + 1, i_n] = bus_angles[ix, i_n]
-                state_variable_count += 2
-            else
-                throw(ArgumentError("$b not recognized as a bustype"))
-            end
-        end
-        @assert state_variable_count - 1 == n_buses * 2
-    end
-    return x0
 end
 
 """
@@ -154,9 +113,9 @@ WARNING: functions for the evaluation of the multi-period AC OPF still to be imp
 """
 function PowerFlowData(
     ::ACPowerFlow,
-    sys::PSY.System,
+    sys::PSY.System;
     timesteps::Int = 1,
-    timestep_names::Vector{String} = String[]
+    timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true)
 
     # assign timestep_names
@@ -192,7 +151,7 @@ function PowerFlowData(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
 
-    for (ix, bus_no) in bus_lookup
+    for (bus_no, ix) in bus_lookup
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
         bus_type[ix] = PSY.get_bustype(bus)
@@ -251,6 +210,7 @@ function PowerFlowData(
         bus_reactivepower_injection_1,
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
+        Vector{Float64}(),
         bus_type,
         bus_magnitude_1,
         bus_angles_1,
@@ -260,14 +220,6 @@ function PowerFlowData(
         power_network_matrix,
         nothing,
         _calculate_neighbors(power_network_matrix),
-        _calculate_x0(timesteps,
-            bus_type,
-            bus_angles_1,
-            bus_magnitude_1,
-            bus_activepower_injection_1,
-            bus_reactivepower_injection_1,
-            bus_activepower_withdrawals_1,
-            bus_reactivepower_withdrawals_1),
     )
 end
 
@@ -297,7 +249,7 @@ NOTE: use it for DC power flow computations.
 """
 function PowerFlowData(
     ::DCPowerFlow,
-    sys::PSY.System,
+    sys::PSY.System;
     timesteps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true)
@@ -387,6 +339,7 @@ function PowerFlowData(
         bus_reactivepower_injection_1,
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
+        Vector{Float64}(),
         bus_type,
         bus_magnitude_1,
         bus_angles_1,
@@ -396,7 +349,6 @@ function PowerFlowData(
         power_network_matrix,
         aux_network_matrix,
         Vector{Set{Int}}(),
-        Matrix{Float64}(),
     )
 end
 
@@ -424,7 +376,7 @@ NOTE: use it for DC power flow computations.
 """
 function PowerFlowData(
     ::PTDFDCPowerFlow,
-    sys::PSY.System,
+    sys::PSY.System;
     timesteps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true)
@@ -516,6 +468,7 @@ function PowerFlowData(
         bus_reactivepower_injection_1,
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
+        Vector{Float64}(),
         bus_type,
         bus_magnitude_1,
         bus_angles_1,
@@ -525,7 +478,6 @@ function PowerFlowData(
         power_network_matrix,
         aux_network_matrix,
         Vector{Set{Int}}(),
-        Matrix{Float64}(),
     )
 end
 
@@ -553,7 +505,7 @@ NOTE: use it for DC power flow computations.
 """
 function PowerFlowData(
     ::vPTDFDCPowerFlow,
-    sys::PSY.System,
+    sys::PSY.System;
     timesteps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true)
@@ -645,6 +597,7 @@ function PowerFlowData(
         bus_reactivepower_injection_1,
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
+        Vector{Float64}(),
         bus_type,
         bus_magnitude_1,
         bus_angles_1,
@@ -654,6 +607,5 @@ function PowerFlowData(
         power_network_matrix,
         aux_network_matrix,
         Vector{Set{Int}}(),
-        Matrix{Float64}(),
     )
 end
