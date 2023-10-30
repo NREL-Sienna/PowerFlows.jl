@@ -71,8 +71,14 @@ function _get_reactive_power_bound!(
         bus = PSY.get_bus(source)
         bus_ix = bus_lookup[PSY.get_number(bus)]
         reactive_power_limits = PSY.get_reactive_power_limits(source)
-        bus_reactivepower_bounds[bus_ix][1] += min(0, reactive_power_limits.min)
-        bus_reactivepower_bounds[bus_ix][2] += max(0, reactive_power_limits.max)
+        if reactive_power_limits !== nothing
+            bus_reactivepower_bounds[bus_ix][1] += min(0, reactive_power_limits.min)
+            bus_reactivepower_bounds[bus_ix][2] += max(0, reactive_power_limits.max)
+        else
+            @warn("Reactive Power Bounds at Bus $(PSY.get_name(bus)) set to (-Inf, Inf)")
+            bus_reactivepower_bounds[bus_ix][1] = -Inf
+            bus_reactivepower_bounds[bus_ix][2] = Inf
+        end
     end
 end
 ##############################################################################

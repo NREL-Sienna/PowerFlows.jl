@@ -35,12 +35,13 @@ function solve_ac_powerflow!(system::PSY.System; kwargs...)
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
     #Work in System per unit
     PSY.set_units_base_system!(system, "SYSTEM_BASE")
+    check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
     data = PowerFlowData(
-        ACPowerFlow(),
+        ACPowerFlow(check_reactive_power_limits = check_reactive_power_limits),
         system;
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
-    res = _solve_powerflow(data; kwargs...)
+    res = _solve_powerflow!(data, check_reactive_power_limits; kwargs...)
     if res.f_converged
         write_powerflow_solution!(system, res.zero)
         @info("PowerFlow solve converged, the results have been stored in the system")

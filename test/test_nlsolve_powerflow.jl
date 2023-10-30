@@ -32,7 +32,7 @@
     ]
     data = PowerFlows.PowerFlowData(ACPowerFlow(), sys; check_connectivity = true)
     #Compare results between finite diff methods and Jacobian method
-    res1 = PowerFlows._solve_powerflow(data)
+    res1 = PowerFlows._solve_powerflow!(data, false)
     @test LinearAlgebra.norm(result_14 - res1.zero) <= 1e-6
     @test solve_ac_powerflow!(sys; method = :newton)
 end
