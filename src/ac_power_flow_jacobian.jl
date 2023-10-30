@@ -5,16 +5,21 @@ struct PolarPowerFlowJacobian{F,
     Jv::T
 end
 
-function (J::PolarPowerFlowJacobian)(x::Vector{Float64})
-    return J.Jf(J.Jv, x)
+function (Jacobianf::PolarPowerFlowJacobian)(
+    J::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    x::Vector{Float64},
+)
+    Jacobianf.Jf(Jacobianf.Jv, x)
+    copyto!(J, Jacobianf.Jv)
+    return
 end
 
-function PolarPowerFlowJacobian(data::ACPowerFlowData)
+function PolarPowerFlowJacobian(data::ACPowerFlowData, x0::Vector{Float64})
     j0 = _create_jacobian_matrix_structure(data)
     F0 =
         (J::SparseArrays.SparseMatrixCSC{Float64, Int32}, x::Vector{Float64}) ->
             jsp!(J, x, data)
-    F0(j0, data.x0[:, 1])
+    F0(j0, x0)
     return PolarPowerFlowJacobian(F0, j0)
 end
 
@@ -24,15 +29,15 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData)
     J0_J = Int32[]
     J0_V = Float64[]
 
-    for (ix_f, b) in enumerate(data.bus_type)
+    for ix_f in eachindex(data.bus_type)
         F_ix_f_r = 2 * ix_f - 1
         F_ix_f_i = 2 * ix_f
-
         for ix_t in data.neighbors[ix_f]
             X_ix_t_fst = 2 * ix_t - 1
             X_ix_t_snd = 2 * ix_t
+            nb = data.bus_type[ix_t]
             #Set to 0.0 only on connected buses
-            if b == PSY.ACBusTypes.REF
+            if nb == PSY.ACBusTypes.REF
                 if ix_f == ix_t
                     #Active PF w/r Local Active Power
                     push!(J0_I, F_ix_f_r)
@@ -43,7 +48,7 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData)
                     push!(J0_J, X_ix_t_snd)
                     push!(J0_V, 0.0)
                 end
-            elseif b == PSY.ACBusTypes.PV
+            elseif nb == PSY.ACBusTypes.PV
                 #Active PF w/r Angle
                 push!(J0_I, F_ix_f_r)
                 push!(J0_J, X_ix_t_snd)
@@ -58,7 +63,7 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData)
                     push!(J0_J, X_ix_t_fst)
                     push!(J0_V, 0.0)
                 end
-            elseif b == PSY.ACBusTypes.PQ
+            elseif nb == PSY.ACBusTypes.PQ
                 #Active PF w/r VoltageMag
                 push!(J0_I, F_ix_f_r)
                 push!(J0_J, X_ix_t_fst)
@@ -87,7 +92,7 @@ function jsp!(
     ::Vector{Float64},
     data::ACPowerFlowData,
 )
-    Yb = data.power_network_matrix
+    Yb = data.power_network_matrix.data
     Vm = data.bus_magnitude
     θ = data.bus_angles
     for (ix_f, b) in enumerate(data.bus_type)
@@ -97,7 +102,8 @@ function jsp!(
         for ix_t in data.neighbors[ix_f]
             X_ix_t_fst = 2 * ix_t - 1
             X_ix_t_snd = 2 * ix_t
-            if b == PSY.ACBusTypes.REF
+            nb = data.bus_type[ix_t]
+            if nb == PSY.ACBusTypes.REF
                 # State variables are Active and Reactive Power Generated
                 # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - x[2*i-1]
                 # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
@@ -106,7 +112,7 @@ function jsp!(
                     J[F_ix_f_r, X_ix_t_fst] = -1.0
                     J[F_ix_f_i, X_ix_t_snd] = -1.0
                 end
-            elseif b == PSY.ACBusTypes.PV
+            elseif nb == PSY.ACBusTypes.PV
                 # State variables are Reactive Power Generated and Voltage Angle
                 # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - p_gen[i]
                 # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
@@ -145,7 +151,7 @@ function jsp!(
                         Vm[ix_t] *
                         (g_ij * -cos(θ[ix_f] - θ[ix_t]) - b_ij * sin(θ[ix_f] - θ[ix_t]))
                 end
-            elseif b == PSY.ACBusTypes.PQ
+            elseif nb == PSY.ACBusTypes.PQ
                 # State variables are Voltage Magnitude and Voltage Angle
                 # Everything appears in everything
                 if ix_f == ix_t
