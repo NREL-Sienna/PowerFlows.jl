@@ -48,19 +48,19 @@ flows and angles, as well as these ones.
         depending on the method considered.
 - `neighbors::Vector{Set{Int}}`: Vector with the sets of adjacent buses.
 """
-struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N, S <: Union{String, String}}
+struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
     bus_lookup::Dict{Int, Int}
     branch_lookup::Dict{String, Int}
     bus_activepower_injection::Matrix{Float64}
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
     bus_reactivepower_withdrawals::Matrix{Float64}
-    bus_reactivepower_bounds::Vector{Float64}
+    bus_reactivepower_bounds::Vector{Vector{Float64}}
     bus_type::Vector{PSY.ACBusTypes}
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
     branch_flow_values::Matrix{Float64}
-    timestep_map::Dict{Int, S}
+    timestep_map::Dict{Int, String}
     valid_ix::Vector{Int}
     power_network_matrix::M
     aux_network_matrix::N
@@ -178,18 +178,20 @@ function PowerFlowData(
         sys,
     )
 
-    # initialize data
-    init_1 = zeros(n_buses, timesteps)
-    init_2 = zeros(n_branches, timesteps)
-
     # define fields as matrices whose number of columns is eqault to the number of timesteps
-    bus_activepower_injection_1 = deepcopy(init_1)
-    bus_reactivepower_injection_1 = deepcopy(init_1)
-    bus_activepower_withdrawals_1 = deepcopy(init_1)
-    bus_reactivepower_withdrawals_1 = deepcopy(init_1)
-    bus_magnitude_1 = deepcopy(init_1)
-    bus_angles_1 = deepcopy(init_1)
-    branch_flow_values_1 = deepcopy(init_2)
+    bus_activepower_injection_1 = zeros(n_buses, timesteps)
+    bus_reactivepower_injection_1 = zeros(n_buses, timesteps)
+    bus_activepower_withdrawals_1 = zeros(n_buses, timesteps)
+    bus_reactivepower_withdrawals_1 = zeros(n_buses, timesteps)
+    bus_magnitude_1 = zeros(n_buses, timesteps)
+    bus_angles_1 = zeros(n_buses, timesteps)
+    branch_flow_values_1 = zeros(n_branches, timesteps)
+
+    bus_reactivepower_bounds = Vector{Vector{Float64}}(undef, n_buses)
+    for i in 1:n_buses
+        bus_reactivepower_bounds[i] = [0.0, 0.0]
+    end
+    _get_reactive_power_bound!(bus_reactivepower_bounds, bus_lookup, sys)
 
     # initial values related to first timestep allocated in the first column
     bus_activepower_injection_1[:, 1] .= bus_activepower_injection
@@ -207,7 +209,7 @@ function PowerFlowData(
         bus_reactivepower_injection_1,
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
-        Vector{Float64}(),
+        bus_reactivepower_bounds,
         bus_type,
         bus_magnitude_1,
         bus_angles_1,
@@ -336,7 +338,7 @@ function PowerFlowData(
         bus_reactivepower_injection_1,
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
-        Vector{Float64}(),
+        Vector{Vector{Float64}}(),
         bus_type,
         bus_magnitude_1,
         bus_angles_1,
@@ -465,7 +467,7 @@ function PowerFlowData(
         bus_reactivepower_injection_1,
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
-        Vector{Float64}(),
+        Vector{Vector{Float64}}(),
         bus_type,
         bus_magnitude_1,
         bus_angles_1,
@@ -594,7 +596,7 @@ function PowerFlowData(
         bus_reactivepower_injection_1,
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
-        Vector{Float64}(),
+        Vector{Vector{Float64}}(),
         bus_type,
         bus_magnitude_1,
         bus_angles_1,

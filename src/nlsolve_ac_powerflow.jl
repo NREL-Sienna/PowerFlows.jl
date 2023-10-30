@@ -66,7 +66,7 @@ res = solve_powerflow(sys, method=:newton)
 ```
 """
 function solve_powerflow(
-    ::ACPowerFlow,
+    pf::ACPowerFlow,
     system::PSY.System;
     kwargs...,
 )
@@ -79,7 +79,9 @@ function solve_powerflow(
         system;
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
-    res = _solve_powerflow(data; kwargs...)
+
+    res = _solve_powerflow!(data, pf.check_reactive_power_limits; kwargs...)
+
     if res.f_converged
         @info("PowerFlow solve converged, the results are exported in DataFrames")
         df_results = write_results(ACPowerFlow(), system, res.zero)
@@ -92,12 +94,61 @@ function solve_powerflow(
     return res.f_converged
 end
 
-function _solve_powerflow(data::ACPowerFlowData; kwargs...)
-    nlsolve_kwargs = (k for k in kwargs if first(k) ∉ AC_PF_KW)
+function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
+    within_limits = true
+    for (ix, b) in enumerate(data.bus_type)
+        if b == PSY.ACBusTypes.PV
+            Q_gen = zero[2 * ix - 1]
+        else
+            continue
+        end
+
+        if Q_gen <= data.bus_reactivepower_bounds[ix][1]
+            @show "here under"
+            within_limits = false
+            data.bus_type[ix] = PSY.ACBusTypes.PQ
+            data.bus_reactivepower_injection[ix] = data.bus_reactivepower_bounds[ix][1]
+        elseif Q_gen >= data.bus_reactivepower_bounds[ix][2]
+            @show "here over"
+            within_limits = false
+            data.bus_type[ix] = PSY.ACBusTypes.PQ
+            data.bus_reactivepower_injection[ix] = data.bus_reactivepower_bounds[ix][2]
+        else
+            @debug "Within Limits"
+        end
+    end
+    return within_limits
+end
+
+function _solve_powerflow!(
+    data::ACPowerFlowData,
+    check_reactive_power_limits;
+    nlsolve_kwargs...,
+)
+    if check_reactive_power_limits
+        for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
+            res = _nlsolve_powerflow(data; nlsolve_kwargs...)
+            if res.f_converged
+                if _check_q_limit_bounds!(data, res.zero)
+                    return res
+                end
+            else
+                return res
+            end
+        end
+    else
+        return _nlsolve_powerflow(data; nlsolve_kwargs...)
+    end
+end
+
+function _nlsolve_powerflow(data::ACPowerFlowData; nlsolve_kwargs...)
     pf = PolarPowerFlow(data)
     J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
 
     df = NLsolve.OnceDifferentiable(pf, J, pf.x0, pf.residual, J.Jv)
     res = NLsolve.nlsolve(df, pf.x0; nlsolve_kwargs...)
+    if !res.f_converged
+        @error("The powerflow solver returned convergence = $(res.f_converged)")
+    end
     return res
 end
