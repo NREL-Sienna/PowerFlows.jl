@@ -4,7 +4,6 @@ const ACPowerFlowData = PowerFlowData{
         Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
     },
     Nothing,
-    String,
 }
 
 struct PolarPowerFlow{F, D}
