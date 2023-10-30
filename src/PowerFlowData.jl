@@ -48,7 +48,10 @@ flows and angles, as well as these ones.
         depending on the method considered.
 - `neighbors::Vector{Set{Int}}`: Vector with the sets of adjacent buses.
 """
-struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+struct PowerFlowData{
+    M <: PNM.PowerNetworkMatrix,
+    N <: Union{PNM.PowerNetworkMatrix, Nothing},
+}
     bus_lookup::Dict{Int, Int}
     branch_lookup::Dict{String, Int}
     bus_activepower_injection::Matrix{Float64}

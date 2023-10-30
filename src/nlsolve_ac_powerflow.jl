@@ -37,7 +37,7 @@ function solve_ac_powerflow!(system::PSY.System; kwargs...)
     PSY.set_units_base_system!(system, "SYSTEM_BASE")
     check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
     data = PowerFlowData(
-        ACPowerFlow(check_reactive_power_limits = check_reactive_power_limits),
+        ACPowerFlow(; check_reactive_power_limits = check_reactive_power_limits),
         system;
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
