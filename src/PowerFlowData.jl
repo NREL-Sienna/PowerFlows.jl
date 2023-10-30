@@ -37,11 +37,9 @@ flows and angles, as well as these ones.
         "branch_lookup". br: number of branches, t: number of time period.
 - `timestep_map::Dict{Int, S}`:
         dictonary mapping the number of the time periods (corresponding to the
-        column number of the previosly mentioned matrices) and their actual
-        names.
+        column number of the previosly mentioned matrices) and their names.
 - `valid_ix::Vector{Int}`:
-        vector containing the indeces related to those buses that are not slack
-        ones.
+        vector containing the indeces of not slack buses
 - `power_network_matrix::M`:
         matrix used for the evaluation of either the power flows or bus angles,
         depending on the method considered.
@@ -49,7 +47,6 @@ flows and angles, as well as these ones.
         matrix used for the evaluation of either the power flows or bus angles,
         depending on the method considered.
 - `neighbors::Vector{Set{Int}}`: Vector with the sets of adjacent buses.
-- `x0::Matrix{Float64}`: Initial conditions for the AC PowerFlow.
 """
 struct PowerFlowData{M <: PNM.PowerNetworkMatrix, N, S <: Union{String, String}}
     bus_lookup::Dict{Int, Int}
