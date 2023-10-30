@@ -67,7 +67,7 @@ For instance, initializing dynamic simulations. Also, because [`run_powerflow!`]
 are also available for [`run_powerflow!`](@ref)
 
 ````@example generated_power_flow
-run_powerflow!(system_data; finite_diff = true, method = :newton)
+run_powerflow!(system_data; method = :newton)
 ````
 
 After running the power flow command this are the values of the
