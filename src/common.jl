@@ -54,8 +54,8 @@ function _get_withdrawals!(
         !PSY.get_available(l) && continue
         bus = PSY.get_bus(l)
         bus_ix = bus_lookup[PSY.get_number(bus)]
-        bus_activepower_withdrawals[bus_ix] += PSY.get_active_power(l)
-        bus_reactivepower_withdrawals[bus_ix] += PSY.get_reactive_power(l)
+        bus_activepower_withdrawals[bus_ix] += get_total_p(l)
+        bus_reactivepower_withdrawals[bus_ix] += get_total_q(l)
     end
     return
 end
