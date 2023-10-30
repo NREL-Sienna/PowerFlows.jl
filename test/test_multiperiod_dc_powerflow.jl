@@ -1,6 +1,4 @@
 @testset "MULTI-PERIOD power flows evaluation: ABA, PTDF, VirtualPTDF" begin
-    MAIN_DIR = dirname(@__DIR__)
-
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     injections = CSV.read(
@@ -28,9 +26,9 @@
 
     # create structure for multi-period case
     timesteps = 24
-    data_1 = PowerFlowData(DCPowerFlow(), sys, timesteps)
-    data_2 = PowerFlowData(PTDFDCPowerFlow(), sys, timesteps)
-    data_3 = PowerFlowData(vPTDFDCPowerFlow(), sys, timesteps)
+    data_1 = PowerFlowData(DCPowerFlow(), sys; timesteps=timesteps)
+    data_2 = PowerFlowData(PTDFDCPowerFlow(), sys; timesteps=timesteps)
+    data_3 = PowerFlowData(vPTDFDCPowerFlow(), sys; timesteps=timesteps)
 
     # allocate data from csv
     injs = Matrix(injections)
