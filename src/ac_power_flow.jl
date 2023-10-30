@@ -13,6 +13,47 @@ struct PolarPowerFlow{F, D}
     residual::Vector{Float64}
     P_net::Vector{Float64}
     Q_net::Vector{Float64}
+    x0::Vector{Float64}
+end
+
+function _calculate_x0(n::Int,
+    bus_types::Vector{PSY.ACBusTypes},
+    bus_angles::Matrix{Float64},
+    bus_magnitude::Matrix{Float64},
+    bus_activepower_injection::Matrix{Float64},
+    bus_reactivepower_injection::Matrix{Float64},
+    bus_activepower_withdrawals::Matrix{Float64},
+    bus_reactivepower_withdrawals::Matrix{Float64})
+    n_buses = length(bus_types)
+    x0 = Vector{Float64}(undef, 2 * n_buses)
+    for i_n in 1:n
+        state_variable_count = 1
+        for (ix, b) in enumerate(bus_types)
+            if b == PSY.ACBusTypes.REF
+                x0[state_variable_count, i_n] =
+                    bus_activepower_injection[ix, i_n] -
+                    bus_activepower_withdrawals[ix, i_n]
+                x0[state_variable_count + 1, i_n] =
+                    bus_reactivepower_injection[ix, i_n] -
+                    bus_reactivepower_withdrawals[ix, i_n]
+                state_variable_count += 2
+            elseif b == PSY.ACBusTypes.PV
+                x0[state_variable_count, i_n] =
+                    bus_reactivepower_injection[ix, i_n] -
+                    bus_reactivepower_withdrawals[ix, i_n]
+                x0[state_variable_count + 1, i_n] = bus_angles[ix, i_n]
+                state_variable_count += 2
+            elseif b == PSY.ACBusTypes.PQ
+                x0[state_variable_count, i_n] = bus_magnitude[ix, i_n]
+                x0[state_variable_count + 1, i_n] = bus_angles[ix, i_n]
+                state_variable_count += 2
+            else
+                throw(ArgumentError("$b not recognized as a bustype"))
+            end
+        end
+        @assert state_variable_count - 1 == n_buses * 2
+    end
+    return x0
 end
 
 function PolarPowerFlow(data::ACPowerFlowData)
@@ -25,13 +66,39 @@ function PolarPowerFlow(data::ACPowerFlowData)
         Q_net[ix] =
             data.bus_reactivepower_injection[ix] - data.bus_reactivepower_withdrawals[ix]
     end
+    x0 = _calculate_x0(1,
+        data.bus_type,
+        data.bus_angles,
+        data.bus_magnitude,
+        data.bus_activepower_injection,
+        data.bus_reactivepower_injection,
+        data.bus_activepower_withdrawals,
+        data.bus_reactivepower_withdrawals)
+    pf_function =
+        (res::Vector{Float64}, X::Vector{Float64}) -> polar_pf!(res, X, P_net, Q_net, data)
+    res = similar(x0)
+    pf_function(res, x0)
+
+    if sum(res) > 10 * (n_buses * 2)
+        _, ix = findmax(res)
+        bus_no = data.bus_lookup[ix]
+        @warn "Initial guess provided results in a large initial residual. Largest residual at bus $bus_no"
+    end
+
     return PolarPowerFlow(
-        (res::Vector{Float64}, X::Vector{Float64}) -> polar_pf!(res, X, P_net, Q_net, data),
+        pf_function,
         data,
-        zeros(2 * n_buses),
+        res,
         P_net,
         Q_net,
+        x0,
     )
+end
+
+function (pf::PolarPowerFlow)(res::Vector{Float64}, x::Vector{Float64})
+    pf.Pf(pf.residual, x)
+    copyto!(res, pf.residual)
+    return
 end
 
 function (pf::PolarPowerFlow)(x::Vector{Float64})
@@ -46,7 +113,7 @@ function polar_pf!(
     Q_net::Vector{Float64},
     data::ACPowerFlowData,
 )
-    Yb = data.power_network_matrix
+    Yb = data.power_network_matrix.data
     n_buses = length(data.bus_type)
     for (ix, b) in enumerate(data.bus_type)
         if b == PSY.ACBusTypes.REF
