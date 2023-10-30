@@ -25,50 +25,6 @@ const ABAPowerFlowData = PowerFlowData{
         Tuple{Dict{Int64, Int64}, Dict{String, Int64}}},
 }
 
-# # method based on ABA and BA matrices
-# function _solve_powerflows!(
-#     data::ABAPowerFlowData,
-# )
-#     # get net injections
-#     power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
-#     # save angles and power flows
-#     data.bus_angles[data.valid_ix, :] .=
-#         data.power_network_matrix.K \ @view power_injection[data.valid_ix, :]
-#     data.branch_flow_values .= data.aux_network_matrix.data' * data.bus_angles
-#     return
-# end
-
-# # method based on PTDF matrix
-# function _solve_powerflows!(
-#     data::PTDFPowerFlowData,
-# )
-#     # get net power injections
-#     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
-#     # evaluate flows
-#     data.branch_flow_values .= data.power_network_matrix.data' * power_injection
-#     # evaluate bus angles
-#     p_inj = power_injection[data.valid_ix, :]
-#     data.bus_angles[data.valid_ix, :] .= data.aux_network_matrix.K \ p_inj
-#     return
-# end
-
-# # method based on Virtual PTDF
-# function _solve_powerflows!(
-#     data::vPTDFPowerFlowData,
-# )
-#     # get net power injections
-#     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
-#     for i in axes(power_injection, 2)
-#         # evaluate flows (next line evaluates both both PTDF rows and line flows)
-#         data.branch_flow_values[:, i] .=
-#             my_mul_mt(data.power_network_matrix, power_injection[:, i])
-#         # evaluate bus angles
-#         p_inj = power_injection[data.valid_ix, i]
-#         data.bus_angles[data.valid_ix, i] .= data.aux_network_matrix.K \ p_inj
-#     end
-#     return
-# end
-
 """
 Evaluates the power flows on each system's branch and updates the PowerFlowData structure.
 
@@ -137,18 +93,18 @@ end
 # SINGLE PERIOD ##############################################################
 
 """
-Evaluates the power flows on each system's branch by means of the PTDF matrix. 
+Evaluates the power flows on each system's branch by means of the PTDF matrix.
 Updates the PowerFlowData structure and returns a dictionary containing a
 DataFrame for the single timestep considered.
-The DataFrame containts the flows and angles related to the information stored 
+The DataFrame containts the flows and angles related to the information stored
 in the PSY.System considered as input.
 
 # Arguments:
 - `::PTDFDCPowerFlow`:
-        use PTDFDCPowerFlow() to evaluate the power flows according to the 
+        use PTDFDCPowerFlow() to evaluate the power flows according to the
         method based on the PTDF matrix
 - `sys::PSY.System`:
-        container gathering the system data used for the evaluation of flows 
+        container gathering the system data used for the evaluation of flows
         and angles.
 """
 function solve_powerflow(
@@ -161,19 +117,19 @@ function solve_powerflow(
 end
 
 """
-Evaluates the power flows on each system's branch by means of the ABA and BA 
-matrices. 
+Evaluates the power flows on each system's branch by means of the ABA and BA
+matrices.
 Updates the PowerFlowData structure and returns a dictionary containing a
 DataFrame for the single timestep considered.
-The DataFrame containts the flows and angles related to the information stored 
+The DataFrame containts the flows and angles related to the information stored
 in the PSY.System considered as input.
 
 # Arguments:
 - `::DCPowerFlow`:
-        use DCPowerFlow() to evaluate the power flows according to the method 
+        use DCPowerFlow() to evaluate the power flows according to the method
         based on the ABA and BA matrices
 - `sys::PSY.System`:
-        container gathering the system data used for the evaluation of flows 
+        container gathering the system data used for the evaluation of flows
         and angles.
 """
 function solve_powerflow(
@@ -186,19 +142,19 @@ function solve_powerflow(
 end
 
 """
-Evaluates the power flows on each system's branch by means of the Virtual PTDF 
+Evaluates the power flows on each system's branch by means of the Virtual PTDF
 matrix.
 Updates the PowerFlowData structure "data" and returns a dictionary containing
 a number of DataFrames equal to the numeber of timestep considered in "data".
-The DataFrame containts the flows and angles related to the information stored 
+The DataFrame containts the flows and angles related to the information stored
 in the PSY.System considered as input.
 
 # Arguments:
 - `::vPTDFDCPowerFlow`:
-        use vPTDFDCPowerFlow() to evaluate the power flows according to the 
+        use vPTDFDCPowerFlow() to evaluate the power flows according to the
         method based on the Virtual PTDF matrix
 - `sys::PSY.System`:
-        container gathering the system data used for the evaluation of flows 
+        container gathering the system data used for the evaluation of flows
         and angles.
 """
 function solve_powerflow(
@@ -234,7 +190,7 @@ function solve_powerflow(
 end
 
 """
-Evaluates the power flows on each system's branch by means of the ABA and BA 
+Evaluates the power flows on each system's branch by means of the ABA and BA
 matrices.
 Updates the PowerFlowData structure "data" and returns a dictionary containing
 a number of DataFrames equal to the numeber of timestep considered in "data".
@@ -256,7 +212,7 @@ function solve_powerflow(
 end
 
 """
-Evaluates the power flows on each system's branch by means of Virtual PTDF 
+Evaluates the power flows on each system's branch by means of Virtual PTDF
 matrices.
 Updates the PowerFlowData structure "data" and returns a dictionary containing
 a number of DataFrames equal to the numeber of timestep considered in "data".
