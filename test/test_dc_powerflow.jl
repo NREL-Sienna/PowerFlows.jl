@@ -1,6 +1,3 @@
-# TODO:
-# - get_active_power(::StandardLoad) not working
-
 @testset "SINGLE PERIOD power flows evaluation: ABA, PTDF, VirtualPTDF" begin
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
@@ -28,7 +25,7 @@
     ref_bus_angles[valid_ix] = matrix_data \ power_injection[valid_ix]
     ref_flow_values = transpose(aux_network_matrix.data) * ref_bus_angles
 
-    # CASE 1: ABA and BA matrices 
+    # CASE 1: ABA and BA matrices
     solved_data_ABA = solve_powerflow(DCPowerFlow(), sys)
     @test isapprox(
         solved_data_ABA["1"]["flow_results"].P_from_to +

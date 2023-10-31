@@ -1,7 +1,7 @@
 module PowerFlows
 
 export solve_powerflow
-export solve_powerflow!
+export solve_ac_powerflow!
 export PowerFlowData
 export DCPowerFlow
 export ACPowerFlow
@@ -14,7 +14,6 @@ import PowerSystems
 import LinearAlgebra
 import NLsolve
 import SparseArrays
-import SharedArrays: SharedArray
 import InfrastructureSystems
 import PowerNetworkMatrices
 import SparseArrays: SparseMatrixCSC
@@ -28,6 +27,8 @@ include("definitions.jl")
 include("powerflow_types.jl")
 include("PowerFlowData.jl")
 include("solve_dc_powerflow.jl")
+include("ac_power_flow.jl")
+include("ac_power_flow_jacobian.jl")
 include("nlsolve_ac_powerflow.jl")
 include("post_processing.jl")
 
