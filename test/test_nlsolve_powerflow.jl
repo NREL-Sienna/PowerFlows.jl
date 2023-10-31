@@ -35,6 +35,13 @@
     res1 = PowerFlows._solve_powerflow!(data, false)
     @test LinearAlgebra.norm(result_14 - res1.zero) <= 1e-6
     @test solve_ac_powerflow!(sys; method = :newton)
+
+    # Test enforcing the reactive power Limits
+    set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
+    data = PowerFlows.PowerFlowData(ACPowerFlow(), sys; check_connectivity = true)
+    res2 = PowerFlows._solve_powerflow!(data, true)
+    @test LinearAlgebra.norm(result_14 - res2.zero) >= 1e-6
+    @test 1.08 <= res2.zero[15] <= 1.09
 end
 
 @testset "NLsolve Power Flow 14-Bus Line Configurations" begin

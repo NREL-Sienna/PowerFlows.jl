@@ -96,6 +96,7 @@ function solve_powerflow(
 end
 
 function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
+    bus_names = data.power_network_matrix.axes[1]
     within_limits = true
     for (ix, b) in enumerate(data.bus_type)
         if b == PSY.ACBusTypes.PV
@@ -105,12 +106,12 @@ function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
         end
 
         if Q_gen <= data.bus_reactivepower_bounds[ix][1]
-            @show "here under"
+            @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix] = PSY.ACBusTypes.PQ
             data.bus_reactivepower_injection[ix] = data.bus_reactivepower_bounds[ix][1]
         elseif Q_gen >= data.bus_reactivepower_bounds[ix][2]
-            @show "here over"
+            @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix] = PSY.ACBusTypes.PQ
             data.bus_reactivepower_injection[ix] = data.bus_reactivepower_bounds[ix][2]
