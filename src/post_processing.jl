@@ -596,6 +596,7 @@ dictionary will therefore feature just one key linked to one DataFrame.
 function write_results(
     ::ACPowerFlow,
     sys::PSY.System,
+    data::ACPowerFlowData,
     result::Vector{Float64},
 )
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
@@ -603,7 +604,6 @@ function write_results(
     N_BUS = length(buses)
     bus_map = Dict(buses .=> 1:N_BUS)
     sys_basepower = PSY.get_base_power(sys)
-    sources = PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, sys)
     Vm_vect = fill(0.0, N_BUS)
     θ_vect = fill(0.0, N_BUS)
     P_gen_vect = fill(0.0, N_BUS)
@@ -611,36 +611,27 @@ function write_results(
     P_load_vect = fill(0.0, N_BUS)
     Q_load_vect = fill(0.0, N_BUS)
 
-    for (ix, bus) in enumerate(buses)
-        P_load_vect[ix], Q_load_vect[ix] = _get_load_data(sys, bus) .* sys_basepower
-        P_admittance, Q_admittance = _get_fixed_admittance_power(sys, bus, result, ix)
+    for (ix, bustype) in enumerate(data.bus_type)
+        P_load_vect[ix] = data.bus_activepower_withdrawals[ix] * sys_basepower
+        Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix] * sys_basepower
+        P_admittance, Q_admittance = _get_fixed_admittance_power(sys, buses[ix], result, ix)
         P_load_vect[ix] += P_admittance * sys_basepower
         Q_load_vect[ix] += Q_admittance * sys_basepower
-        if bus.bustype == PSY.ACBusTypes.REF
-            Vm_vect[ix] = PSY.get_magnitude(bus)
-            θ_vect[ix] = PSY.get_angle(bus)
+        if bustype == PSY.ACBusTypes.REF
+            Vm_vect[ix] = data.bus_magnitude[ix]
+            θ_vect[ix] = data.bus_angles[ix]
             P_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix] * sys_basepower
-        elseif bus.bustype == PSY.ACBusTypes.PV
-            Vm_vect[ix] = PSY.get_magnitude(bus)
+        elseif bustype == PSY.ACBusTypes.PV
+            Vm_vect[ix] = data.bus_magnitude[ix]
             θ_vect[ix] = result[2 * ix]
-            for gen in sources
-                !PSY.get_available(gen) && continue
-                if gen.bus == bus
-                    P_gen_vect[ix] += PSY.get_active_power(gen) * sys_basepower
-                end
-            end
+            P_gen_vect[ix] = data.bus_activepower_injection[ix] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
-        elseif bus.bustype == PSY.ACBusTypes.PQ
+        elseif bustype == PSY.ACBusTypes.PQ
             Vm_vect[ix] = result[2 * ix - 1]
             θ_vect[ix] = result[2 * ix]
-            for gen in sources
-                !PSY.get_available(gen) && continue
-                if gen.bus == bus
-                    P_gen_vect[ix] += PSY.get_active_power(gen) * sys_basepower
-                    Q_gen_vect[ix] += PSY.get_reactive_power(gen) * sys_basepower
-                end
-            end
+            P_gen_vect[ix] = data.bus_activepower_injection[ix] * sys_basepower
+            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix] * sys_basepower
         end
     end
 

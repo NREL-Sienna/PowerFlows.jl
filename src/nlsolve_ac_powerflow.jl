@@ -76,7 +76,7 @@ function solve_powerflow(
     #Work in System per unit
     PSY.set_units_base_system!(system, "SYSTEM_BASE")
     data = PowerFlowData(
-        ACPowerFlow(),
+        pf,
         system;
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
@@ -85,7 +85,7 @@ function solve_powerflow(
 
     if res.f_converged
         @info("PowerFlow solve converged, the results are exported in DataFrames")
-        df_results = write_results(ACPowerFlow(), system, res.zero)
+        df_results = write_results(pf, system, data, res.zero)
         #Restore original per unit base
         PSY.set_units_base_system!(system, settings_unit_cache)
         return df_results
