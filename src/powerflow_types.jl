@@ -1,4 +1,4 @@
-@kwdef struct ACPowerFlow
+Base.@kwdef struct ACPowerFlow
     check_reactive_power_limits::Bool = false
 end
 
