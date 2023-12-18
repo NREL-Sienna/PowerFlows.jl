@@ -25,9 +25,9 @@ Arguments available for `nlsolve`:
 ## Examples
 
 ```julia
-solve_powerflow!(sys)
+solve_ac_powerflow!(sys)
 # Passing NLsolve arguments
-solve_powerflow!(sys, method=:newton)
+solve_ac_powerflow!(sys, method=:newton)
 ```
 """
 function solve_ac_powerflow!(system::PSY.System; kwargs...)
