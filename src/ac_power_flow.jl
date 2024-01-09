@@ -119,12 +119,21 @@ function polar_pf!(
             # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
             P_net[ix] = X[2 * ix - 1] - data.bus_activepower_withdrawals[ix]
             Q_net[ix] = X[2 * ix] - data.bus_reactivepower_withdrawals[ix]
+            data.bus_activepower_injection[ix] = X[2 * ix - 1]
+            data.bus_reactivepower_injection[ix] = X[2 * ix]
         elseif b == PSY.ACBusTypes.PV
             # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
+            P_net[ix] =
+            data.bus_activepower_injection[ix] - data.bus_activepower_withdrawals[ix]
             Q_net[ix] = X[2 * ix - 1] - data.bus_reactivepower_withdrawals[ix]
+            data.bus_reactivepower_injection[ix] = X[2 * ix - 1]
             data.bus_angles[ix] = X[2 * ix]
         elseif b == PSY.ACBusTypes.PQ
             # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
+            P_net[ix] =
+            data.bus_activepower_injection[ix] - data.bus_activepower_withdrawals[ix]
+            Q_net[ix] =
+            data.bus_reactivepower_injection[ix] - data.bus_reactivepower_withdrawals[ix]
             data.bus_magnitude[ix] = X[2 * ix - 1]
             data.bus_angles[ix] = X[2 * ix]
         end

@@ -145,7 +145,7 @@ end
 
 function _nlsolve_powerflow(data::ACPowerFlowData; nlsolve_kwargs...)
     pf = PolarPowerFlow(data)
-    J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
+    J = PolarPowerFlowJacobian(data, pf.x0)
 
     df = NLsolve.OnceDifferentiable(pf, J, pf.x0, pf.residual, J.Jv)
     res = NLsolve.nlsolve(df, pf.x0; nlsolve_kwargs...)
