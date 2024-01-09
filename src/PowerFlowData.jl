@@ -60,6 +60,7 @@ struct PowerFlowData{
     bus_reactivepower_withdrawals::Matrix{Float64}
     bus_reactivepower_bounds::Vector{Vector{Float64}}
     bus_type::Vector{PSY.ACBusTypes}
+    branch_type::Vector{DataType}
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
     branch_flow_values::Matrix{Float64}
@@ -99,12 +100,12 @@ NOTE: use it for AC power flow computations.
 - `sys::PSY.System`:
         container storing the system data to consider in the PowerFlowData
         structure.
-- `timesteps::Int`:
+- `time_steps::Int`:
         number of time periods to consider in the PowerFlowData structure. It
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "timesteps". Default
+        names of the time periods defines by the argmunet "time_steps". Default
         value = String[].
 - `check_connectivity::Bool`:
         Perform connectivity check on the network matrix. Default value = true.
@@ -114,17 +115,17 @@ WARNING: functions for the evaluation of the multi-period AC PF still to be impl
 function PowerFlowData(
     ::ACPowerFlow,
     sys::PSY.System;
-    timesteps::Int = 1,
+    time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true)
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
-    if timesteps != 0
+    if time_steps != 0
         if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:timesteps]
-        elseif length(timestep_names) != timesteps
-            error("timestep_names field must have same length as timesteps")
+            timestep_names = [string(i) for i in 1:time_steps]
+        elseif length(timestep_names) != time_steps
+            error("timestep_names field must have same length as time_steps")
         end
     end
 
@@ -140,8 +141,12 @@ function PowerFlowData(
     n_branches = length(branches)
 
     bus_lookup = power_network_matrix.lookup[2]
-    branch_lookup =
-        Dict{String, Int}(PSY.get_name(b) => ix for (ix, b) in enumerate(branches))
+    branch_lookup = Dict{String, Int}()
+    branch_types = Vector{DataType}(undef, n_branches)
+    for (ix, b) in enumerate(branches)
+        branch_lookup[PSY.get_name(b)] = ix
+        branch_types[ix] = typeof(b)
+    end
 
     # TODO: bus_type might need to also be a Matrix since the type can change for a particular scenario
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
@@ -178,14 +183,14 @@ function PowerFlowData(
         sys,
     )
 
-    # define fields as matrices whose number of columns is eqault to the number of timesteps
-    bus_activepower_injection_1 = zeros(n_buses, timesteps)
-    bus_reactivepower_injection_1 = zeros(n_buses, timesteps)
-    bus_activepower_withdrawals_1 = zeros(n_buses, timesteps)
-    bus_reactivepower_withdrawals_1 = zeros(n_buses, timesteps)
-    bus_magnitude_1 = zeros(n_buses, timesteps)
-    bus_angles_1 = zeros(n_buses, timesteps)
-    branch_flow_values_1 = zeros(n_branches, timesteps)
+    # define fields as matrices whose number of columns is eqault to the number of time_steps
+    bus_activepower_injection_1 = zeros(n_buses, time_steps)
+    bus_reactivepower_injection_1 = zeros(n_buses, time_steps)
+    bus_activepower_withdrawals_1 = zeros(n_buses, time_steps)
+    bus_reactivepower_withdrawals_1 = zeros(n_buses, time_steps)
+    bus_magnitude_1 = zeros(n_buses, time_steps)
+    bus_angles_1 = zeros(n_buses, time_steps)
+    branch_flow_values_1 = zeros(n_branches, time_steps)
 
     bus_reactivepower_bounds = Vector{Vector{Float64}}(undef, n_buses)
     for i in 1:n_buses
@@ -211,6 +216,7 @@ function PowerFlowData(
         bus_reactivepower_withdrawals_1,
         bus_reactivepower_bounds,
         bus_type,
+        branch_types,
         bus_magnitude_1,
         bus_angles_1,
         branch_flow_values_1,
@@ -236,12 +242,12 @@ NOTE: use it for DC power flow computations.
 - `sys::PSY.System`:
         container storing the system data to consider in the PowerFlowData
         structure.
-- `timesteps::Int`:
+- `time_steps::Int`:
         number of time periods to consider in the PowerFlowData structure. It
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "timesteps". Default
+        names of the time periods defines by the argmunet "time_steps". Default
         value = String[].
 - `check_connectivity::Bool`:
         Perform connectivity check on the network matrix. Default value = true.
@@ -249,16 +255,16 @@ NOTE: use it for DC power flow computations.
 function PowerFlowData(
     ::DCPowerFlow,
     sys::PSY.System;
-    timesteps::Int = 1,
+    time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true)
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
     if length(timestep_names) == 0
-        timestep_names = [string(i) for i in 1:timesteps]
-    elseif length(timestep_names) != timesteps
-        error("timestep_names field must have same length as timesteps")
+        timestep_names = [string(i) for i in 1:time_steps]
+    elseif length(timestep_names) != time_steps
+        error("timestep_names field must have same length as time_steps")
     end
 
     # get the network matrices
@@ -278,6 +284,23 @@ function PowerFlowData(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
 
+    branch_types = Vector{DataType}(undef, length(branch_lookup))
+    for (ix, b)  in enumerate(PNM.get_ac_branches(sys))
+        branch_types[ix] = typeof(b)
+    end
+
+    for (bus_no, ix) in bus_lookup
+        bus_name = temp_bus_map[bus_no]
+        bus = PSY.get_component(PSY.Bus, sys, bus_name)
+        bus_type[ix] = PSY.get_bustype(bus)
+        if bus_type[ix] == PSY.ACBusTypes.REF
+            bus_angles[ix] = 0.0
+        else
+            bus_angles[ix] = PSY.get_angle(bus)
+        end
+        bus_magnitude[ix] = PSY.get_magnitude(bus)
+    end
+    
     _initialize_bus_data!(
         bus_type,
         bus_angles,
@@ -307,10 +330,10 @@ function PowerFlowData(
     )
 
     # initialize data
-    init_1 = zeros(n_buses, timesteps)
-    init_2 = zeros(n_branches, timesteps)
+    init_1 = zeros(n_buses, time_steps)
+    init_2 = zeros(n_branches, time_steps)
 
-    # define fields as matrices whose number of columns is eqault to the number of timesteps
+    # define fields as matrices whose number of columns is eqault to the number of time_steps
     bus_activepower_injection_1 = deepcopy(init_1)
     bus_reactivepower_injection_1 = deepcopy(init_1)
     bus_activepower_withdrawals_1 = deepcopy(init_1)
@@ -324,7 +347,7 @@ function PowerFlowData(
     bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
     bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
     bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
-    bus_magnitude_1[:, 1] .= bus_magnitude  # for DC case same value accross all timesteps
+    bus_magnitude_1[:, 1] .= bus_magnitude  # for DC case same value accross all time_steps
     bus_angles_1[:, 1] .= bus_angles
     branch_flow_values_1[:, 1] .= zeros(n_branches)
 
@@ -337,10 +360,11 @@ function PowerFlowData(
         bus_reactivepower_withdrawals_1,
         Vector{Vector{Float64}}(),
         bus_type,
+        branch_types,
         bus_magnitude_1,
         bus_angles_1,
         branch_flow_values_1,
-        Dict(zip([i for i in 1:timesteps], timestep_names)),
+        Dict(zip([i for i in 1:time_steps], timestep_names)),
         setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
         power_network_matrix,
         aux_network_matrix,
@@ -362,28 +386,28 @@ NOTE: use it for DC power flow computations.
 - `sys::PSY.System`:
         container storing the system data to consider in the PowerFlowData
         structure.
-- `timesteps::Int`:
+- `time_steps::Int`:
         number of time periods to consider in the PowerFlowData structure. It
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "timesteps". Default
+        names of the time periods defines by the argmunet "time_steps". Default
         value = String[].
 """
 function PowerFlowData(
     ::PTDFDCPowerFlow,
     sys::PSY.System;
-    timesteps::Int = 1,
+    time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true)
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
-    if timesteps != 0
+    if time_steps != 0
         if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:timesteps]
-        elseif length(timestep_names) != timesteps
-            error("timestep_names field must have same length as timesteps")
+            timestep_names = [string(i) for i in 1:time_steps]
+        elseif length(timestep_names) != time_steps
+            error("timestep_names field must have same length as time_steps")
         end
     end
 
@@ -403,6 +427,23 @@ function PowerFlowData(
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
+
+    branch_types = Vector{DataType}(undef, length(branch_lookup))
+    for (ix, b)  in enumerate(PNM.get_ac_branches(sys))
+        branch_types[ix] = typeof(b)
+    end
+
+    for (bus_no, ix) in bus_lookup
+        bus_name = temp_bus_map[bus_no]
+        bus = PSY.get_component(PSY.Bus, sys, bus_name)
+        bus_type[ix] = PSY.get_bustype(bus)
+        if bus_type[ix] == PSY.ACBusTypes.REF
+            bus_angles[ix] = 0.0
+        else
+            bus_angles[ix] = PSY.get_angle(bus)
+        end
+        bus_magnitude[ix] = PSY.get_magnitude(bus)
+    end
 
     _initialize_bus_data!(
         bus_type,
@@ -433,10 +474,10 @@ function PowerFlowData(
     )
 
     # initialize data
-    init_1 = zeros(n_buses, timesteps)
-    init_2 = zeros(n_branches, timesteps)
+    init_1 = zeros(n_buses, time_steps)
+    init_2 = zeros(n_branches, time_steps)
 
-    # define fields as matrices whose number of columns is eqault to the number of timesteps
+    # define fields as matrices whose number of columns is eqault to the number of time_steps
     bus_activepower_injection_1 = deepcopy(init_1)
     bus_reactivepower_injection_1 = deepcopy(init_1)
     bus_activepower_withdrawals_1 = deepcopy(init_1)
@@ -450,7 +491,7 @@ function PowerFlowData(
     bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
     bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
     bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
-    bus_magnitude_1[:, 1] .= bus_magnitude  # for DC case same value accross all timesteps
+    bus_magnitude_1[:, 1] .= bus_magnitude  # for DC case same value accross all time_steps
     bus_angles_1[:, 1] .= bus_angles
     branch_flow_values_1[:, 1] .= zeros(n_branches)
 
@@ -463,10 +504,11 @@ function PowerFlowData(
         bus_reactivepower_withdrawals_1,
         Vector{Vector{Float64}}(),
         bus_type,
+        branch_types,
         bus_magnitude_1,
         bus_angles_1,
         branch_flow_values_1,
-        Dict(zip([i for i in 1:timesteps], timestep_names)),
+        Dict(zip([i for i in 1:time_steps], timestep_names)),
         setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
         power_network_matrix,
         aux_network_matrix,
@@ -488,28 +530,28 @@ NOTE: use it for DC power flow computations.
 - `sys::PSY.System`:
         container storing the system data to consider in the PowerFlowData
         structure.
-- `timesteps::Int`:
+- `time_steps::Int`:
         number of time periods to consider in the PowerFlowData structure. It
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "timesteps". Default
+        names of the time periods defines by the argmunet "time_steps". Default
         value = String[].
 """
 function PowerFlowData(
     ::vPTDFDCPowerFlow,
     sys::PSY.System;
-    timesteps::Int = 1,
+    time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true)
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
-    if timesteps != 0
+    if time_steps != 0
         if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:timesteps]
-        elseif length(timestep_names) != timesteps
-            error("timestep_names field must have same length as timesteps")
+            timestep_names = [string(i) for i in 1:time_steps]
+        elseif length(timestep_names) != time_steps
+            error("timestep_names field must have same length as time_steps")
         end
     end
 
@@ -529,6 +571,23 @@ function PowerFlowData(
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
+
+    branch_types = Vector{DataType}(undef, length(branch_lookup))
+    for (ix, b)  in enumerate(PNM.get_ac_branches(sys))
+        branch_types[ix] = typeof(b)
+    end
+
+    for (bus_no, ix) in bus_lookup
+        bus_name = temp_bus_map[bus_no]
+        bus = PSY.get_component(PSY.Bus, sys, bus_name)
+        bus_type[ix] = PSY.get_bustype(bus)
+        if bus_type[ix] == PSY.ACBusTypes.REF
+            bus_angles[ix] = 0.0
+        else
+            bus_angles[ix] = PSY.get_angle(bus)
+        end
+        bus_magnitude[ix] = PSY.get_magnitude(bus)
+    end
 
     _initialize_bus_data!(
         bus_type,
@@ -559,10 +618,10 @@ function PowerFlowData(
     )
 
     # initialize data
-    init_1 = zeros(n_buses, timesteps)
-    init_2 = zeros(n_branches, timesteps)
+    init_1 = zeros(n_buses, time_steps)
+    init_2 = zeros(n_branches, time_steps)
 
-    # define fields as matrices whose number of columns is eqault to the number of timesteps
+    # define fields as matrices whose number of columns is eqault to the number of time_steps
     bus_activepower_injection_1 = deepcopy(init_1)
     bus_reactivepower_injection_1 = deepcopy(init_1)
     bus_activepower_withdrawals_1 = deepcopy(init_1)
@@ -576,7 +635,7 @@ function PowerFlowData(
     bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
     bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
     bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
-    bus_magnitude_1[:, 1] .= bus_magnitude  # for DC case same value accross all timesteps
+    bus_magnitude_1[:, 1] .= bus_magnitude  # for DC case same value accross all time_steps
     bus_angles_1[:, 1] .= bus_angles
     branch_flow_values_1[:, 1] .= zeros(n_branches)
 
@@ -589,10 +648,11 @@ function PowerFlowData(
         bus_reactivepower_withdrawals_1,
         Vector{Vector{Float64}}(),
         bus_type,
+        branch_types,
         bus_magnitude_1,
         bus_angles_1,
         branch_flow_values_1,
-        Dict(zip([i for i in 1:timesteps], timestep_names)),
+        Dict(zip([i for i in 1:time_steps], timestep_names)),
         setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
         power_network_matrix,
         aux_network_matrix,
