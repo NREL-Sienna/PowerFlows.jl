@@ -1,7 +1,7 @@
 name = "PowerFlows"
 uuid = "94fada2c-fd9a-4e89-8d82-81405f5cb4f6"
 authors = ["Jose Daniel Lara <jdlara@berkeley.edu>"]
-version = "0.6.1"
+version = "0.7.0"
 
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
@@ -17,7 +17,7 @@ DataFrames = "1"
 InfrastructureSystems = "1"
 LinearAlgebra = "1"
 NLsolve = "4"
-PowerNetworkMatrices = "^0.9"
+PowerNetworkMatrices = "^0.10"
 PowerSystems = "^3"
 SparseArrays = "1"
 julia = "^1.6"
