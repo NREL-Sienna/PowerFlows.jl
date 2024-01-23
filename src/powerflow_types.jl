@@ -5,5 +5,5 @@ Base.@kwdef struct ACPowerFlow <: PowerFlowEvaluationModel
 end
 
 struct DCPowerFlow <: PowerFlowEvaluationModel end
-struct PTDFDCPowerFlow <: PowerFlowEvaluationModel  end
-struct vPTDFDCPowerFlow <: PowerFlowEvaluationModel  end
+struct PTDFDCPowerFlow <: PowerFlowEvaluationModel end
+struct vPTDFDCPowerFlow <: PowerFlowEvaluationModel end
