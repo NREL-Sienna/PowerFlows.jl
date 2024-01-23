@@ -71,6 +71,24 @@ struct PowerFlowData{
     neighbors::Vector{Set{Int}}
 end
 
+get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
+get_branch_lookup(pfd::PowerFlowData) = pfd.branch_lookup
+get_bus_activepower_injection(pfd::PowerFlowData) = pfd.bus_activepower_injection
+get_bus_reactivepower_injection(pfd::PowerFlowData) = pfd.bus_reactivepower_injection
+get_bus_activepower_withdrawals(pfd::PowerFlowData) = pfd.bus_activepower_withdrawals
+get_bus_reactivepower_withdrawals(pfd::PowerFlowData) = pfd.bus_reactivepower_withdrawals
+get_bus_reactivepower_bounds(pfd::PowerFlowData) = pfd.bus_reactivepower_bounds
+get_bus_type(pfd::PowerFlowData) = pfd.bus_type
+get_branch_type(pfd::PowerFlowData) = pfd.branch_type
+get_bus_magnitude(pfd::PowerFlowData) = pfd.bus_magnitude
+get_bus_angles(pfd::PowerFlowData) = pfd.bus_angles
+get_branch_flow_values(pfd::PowerFlowData) = pfd.branch_flow_values
+get_timestep_map(pfd::PowerFlowData) = pfd.timestep_map
+get_valid_ix(pfd::PowerFlowData) = pfd.valid_ix
+get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
+get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
+get_neighbor(pfd::PowerFlowData) = pfd.neighbors
+
 # AC Power Flow Data
 # TODO -> MULTI PERIOD: AC Power Flow Data
 function _calculate_neighbors(
@@ -285,7 +303,7 @@ function PowerFlowData(
     )
 
     branch_types = Vector{DataType}(undef, length(branch_lookup))
-    for (ix, b)  in enumerate(PNM.get_ac_branches(sys))
+    for (ix, b) in enumerate(PNM.get_ac_branches(sys))
         branch_types[ix] = typeof(b)
     end
 
@@ -429,7 +447,7 @@ function PowerFlowData(
     )
 
     branch_types = Vector{DataType}(undef, length(branch_lookup))
-    for (ix, b)  in enumerate(PNM.get_ac_branches(sys))
+    for (ix, b) in enumerate(PNM.get_ac_branches(sys))
         branch_types[ix] = typeof(b)
     end
 
@@ -573,7 +591,7 @@ function PowerFlowData(
     )
 
     branch_types = Vector{DataType}(undef, length(branch_lookup))
-    for (ix, b)  in enumerate(PNM.get_ac_branches(sys))
+    for (ix, b) in enumerate(PNM.get_ac_branches(sys))
         branch_types[ix] = typeof(b)
     end
 
