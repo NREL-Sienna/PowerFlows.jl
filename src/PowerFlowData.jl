@@ -89,6 +89,14 @@ get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
 get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
 get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 
+function clear_injection_data!(pfd::PowerFlowData)
+    pfd.bus_activepower_injection[:] = 0.0
+    pfd.bus_reactivepower_injection[:] = 0.0
+    pfd.bus_activepower_withdrawals[:] = 0.0
+    pfd.bus_reactivepower_withdrawals[:] = 0.0
+    return
+end
+
 # AC Power Flow Data
 # TODO -> MULTI PERIOD: AC Power Flow Data
 function _calculate_neighbors(
