@@ -7,13 +7,12 @@ using PowerFlows
 
 PF = PowerFlows
 
-function PSY.get_reactive_power_limits(gen::PSY.RenewableFix) 
-
+function PSY.get_reactive_power_limits(gen::PSY.RenewableFix)
     gen_pf = PSY.get_power_factor(gen)
 
-    gen_q = PSY.get_max_active_power(gen)*sqrt((1/gen_pf^2)-1)
+    gen_q = PSY.get_max_active_power(gen) * sqrt((1 / gen_pf^2) - 1)
 
-    return (min = 0.0, max=gen_q)
+    return (min = 0.0, max = gen_q)
 end
 
 include("/Users/hross2/Julia/psse_exporter/src/support_tools.jl")
@@ -37,7 +36,8 @@ set_units_base_system!(sys2, PSY.IS.UnitSystem.SYSTEM_BASE)
 orig_results = solve_powerflow(DCPowerFlow(), sys)
 old_bus_results = Bus_states(sys)
 old_branch_results = Branch_states(sys)
-orig_flow_results = sort!(orig_results["1"]["flow_results"], [:bus_from, :bus_to, :line_name])
+orig_flow_results =
+    sort!(orig_results["1"]["flow_results"], [:bus_from, :bus_to, :line_name])
 orig_bus_results = orig_results["1"]["bus_results"]
 
 psse_bus_results = Bus_states(sys2)
@@ -63,14 +63,24 @@ new_bus_results = new_results["1"]["bus_results"]
 
 # AC Powerflow testing
 orig_ac_results = solve_ac_powerflow!(sys)
-orig_y_bus = PowerFlows.PowerFlowData(ACPowerFlow(), sys; check_connectivity = true).power_network_matrix.data
+orig_y_bus =
+    PowerFlows.PowerFlowData(
+        ACPowerFlow(),
+        sys;
+        check_connectivity = true,
+    ).power_network_matrix.data
 
 new_ac_results = solve_ac_powerflow!(sys2)
-new_y_bus = PowerFlows.PowerFlowData(ACPowerFlow(), sys2; check_connectivity = true).power_network_matrix.data
+new_y_bus =
+    PowerFlows.PowerFlowData(
+        ACPowerFlow(),
+        sys2;
+        check_connectivity = true,
+    ).power_network_matrix.data
 
 del_y_bus = findall(orig_y_bus .!= new_y_bus)
 
-quant_del_y_bus = DataFrame(Real = Float64[], Imag = Float64[])
+quant_del_y_bus = DataFrame(; Real = Float64[], Imag = Float64[])
 for i in del_y_bus
     del_r = real(orig_y_bus[i] - new_y_bus[i])
     del_i = imag(orig_y_bus[i] - new_y_bus[i])
@@ -79,15 +89,14 @@ end
 
 @show quant_del
 
-
 # gen_busses = ThermalStandard_states(sys2)
 # show(gen_busses, allrows=true)
 
 # gen_busses = sort!(append!(Generator_states(sys), Source_states(sys)), [:bus_number, :active_power])
 # show(gen_busses, allrows=true)
 
-avaialabe_gens = DataFrame("gen_name" => collect(get_name.(get_components(RenewableFix, sys))))
-show(avaialabe_gens, allrows = true)
+avaialabe_gens =
+    DataFrame("gen_name" => collect(get_name.(get_components(RenewableFix, sys))))
+show(avaialabe_gens; allrows = true)
 
 print(get_component(Source, sys, "generator-4242-ND"))
-

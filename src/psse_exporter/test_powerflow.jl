@@ -29,7 +29,7 @@ end
 set_units_base_system!(sys, PSY.IS.UnitSystem.SYSTEM_BASE)
 
 tfy_therms = sort!(collect(get_name.(get_components(ThermalStandard, sys))))
-tfy_re_gen = get_component(RenewableDispatch,sys, "generator-2911-S-gfl")
+tfy_re_gen = get_component(RenewableDispatch, sys, "generator-2911-S-gfl")
 #set_units_base_system!(sys, PSY.IS.UnitSystem.NATURAL_UNITS)
 tfy_therm_gen = get_component(ThermalStandard, sys, "generator-1436-C")
 #set_units_base_system!(sys, PSY.IS.UnitSystem.DEVICE_BASE)
@@ -46,13 +46,22 @@ lines_before = Line_states(sys)
 loads_before = StandardLoad_states(sys)
 fixed_admit_before = FixedAdmittance_states(sys)
 therm_gens_before = ThermalStandard_states(sys)
-gens_before = sort!(append!(Generator_states(sys), Source_states(sys)), [:bus_number, :active_power])
-xfmrs_before = sort!(append!(Transformer2W_states(sys), TapTransformer_states(sys)), [:from_bus, :to_bus])
+gens_before =
+    sort!(append!(Generator_states(sys), Source_states(sys)), [:bus_number, :active_power])
+xfmrs_before = sort!(
+    append!(Transformer2W_states(sys), TapTransformer_states(sys)),
+    [:from_bus, :to_bus],
+)
 shunt_before = FixedAdmittance_states(sys)
 
-
 # Write to .raw file
-Write_Sienna2PSSE(sys, "basic", 2024, export_location = "/Users/hross2/Julia/psse_exporter", v33 = true)
+Write_Sienna2PSSE(
+    sys,
+    "basic",
+    2024;
+    export_location = "/Users/hross2/Julia/psse_exporter",
+    v33 = true,
+)
 
 # Load from .raw file
 file_dir2 = "/Users/hross2/Julia/psse_exporter/Raw_Export/basic/2024"
@@ -71,7 +80,10 @@ lines_after = Line_states(sys2)
 loads_after = StandardLoad_states(sys2)
 therm_gens_after = ThermalStandard_states(sys2)
 gens_after = Generator_states(sys2)
-xfmrs_after = sort!(append!(Transformer2W_states(sys2), TapTransformer_states(sys2)), [:from_bus, :to_bus])
+xfmrs_after = sort!(
+    append!(Transformer2W_states(sys2), TapTransformer_states(sys2)),
+    [:from_bus, :to_bus],
+)
 shunt_after = FixedAdmittance_states(sys2)
 
 # Compare results
@@ -97,8 +109,8 @@ println("New Lines:", lines_after)
 # println("New Bus:", new_bus_results)
 
 orig_compare = compare_begin_to_final(orig_flows, new_flows)
-bus_compare  = compare_begin_to_final(orig_buss_results, new_bus_results)
-line_compare  = compare_begin_to_final(lines_before, lines_after)
+bus_compare = compare_begin_to_final(orig_buss_results, new_bus_results)
+line_compare = compare_begin_to_final(lines_before, lines_after)
 load_compare = compare_begin_to_final(loads_before, loads_after)
 gens_compare = compare_begin_to_final(gens_before, gens_after)
 # therm_gens_compare = compare_begin_to_final(therm_gens_before, therm_gens_after)
@@ -125,4 +137,3 @@ println("Flow Results:", orig_compare[!, 17:end]) #e-12 error
 # @show sum(collect(get_constant_reactive_power.(get_available_components(StandardLoad, sys2))))
 
 # @show sum(collect(get_max_active_power.(get_available_components(Generator, sys2))))
-
