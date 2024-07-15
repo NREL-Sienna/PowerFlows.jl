@@ -1,3 +1,7 @@
+# NOTE this is a standalone script -- neither a part of the library codebase nor a part of the standard test suite.
+# Invoke with `include("path/to/test_powerflow.jl")` in an appropriate environment.
+# TODO remove when superseded by encapsulated utility functions and/or standard test suite.
+
 using Revise
 using Logging
 
@@ -5,7 +9,7 @@ using PowerSystems
 using PowerSystemCaseBuilder
 using PowerFlows
 
-PF = PowerFlows
+const PF = PowerFlows
 
 # Load test system
 #show_systems()
@@ -18,7 +22,7 @@ PF = PowerFlows
 # sys = System(joinpath(file_dir, "PSCAD_VALIDATION_RAW.raw"); bus_name_formatter = x -> strip(string(x["name"])) * "-" * string(x["index"]))
 # sys = build_system(PSIDSystems, "WECC 240 Bus")
 
-file_dir = joinpath(DATA_DIR, "twofortybus", "Marenas")
+file_dir = joinpath(PF.DATA_DIR, "twofortybus", "Marenas")
 sys = with_logger(SimpleLogger(Error)) do  # Suppress system loading warnings
     System(joinpath(file_dir, "system_240[32].json"))
 end
@@ -38,50 +42,53 @@ orig_results = solve_powerflow(DCPowerFlow(), sys)
 orig_flows = sort!(orig_results["1"]["flow_results"], [:bus_from, :bus_to, :line_name])
 orig_buss_results = orig_results["1"]["bus_results"]
 
-busses_before = Bus_states(sys)
-lines_before = Line_states(sys)
-loads_before = StandardLoad_states(sys)
-fixed_admit_before = FixedAdmittance_states(sys)
-therm_gens_before = ThermalStandard_states(sys)
+busses_before = PF.Bus_states(sys)
+lines_before = PF.Line_states(sys)
+loads_before = PF.StandardLoad_states(sys)
+fixed_admit_before = PF.FixedAdmittance_states(sys)
+therm_gens_before = PF.ThermalStandard_states(sys)
 gens_before =
-    sort!(append!(Generator_states(sys), Source_states(sys)), [:bus_number, :active_power])
+    sort!(
+        append!(PF.Generator_states(sys), PF.Source_states(sys)),
+        [:bus_number, :active_power],
+    )
 xfmrs_before = sort!(
-    append!(Transformer2W_states(sys), TapTransformer_states(sys)),
+    append!(PF.Transformer2W_states(sys), PF.TapTransformer_states(sys)),
     [:from_bus, :to_bus],
 )
-shunt_before = FixedAdmittance_states(sys)
+shunt_before = PF.FixedAdmittance_states(sys)
 
 # Write to .raw file
-Write_Sienna2PSSE(
+PF.Write_Sienna2PSSE(
     sys,
     "basic",
     2024;
-    export_location = joinpath(DATA_DIR, "export"),
+    export_location = joinpath(PF.DATA_DIR, "export"),
     v33 = true,
 )
 
 # Load from .raw file
-file_dir2 = joinpath(DATA_DIR, "Raw_Export", "basic", "2024")
+file_dir2 = joinpath(PF.DATA_DIR, "export", "Raw_Export", "basic", "2024")
 # sys2 = System(joinpath(file_dir2, "basic.raw"))
 sys2 = with_logger(SimpleLogger(Error)) do  # Suppress system loading warnings
     System(joinpath(file_dir2, "basic.raw"))
 end
-set_units_base_system!(sys, PSY.IS.UnitSystem.SYSTEM_BASE)
+set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
 # Solve popwerflpw and get new results
 new_results = solve_powerflow(DCPowerFlow(), sys2)
 new_flows = sort!(new_results["1"]["flow_results"], [:bus_from, :bus_to, :line_name])
 new_bus_results = new_results["1"]["bus_results"]
 
-busses_after = Bus_states(sys2)
-lines_after = Line_states(sys2)
-loads_after = StandardLoad_states(sys2)
-therm_gens_after = ThermalStandard_states(sys2)
-gens_after = Generator_states(sys2)
+busses_after = PF.Bus_states(sys2)
+lines_after = PF.Line_states(sys2)
+loads_after = PF.StandardLoad_states(sys2)
+therm_gens_after = PF.ThermalStandard_states(sys2)
+gens_after = PF.Generator_states(sys2)
 xfmrs_after = sort!(
-    append!(Transformer2W_states(sys2), TapTransformer_states(sys2)),
+    append!(PF.Transformer2W_states(sys2), PF.TapTransformer_states(sys2)),
     [:from_bus, :to_bus],
 )
-shunt_after = FixedAdmittance_states(sys2)
+shunt_after = PF.FixedAdmittance_states(sys2)
 
 # Compare results
 # println("Orig:", orig_flows)
@@ -105,14 +112,14 @@ println("New Lines:", lines_after)
 # println("Orig Bus:", orig_buss_results)
 # println("New Bus:", new_bus_results)
 
-orig_compare = compare_begin_to_final(orig_flows, new_flows)
-bus_compare = compare_begin_to_final(orig_buss_results, new_bus_results)
-line_compare = compare_begin_to_final(lines_before, lines_after)
-load_compare = compare_begin_to_final(loads_before, loads_after)
-gens_compare = compare_begin_to_final(gens_before, gens_after)
-# therm_gens_compare = compare_begin_to_final(therm_gens_before, therm_gens_after)
-# xfmr_compare = compare_begin_to_final(xfmrs_before, xfmrs_after)
-shunt_compare = compare_begin_to_final(shunt_before, shunt_after)
+orig_compare = PF.compare_begin_to_final(orig_flows, new_flows)
+bus_compare = PF.compare_begin_to_final(orig_buss_results, new_bus_results)
+line_compare = PF.compare_begin_to_final(lines_before, lines_after)
+load_compare = PF.compare_begin_to_final(loads_before, loads_after)
+gens_compare = PF.compare_begin_to_final(gens_before, gens_after)
+# therm_gens_compare = PF.compare_begin_to_final(therm_gens_before, therm_gens_after)
+# xfmr_compare = PF.compare_begin_to_final(xfmrs_before, xfmrs_after)
+shunt_compare = PF.compare_begin_to_final(shunt_before, shunt_after)
 
 println("Flow Results:", orig_compare[!, 17:end]) #e-12 error
 # println("Bus Results:", bus_compare[!, 17:end]) # e-15 error

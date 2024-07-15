@@ -1,11 +1,4 @@
-using Dates
-using DataStructures
-using PowerSystems
-using DelimitedFiles
-using JSON
-
-PSY = PowerSystems
-
+# TODO document this function
 function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     export_location::Union{Nothing, String} = nothing, base_case = false, setpoint = false,
     setpoint_ts::Union{Nothing, Dates.DateTime} = nothing,
@@ -21,6 +14,7 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     else
         export_location = joinpath(export_location, "Raw_Export")
     end
+    @info "Exporting to $export_location"
 
     if (setpoint)
         if (setpoint_ts === nothing || results_dir === nothing)
@@ -49,7 +43,6 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     PSY.set_units_base_system!(sys, PSY.IS.UnitSystem.NATURAL_UNITS)
 
     export_ts =
-
         if (setpoint)
             populate_setpoints!(sys, results_dir, setpoint_ts)
         end
@@ -64,12 +57,12 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     if (v33)
         push!(
             raw_file,
-            "0,   $(get_base_power(sys)), 33, 0, 1, 60.00     /  PSS(R)E 33 RAW created by Sienna2PF.jl  $(dt_now)",
+            "0,   $(PSY.get_base_power(sys)), 33, 0, 1, 60.00     /  PSS(R)E 33 RAW created by Sienna2PF.jl  $(dt_now)",
         )
     else
         push!(
             raw_file,
-            "0,   $(get_base_power(sys)), 34, 0, 1, 60.00 /  PSS(R)E 34 RAW created by Sienna2PF.jl  $(dt_now)",
+            "0,   $(PSY.get_base_power(sys)), 34, 0, 1, 60.00 /  PSS(R)E 34 RAW created by Sienna2PF.jl  $(dt_now)",
         )
     end
 
@@ -212,8 +205,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
         i = PSY.get_number(PSY.get_bus(shunt))
         id = uppercase(first(last(split(PSY.get_name(shunt), "-")), 2))
         stat = get_PSSE_status(PSY.get_available(shunt))
-        gl = real(PSY.get_Y(shunt)) * get_base_power(sys) # Sienna expects system base, but PSS/e expects MW
-        bl = imag(PSY.get_Y(shunt)) * get_base_power(sys) # Sienna expects system base, but PSS/e expects MW
+        gl = real(PSY.get_Y(shunt)) * PSY.get_base_power(sys) # Sienna expects system base, but PSS/e expects MW
+        bl = imag(PSY.get_Y(shunt)) * PSY.get_base_power(sys) # Sienna expects system base, but PSS/e expects MW
 
         if (v33)
             shunt_entry = "$(i), $(id), $(stat), $(gl), $(bl)"
@@ -237,7 +230,7 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     psy_gens = collect(PSY.get_components(PSY.Generator, sys))
 
     for gen in psy_gens
-        if typeof(gen) == ThermalStandard
+        if gen isa PSY.ThermalStandard
             gen_bus_num = PSY.get_number(PSY.get_bus(gen))
             if (haskey(bus_mapping, gen_bus_num))
                 gen_bus_num = bus_mapping[gen_bus_num]
@@ -245,16 +238,16 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
             gen_id = uppercase(first(last(split(PSY.get_name(gen), "-")), 2))
             p_g = base_case ? 0.0 : PSY.get_active_power(gen)
             q_g = base_case ? 0.0 : PSY.get_reactive_power(gen)
-            if get_reactive_power_limits(gen)[:max] > get_rating(gen)
+            if PSY.get_reactive_power_limits(gen)[:max] > PSY.get_rating(gen)
                 q_t = 999.0
                 q_b = -999.0
             else
-                q_t = get_reactive_power_limits(gen)[:max]
-                q_b = get_reactive_power_limits(gen)[:min]
+                q_t = PSY.get_reactive_power_limits(gen)[:max]
+                q_b = PSY.get_reactive_power_limits(gen)[:min]
             end
             v_s = PSY.get_magnitude(PSY.get_bus(gen))
             ireg = 0 # DEFAULT 
-            mbase = get_base_power(gen)
+            mbase = PSY.get_base_power(gen)
             z_r = 0.0 # DEFAULT
             z_x = 1.0 # DEFAULT
             r_t = 0.0 # DEFAULT
@@ -262,8 +255,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
             gtap = 1.0 # DEFAULT
             stat = get_PSSE_status(PSY.get_available(gen))
             rmpct = 100.0 # DEFAULT
-            p_t = get_active_power_limits(gen)[:max]
-            p_b = get_active_power_limits(gen)[:min]
+            p_t = PSY.get_active_power_limits(gen)[:max]
+            p_b = PSY.get_active_power_limits(gen)[:min]
             o_i = 1 # DEFAULT
             f_i = 1.0 # DEFAULT
             wmod = get_psse_gen_wmod(gen)
@@ -288,11 +281,11 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
             gen_id = uppercase(first(last(split(PSY.get_name(gen), "-")), 2))
             p_g = base_case ? 0.0 : PSY.get_active_power(gen)
             q_g = base_case ? 0.0 : PSY.get_reactive_power(gen)
-            q_t = get_rating(gen)cos(π / 4)
+            q_t = PSY.get_rating(gen)cos(π / 4)
             q_b = 0.0
             v_s = PSY.get_magnitude(PSY.get_bus(gen))
             ireg = 0 # DEFAULT 
-            mbase = get_base_power(gen)
+            mbase = PSY.get_base_power(gen)
             z_r = 0.0 # DEFAULT
             z_x = 1.0 # DEFAULT
             r_t = 0.0 # DEFAULT
@@ -300,7 +293,7 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
             gtap = 1.0 # DEFAULT
             stat = get_PSSE_status(PSY.get_available(gen))
             rmpct = 100.0 # DEFAULT
-            p_t = get_rating(gen)cos(π / 4)
+            p_t = PSY.get_rating(gen)cos(π / 4)
             p_b = 0.0
             o_i = 1 # DEFAULT
             f_i = 1.0 # DEFAULT
@@ -326,13 +319,13 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
             gen_bus_num = bus_mapping[gen_bus_num]
         end
         gen_id = uppercase(first(last(split(PSY.get_name(source), "-")), 2))
-        p_g = base_case ? 0.0 : PSY.get_active_power(source) * get_base_power(sys)
-        q_g = base_case ? 0.0 : PSY.get_reactive_power(source) * get_base_power(sys)
+        p_g = base_case ? 0.0 : PSY.get_active_power(source) * PSY.get_base_power(sys)
+        q_g = base_case ? 0.0 : PSY.get_reactive_power(source) * PSY.get_base_power(sys)
         q_t = 10000 * cos(π / 4)
         q_b = 0.0
         v_s = PSY.get_internal_voltage(source)
         ireg = 0 # DEFAULT 
-        mbase = get_base_power(source)
+        mbase = PSY.get_base_power(source)
         z_r = 0.0 # DEFAULT
         z_x = 1.0 # DEFAULT
         r_t = 0.0 # DEFAULT
@@ -379,7 +372,7 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
 
     # line_dict = Dict{Tuple{Int64, Int64}, Int64}()
     for branch in psy_branches
-        if typeof(branch) == Line
+        if branch isa PSY.Line
             i = PSY.get_number(PSY.get_from_bus(branch))
             if (haskey(bus_mapping, i))
                 i = bus_mapping[i]
@@ -455,7 +448,7 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     # twowind_xfmr_dict = Dict{Tuple{Int64, Int64}, Int64}()
     # tap_xfmr_dict = Dict{Tuple{Int64, Int64}, Int64}()
     for branch in psy_branches
-        if typeof(branch) == Transformer2W
+        if branch isa PSY.Transformer2W
             i = PSY.get_number(PSY.get_from_bus(branch))
             if (haskey(bus_mapping, i))
                 i = bus_mapping[i]
@@ -534,7 +527,7 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
             push!(raw_file, branch_entry3)
             push!(raw_file, branch_entry4)
 
-        elseif typeof(branch) == TapTransformer
+        elseif branch isa PSY.TapTransformer
             i = PSY.get_number(PSY.get_from_bus(branch))
             if (haskey(bus_mapping, i))
                 i = bus_mapping[i]

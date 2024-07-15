@@ -1,45 +1,50 @@
+# NOTE this is a standalone script -- neither a part of the library codebase nor a part of the standard test suite.
+# Invoke with `include("path/to/compare_psse_results.jl")` in an appropriate environment.
+# TODO remove when superseded by encapsulated utility functions and/or standard test suite.
+
 using Revise
 using Logging
+using DataFrames
 
 using PowerSystems
 using PowerSystemCaseBuilder
 using PowerFlows
 
-PF = PowerFlows
+const PF = PowerFlows
 
-function PSY.get_reactive_power_limits(gen::PSY.RenewableFix)
-    gen_pf = PSY.get_power_factor(gen)
+function PowerSystems.get_reactive_power_limits(gen::RenewableNonDispatch)
+    gen_pf = get_power_factor(gen)
 
-    gen_q = PSY.get_max_active_power(gen) * sqrt((1 / gen_pf^2) - 1)
+    gen_q = get_max_active_power(gen) * sqrt((1 / gen_pf^2) - 1)
 
     return (min = 0.0, max = gen_q)
 end
 
 # Import test cases
 # sys = build_system(PSIDSystems, "WECC 240 Bus")
-file_dir = joinpath(DATA_DIR, "twofortybus", "Marenas")
+file_dir = joinpath(PF.DATA_DIR, "twofortybus", "Marenas")
 sys = with_logger(SimpleLogger(Error)) do  # Suppress system loading warnings
     System(joinpath(file_dir, "system_240[32].json"))
 end
-set_units_base_system!(sys, PSY.IS.UnitSystem.SYSTEM_BASE)
+set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
 
-# Load from .raw file
-file_dir2 = joinpath(DATA_DIR, "Raw_Export", "basic", "2024")
+# Load from .raw file (this gets written in `test_powerflow.jl`)
+file_dir2 = joinpath(PF.DATA_DIR, "export", "Raw_Export", "basic", "2024")
 sys2 = with_logger(SimpleLogger(Error)) do  # Suppress system loading warnings
-    System(joinpath(file_dir2, "basic 4_solved2.raw"))
+    System(joinpath(file_dir2, "basic.raw"))
 end
-set_units_base_system!(sys2, PSY.IS.UnitSystem.SYSTEM_BASE)
+set_units_base_system!(sys2, UnitSystem.SYSTEM_BASE)
 
 # DC Powerflow testing
 orig_results = solve_powerflow(DCPowerFlow(), sys)
-old_bus_results = Bus_states(sys)
-old_branch_results = Branch_states(sys)
+old_bus_results = PF.Bus_states(sys)
+old_branch_results = PF.Branch_states(sys)
 orig_flow_results =
     sort!(orig_results["1"]["flow_results"], [:bus_from, :bus_to, :line_name])
 orig_bus_results = orig_results["1"]["bus_results"]
 
-psse_bus_results = Bus_states(sys2)
-psse_branch_results = Branch_states(sys2)
+psse_bus_results = PF.Bus_states(sys2)
+psse_branch_results = PF.Branch_states(sys2)
 new_results = solve_powerflow(DCPowerFlow(), sys2)
 new_flows = sort!(new_results["1"]["flow_results"], [:bus_from, :bus_to, :line_name])
 new_bus_results = new_results["1"]["bus_results"]
@@ -82,10 +87,10 @@ quant_del_y_bus = DataFrame(; Real = Float64[], Imag = Float64[])
 for i in del_y_bus
     del_r = real(orig_y_bus[i] - new_y_bus[i])
     del_i = imag(orig_y_bus[i] - new_y_bus[i])
-    push!(quant_del, [del_r, del_i])
+    push!(quant_del_y_bus, [del_r, del_i])
 end
 
-@show quant_del
+@show quant_del_y_bus
 
 # gen_busses = ThermalStandard_states(sys2)
 # show(gen_busses, allrows=true)
@@ -93,8 +98,8 @@ end
 # gen_busses = sort!(append!(Generator_states(sys), Source_states(sys)), [:bus_number, :active_power])
 # show(gen_busses, allrows=true)
 
-avaialabe_gens =
-    DataFrame("gen_name" => collect(get_name.(get_components(RenewableFix, sys))))
-show(avaialabe_gens; allrows = true)
+available_gens =
+    DataFrame("gen_name" => collect(get_name.(get_components(RenewableNonDispatch, sys))))
+show(available_gens; allrows = true)
 
 print(get_component(Source, sys, "generator-4242-ND"))
