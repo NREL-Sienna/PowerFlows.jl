@@ -208,7 +208,7 @@ end
         r = 1e-3,
         x = 1e-3,
         b = (from = 0.0, to = 0.0),
-        rate = 0.0,
+        rating = 0.0,
         angle_limits = (min = -pi / 2, max = pi / 2),
     )
     add_component!(sys, l)
@@ -289,7 +289,7 @@ end
         active_power_limits = (min = 0.0, max = 0.0),
         reactive_power_limits = nothing,
         ramp_limits = nothing,
-        operation_cost = ThreePartCost(nothing),
+        operation_cost = ThermalGenerationCost(nothing),
         base_power = 100.0,
         time_limits = nothing,
         prime_mover_type = PrimeMovers.OT,
@@ -297,7 +297,6 @@ end
         services = Device[],
         dynamic_injector = nothing,
         ext = Dict{String, Any}(),
-        time_series_container = InfrastructureSystems.TimeSeriesContainer(),
     )
     add_component!(sys, g1)
 
@@ -347,7 +346,7 @@ end
         r = 1e-3,
         x = 1e-3,
         b = (from = 0.0, to = 0.0),
-        rate = 0.0,
+        rating = 0.0,
         angle_limits = (min = -pi / 2, max = pi / 2),
     )
     add_component!(sys, l)
@@ -384,7 +383,7 @@ end
         active_power_limits = (min = 0.0, max = 0.0),
         reactive_power_limits = nothing,
         ramp_limits = nothing,
-        operation_cost = ThreePartCost(nothing),
+        operation_cost = ThermalGenerationCost(nothing),
         base_power = 100.0,
         time_limits = nothing,
         prime_mover_type = PrimeMovers.OT,
@@ -392,7 +391,6 @@ end
         services = Device[],
         dynamic_injector = nothing,
         ext = Dict{String, Any}(),
-        time_series_container = InfrastructureSystems.TimeSeriesContainer(),
     )
     add_component!(sys, g1)
 
