@@ -6,7 +6,7 @@ using JSON
 
 PSY = PowerSystems
 
-function Write_Sienna2PSSE(sys_location::System, scenario_name::String, year::Int64;
+function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     export_location::Union{Nothing, String} = nothing, base_case = false, setpoint = false,
     setpoint_ts::Union{Nothing, Dates.DateTime} = nothing,
     results_dir::Union{Nothing, String} = nothing, v33 = true)
@@ -33,7 +33,7 @@ function Write_Sienna2PSSE(sys_location::System, scenario_name::String, year::In
     raw_exp_dir = joinpath(export_location, scenario_name, string(year))
 
     # Metadata
-    push!(raw_file_metadata, "Sienna_System_Location" => sys_location)
+    # push!(raw_file_metadata, "Sienna_System_Location" => sys_location)  # TODO fix
     push!(raw_file_metadata, "Raw_File_Export_Location" => raw_exp_dir)
     if base_case
         push!(raw_file_metadata, "Base_Case_Export" => true)
@@ -49,6 +49,7 @@ function Write_Sienna2PSSE(sys_location::System, scenario_name::String, year::In
     PSY.set_units_base_system!(sys, PSY.IS.UnitSystem.NATURAL_UNITS)
 
     export_ts =
+
         if (setpoint)
             populate_setpoints!(sys, results_dir, setpoint_ts)
         end
@@ -398,9 +399,9 @@ function Write_Sienna2PSSE(sys_location::System, scenario_name::String, year::In
             r = PSY.get_r(branch)
             x = PSY.get_x(branch)
             b = getfield(PSY.get_b(branch), :from) + getfield(PSY.get_b(branch), :to)
-            rate_a = PSY.get_rate(branch)
-            rate_b = PSY.get_rate(branch)
-            rate_c = PSY.get_rate(branch)
+            rate_a = PSY.get_rating(branch)
+            rate_b = PSY.get_rating(branch)
+            rate_c = PSY.get_rating(branch)
             g_i, b_i = 0.0, 0.0 # DEFAULT
             g_j, b_j = 0.0, 0.0 # DEFAULT
             st = get_PSSE_status(PSY.get_available(branch))
@@ -497,9 +498,9 @@ function Write_Sienna2PSSE(sys_location::System, scenario_name::String, year::In
             windv1 = 1.0 # DEFAULT
             nomv1 = 0.0 # DEFAULT
             ang1 = 0.0 # DEFAULT
-            rata1 = PSY.get_rate(branch)
-            ratb1 = PSY.get_rate(branch)
-            ratc1 = PSY.get_rate(branch)
+            rata1 = PSY.get_rating(branch)
+            ratb1 = PSY.get_rating(branch)
+            ratc1 = PSY.get_rating(branch)
             cod1 = 0 # DEFAULT
             cont1 = 0 # DEFAULT
             rma1 = 1.1 # DEFAULT
@@ -576,9 +577,9 @@ function Write_Sienna2PSSE(sys_location::System, scenario_name::String, year::In
             windv1 = 1.0 # DEFAULT
             nomv1 = 0.0 # DEFAULT
             ang1 = 0.0 # DEFAULT
-            rata1 = PSY.get_rate(branch)
-            ratb1 = PSY.get_rate(branch)
-            ratc1 = PSY.get_rate(branch)
+            rata1 = PSY.get_rating(branch)
+            ratb1 = PSY.get_rating(branch)
+            ratc1 = PSY.get_rating(branch)
             cod1 = 1
             cont1 = j
             rma1 = 1.1 # DEFAULT

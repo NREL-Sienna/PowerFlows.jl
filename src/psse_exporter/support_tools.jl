@@ -28,7 +28,7 @@ function Branch_states(sys::System)
             #"b" => get_b.(lines),
             "P_to_from" => get_active_power_flow.(lines),
             "Q_to_from" => get_reactive_power_flow.(lines),
-            "rate" => get_rate.(lines),
+            "rate" => get_rating.(lines),
             #"arc" => get_arc.(lines)
         ), [:bus_from, :bus_to, :branch_name])
 end
@@ -45,7 +45,7 @@ function Line_states(sys::System)
             #"b" => get_b.(lines),
             "active_flow" => get_active_power_flow.(lines),
             "reactive_flow" => get_reactive_power_flow.(lines),
-            "rate" => get_rate.(lines),
+            "rate" => get_rating.(lines),
             #"arc" => get_arc.(lines)
         ), [:from_bus, :to_bus, "line_name"])
 end
@@ -138,7 +138,7 @@ function Transformer2W_states(sys::System)
             "r" => get_r.(xfmrs),
             "x" => get_x.(xfmrs),
             #"primary_shunt" => get_primary_shunt.(xfmrs),
-            "rate" => get_rate.(xfmrs),
+            "rate" => get_rating.(xfmrs),
         ), [:from_bus, :to_bus, :Transformer_name])
 end
 
@@ -156,7 +156,7 @@ function TapTransformer_states(sys::System)
             "r" => get_r.(xfmrs),
             "x" => get_x.(xfmrs),
             #"primary_shunt" => get_primary_shunt.(xfmrs),
-            "rate" => get_rate.(xfmrs),
+            "rate" => get_rating.(xfmrs),
         ), [:from_bus, :to_bus, :Transformer_name])
 end
 
