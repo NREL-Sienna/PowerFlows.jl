@@ -1,12 +1,10 @@
 using Dates
-using OrderedCollections
+using DataStructures
 using PowerSystems
 using DelimitedFiles
 using JSON
 
 PSY = PowerSystems
-
-include("/Users/hross2/Julia/psse_exporter/src/support_tools.jl")
 
 function Write_Sienna2PSSE(sys_location::System, scenario_name::String, year::Int64;
     export_location::Union{Nothing, String} = nothing, base_case = false, setpoint = false,
@@ -14,7 +12,7 @@ function Write_Sienna2PSSE(sys_location::System, scenario_name::String, year::In
     results_dir::Union{Nothing, String} = nothing, v33 = true)
 
     # Metadata file
-    raw_file_metadata = OrderedCollections.OrderedDict()
+    raw_file_metadata = OrderedDict()
 
     if (export_location === nothing)
         export_location = dirname(dirname(@__DIR__))
@@ -110,9 +108,9 @@ function Write_Sienna2PSSE(sys_location::System, scenario_name::String, year::In
     # Find buses in PSY System
     psy_buses = collect(PSY.get_components(PSY.Bus, sys))
 
-    bus_mapping = OrderedCollections.OrderedDict()
+    bus_mapping = OrderedDict()
     # Metadata
-    push!(raw_file_metadata, "Bus_Name_Mapping" => OrderedCollections.OrderedDict())
+    push!(raw_file_metadata, "Bus_Name_Mapping" => OrderedDict())
 
     for bus in psy_buses
         _bus_num = PSY.get_number(bus)

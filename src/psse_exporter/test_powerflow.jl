@@ -7,9 +7,6 @@ using PowerFlows
 
 PF = PowerFlows
 
-include("/Users/hross2/Julia/psse_exporter/src/support_tools.jl")
-include("/Users/hross2/Julia/psse_exporter/src/psse_exporter.jl")
-
 # Load test system
 #show_systems()
 # sys = build_system(PSSEParsingTestSystems, "pti_case3_sys")
@@ -21,18 +18,18 @@ include("/Users/hross2/Julia/psse_exporter/src/psse_exporter.jl")
 # sys = System(joinpath(file_dir, "PSCAD_VALIDATION_RAW.raw"); bus_name_formatter = x -> strip(string(x["name"])) * "-" * string(x["index"]))
 # sys = build_system(PSIDSystems, "WECC 240 Bus")
 
-file_dir = "/Users/hross2/Julia/twofortybus/Marenas"
+file_dir = joinpath(DATA_DIR, "twofortybus", "Marenas")
 sys = with_logger(SimpleLogger(Error)) do  # Suppress system loading warnings
     System(joinpath(file_dir, "system_240[32].json"))
 end
 
-set_units_base_system!(sys, PSY.IS.UnitSystem.SYSTEM_BASE)
+set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
 
 tfy_therms = sort!(collect(get_name.(get_components(ThermalStandard, sys))))
 tfy_re_gen = get_component(RenewableDispatch, sys, "generator-2911-S-gfl")
-#set_units_base_system!(sys, PSY.IS.UnitSystem.NATURAL_UNITS)
+#set_units_base_system!(sys, UnitSystem.NATURAL_UNITS)
 tfy_therm_gen = get_component(ThermalStandard, sys, "generator-1436-C")
-#set_units_base_system!(sys, PSY.IS.UnitSystem.DEVICE_BASE)
+#set_units_base_system!(sys, UnitSystem.DEVICE_BASE)
 tfy_therm_gen = get_component(ThermalStandard, sys, "generator-1431-N")
 tfy_oad = get_component(StandardLoad, sys, "load12021")
 
@@ -59,12 +56,12 @@ Write_Sienna2PSSE(
     sys,
     "basic",
     2024;
-    export_location = "/Users/hross2/Julia/psse_exporter",
+    export_location = joinpath(DATA_DIR, "export"),
     v33 = true,
 )
 
 # Load from .raw file
-file_dir2 = "/Users/hross2/Julia/psse_exporter/Raw_Export/basic/2024"
+file_dir2 = joinpath(DATA_DIR, "Raw_Export", "basic", "2024")
 # sys2 = System(joinpath(file_dir2, "basic.raw"))
 sys2 = with_logger(SimpleLogger(Error)) do  # Suppress system loading warnings
     System(joinpath(file_dir2, "basic.raw"))

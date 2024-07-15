@@ -15,18 +15,16 @@ function PSY.get_reactive_power_limits(gen::PSY.RenewableFix)
     return (min = 0.0, max = gen_q)
 end
 
-include("/Users/hross2/Julia/psse_exporter/src/support_tools.jl")
-
 # Import test cases
 # sys = build_system(PSIDSystems, "WECC 240 Bus")
-file_dir = "/Users/hross2/Julia/twofortybus/Marenas"
+file_dir = joinpath(DATA_DIR, "twofortybus", "Marenas")
 sys = with_logger(SimpleLogger(Error)) do  # Suppress system loading warnings
     System(joinpath(file_dir, "system_240[32].json"))
 end
 set_units_base_system!(sys, PSY.IS.UnitSystem.SYSTEM_BASE)
 
 # Load from .raw file
-file_dir2 = "/Users/hross2/Julia/psse_exporter/Raw_Export/basic/2024"
+file_dir2 = joinpath(DATA_DIR, "Raw_Export", "basic", "2024")
 sys2 = with_logger(SimpleLogger(Error)) do  # Suppress system loading warnings
     System(joinpath(file_dir2, "basic 4_solved2.raw"))
 end

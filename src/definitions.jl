@@ -10,3 +10,6 @@ const MAX_REACTIVE_POWER_ITERATIONS = 10
 const ISAPPROX_ZERO_TOLERANCE = 1e-6
 
 const AC_PF_KW = []
+
+# TODO remove, this is just for testing
+const DATA_DIR = joinpath(dirname(dirname(dirname(pathof(PowerFlows)))), "pf_data")
