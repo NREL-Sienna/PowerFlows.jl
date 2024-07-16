@@ -31,6 +31,14 @@ MAIN_DIR = dirname(@__DIR__)
 include("test_utils/psse_results_compare.jl")
 
 LOG_FILE = "power-systems.log"
+
+const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl"
+    # "test_dc_powerflow.jl",
+    # "test_multiperiod_dc_powerflow.jl",
+    # "test_nlsolve_powerflow.jl",
+    # "test_powerflow_data.jl",
+]
+
 LOG_LEVELS = Dict(
     "Debug" => Logging.Debug,
     "Info" => Logging.Info,
@@ -72,7 +80,11 @@ macro includetests(testarg...)
             tests = map(f -> string(f, ".jl"), tests)
         end
         println()
+        if !isempty(DISABLED_TEST_FILES)
+            @warn("Some tests are disabled $DISABLED_TEST_FILES")
+        end
         for test in tests
+            test in DISABLED_TEST_FILES && continue
             print(splitext(test)[1], ": ")
             include(test)
             println()
