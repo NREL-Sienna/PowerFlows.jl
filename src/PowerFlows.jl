@@ -9,8 +9,9 @@ export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
 export write_results
 export PSSEExporter
+export update_exporter!
 export write_export
-export get_paths
+export get_psse_export_paths
 
 import DataFrames
 import PowerSystems

@@ -1,6 +1,16 @@
 test_psse_export_dir = joinpath(TEST_FILES_DIR, "test_psse_exports")  # at some point could move this to temp files
 isdir(test_psse_export_dir) && rm(test_psse_export_dir; recursive = true)
 
+# TODO second macro I've ever written, probably wants a refactor
+function _log_assert(result, msg)
+    result || @error "Failed check: $(string(msg))"
+    return result
+end
+"If the expression is false, log an error; in any case, pass through the result of the expression."
+macro log_assert(ex)
+    return :(_log_assert($(esc(ex)), $(string(ex))))
+end
+
 """
 Compare the two dataframes by column. Specify tolerances using kwargs; tolerances default to
 default_tol. If tolerance is `nothing`, skip that column. Otherwise, if the column is
@@ -13,33 +23,46 @@ function test_diff_within_tolerance(
     default_tol = PF.SYSTEM_EXPORT_TOLERANCE;
     kwargs...,
 )
-    @test names(df1) == names(df2)
-    @test eltype.(eachcol(df1)) == eltype.(eachcol(df2))
+    result = true
+    result &= (@log_assert names(df1) == names(df2))
+    result &= (@log_assert eltype.(eachcol(df1)) == eltype.(eachcol(df2)))
     for (colname, my_eltype, col1, col2) in
         zip(names(df1), eltype.(eachcol(df1)), eachcol(df1), eachcol(df2))
         my_tol = (Symbol(colname) in keys(kwargs)) ? kwargs[Symbol(colname)] : default_tol
         isnothing(my_tol) && continue
-        success = if my_eltype <: AbstractFloat
-            @test all(isapprox.(col1, col2; atol = my_tol))
-        else
-            @test all(isequal.(col1, col2))
-        end
-        (success isa Test.Pass) || @error "Mismatch on $colname"
+        inner_result = (
+            if my_eltype <: AbstractFloat
+                @log_assert all(isapprox.(col1, col2; atol = my_tol))
+            else
+                @log_assert all(isequal.(col1, col2))
+            end
+        )
+        inner_result || (@error "Mismatch on $colname")
+        result &= inner_result
     end
+    return result
 end
 
 function compare_component_values(sys1::System, sys2::System)
     # TODO rewrite to not depend on the old `_states` DataFrame-based functions
-    test_diff_within_tolerance(PF.Bus_states(sys1), PF.Bus_states(sys2); bus_name = nothing)
-    test_diff_within_tolerance(
+    result = true
+    result &= test_diff_within_tolerance(
+        PF.Bus_states(sys1),
+        PF.Bus_states(sys2);
+        bus_name = nothing,
+    )
+    result &= test_diff_within_tolerance(
         PF.Line_states(sys1),
         PF.Line_states(sys2);
         line_name = nothing,
         active_flow = nothing,
         reactive_flow = nothing,
     )
-    test_diff_within_tolerance(PF.StandardLoad_states(sys1), PF.StandardLoad_states(sys2))
-    test_diff_within_tolerance(
+    result &= test_diff_within_tolerance(
+        PF.StandardLoad_states(sys1),
+        PF.StandardLoad_states(sys2),
+    )
+    result &= test_diff_within_tolerance(
         PF.FixedAdmittance_states(sys1),
         PF.FixedAdmittance_states(sys2);
         load_name = nothing,
@@ -49,26 +72,28 @@ function compare_component_values(sys1::System, sys2::System)
         :Generator_name => in(thermals1[!, :Generator_name]),
         sort(PF.ThermalStandard_states(sys2)),
     )
-    test_diff_within_tolerance(thermals1, thermals2; rating = nothing)
+    result &= test_diff_within_tolerance(thermals1, thermals2; rating = nothing)
     gens1 = sort(append!(PF.Generator_states(sys1), PF.Source_states(sys1)))
-    gens2 = sort(PF.Generator_states(sys2))
-    test_diff_within_tolerance(gens1, gens2; rating = nothing, Generator_name = nothing)
-    test_diff_within_tolerance(
+    gens2 = sort(append!(PF.Generator_states(sys2), PF.Source_states(sys2)))
+    result &=
+        test_diff_within_tolerance(gens1, gens2; rating = nothing, Generator_name = nothing)
+    result &= test_diff_within_tolerance(
         PF.Transformer2W_states(sys1),
         PF.Transformer2W_states(sys2);
         Transformer_name = nothing,
         active_power_flow = nothing,
         reactive_power_flow = nothing,
     )
-    test_diff_within_tolerance(
+    result &= test_diff_within_tolerance(
         PF.TapTransformer_states(sys1),
-        PF.TapTransformer_states(sys2),
+        PF.TapTransformer_states(sys2);
     )
-    test_diff_within_tolerance(
+    result &= test_diff_within_tolerance(
         PF.FixedAdmittance_states(sys1),
         PF.FixedAdmittance_states(sys2);
         load_name = nothing,
     )
+    return result
 end
 
 # If we have a name like "Bus1-Bus2-OtherInfo," reverse it to "Bus2-Bus1-OtherInfo"
@@ -174,8 +199,8 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
             )
             result &= comparison
             if !comparison
-                @show comp1
-                @show comp2
+                @error "Mismatched component LHS: $comp1"
+                @error "Mismatched component RHS: $comp2"
             end
         end
     end
@@ -183,14 +208,25 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
 end
 
 # We currently have two imperfect methods of comparing systems. TODO at some point combine into one good method
-function compare_systems_wrapper(sys1::System, sys2::System, sys2_metadata)
-    compare_component_values(sys1, sys2)
-    compare_systems_loosely(
+function compare_systems_wrapper(sys1::System, sys2::System, sys2_metadata = nothing)
+    first_result = compare_component_values(sys1, sys2)
+    second_result = compare_systems_loosely(
         sys1,
         sys2;
-        bus_name_mapping = sys2_metadata["Bus_Name_Mapping"],
+        bus_name_mapping = if isnothing(sys2_metadata)
+            Dict{String, String}()
+        else
+            sys2_metadata["Bus_Name_Mapping"]
+        end,
     )
+    return first_result && second_result
 end
+
+read_system_and_metadata(raw_path, metadata_path) =
+    System(raw_path), PF.JSON.parsefile(metadata_path)
+
+read_system_and_metadata(scenario_name, year, export_location) = read_system_and_metadata(
+    PF.get_psse_export_paths(scenario_name, year, export_location)...)
 
 function test_psse_round_trip(
     sys::System,
@@ -199,7 +235,7 @@ function test_psse_round_trip(
     year::Int,
     export_location::AbstractString,
 )
-    raw_path, metadata_path = get_paths(scenario_name, year, export_location)
+    raw_path, metadata_path = PF.get_psse_export_paths(scenario_name, year, export_location)
     @test !isfile(raw_path)
     @test !isfile(metadata_path)
 
@@ -207,16 +243,37 @@ function test_psse_round_trip(
     @test isfile(raw_path)
     @test isfile(metadata_path)
 
-    sys2 = System(raw_path)
-    sys2_metadata = PF.JSON.parsefile(metadata_path)
-
-    set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
-    set_units_base_system!(sys2, UnitSystem.SYSTEM_BASE)
-
-    compare_systems_wrapper(sys, sys2, sys2_metadata)
+    sys2, sys2_metadata = read_system_and_metadata(raw_path, metadata_path)
+    @test compare_systems_wrapper(sys, sys2, sys2_metadata)
 end
 
-@testset "PSSE Exporter with system_240[32].json, v33" begin
+"Test that the two raw files are exactly identical and the two metadata files parse to identical JSON"
+function test_psse_export_strict_equality(
+    raw1,
+    metadata1,
+    raw2,
+    metadata2;
+    exclude_metadata_keys = ["Raw_File_Export_Location"],
+)
+    open(raw1, "r") do handle1
+        open(raw2, "r") do handle2
+            @test countlines(handle1) == countlines(handle2)
+            for (line1, line2) in zip(readlines(handle1), readlines(handle2))
+                @test line1 == line2
+            end
+        end
+    end
+
+    parsed1 = PF.JSON.parsefile(metadata1)
+    parsed2 = PF.JSON.parsefile(metadata2)
+    for key in exclude_metadata_keys
+        parsed1[key] = nothing
+        parsed2[key] = nothing
+    end
+    @test parsed1 == parsed2
+end
+
+function load_test_system()
     # TODO commit to either providing this file or not requiring it
     sys_file = joinpath(PF.DATA_DIR, "twofortybus", "Marenas", "system_240[32].json")
     if !isfile(sys_file)
@@ -226,21 +283,58 @@ end
     sys = with_logger(SimpleLogger(Error)) do
         System(sys_file)
     end
-    @test_throws ArgumentError PSSEExporter(sys, :vNonexistent)
-
-    exporter_33 = PSSEExporter(sys, :v33)
-    export_location = joinpath(test_psse_export_dir, "v33", "system_240")
-    test_psse_round_trip(sys, exporter_33, "basic", 2024, export_location)
+    set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
+    return sys
 end
 
-# TODO make this pass
-# @testset "PSSE Exporter with RTS_GMLC_DA_sys, v33" begin
-#     sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
-#     @test_throws ArgumentError PSSEExporter(sys, :vNonexistent)
+# I test so much, my tests have tests
+@testset "Test system comparison utilities" begin
+    sys = load_test_system()
 
-#     exporter_33 = PSSEExporter(sys, :v33)
-#     export_location = joinpath(test_psse_export_dir, "v33", "RTS_GMLC_DA_sys")
-#     test_psse_round_trip(sys, exporter_33, "basic", 2024, export_location)
-# end
+    @test compare_systems_wrapper(sys, sys)
+    @test compare_systems_wrapper(sys, deepcopy(sys))
+end
 
-# TODO v44
+@testset "PSSE Exporter with system_240[32].json, v33" begin
+    sys = load_test_system()
+
+    # PSS/E version must be one of the supported ones
+    @test_throws ArgumentError PSSEExporter(sys, :vNonexistent)
+
+    # Reimported export should be comparable to original system
+    exporter = PSSEExporter(sys, :v33)
+    export_location = joinpath(test_psse_export_dir, "v33", "system_240")
+    test_psse_round_trip(sys, exporter, "basic", 2024, export_location)
+
+    # Exporting the exact same thing again should result in the exact same files
+    write_export(exporter, "basic2", 2024, export_location)
+    test_psse_export_strict_equality(
+        PF.get_psse_export_paths("basic", 2024, export_location)...,
+        PF.get_psse_export_paths("basic2", 2024, export_location)...)
+
+    # Updating with a completely different system should fail
+    different_system = build_system(PSITestSystems, "c_sys5_all_components")
+    @test_throws ArgumentError update_exporter!(exporter, different_system)
+
+    # Updating with the exact same system should result in the exact same files
+    update_exporter!(exporter, sys)
+    write_export(exporter, "basic3", 2024, export_location)
+    test_psse_export_strict_equality(
+        PF.get_psse_export_paths("basic", 2024, export_location)...,
+        PF.get_psse_export_paths("basic3", 2024, export_location)...)
+
+    # Updating with changed value should result in a different reimport (System version)
+    sys2 = deepcopy(sys)
+    line_to_change = first(get_components(Line, sys2))
+    set_rating!(line_to_change, get_rating(line_to_change) * 12345.6)
+    update_exporter!(exporter, sys2)
+    write_export(exporter, "basic4", 2024, export_location)
+    reread_sys2, sys2_metadata = read_system_and_metadata("basic4", 2024, export_location)
+    @test compare_systems_wrapper(sys2, reread_sys2, sys2_metadata)
+    @test_logs((:error, r"Mismatch on rate"), (:error, r"values do not match"),
+        match_mode = :any, min_level = Logging.Error,
+        compare_systems_wrapper(sys, reread_sys2, sys2_metadata))
+end
+
+# TODO test with systems from PSB rather than the custom one
+# TODO test v34
