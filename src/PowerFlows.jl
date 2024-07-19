@@ -8,6 +8,9 @@ export ACPowerFlow
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
 export write_results
+export PSSEExporter
+export write_export
+export get_paths
 
 import DataFrames
 import PowerSystems
@@ -31,8 +34,9 @@ include("ac_power_flow.jl")
 include("ac_power_flow_jacobian.jl")
 include("nlsolve_ac_powerflow.jl")
 include("post_processing.jl")
+include("psse_export.jl")
 
-# PSSE Exporter
+# Old PSSE Exporter
 import PowerSystems: System
 import DataFrames: DataFrame
 import Dates

@@ -1,3 +1,5 @@
+_permissive_parse_int(x) = Int64(parse(Float64, x))  # Parses "1.0" as 1, errors on "1.5"
+
 # TODO document this function
 function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     export_location::Union{Nothing, String} = nothing, base_case = false, setpoint = false,
@@ -8,9 +10,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     raw_file_metadata = OrderedDict()
 
     if (export_location === nothing)
-        export_location = dirname(dirname(@__DIR__))
         @warn "Location to save the incremental raw file not specified. Using the data folder in the test folder of the module."
-        export_location = joinpath(export_location, "test", "data", "Raw_Export")
+        export_location = joinpath(dirname(dirname(@__DIR__)), "test", "data", "Raw_Export")
     else
         export_location = joinpath(export_location, "Raw_Export")
     end
@@ -126,8 +127,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
         push!(raw_file_metadata["Bus_Name_Mapping"], PSY.get_name(bus) => bus_name)
         bus_base_kv = PSY.get_base_voltage(bus)
         bus_ide = PSY.get_bustype(bus).value
-        area = parse(Int, PSY.get_name(PSY.get_area(bus)))
-        l_z = parse(Int, PSY.get_name(PSY.get_load_zone(bus)))
+        area = _permissive_parse_int(PSY.get_name(PSY.get_area(bus)))
+        l_z = _permissive_parse_int(PSY.get_name(PSY.get_load_zone(bus)))
         owner = 1 # DEFAULT
         v_mag = PSY.get_magnitude(bus)
         v_ang = rad2deg(PSY.get_angle(bus))
@@ -167,8 +168,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
         load_id = last(PSY.get_name(load))
         load_status = get_PSSE_status(PSY.get_available(load))
         load_bus = PSY.get_bus(load)
-        area = parse(Int, PSY.get_name(PSY.get_area(load_bus)))
-        l_z = parse(Int, PSY.get_name(PSY.get_load_zone(load_bus)))
+        area = _permissive_parse_int(PSY.get_name(PSY.get_area(load_bus)))
+        l_z = _permissive_parse_int(PSY.get_name(PSY.get_load_zone(load_bus)))
         p_l = base_case ? 0.0 : PSY.get_constant_active_power(load)
         q_l = base_case ? 0.0 : PSY.get_constant_reactive_power(load)
         PSY.set_units_base_system!(sys, PSY.IS.UnitSystem.DEVICE_BASE) # These need to be on device base to be parsed correctly for now, everything else, sys base
