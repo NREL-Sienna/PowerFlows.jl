@@ -13,6 +13,7 @@ const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
 const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
+const PF = PowerFlows
 
 import Aqua
 Aqua.test_unbound_args(PowerFlows)
@@ -33,10 +34,11 @@ include("test_utils/psse_results_compare.jl")
 LOG_FILE = "power-systems.log"
 
 const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl"
-    # "test_dc_powerflow.jl",
-    # "test_multiperiod_dc_powerflow.jl",
-    # "test_nlsolve_powerflow.jl",
-    # "test_powerflow_data.jl",
+# "test_dc_powerflow.jl",
+# "test_multiperiod_dc_powerflow.jl",
+# "test_nlsolve_powerflow.jl",
+# "test_powerflow_data.jl",
+# "test_psse_export.jl",
 ]
 
 LOG_LEVELS = Dict(

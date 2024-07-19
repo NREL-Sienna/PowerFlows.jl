@@ -8,6 +8,7 @@ const BOUNDS_TOLERANCE = 1e-6
 const MAX_REACTIVE_POWER_ITERATIONS = 10
 
 const ISAPPROX_ZERO_TOLERANCE = 1e-6
+const SYSTEM_EXPORT_TOLERANCE = 1e-10  # TODO maybe this belongs in the testing codebase
 
 const AC_PF_KW = []
 
