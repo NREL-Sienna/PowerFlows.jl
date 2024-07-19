@@ -1,3 +1,6 @@
+const SYSTEM_REIMPORT_COMPARISON_TOLERANCE = 1e-10
+const POWERFLOW_COMPARISON_TOLERANCE = 1e-9
+
 test_psse_export_dir = joinpath(TEST_FILES_DIR, "test_psse_exports")  # at some point could move this to temp files
 isdir(test_psse_export_dir) && rm(test_psse_export_dir; recursive = true)
 
@@ -17,10 +20,10 @@ default_tol. If tolerance is `nothing`, skip that column. Otherwise, if the colu
 floating point, compare element-wise with `isapprox(atol = tolerance)`; if not, test strict
 equality element-wise.
 """
-function test_diff_within_tolerance(
+function compare_df_within_tolerance(
     df1::DataFrame,
     df2::DataFrame,
-    default_tol = PF.SYSTEM_EXPORT_TOLERANCE;
+    default_tol = SYSTEM_REIMPORT_COMPARISON_TOLERANCE;
     kwargs...,
 )
     result = true
@@ -37,7 +40,8 @@ function test_diff_within_tolerance(
                 @log_assert all(isequal.(col1, col2))
             end
         )
-        inner_result || (@error "Mismatch on $colname")
+        inner_result ||
+            (@error "Mismatch on $colname$((my_eltype <: AbstractFloat) ? ", max discrepancy $(maximum(abs.(col2 - col1)))" : "")")
         result &= inner_result
     end
     return result
@@ -46,23 +50,23 @@ end
 function compare_component_values(sys1::System, sys2::System)
     # TODO rewrite to not depend on the old `_states` DataFrame-based functions
     result = true
-    result &= test_diff_within_tolerance(
+    result &= compare_df_within_tolerance(
         PF.Bus_states(sys1),
         PF.Bus_states(sys2);
         bus_name = nothing,
     )
-    result &= test_diff_within_tolerance(
+    result &= compare_df_within_tolerance(
         PF.Line_states(sys1),
         PF.Line_states(sys2);
         line_name = nothing,
         active_flow = nothing,
         reactive_flow = nothing,
     )
-    result &= test_diff_within_tolerance(
+    result &= compare_df_within_tolerance(
         PF.StandardLoad_states(sys1),
         PF.StandardLoad_states(sys2),
     )
-    result &= test_diff_within_tolerance(
+    result &= compare_df_within_tolerance(
         PF.FixedAdmittance_states(sys1),
         PF.FixedAdmittance_states(sys2);
         load_name = nothing,
@@ -72,23 +76,28 @@ function compare_component_values(sys1::System, sys2::System)
         :Generator_name => in(thermals1[!, :Generator_name]),
         sort(PF.ThermalStandard_states(sys2)),
     )
-    result &= test_diff_within_tolerance(thermals1, thermals2; rating = nothing)
+    result &= compare_df_within_tolerance(thermals1, thermals2; rating = nothing)
     gens1 = sort(append!(PF.Generator_states(sys1), PF.Source_states(sys1)))
     gens2 = sort(append!(PF.Generator_states(sys2), PF.Source_states(sys2)))
     result &=
-        test_diff_within_tolerance(gens1, gens2; rating = nothing, Generator_name = nothing)
-    result &= test_diff_within_tolerance(
+        compare_df_within_tolerance(
+            gens1,
+            gens2;
+            rating = nothing,
+            Generator_name = nothing,
+        )
+    result &= compare_df_within_tolerance(
         PF.Transformer2W_states(sys1),
         PF.Transformer2W_states(sys2);
         Transformer_name = nothing,
         active_power_flow = nothing,
         reactive_power_flow = nothing,
     )
-    result &= test_diff_within_tolerance(
+    result &= compare_df_within_tolerance(
         PF.TapTransformer_states(sys1),
         PF.TapTransformer_states(sys2);
     )
-    result &= test_diff_within_tolerance(
+    result &= compare_df_within_tolerance(
         PF.FixedAdmittance_states(sys1),
         PF.FixedAdmittance_states(sys2);
         load_name = nothing,
@@ -104,7 +113,7 @@ function reverse_composite_name(name::String)
 end
 
 loose_system_match_fn(a::Float64, b::Float64) =
-    isapprox(a, b; atol = PF.SYSTEM_EXPORT_TOLERANCE) || IS.isequivalent(a, b)
+    isapprox(a, b; atol = SYSTEM_REIMPORT_COMPARISON_TOLERANCE) || IS.isequivalent(a, b)
 loose_system_match_fn(a, b) = IS.isequivalent(a, b)
 
 function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
@@ -222,11 +231,29 @@ function compare_systems_wrapper(sys1::System, sys2::System, sys2_metadata = not
     return first_result && second_result
 end
 
+# TODO temporary hack, see https://github.com/NREL-Sienna/PowerFlows.jl/issues/39
+function PowerSystems.get_reactive_power_limits(gen::RenewableNonDispatch)
+    gen_pf = get_power_factor(gen)
+    gen_q = get_max_active_power(gen) * sqrt((1 / gen_pf^2) - 1)
+    return (min = 0.0, max = gen_q)
+end
+
+function test_power_flow(sys1::System, sys2::System)
+    result1 = solve_powerflow(ACPowerFlow(), sys1)
+    result2 = solve_powerflow(ACPowerFlow(), sys2)
+    @test compare_df_within_tolerance(result1["bus_results"],
+        result2["bus_results"], POWERFLOW_COMPARISON_TOLERANCE)
+    @test compare_df_within_tolerance(
+        sort(result1["flow_results"], names(result1["flow_results"])[2:end]),
+        sort(result2["flow_results"], names(result2["flow_results"])[2:end]),
+        POWERFLOW_COMPARISON_TOLERANCE; line_name = nothing)
+end
+
 read_system_and_metadata(raw_path, metadata_path) =
     System(raw_path), PF.JSON.parsefile(metadata_path)
 
 read_system_and_metadata(scenario_name, year, export_location) = read_system_and_metadata(
-    PF.get_psse_export_paths(scenario_name, year, export_location)...)
+    get_psse_export_paths(scenario_name, year, export_location)...)
 
 function test_psse_round_trip(
     sys::System,
@@ -235,7 +262,7 @@ function test_psse_round_trip(
     year::Int,
     export_location::AbstractString,
 )
-    raw_path, metadata_path = PF.get_psse_export_paths(scenario_name, year, export_location)
+    raw_path, metadata_path = get_psse_export_paths(scenario_name, year, export_location)
     @test !isfile(raw_path)
     @test !isfile(metadata_path)
 
@@ -245,6 +272,7 @@ function test_psse_round_trip(
 
     sys2, sys2_metadata = read_system_and_metadata(raw_path, metadata_path)
     @test compare_systems_wrapper(sys, sys2, sys2_metadata)
+    test_power_flow(sys, sys2)
 end
 
 "Test that the two raw files are exactly identical and the two metadata files parse to identical JSON"
@@ -309,8 +337,8 @@ end
     # Exporting the exact same thing again should result in the exact same files
     write_export(exporter, "basic2", 2024, export_location)
     test_psse_export_strict_equality(
-        PF.get_psse_export_paths("basic", 2024, export_location)...,
-        PF.get_psse_export_paths("basic2", 2024, export_location)...)
+        get_psse_export_paths("basic", 2024, export_location)...,
+        get_psse_export_paths("basic2", 2024, export_location)...)
 
     # Updating with a completely different system should fail
     different_system = build_system(PSITestSystems, "c_sys5_all_components")
@@ -320,8 +348,8 @@ end
     update_exporter!(exporter, sys)
     write_export(exporter, "basic3", 2024, export_location)
     test_psse_export_strict_equality(
-        PF.get_psse_export_paths("basic", 2024, export_location)...,
-        PF.get_psse_export_paths("basic3", 2024, export_location)...)
+        get_psse_export_paths("basic", 2024, export_location)...,
+        get_psse_export_paths("basic3", 2024, export_location)...)
 
     # Updating with changed value should result in a different reimport (System version)
     sys2 = deepcopy(sys)
@@ -334,6 +362,7 @@ end
     @test_logs((:error, r"Mismatch on rate"), (:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_wrapper(sys, reread_sys2, sys2_metadata))
+    test_power_flow(sys2, reread_sys2)
 end
 
 # TODO test with systems from PSB rather than the custom one
