@@ -1,6 +1,3 @@
-const SYSTEM_REIMPORT_COMPARISON_TOLERANCE = 1e-10
-const POWERFLOW_COMPARISON_TOLERANCE = 1e-9
-
 test_psse_export_dir = joinpath(TEST_FILES_DIR, "test_psse_exports")  # at some point could move this to temp files
 isdir(test_psse_export_dir) && rm(test_psse_export_dir; recursive = true)
 
@@ -229,13 +226,6 @@ function compare_systems_wrapper(sys1::System, sys2::System, sys2_metadata = not
         end,
     )
     return first_result && second_result
-end
-
-# TODO temporary hack, see https://github.com/NREL-Sienna/PowerFlows.jl/issues/39
-function PowerSystems.get_reactive_power_limits(gen::RenewableNonDispatch)
-    gen_pf = get_power_factor(gen)
-    gen_q = get_max_active_power(gen) * sqrt((1 / gen_pf^2) - 1)
-    return (min = 0.0, max = gen_q)
 end
 
 function test_power_flow(sys1::System, sys2::System)
