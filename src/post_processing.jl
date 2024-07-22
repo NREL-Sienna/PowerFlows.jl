@@ -692,3 +692,30 @@ function write_results(
 
     return Dict("bus_results" => bus_df, "flow_results" => branch_df)
 end
+
+"""
+Modify the values in the given `System` to correspond to the given `PowerFlowData` such that
+if a new `PowerFlowData` is constructed from the resulting system it is the same as `data`.
+See also `write_powerflow_solution!`.
+"""
+function update_system!(sys::PSY.System, data::PowerFlowData)
+    for bus in PSY.get_components(PSY.Bus, sys)
+        if bus.bustype == PSY.ACBusTypes.REF
+            P_gen = data.bus_activepower_injection[data.bus_lookup[PSY.get_number(bus)]]
+            Q_gen = data.bus_reactivepower_injection[data.bus_lookup[PSY.get_number(bus)]]
+            _power_redistribution_ref(sys, P_gen, Q_gen, bus)
+            # elseif bus.bustype == PSY.ACBusTypes.PV
+            #     # TODO. This is the write_powerflow_solution! logic:
+            #     Q_gen = result[2 * ix - 1]
+            #     bus.angle = result[2 * ix]
+            #     _reactive_power_redistribution_pv(sys, Q_gen, bus)
+            # elseif bus.bustype == PSY.ACBusTypes.PQ
+            #     # TODO. This is the write_powerflow_solution! logic:
+            #     Vm = result[2 * ix - 1]
+            #     θ = result[2 * ix]
+            #     PSY.set_magnitude!(bus, Vm)
+            #     PSY.set_angle!(bus, θ)
+        end
+    end
+    # TODO
+end
