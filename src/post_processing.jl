@@ -701,20 +701,20 @@ See also `write_powerflow_solution!`.
 function update_system!(sys::PSY.System, data::PowerFlowData)
     for bus in PSY.get_components(PSY.Bus, sys)
         if bus.bustype == PSY.ACBusTypes.REF
+            # For REF bus, voltage and angle are fixed; update active and reactive
             P_gen = data.bus_activepower_injection[data.bus_lookup[PSY.get_number(bus)]]
             Q_gen = data.bus_reactivepower_injection[data.bus_lookup[PSY.get_number(bus)]]
             _power_redistribution_ref(sys, P_gen, Q_gen, bus)
-            # elseif bus.bustype == PSY.ACBusTypes.PV
-            #     # TODO. This is the write_powerflow_solution! logic:
-            #     Q_gen = result[2 * ix - 1]
-            #     bus.angle = result[2 * ix]
-            #     _reactive_power_redistribution_pv(sys, Q_gen, bus)
-            # elseif bus.bustype == PSY.ACBusTypes.PQ
-            #     # TODO. This is the write_powerflow_solution! logic:
-            #     Vm = result[2 * ix - 1]
-            #     θ = result[2 * ix]
-            #     PSY.set_magnitude!(bus, Vm)
-            #     PSY.set_angle!(bus, θ)
+        elseif bus.bustype == PSY.ACBusTypes.PV
+            # For PV bus, active and voltage are fixed; update reactive and angle
+            Q_gen = data.bus_reactivepower_injection[data.bus_lookup[PSY.get_number(bus)]]
+            _reactive_power_redistribution_pv(sys, Q_gen, bus)
+            PSY.set_angle!(bus, data.bus_angles[data.bus_lookup[PSY.get_number(bus)]])
+        elseif bus.bustype == PSY.ACBusTypes.PQ
+            # For PQ bus, active and reactive are fixed; update voltage and angle
+            Vm = data.bus_magnitude[data.bus_lookup[PSY.get_number(bus)]]
+            PSY.set_magnitude!(bus, Vm)
+            PSY.set_angle!(bus, data.bus_angles[data.bus_lookup[PSY.get_number(bus)]])
         end
     end
     # TODO
