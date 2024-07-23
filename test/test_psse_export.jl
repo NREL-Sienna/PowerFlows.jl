@@ -215,15 +215,7 @@ end
 # We currently have two imperfect methods of comparing systems. TODO at some point combine into one good method
 function compare_systems_wrapper(sys1::System, sys2::System, sys2_metadata = nothing)
     first_result = compare_component_values(sys1, sys2)
-    second_result = compare_systems_loosely(
-        sys1,
-        sys2;
-        bus_name_mapping = if isnothing(sys2_metadata)
-            Dict{String, String}()
-        else
-            sys2_metadata["Bus_Name_Mapping"]
-        end,
-    )
+    second_result = compare_systems_loosely(sys1, sys2)
     return first_result && second_result
 end
 
@@ -241,7 +233,9 @@ end
 function read_system_and_metadata(raw_path, metadata_path)
     md = PF.JSON.parsefile(metadata_path)
     sys =
-        System(raw_path; gen_name_formatter = PF.make_gen_name_formatter_from_metadata(md))
+        System(raw_path;
+            bus_name_formatter = PF.make_bus_name_formatter_from_metadata(md),
+            gen_name_formatter = PF.make_gen_name_formatter_from_metadata(md))
     return sys, md
 end
 
