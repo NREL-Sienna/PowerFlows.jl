@@ -51,7 +51,21 @@ function create_gen_ids(gens::Vector{<:PSY.Device})
     return gen_ids
 end
 
-# TODO maybe we want a special System constructor that takes the JSON and does this internally
+# TODO maybe we want a special System constructor that takes the JSON and handles these mappings internally
+"""
+Given a metadata dictionary parsed from a `raw_metadata_log.json`, yields a function that
+can be passed as the `bus_name_formatter` kwarg to the `System` constructor to properly
+restore Sienna bus names:
+`System("filename.raw"; bus_name_formatter = PF.make_bus_name_formatter_from_metadata(md))`
+"""
+function make_bus_name_formatter_from_metadata(md::Dict)
+    bus_map = Dict(value => key for (key, value) in md["Bus_Name_Mapping"])
+    function md_bus_name_formatter(device_dict::Dict)::String
+        return bus_map[device_dict["name"]]
+    end
+    return md_bus_name_formatter
+end
+
 """
 Given a metadata dictionary parsed from a `raw_metadata_log.json`, yields a function that
 can be passed as the `gen_name_formatter` kwarg to the `System` constructor to properly
