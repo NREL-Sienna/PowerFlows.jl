@@ -81,7 +81,6 @@ function compare_component_values(sys1::System, sys2::System)
             gens1,
             gens2;
             rating = nothing,
-            Generator_name = nothing,
         )
     result &= compare_df_within_tolerance(
         PF.Transformer2W_states(sys1),
@@ -239,8 +238,12 @@ function test_power_flow(sys1::System, sys2::System)
         POWERFLOW_COMPARISON_TOLERANCE; line_name = nothing)
 end
 
-read_system_and_metadata(raw_path, metadata_path) =
-    System(raw_path), PF.JSON.parsefile(metadata_path)
+function read_system_and_metadata(raw_path, metadata_path)
+    md = PF.JSON.parsefile(metadata_path)
+    sys =
+        System(raw_path; gen_name_formatter = PF.make_gen_name_formatter_from_metadata(md))
+    return sys, md
+end
 
 read_system_and_metadata(scenario_name, year, export_location) = read_system_and_metadata(
     get_psse_export_paths(scenario_name, year, export_location)...)

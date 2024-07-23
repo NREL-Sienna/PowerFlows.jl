@@ -1,5 +1,72 @@
 _permissive_parse_int(x) = Int64(parse(Float64, x))  # Parses "1.0" as 1, errors on "1.5"
 
+function _increment_gen_char(gen_char::Char)
+    (gen_char == '9') && return 'A'
+    (gen_char == 'Z') && return '0'
+    return gen_char + 1
+end
+
+function _increment_gen_id(gen_id::String)
+    carry = (last(gen_id) == 'Z')
+    if length(gen_id) == 1
+        carry && return '0' * _increment_gen_char(first(gen_id))
+        return string(_increment_gen_char(first(gen_id)))
+    end
+    return (carry ? _increment_gen_char(first(gen_id)) : first(gen_id)) *
+           _increment_gen_char(last(gen_id))
+end
+
+"""
+Try to make an informative one or two character name for the generator
+
+  - "generator-1234-AB" -> "AB"
+  - "123_CT_7" -> "7"
+"""
+function _first_choice_gen_id(name::String)
+    my_split = argmax(length, [split(name, "-"), split(name, "_")])
+    return uppercase(first(last(my_split), 2))
+end
+
+"""
+Given a vector of Generators, create a corresponding vector of unique-per-bus PSS/E-compatible generator IDs
+
+WRITTEN TO SPEC: PSS/E 33.3 POM page 5-14, PSS/E 34.1 DataFormat page 1-15
+"""
+function create_gen_ids(gens::Vector{<:PSY.Device})
+    gen_ids = Vector{String}()
+    sizehint!(gen_ids, length(gens))
+    ids_by_bus = Dict{Int64, Vector{String}}()
+
+    for gen in gens
+        bus_n = PSY.get_number(PSY.get_bus(gen))
+        haskey(ids_by_bus, bus_n) || (ids_by_bus[bus_n] = Vector{String}())
+        my_blocked = ids_by_bus[bus_n]
+        my_name = _first_choice_gen_id(PSY.get_name(gen))
+        while my_name in my_blocked
+            my_name = _increment_gen_id(my_name)
+        end
+        push!(gen_ids, my_name)
+        push!(my_blocked, my_name)
+    end
+    return gen_ids
+end
+
+# TODO maybe we want a special System constructor that takes the JSON and does this internally
+"""
+Given a metadata dictionary parsed from a `raw_metadata_log.json`, yields a function that
+can be passed as the `gen_name_formatter` kwarg to the `System` constructor to properly
+restore Sienna generator names:
+`System("filename.raw"; gen_name_formatter = PF.make_gen_name_formatter_from_metadata(md))`
+"""
+function make_gen_name_formatter_from_metadata(md::Dict)
+    gen_map = md["Gen_Name_Mapping"]
+    function md_gen_name_formatter(device_dict::Dict)::String
+        bus_n, gen_id = device_dict["source_id"][2:3]
+        return gen_map["$(bus_n)_$(rstrip(gen_id))"]
+    end
+    return md_gen_name_formatter
+end
+
 # TODO document this function
 function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     export_location::Union{Nothing, String} = nothing, base_case = false, setpoint = false,
@@ -229,14 +296,17 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     end
     # Generators
     psy_gens = collect(PSY.get_components(PSY.Generator, sys))
+    sources = collect(PSY.get_components(PSY.Source, sys))
 
-    for gen in psy_gens
+    gen_ids = create_gen_ids(vcat(psy_gens, sources))
+    gen_mapping = OrderedDict{String, String}()  # Maps "$(psse_bus_number)_$(psse_gen_id)" to original PSY name
+
+    for (gen, gen_id) in zip(psy_gens, first(gen_ids, length(psy_gens)))
         if gen isa PSY.ThermalStandard
             gen_bus_num = PSY.get_number(PSY.get_bus(gen))
             if (haskey(bus_mapping, gen_bus_num))
                 gen_bus_num = bus_mapping[gen_bus_num]
             end
-            gen_id = uppercase(first(last(split(PSY.get_name(gen), "-")), 2))
             p_g = base_case ? 0.0 : PSY.get_active_power(gen)
             q_g = base_case ? 0.0 : PSY.get_reactive_power(gen)
             if PSY.get_reactive_power_limits(gen)[:max] > PSY.get_rating(gen)
@@ -279,7 +349,6 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
             if (haskey(bus_mapping, gen_bus_num))
                 gen_bus_num = bus_mapping[gen_bus_num]
             end
-            gen_id = uppercase(first(last(split(PSY.get_name(gen), "-")), 2))
             p_g = base_case ? 0.0 : PSY.get_active_power(gen)
             q_g = base_case ? 0.0 : PSY.get_reactive_power(gen)
             q_t = PSY.get_rating(gen)cos(π / 4)
@@ -311,15 +380,16 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
                 end
             push!(raw_file, gen_entry)
         end
-    end
 
-    sources = collect(PSY.get_components(PSY.Source, sys))
-    for source in sources
+        gen_mapping["$(gen_bus_num)_$(gen_id)"] = PSY.get_name(gen)
+    end
+    push!(raw_file_metadata, "Gen_Name_Mapping" => gen_mapping)
+
+    for (source, gen_id) in zip(sources, last(gen_ids, length(sources)))
         gen_bus_num = PSY.get_number(PSY.get_bus(source))
         if (haskey(bus_mapping, gen_bus_num))
             gen_bus_num = bus_mapping[gen_bus_num]
         end
-        gen_id = uppercase(first(last(split(PSY.get_name(source), "-")), 2))
         p_g = base_case ? 0.0 : PSY.get_active_power(source) * PSY.get_base_power(sys)
         q_g = base_case ? 0.0 : PSY.get_reactive_power(source) * PSY.get_base_power(sys)
         q_t = 10000 * cos(π / 4)
@@ -350,6 +420,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
                 "$(gen_bus_num), '$(gen_id) ', $(p_g), $(q_g), $(q_t), $(q_b), $(v_s), $(ireg), $(mbase), $(z_r), $(z_x), $(r_t), $(x_t), $(gtap), $(stat), $(rmpct), $(p_t), $(p_b), $(o_i), $(f_i), $(wmod), $(wpf), $(n_reg)"
             end
         push!(raw_file, gen_entry)
+
+        gen_mapping["$(gen_bus_num)_$(gen_id)"] = PSY.get_name(source)
     end
 
     if (v33)
@@ -641,7 +713,7 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
         push!(raw_file, "0 / END OF INTER-AREA TRANSFER DATA, BEGIN OWNER DATA")
         push!(raw_file, "0 / END OF OWNER DATA, BEGIN FACTS DEVICE DATA")
         push!(raw_file, "0 / END OF FACTS DEVICE DATA, BEGIN SWITCHED SHUNT DATA")
-        ush!(raw_file, "0 / END OF SWITCHED SHUNT DATA, BEGIN GNE DATA")
+        push!(raw_file, "0 / END OF SWITCHED SHUNT DATA, BEGIN GNE DATA")
         push!(raw_file, "0 / END OF GNE DATA, BEGIN INDUCTION MACHINE DATA")
         push!(raw_file, "0 / END OF INDUCTION MACHINE DATA, BEGIN SUBSTATION DATA")
         push!(raw_file, "0 / END OF SUBSTATION DATA")
