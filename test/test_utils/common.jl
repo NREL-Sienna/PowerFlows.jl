@@ -15,6 +15,11 @@ function PowerSystems.get_reactive_power_limits(gen::RenewableNonDispatch)
     return (min = 0.0, max = gen_q)
 end
 
+# TODO more hacks
+PowerSystems.get_r(::TwoTerminalHVDCLine) = 0.001
+PowerSystems.get_x(::TwoTerminalHVDCLine) = 0.0
+PowerSystems.get_b(::TwoTerminalHVDCLine) = (from = 0.0, to = 0.0)
+
 "Take RTS_GMLC_DA_sys and make some changes to it that are fully captured in the PowerFlowData(ACPowerFlow(), ...)"
 function modify_rts_system!(sys::System)
     # For REF bus, voltage and angle are fixed; update active and reactive

@@ -81,6 +81,20 @@ function make_gen_name_formatter_from_metadata(md::Dict)
     return md_gen_name_formatter
 end
 
+function make_branch_name_formatter_from_metadata(md::Dict)
+    branch_map = md["Branch_Name_Mapping"]
+    function md_bus_name_formatter(
+        device_dict::Dict,
+        bus_f::PSY.ACBus,
+        bus_t::PSY.ACBus,
+    )::String
+        sid = device_dict["source_id"]
+        key = join((length(sid) == 6) ? [sid[2], sid[3], sid[5]] : last(sid, 3), "_")
+        return branch_map[key]
+    end
+    return md_bus_name_formatter
+end
+
 # TODO document this function
 function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     export_location::Union{Nothing, String} = nothing, base_case = false, setpoint = false,
@@ -456,6 +470,13 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
             sys,
         ),
     )
+    branch_mapping = OrderedDict{String, String}()  # Maps "$(from_bus_number)_$(to_bus_number)" to original PSY name
+    for branch in psy_branches
+        key = "$(PSY.get_number(PSY.get_from_bus(branch)))_$(PSY.get_number(PSY.get_to_bus(branch)))_$(last(split(PSY.get_name(branch), "_")))"
+        @assert !haskey(branch_mapping, key)
+        branch_mapping[key] = PSY.get_name(branch)
+    end
+    push!(raw_file_metadata, "Branch_Name_Mapping" => branch_mapping)
 
     # line_dict = Dict{Tuple{Int64, Int64}, Int64}()
     for branch in psy_branches

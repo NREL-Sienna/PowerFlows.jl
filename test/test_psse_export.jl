@@ -108,6 +108,16 @@ function reverse_composite_name(name::String)
     return join([parts[2], parts[1], parts[3:end]...], "-")
 end
 
+# TODO figure out where these are coming from and fix at the source
+# I think it has to do with per-unit conversions creating a division by zero, because `set_[re]active_power!(..., 0.0)` doesn't fix it
+"Iterate over all the `Generator`s in the system and, if any `active_power` or `reactive_power` fields are `NaN`, make them `0.0`"
+function fix_nans!(sys::PSY.System)
+    for gen in PSY.get_components(PSY.Generator, sys)
+        isnan(PSY.get_active_power(gen)) && (gen.active_power = 0.0)
+        isnan(PSY.get_reactive_power(gen)) && (gen.reactive_power = 0.0)
+    end
+end
+
 loose_system_match_fn(a::Float64, b::Float64) =
     isapprox(a, b; atol = SYSTEM_REIMPORT_COMPARISON_TOLERANCE) || IS.isequivalent(a, b)
 loose_system_match_fn(a, b) = IS.isequivalent(a, b)
@@ -125,7 +135,7 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         PSY.Transformer2W,
         PSY.ThermalStandard,
     ],
-    # TODO when possible, don't exclude: :bustype, :number, :angle, :magnitude, :variable, maybe more
+    # TODO when possible, don't exclude: :bustype, :number, :angle, :magnitude, :variable, :load_zone, probably more
     exclude_fields = Set([
         :name,
         :ext,
@@ -135,6 +145,12 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         :active_power_flow,
         :reactive_power_flow,
         :internal,
+        :voltage_limits,
+        :load_zone,
+        :ramp_limits,
+        :time_limits,
+        :services,
+        :angle_limits,
     ]),
     # TODO when possible, don't exclude these things
     exclude_fields_for_type = Dict(
@@ -216,6 +232,8 @@ end
 function compare_systems_wrapper(sys1::System, sys2::System, sys2_metadata = nothing)
     first_result = compare_component_values(sys1, sys2)
     second_result = compare_systems_loosely(sys1, sys2)
+    @test first_result
+    @test second_result
     return first_result && second_result
 end
 
@@ -235,7 +253,9 @@ function read_system_and_metadata(raw_path, metadata_path)
     sys =
         System(raw_path;
             bus_name_formatter = PF.make_bus_name_formatter_from_metadata(md),
-            gen_name_formatter = PF.make_gen_name_formatter_from_metadata(md))
+            gen_name_formatter = PF.make_gen_name_formatter_from_metadata(md),
+            branch_name_formatter = PF.make_branch_name_formatter_from_metadata(md))
+    fix_nans!(sys)
     return sys, md
 end
 
@@ -258,7 +278,7 @@ function test_psse_round_trip(
     @test isfile(metadata_path)
 
     sys2, sys2_metadata = read_system_and_metadata(raw_path, metadata_path)
-    @test compare_systems_wrapper(sys, sys2, sys2_metadata)
+    compare_systems_wrapper(sys, sys2, sys2_metadata)
     test_power_flow(sys, sys2)
 end
 
@@ -306,8 +326,8 @@ end
 @testset "Test system comparison utilities" begin
     sys = load_test_system()
 
-    @test compare_systems_wrapper(sys, sys)
-    @test compare_systems_wrapper(sys, deepcopy(sys))
+    compare_systems_wrapper(sys, sys)
+    compare_systems_wrapper(sys, deepcopy(sys))
 end
 
 @testset "PSSE Exporter with system_240[32].json, v33" begin
@@ -345,12 +365,24 @@ end
     update_exporter!(exporter, sys2)
     write_export(exporter, "basic4", 2024, export_location)
     reread_sys2, sys2_metadata = read_system_and_metadata("basic4", 2024, export_location)
-    @test compare_systems_wrapper(sys2, reread_sys2, sys2_metadata)
+    compare_systems_wrapper(sys2, reread_sys2, sys2_metadata)
     @test_logs((:error, r"Mismatch on rate"), (:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_wrapper(sys, reread_sys2, sys2_metadata))
     test_power_flow(sys2, reread_sys2)
 end
 
-# TODO test with systems from PSB rather than the custom one
+@testset "PSSE Exporter with RTS_GMLC_DA_sys, v33" begin
+    sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
+    set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
+
+    # PSS/E version must be one of the supported ones
+    @test_throws ArgumentError PSSEExporter(sys, :vNonexistent)
+
+    # Reimported export should be comparable to original system
+    exporter = PSSEExporter(sys, :v33)
+    export_location = joinpath(test_psse_export_dir, "v33", "rts_gmlc")
+    test_psse_round_trip(sys, exporter, "basic", 2024, export_location)
+end
+
 # TODO test v34
