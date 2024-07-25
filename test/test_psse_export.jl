@@ -52,8 +52,14 @@ compare_df_within_tolerance(
     kwargs...,
 ) = compare_df_within_tolerance("unnamed", df1, df2, default_tol; kwargs...)
 
-function compare_component_values(sys1::System, sys2::System)
+function compare_component_values(
+    sys1::System,
+    sys2::System;
+    exclude_reactive_power = false,
+)
     # TODO rewrite to not depend on the old `_states` DataFrame-based functions
+    reactive_power_tol =
+        exclude_reactive_power ? nothing : SYSTEM_REIMPORT_COMPARISON_TOLERANCE
     result = true
     result &= compare_df_within_tolerance(
         "Bus_states",
@@ -90,6 +96,7 @@ function compare_component_values(sys1::System, sys2::System)
         thermals1,
         thermals2;
         rating = nothing,
+        reactive_power = reactive_power_tol,
     )
     gens1 = sort(append!(PF.Generator_states(sys1), PF.Source_states(sys1)))
     gens2 = sort(append!(PF.Generator_states(sys2), PF.Source_states(sys2)))
@@ -99,6 +106,7 @@ function compare_component_values(sys1::System, sys2::System)
             gens1,
             gens2;
             rating = nothing,
+            reactive_power = reactive_power_tol,
         )
     result &= compare_df_within_tolerance(
         "Transformer2W_states",
@@ -203,8 +211,10 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         ]),
     ),
     ignore_name_order = true,
-    ignore_extra_gens = true)
+    ignore_extra_gens = true,
+    exclude_reactive_power = false)
     result = true
+    exclude_reactive_power && push!(exclude_fields, :reactive_power)
 
     # Compare everything about the systems except the actual components
     result &= IS.compare_values(sys1, sys2; exclude = [:data])
@@ -267,9 +277,12 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
 end
 
 # We currently have two imperfect methods of comparing systems. TODO at some point combine into one good method
-function compare_systems_wrapper(sys1::System, sys2::System, sys2_metadata = nothing)
-    first_result = compare_component_values(sys1, sys2)
-    second_result = compare_systems_loosely(sys1, sys2)
+function compare_systems_wrapper(sys1::System, sys2::System, sys2_metadata = nothing;
+    exclude_reactive_power = false)
+    first_result = compare_component_values(sys1, sys2;
+        exclude_reactive_power = exclude_reactive_power)
+    second_result = compare_systems_loosely(sys1, sys2;
+        exclude_reactive_power = exclude_reactive_power)
     return first_result && second_result
 end
 
@@ -423,6 +436,57 @@ end
     export_location = joinpath(test_psse_export_dir, "v33", "rts_gmlc")
     test_psse_round_trip(sys, exporter, "basic", 2024, export_location;
         do_power_flow_test = false)  # TODO why is AC power flow not converging for reimport here?
+
+    # Exporting the exact same thing again should result in the exact same files
+    write_export(exporter, "basic2", 2024, export_location)
+    test_psse_export_strict_equality(
+        get_psse_export_paths("basic", 2024, export_location)...,
+        get_psse_export_paths("basic2", 2024, export_location)...)
+
+    # Updating with a completely different system should fail
+    different_system = build_system(PSITestSystems, "c_sys5_all_components")
+    @test_throws ArgumentError update_exporter!(exporter, different_system)
+
+    # Updating with the exact same system should result in the exact same files
+    update_exporter!(exporter, sys)
+    write_export(exporter, "basic3", 2024, export_location)
+    test_psse_export_strict_equality(
+        get_psse_export_paths("basic", 2024, export_location)...,
+        get_psse_export_paths("basic3", 2024, export_location)...)
+
+    # Updating with changed value should result in a different reimport (System version)
+    sys2 = deepcopy(sys)
+    modify_rts_system!(sys2)
+    update_exporter!(exporter, sys2)
+    write_export(exporter, "basic4", 2024, export_location)
+    reread_sys2, sys2_metadata = read_system_and_metadata("basic4", 2024, export_location)
+    @test compare_systems_wrapper(sys2, reread_sys2, sys2_metadata)
+    @test_logs((:error, r"values do not match"),
+        (:error, r"Mismatch on active_power"), (:error, r"Mismatch on reactive_power"),
+        (:error, r"Mismatch on Vm"), (:error, r"Mismatch on θ"),
+        match_mode = :any, min_level = Logging.Error,
+        compare_systems_wrapper(sys, reread_sys2, sys2_metadata))
+    # test_power_flow(sys2, reread_sys2)  # TODO fix power flow, see above
+
+    # Updating with changed value should result in a different reimport (PowerFlowData version)
+    exporter = PSSEExporter(sys, :v33)
+    pf2 = PowerFlowData(ACPowerFlow(), sys)
+    # This modifies the PowerFlowData in the same way that modify_rts_system! modifies the
+    # system, so the reimport should be comparable to sys2 from above
+    modify_rts_powerflow!(pf2)
+    update_exporter!(exporter, pf2)
+    write_export(exporter, "basic5", 2024, export_location)
+    reread_sys3, sys3_metadata = read_system_and_metadata("basic5", 2024, export_location)
+    # TODO fix bug in `_reactive_power_redistribution_pv`, see https://github.com/NREL-Sienna/PowerFlows.jl/issues/44
+    @test compare_systems_wrapper(sys2, reread_sys3, sys3_metadata;
+        exclude_reactive_power = true)
+    @test_logs((:error, r"values do not match"),
+        (:error, r"Mismatch on active_power"), (:error, r"Mismatch on reactive_power"),
+        (:error, r"Mismatch on Vm"), (:error, r"Mismatch on θ"),
+        match_mode = :any, min_level = Logging.Error,
+        compare_systems_wrapper(sys, reread_sys3, sys3_metadata))
+    # test_power_flow(sys3, reread_sys3)  # TODO fix power flow, see above
+
 end
 
 # TODO test v34

@@ -43,8 +43,8 @@ Update the `PSSEExporter` with new `data`.
     exporter was constructor
 """
 function update_exporter!(exporter::PSSEExporter, data::PowerFlowData)
-    # TODO
-    raise(IS.NotImplementedError("TODO"))
+    # NOTE this relies on exporter.system being a deepcopy of the original system so we're not changing that one here
+    update_system!(exporter.system, data)
 end
 
 # TODO solidify the notion of sameness we care about here
