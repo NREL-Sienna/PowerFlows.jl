@@ -41,6 +41,7 @@ include("psse_export.jl")
 import PowerSystems: System
 import DataFrames: DataFrame
 import Dates
+import DataStructures
 import DataStructures: OrderedDict
 import DelimitedFiles
 import JSON
