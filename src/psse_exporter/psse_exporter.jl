@@ -756,6 +756,14 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
 
     push!(raw_file, "Q")
 
+    # This is very much overkill, but some systems' load zones are named like 123.0 and others are named like 123
+    lz_mapping = DataStructures.SortedDict{String, String}()  # Maps int(load_zone_name) => load_zone_name
+    for load_zone in PSY.get_components(PSY.LoadZone, sys)
+        lz_mapping[string(_permissive_parse_int(PSY.get_name(load_zone)))] =
+            PSY.get_name(load_zone)
+    end
+    push!(raw_file_metadata, "Load_Zone_Name_Mapping" => lz_mapping)
+
     @info "Exporting raw file and relevant metadata log ..."
 
     # Export raw file

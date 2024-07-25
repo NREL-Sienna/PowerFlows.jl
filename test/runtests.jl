@@ -29,6 +29,7 @@ const DIFF_L2_TOLERANCE = 1e-3
 
 MAIN_DIR = dirname(@__DIR__)
 
+include("test_utils/common.jl")
 include("test_utils/psse_results_compare.jl")
 
 LOG_FILE = "power-systems.log"
