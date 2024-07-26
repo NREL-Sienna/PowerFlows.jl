@@ -1,5 +1,3 @@
-_permissive_parse_int(x) = Int64(parse(Float64, x))  # Parses "1.0" as 1, errors on "1.5"
-
 function _increment_gen_char(gen_char::Char)
     (gen_char == '9') && return 'A'
     (gen_char == 'Z') && return '0'
@@ -196,7 +194,7 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
 
     # Buses
     # Find buses in PSY System
-    psy_buses = collect(PSY.get_components(PSY.Bus, sys))
+    psy_buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = PSY.get_number)
 
     bus_mapping = OrderedDict()
     # Metadata
