@@ -489,4 +489,23 @@ end
 
 end
 
+@testset "Test exporter helper functions" begin
+    @test PF._psse_bus_numbers([2, 3, 999_997, 999_998, 1_000_001, 1]) ==
+          Dict(
+        2 => 2,
+        3 => 3,
+        999_997 => 999_997,
+        999_998 => 899_998,
+        1_000_001 => 4,
+        1 => 1,
+    )
+    @test !PF._is_valid_psse_bus_name("a pretty long name")
+    @test !PF._is_valid_psse_bus_name("-bad")
+    @test PF._is_valid_psse_bus_name(raw"¯\_(ツ)_/¯")
+    @test PF._psse_bus_names(["-bad1", "compliant", "BUS_100", "-bad2", "ok just too long"],
+        [10, 2, 3, 4, 5], Dict(10 => 100, 2 => 20, 3 => 30, 4 => 40, 5 => 50)) ==
+          Dict("-bad1" => "BUS_100-", "compliant" => "compliant", "BUS_100" => "BUS_100",
+        "-bad2" => "BUS_40", "ok just too long" => "ok just too ")
+end
+
 # TODO test v34
