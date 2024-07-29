@@ -95,6 +95,7 @@ end
 
 "`join` with a newline at the end, delimeter defaults to \", \" "
 function joinln(io::IO, iterator, delim = ", ")  # TODO maybe remove the space from the delim?
+    # We could also strip trailing empty (default) entries here
     join(io, iterator, delim)
     println(io)
 end
@@ -102,6 +103,11 @@ end
 _permissive_parse_int(x) = Int64(parse(Float64, x))  # Parses "1.0" as 1, errors on "1.5"
 
 _psse_quote_string(s::String) = "'$s'"
+
+"Throw a `NotImplementedError` if the `psse_version` is not `:v33`"
+check_33(psse_version::Symbol) =
+    (psse_version == :v33) ||
+    throw(IS.NotImplementedError("Only implemented for psse_version $(:v33)"))
 
 function _validate_container_number(unparsed::String)
     parsed = try
@@ -131,8 +137,7 @@ function _write_case_identification_data(
     psse_version::Symbol,
     case_name::String,
 )
-    (psse_version == :v33) ||
-        throw(IS.NotImplementedError("Only implemented for psse_version $(:v33)"))
+    check_33(psse_version)
 
     # Record 1
     IC = 0
@@ -238,8 +243,7 @@ WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Bus Data. Sienna voltage limits treated as
 normal voltage limits; PSSE emergency voltage limits left as default.
 """
 function _write_bus_data(io::IO, md::AbstractDict, sys::System, psse_version::Symbol)
-    (psse_version == :v33) ||
-        throw(IS.NotImplementedError("Only implemented for psse_version $(:v33)"))
+    check_33(psse_version)
 
     buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = PSY.get_number)
     old_bus_numbers = PSY.get_number.(buses)
@@ -252,7 +256,7 @@ function _write_bus_data(io::IO, md::AbstractDict, sys::System, psse_version::Sy
         BASKV = PSY.get_base_voltage(bus)
         IDE = PSSE_BUS_TYPE_MAP[PSY.get_bustype(bus)]
         AREA = md["area_mapping"][PSY.get_name(PSY.get_area(bus))]
-        ZONE = md["area_mapping"][PSY.get_name(PSY.get_load_zone(bus))]
+        ZONE = md["zone_mapping"][PSY.get_name(PSY.get_load_zone(bus))]
         OWNER = PSSE_DEFAULT
         VM = PSY.get_magnitude(bus)
         VA = rad2deg(PSY.get_angle(bus))
@@ -297,33 +301,35 @@ function _first_choice_gen_id(name::String)
 end
 
 """
-Given vectors of load, generator, etc. names and bus numbers, create unique-per-bus
-PSS/E-compatible IDs, output a dictionary from (Sienna_bus_number, Sienna_component_name) to
-PSSE_component_ID. The "singles_to_1" flag detects components that are the only one on their
-bus and gives them the name "1".
+Given a vector of component names and a corresponding vector of container IDs (e.g., bus
+numbers), create unique-per-container PSS/E-compatible IDs, output a dictionary from
+(container ID, component name) to PSS/E-compatible component ID. The "singles_to_1" flag
+detects components that are the only one on their bus and gives them the name "1".
 """
 function create_component_ids(
     component_names::Vector{<:String},
-    bus_numbers::Vector{Int64};
+    container_ids::Vector{T};
     singles_to_1 = false,
-)
-    id_mapping = Dict{Tuple{Int64, String}, String}()
+) where {T}
+    id_mapping = Dict{Tuple{T, String}, String}()
     sizehint!(id_mapping, length(component_names))
-    ids_by_bus = Dict{Int64, Vector{String}}()
+    ids_by_container = Dict{T, Vector{String}}()
 
-    for (name, bus_n) in zip(component_names, bus_numbers)
-        haskey(ids_by_bus, bus_n) || (ids_by_bus[bus_n] = Vector{String}())
-        my_blocked = ids_by_bus[bus_n]
+    for (name, container_id) in zip(component_names, container_ids)
+        haskey(ids_by_container, container_id) ||
+            (ids_by_container[container_id] = Vector{String}())
+        my_blocked = ids_by_container[container_id]
         id = _first_choice_gen_id(name)
         while id in my_blocked
             id = _increment_component_id(id)
         end
-        id_mapping[(bus_n, name)] = id
+        id_mapping[(container_id, name)] = id
         push!(my_blocked, id)
     end
     if singles_to_1
-        for (name, bus_n) in zip(component_names, bus_numbers)
-            (length(ids_by_bus[bus_n]) == 1) && (id_mapping[(bus_n, name)] = "1")
+        for (name, container_id) in zip(component_names, container_ids)
+            (length(ids_by_container[container_id]) == 1) &&
+                (id_mapping[(container_id, name)] = "1")
         end
     end
     return id_mapping
@@ -333,8 +339,7 @@ end
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Load Data
 """
 function _write_load_data(io::IO, md::AbstractDict, sys::System, psse_version::Symbol)
-    (psse_version == :v33) ||
-        throw(IS.NotImplementedError("Only implemented for psse_version $(:v33)"))
+    check_33(psse_version)
 
     loads = sort!(collect(PSY.get_components(PSY.StaticLoad, sys)); by = PSY.get_name)
     load_name_mapping =
@@ -379,8 +384,7 @@ function _write_fixed_bus_shunt_data(
     sys::System,
     psse_version::Symbol,
 )
-    (psse_version == :v33) ||
-        throw(IS.NotImplementedError("Only implemented for psse_version $(:v33)"))
+    check_33(psse_version)
 
     shunts = sort!(collect(PSY.get_components(PSY.FixedAdmittance, sys)); by = PSY.get_name)
     shunt_name_mapping =
@@ -404,6 +408,139 @@ function _write_fixed_bus_shunt_data(
     end
     println(io, "0")  # End of section
     md["shunt_name_mapping"] = shunt_name_mapping  # TODO reshape to be better for import
+end
+
+"""
+If the flag `sources_as_generators` is set, export `PSY.Source` instances as PSS/E
+generators in addition to `PSY.Generator`s
+
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
+"""
+function _write_generator_data(
+    io::IO,
+    md::AbstractDict,
+    sys::System,
+    psse_version::Symbol;
+    sources_as_generators = false,
+)
+    check_33(psse_version)
+
+    generators::Vector{PSY.StaticInjection} =
+        sort!(collect(PSY.get_components(PSY.Generator, sys)); by = PSY.get_name)
+    sources_as_generators && append!(generators,
+        sort!(collect(PSY.get_components(PSY.Source, sys)); by = PSY.get_name))
+    generator_name_mapping =
+        create_component_ids(
+            PSY.get_name.(generators),
+            PSY.get_number.(PSY.get_bus.(generators));
+            singles_to_1 = false,
+        )
+    for generator in generators
+        sienna_bus_number = PSY.get_number(PSY.get_bus(generator))
+        I = md["bus_number_mapping"][sienna_bus_number]
+        ID =
+            _psse_quote_string(
+                generator_name_mapping[(sienna_bus_number, PSY.get_name(generator))],
+            )  # TODO should this be quoted?
+        PG, QG = with_units(sys, PSY.UnitSystem.SYSTEM_BASE) do
+            # Doing the conversion myself due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1164
+            PSY.get_active_power(generator) * PSY.get_base_power(sys),
+            PSY.get_reactive_power(generator) * PSY.get_base_power(sys)
+        end  # TODO fix units
+        QT = PSY.get_reactive_power_limits(generator).max
+        isfinite(QT) || (QT = PSSE_DEFAULT)  # Catch Inf, etc.
+        QB = PSY.get_reactive_power_limits(generator).min
+        isfinite(QB) || (QB = PSSE_DEFAULT)
+        VS = PSY.get_magnitude(PSY.get_bus(generator))  # TODO is this correct? Should this be `get_internal_voltage` for `PSY.Source`?
+        IREG = get(PSY.get_ext(generator), "IREG", PSSE_DEFAULT)
+        MBASE = PSY.get_base_power(generator)
+        ZR, ZX = PSSE_DEFAULT, PSSE_DEFAULT
+        RT, XT = PSSE_DEFAULT, PSSE_DEFAULT  # TODO?
+        GTAP = PSSE_DEFAULT
+        STAT = PSY.get_available(generator) ? 1 : 0
+        RMPCT = PSSE_DEFAULT
+        # TODO maybe have a better default here
+        PT = try
+            PSY.get_active_power_limits(generator).max
+        catch
+            PSSE_DEFAULT
+        end
+        PB = try
+            PSY.get_active_power_limits(generator).min
+        catch
+            PSSE_DEFAULT
+        end
+        O1, O2, O3, O4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
+        F1, F2, F3, F4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
+        WMOD = get(PSY.get_ext(generator), "WMOD", PSSE_DEFAULT)
+        WPF = get(PSY.get_ext(generator), "WPF", PSSE_DEFAULT)
+        joinln(
+            io,
+            [I, ID, PG, QG, QT, QB, VS, IREG, MBASE, ZR, ZX, RT, XT, GTAP, STAT,
+                RMPCT, PT, PB, O1, F1, O2, F2, O3, F3, O4, F4, WMOD, WPF],
+        )
+    end
+    println(io, "0")  # End of section
+    md["generator_name_mapping"] = generator_name_mapping  # TODO reshape to be better for import
+end
+
+"""
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
+"""
+function _write_non_transformer_branch_data(
+    io::IO,
+    md::AbstractDict,
+    sys::System,
+    psse_version::Symbol,
+)
+    check_33(psse_version)
+
+    # TODO can/should we be more general than `Line`?
+    branches = sort!(collect(PSY.get_components(PSY.Line, sys));
+        by = branch ->
+            PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch))))
+    branch_to_bus_numbers(branch) =
+        (PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch))))
+    branch_name_mapping =
+        create_component_ids(
+            PSY.get_name.(branches),
+            branch_to_bus_numbers.(branches);
+            singles_to_1 = false,
+        )
+
+    for branch in branches
+        I = md["bus_number_mapping"][PSY.get_number(PSY.get_from_bus(branch))]
+        J = md["bus_number_mapping"][PSY.get_number(PSY.get_to_bus(branch))]
+        CKT = branch_name_mapping[((I, J), PSY.get_name(branch))]
+        @assert !(first(CKT) in ['&', '@', '*'])  # Characters with a special meaning in this context
+        CKT = _psse_quote_string(CKT)
+        R = PSY.get_r(branch)
+        X = PSY.get_x(branch)
+        B = 0.0  # TODO iron out the details of B vs. BI, BJ
+        RATEA =
+            RATEB =
+                RATEC =
+                    with_units(
+                        () -> PSY.get_rating(branch),
+                        sys,
+                        PSY.UnitSystem.NATURAL_UNITS,
+                    )
+        GI, BI = 0.0, PSY.get_b(branch).from
+        GJ, BJ = 0.0, PSY.get_b(branch).to
+        ST = PSY.get_available(branch) ? 1 : 0
+        MET = PSSE_DEFAULT
+        LEN = PSSE_DEFAULT
+        O1, O2, O3, O4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
+        F1, F2, F3, F4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
+
+        joinln(
+            io,
+            [I, J, CKT, R, X, B, RATEA, RATEB, RATEC, GI, BI, GJ, BJ, ST, MET, LEN,
+                O1, F1, O2, F2, O3, F3, O4, F4],
+        )
+    end
+    println(io, "0")  # End of section
+    md["branch_name_mapping"] = branch_name_mapping
 end
 
 "Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
@@ -437,6 +574,8 @@ function write_export(
     _write_bus_data(raw, md, sys, psse_version)
     _write_load_data(raw, md, sys, psse_version)
     _write_fixed_bus_shunt_data(raw, md, sys, psse_version)
+    _write_generator_data(raw, md, sys, psse_version; sources_as_generators = true)
+    _write_non_transformer_branch_data(raw, md, sys, psse_version)
 
     # Write files
     open(file -> write(file, seekstart(raw)), raw_path; truncate = true)
