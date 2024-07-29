@@ -1,54 +1,3 @@
-function _increment_gen_char(gen_char::Char)
-    (gen_char == '9') && return 'A'
-    (gen_char == 'Z') && return '0'
-    return gen_char + 1
-end
-
-function _increment_gen_id(gen_id::String)
-    carry = (last(gen_id) == 'Z')
-    if length(gen_id) == 1
-        carry && return '0' * _increment_gen_char(first(gen_id))
-        return string(_increment_gen_char(first(gen_id)))
-    end
-    return (carry ? _increment_gen_char(first(gen_id)) : first(gen_id)) *
-           _increment_gen_char(last(gen_id))
-end
-
-"""
-Try to make an informative one or two character name for the generator
-
-  - "generator-1234-AB" -> "AB"
-  - "123_CT_7" -> "7"
-"""
-function _first_choice_gen_id(name::String)
-    my_split = argmax(length, [split(name, "-"), split(name, "_")])
-    return uppercase(first(last(my_split), 2))
-end
-
-"""
-Given a vector of Generators, create a corresponding vector of unique-per-bus PSS/E-compatible generator IDs
-
-WRITTEN TO SPEC: PSS/E 33.3 POM page 5-14, PSS/E 34.1 DataFormat page 1-15
-"""
-function create_gen_ids(gens::Vector{<:PSY.Device})
-    gen_ids = Vector{String}()
-    sizehint!(gen_ids, length(gens))
-    ids_by_bus = Dict{Int64, Vector{String}}()
-
-    for gen in gens
-        bus_n = PSY.get_number(PSY.get_bus(gen))
-        haskey(ids_by_bus, bus_n) || (ids_by_bus[bus_n] = Vector{String}())
-        my_blocked = ids_by_bus[bus_n]
-        my_name = _first_choice_gen_id(PSY.get_name(gen))
-        while my_name in my_blocked
-            my_name = _increment_gen_id(my_name)
-        end
-        push!(gen_ids, my_name)
-        push!(my_blocked, my_name)
-    end
-    return gen_ids
-end
-
 # TODO maybe we want a special System constructor that takes the JSON and handles these mappings internally
 """
 Given a metadata dictionary parsed from a `raw_metadata_log.json`, yields a function that
@@ -246,7 +195,7 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
 
     # Loads
     # Find buses in PSY System where LOADS are available
-    psy_loads = collect(PSY.get_components(PSY.StandardLoad, sys))
+    psy_loads = sort!(collect(PSY.get_components(PSY.StandardLoad, sys)); by = PSY.get_name)
 
     # V34
     dg_enp = 0.0 # DEFAULT
@@ -293,7 +242,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     end
 
     # Shunts
-    psy_shunts = collect(PSY.get_components(PSY.FixedAdmittance, sys))
+    psy_shunts =
+        sort!(collect(PSY.get_components(PSY.FixedAdmittance, sys)); by = PSY.get_name)
 
     for shunt in psy_shunts
         i = PSY.get_number(PSY.get_bus(shunt))
@@ -321,13 +271,18 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
         )
     end
     # Generators
-    psy_gens = collect(PSY.get_components(PSY.Generator, sys))
-    sources = collect(PSY.get_components(PSY.Source, sys))
+    psy_gens = sort!(collect(PSY.get_components(PSY.Generator, sys)); by = PSY.get_name)
+    sources = sort!(collect(PSY.get_components(PSY.Source, sys)); by = PSY.get_name)
 
-    gen_ids = create_gen_ids(vcat(psy_gens, sources))
+    gens_and_sources = vcat(psy_gens, sources)
+    gen_ids = create_component_ids(
+        PSY.get_name.(gens_and_sources),
+        PSY.get_number.(PSY.get_bus.(gens_and_sources)),
+    )
     gen_mapping = OrderedDict{String, String}()  # Maps "$(psse_bus_number)_$(psse_gen_id)" to original PSY name
 
-    for (gen, gen_id) in zip(psy_gens, first(gen_ids, length(psy_gens)))
+    for gen in psy_gens
+        gen_id = gen_ids[(PSY.get_number(PSY.get_bus(gen)), PSY.get_name(gen))]
         if gen isa PSY.ThermalStandard
             gen_bus_num = PSY.get_number(PSY.get_bus(gen))
             if (haskey(bus_mapping, gen_bus_num))
@@ -411,8 +366,9 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     end
     push!(raw_file_metadata, "Gen_Name_Mapping" => gen_mapping)
 
-    for (source, gen_id) in zip(sources, last(gen_ids, length(sources)))
+    for source in sources
         gen_bus_num = PSY.get_number(PSY.get_bus(source))
+        gen_id = gen_ids[(gen_bus_num, PSY.get_name(source))]
         if (haskey(bus_mapping, gen_bus_num))
             gen_bus_num = bus_mapping[gen_bus_num]
         end
