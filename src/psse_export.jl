@@ -8,6 +8,26 @@ const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.ISOLATED => 4,
 )
 
+# TODO consider adding this to IS
+"""
+A context manager similar to `Logging.with_logger` that sets the system's units to the given
+value, executes the function, then sets them back. Suppresses logging below `Warn` from
+internal calls to `set_units_base_system!`.
+"""
+function with_units(f::Function, sys::System, units::Union{PSY.UnitSystem, String})
+    old_units = PSY.get_units_base(sys)
+    Logging.with_logger(Logging.SimpleLogger(Logging.Warn)) do
+        PSY.set_units_base_system!(sys, units)
+    end
+    try
+        f()
+    finally
+        Logging.with_logger(Logging.SimpleLogger(Logging.Warn)) do
+            PSY.set_units_base_system!(sys, old_units)
+        end
+    end
+end
+
 """
 Structure to perform an export from a Sienna System, plus optional updates from
 `PowerFlowData`, to the PSS/E format. Construct from a `System` and a PSS/E version, update
@@ -81,6 +101,8 @@ end
 
 _permissive_parse_int(x) = Int64(parse(Float64, x))  # Parses "1.0" as 1, errors on "1.5"
 
+_psse_quote_string(s::String) = "'$s'"
+
 function _validate_container_number(unparsed::String)
     parsed = try
         _permissive_parse_int(unparsed)
@@ -101,7 +123,7 @@ _psse_container_numbers(container_names::Vector{String}) =
         name => _validate_container_number(name) for name in container_names
     )
 
-"WRITTEN TO SPEC: PSSE/E 33.3 POM 5.2.1 Case Identification Data"
+"WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Case Identification Data"
 function _write_case_identification_data(
     io::IO,
     md::AbstractDict,
@@ -139,7 +161,7 @@ Guarantees determinism: if the input contains the same bus numbers in the same o
 output will. Guarantees minimal changes: that if an existing bus number is compliant, it
 will not be changed.
 
-WRITTEN TO SPEC: PSSE/E 33.3 POM 5.2.1 Bus Data
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Bus Data
 """
 function _psse_bus_numbers(buses::Vector{Int64})
     used_numbers = Set{Int64}()
@@ -177,7 +199,7 @@ end
 Given a vector of Sienna bus names, create a dictionary from Sienna bus name to
 PSS/E-compatible bus name. Guarantees determinism and minimal changes.
 
-WRITTEN TO SPEC: PSSE/E 33.3 POM 5.2.1 Bus Data
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Bus Data
 """
 function _psse_bus_names(
     buses::Vector{String},
@@ -212,7 +234,7 @@ function _psse_bus_names(
 end
 
 """
-WRITTEN TO SPEC: PSSE/E 33.3 POM 5.2.1 Bus Data. Sienna voltage limits treated as PSS/E
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Bus Data. Sienna voltage limits treated as PSS/E
 normal voltage limits; PSSE emergency voltage limits left as default.
 """
 function _write_bus_data(io::IO, md::AbstractDict, sys::System, psse_version::Symbol)
@@ -226,7 +248,7 @@ function _write_bus_data(io::IO, md::AbstractDict, sys::System, psse_version::Sy
         _psse_bus_names(PSY.get_name.(buses), old_bus_numbers, bus_number_mapping)
     for bus in buses
         I = bus_number_mapping[PSY.get_number(bus)]
-        NAME = "'$(bus_name_mapping[PSY.get_name(bus)])'"
+        NAME = _psse_quote_string(bus_name_mapping[PSY.get_name(bus)])
         BASKV = PSY.get_base_voltage(bus)
         IDE = PSSE_BUS_TYPE_MAP[PSY.get_bustype(bus)]
         AREA = md["area_mapping"][PSY.get_name(PSY.get_area(bus))]
@@ -244,6 +266,144 @@ function _write_bus_data(io::IO, md::AbstractDict, sys::System, psse_version::Sy
 
     md["bus_number_mapping"] = bus_number_mapping
     md["bus_name_mapping"] = bus_name_mapping
+end
+
+function _increment_component_char(component_char::Char)
+    (component_char == '9') && return 'A'
+    (component_char == 'Z') && return '0'
+    return component_char + 1
+end
+
+function _increment_component_id(component_id::String)
+    carry = (last(component_id) == 'Z')
+    if length(component_id) == 1
+        carry && return '0' * _increment_component_char(first(component_id))
+        return string(_increment_component_char(first(component_id)))
+    end
+    return (carry ? _increment_component_char(first(component_id)) : first(component_id)) *
+           _increment_component_char(last(component_id))
+end
+
+"""
+Try to make an informative one or two character name for the load/generator/etc.
+
+  - "generator-1234-AB" -> "AB"
+  - "123_CT_7" -> "7"
+  - "load1234" -> "34"
+"""
+function _first_choice_gen_id(name::String)
+    my_split = argmax(length, [split(name, "-"), split(name, "_")])
+    return uppercase(last(last(my_split), 2))
+end
+
+"""
+Given vectors of load, generator, etc. names and bus numbers, create unique-per-bus
+PSS/E-compatible IDs, output a dictionary from (Sienna_bus_number, Sienna_component_name) to
+PSSE_component_ID. The "singles_to_1" flag detects components that are the only one on their
+bus and gives them the name "1".
+"""
+function create_component_ids(
+    component_names::Vector{<:String},
+    bus_numbers::Vector{Int64};
+    singles_to_1 = false,
+)
+    id_mapping = Dict{Tuple{Int64, String}, String}()
+    sizehint!(id_mapping, length(component_names))
+    ids_by_bus = Dict{Int64, Vector{String}}()
+
+    for (name, bus_n) in zip(component_names, bus_numbers)
+        haskey(ids_by_bus, bus_n) || (ids_by_bus[bus_n] = Vector{String}())
+        my_blocked = ids_by_bus[bus_n]
+        id = _first_choice_gen_id(name)
+        while id in my_blocked
+            id = _increment_component_id(id)
+        end
+        id_mapping[(bus_n, name)] = id
+        push!(my_blocked, id)
+    end
+    if singles_to_1
+        for (name, bus_n) in zip(component_names, bus_numbers)
+            (length(ids_by_bus[bus_n]) == 1) && (id_mapping[(bus_n, name)] = "1")
+        end
+    end
+    return id_mapping
+end
+
+"""
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Load Data
+"""
+function _write_load_data(io::IO, md::AbstractDict, sys::System, psse_version::Symbol)
+    (psse_version == :v33) ||
+        throw(IS.NotImplementedError("Only implemented for psse_version $(:v33)"))
+
+    loads = sort!(collect(PSY.get_components(PSY.StaticLoad, sys)); by = PSY.get_name)
+    load_name_mapping =
+        create_component_ids(
+            PSY.get_name.(loads),
+            PSY.get_number.(PSY.get_bus.(loads));
+            singles_to_1 = true,
+        )
+    for load in loads
+        sienna_bus_number = PSY.get_number(PSY.get_bus(load))
+        I = md["bus_number_mapping"][sienna_bus_number]
+        ID = _psse_quote_string(load_name_mapping[(sienna_bus_number, PSY.get_name(load))])  # TODO should this be quoted?
+        STATUS = PSY.get_available(load) ? 1 : 0
+        AREA = PSSE_DEFAULT  # defaults to bus's area
+        ZONE = PSSE_DEFAULT  # defaults to zone's area
+        PL = PSY.get_constant_active_power(load)
+        QL = PSY.get_constant_reactive_power(load)
+        IP, IQ, YP, YQ = with_units(sys, PSY.UnitSystem.DEVICE_BASE) do
+            PSY.get_current_active_power(load),
+            PSY.get_current_reactive_power(load),
+            PSY.get_impedance_active_power(load),
+            PSY.get_impedance_reactive_power(load)
+        end
+        OWNER = PSSE_DEFAULT  # defaults to bus's owner
+        SCALE = PSSE_DEFAULT  # TODO reconsider
+        INTRPT = PSSE_DEFAULT  # TODO reconsider
+        joinln(
+            io,
+            [I, ID, STATUS, AREA, ZONE, PL, QL, IP, IQ, YP, YQ, OWNER, SCALE, INTRPT],
+        )
+    end
+    println(io, "0")  # End of section
+    md["load_name_mapping"] = load_name_mapping  # TODO reshape to be better for import
+end
+
+"""
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
+"""
+function _write_fixed_bus_shunt_data(
+    io::IO,
+    md::AbstractDict,
+    sys::System,
+    psse_version::Symbol,
+)
+    (psse_version == :v33) ||
+        throw(IS.NotImplementedError("Only implemented for psse_version $(:v33)"))
+
+    shunts = sort!(collect(PSY.get_components(PSY.FixedAdmittance, sys)); by = PSY.get_name)
+    shunt_name_mapping =
+        create_component_ids(
+            PSY.get_name.(shunts),
+            PSY.get_number.(PSY.get_bus.(shunts));
+            singles_to_1 = true,
+        )
+    for shunt in shunts
+        sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
+        I = md["bus_number_mapping"][sienna_bus_number]
+        ID =
+            _psse_quote_string(shunt_name_mapping[(sienna_bus_number, PSY.get_name(shunt))])  # TODO should this be quoted?
+        STATUS = PSY.get_available(shunt) ? 1 : 0
+        GL = real(PSY.get_Y(shunt)) * PSY.get_base_power(sys)
+        BL = imag(PSY.get_Y(shunt)) * PSY.get_base_power(sys)
+        joinln(
+            io,
+            [I, ID, STATUS, GL, BL],
+        )
+    end
+    println(io, "0")  # End of section
+    md["shunt_name_mapping"] = shunt_name_mapping  # TODO reshape to be better for import
 end
 
 "Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
@@ -275,6 +435,8 @@ function write_export(
     # Each of these corresponds to a group of records in the PSS/E spec
     _write_case_identification_data(raw, md, sys, psse_version, "$(scenario_name)_$(year)")
     _write_bus_data(raw, md, sys, psse_version)
+    _write_load_data(raw, md, sys, psse_version)
+    _write_fixed_bus_shunt_data(raw, md, sys, psse_version)
 
     # Write files
     open(file -> write(file, seekstart(raw)), raw_path; truncate = true)
