@@ -417,13 +417,16 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     end
 
     # Branch
-    psy_branches = collect(
-        PSY.get_components(
-            (x -> PSY.get_from_bus(x) ∈ psy_buses || PSY.get_to_bus(x) ∈ psy_buses),
-            PSY.ACBranch,
-            sys,
-        ),
-    )
+    psy_branches = sort!(
+        collect(
+            PSY.get_components(
+                (x -> PSY.get_from_bus(x) ∈ psy_buses || PSY.get_to_bus(x) ∈ psy_buses),
+                PSY.ACBranch,
+                sys,
+            ),
+        );
+        by = branch ->
+            PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch))))
     branch_mapping = OrderedDict{String, String}()  # Maps "$(from_bus_number)_$(to_bus_number)" to original PSY name
     for branch in psy_branches
         key = "$(PSY.get_number(PSY.get_from_bus(branch)))_$(PSY.get_number(PSY.get_to_bus(branch)))_$(last(split(PSY.get_name(branch), "_")))"
