@@ -170,6 +170,7 @@ function _write_case_identification_data(
     line3 = "Created by PowerFlows.jl on $(Dates.now())"
     @assert length(line3) <= 60
     println(io, line3)
+    md["record_groups"]["Case Identification Data"] = true
 end
 
 """
@@ -269,7 +270,7 @@ function _write_bus_data(io::IO, md::AbstractDict, sys::System, psse_version::Sy
         BASKV = PSY.get_base_voltage(bus)
         IDE = PSSE_BUS_TYPE_MAP[PSY.get_bustype(bus)]
         AREA = md["area_mapping"][PSY.get_name(PSY.get_area(bus))]
-        ZONE = md["zone_mapping"][PSY.get_name(PSY.get_load_zone(bus))]
+        ZONE = md["zone_number_mapping"][PSY.get_name(PSY.get_load_zone(bus))]
         OWNER = PSSE_DEFAULT
         VM = PSY.get_magnitude(bus)
         VA = rad2deg(PSY.get_angle(bus))
@@ -283,6 +284,7 @@ function _write_bus_data(io::IO, md::AbstractDict, sys::System, psse_version::Sy
 
     md["bus_number_mapping"] = bus_number_mapping
     md["bus_name_mapping"] = bus_name_mapping
+    md["record_groups"]["Bus Data"] = true
 end
 
 function _increment_component_char(component_char::Char)
@@ -386,6 +388,7 @@ function _write_load_data(io::IO, md::AbstractDict, sys::System, psse_version::S
     end
     println(io, "0")  # End of section
     md["load_name_mapping"] = load_name_mapping  # TODO reshape to be better for import
+    md["record_groups"]["Load Data"] = true
 end
 
 """
@@ -421,6 +424,7 @@ function _write_fixed_bus_shunt_data(
     end
     println(io, "0")  # End of section
     md["shunt_name_mapping"] = shunt_name_mapping  # TODO reshape to be better for import
+    md["record_groups"]["Fixed Bus Shunt Data"] = true
 end
 
 """
@@ -493,6 +497,7 @@ function _write_generator_data(
     end
     println(io, "0")  # End of section
     md["generator_name_mapping"] = generator_name_mapping  # TODO reshape to be better for import
+    md["record_groups"]["Generator Data"] = true
 end
 
 """
@@ -547,6 +552,7 @@ function _write_non_transformer_branch_data(
     end
     println(io, "0")  # End of section
     md["branch_name_mapping"] = branch_name_mapping
+    md["record_groups"]["Non-Transformer Branch Data"] = true
 end
 
 """
@@ -682,6 +688,51 @@ function _write_transformer_data(
     println(io, "0")  # End of section
     md["transformer_ckt_mapping"] = transformer_ckt_mapping
     md["transformer_name_mapping"] = transformer_name_mapping
+    md["record_groups"]["Transformer Data"] = true
+end
+
+# TODO this assumption might not be valid
+"""
+Assumes that the Sienna zone names are already PSS/E compatible
+
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Zone Data
+"""
+function _write_zone_data(io::IO, md::AbstractDict, sys::System, psse_version::Symbol)
+    check_33(psse_version)
+    zone_number_mapping = md["zone_number_mapping"]
+    zones = sort!(
+        collect(PSY.get_components(PSY.LoadZone, sys));
+        by = x -> zone_number_mapping[PSY.get_name(x)],
+    )
+    for zone in zones
+        name = PSY.get_name(zone)
+        I = zone_number_mapping[name]
+        @assert _is_valid_psse_name(name) name
+        ZONAME = _psse_quote_string(name)
+
+        joinln(io, [I, ZONAME])
+    end
+    println(io, "0")  # End of section
+    md["record_groups"]["Zone Data"] = true
+end
+
+function _write_q_record(io::IO, md::AbstractDict, sys::System, psse_version::Symbol)
+    check_33(psse_version)
+    println(io, "Q")  # End of file
+    md["record_groups"]["Q Record"] = true
+end
+
+function _write_skip_group(
+    io::IO,
+    md::AbstractDict,
+    sys::System,
+    psse_version::Symbol,
+    section_name::String,
+)
+    check_33(psse_version)
+    println(io, "0")
+    haskey(md, "skipped_groups") || (md["skipped_groups"] = Vector{String}())
+    md["record_groups"][section_name] = false
 end
 
 "Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
@@ -706,9 +757,10 @@ function write_export(
     md["area_mapping"] = _psse_container_numbers(
         sort!(collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, sys)))),
     )
-    md["zone_mapping"] = _psse_container_numbers(
+    md["zone_number_mapping"] = _psse_container_numbers(
         sort!(collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, sys)))),
     )
+    md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
 
     # Each of these corresponds to a group of records in the PSS/E spec
     _write_case_identification_data(raw, md, sys, psse_version, "$(scenario_name)_$(year)")
@@ -718,6 +770,27 @@ function write_export(
     _write_generator_data(raw, md, sys, psse_version; sources_as_generators = true)
     _write_non_transformer_branch_data(raw, md, sys, psse_version)
     _write_transformer_data(raw, md, sys, psse_version)
+    # TODO we'll eventually need area interchange data
+    _write_skip_group(raw, md, sys, psse_version, "Area Interchange Data")
+    _write_skip_group(raw, md, sys, psse_version, "Two-Terminal DC Transmission Line Data")
+    _write_skip_group(raw, md, sys, psse_version,
+        "Voltage Source Converter (VSC) DC Transmission Line Data")
+    _write_skip_group(raw, md, sys, psse_version, "Transformer Impedance Correction Tables")
+    _write_skip_group(raw, md, sys, psse_version,
+        "Multi-Terminal DC Transmission Line Data")
+    _write_skip_group(raw, md, sys, psse_version, "Multi-Section Line Grouping Data")
+    _write_zone_data(raw, md, sys, psse_version)
+    _write_skip_group(raw, md, sys, psse_version, "Interarea Transfer Data")
+    _write_skip_group(raw, md, sys, psse_version, "Owner Data")
+    _write_skip_group(raw, md, sys, psse_version, "FACTS Device Data")
+    # TODO we'll eventually need switched shunt data
+    _write_skip_group(raw, md, sys, psse_version, "Switched Shunt Data")
+    _write_skip_group(raw, md, sys, psse_version, "GNE Device Data")
+    _write_skip_group(raw, md, sys, psse_version, "Induction Machine Data")
+    _write_q_record(raw, md, sys, psse_version)
+
+    skipped_groups = [k for (k, v) in md["record_groups"] if !v]
+    !isempty(skipped_groups) && @warn "Skipped groups: $(join(skipped_groups, ", "))"
 
     # Write files
     open(file -> write(file, seekstart(raw)), raw_path; truncate = true)
