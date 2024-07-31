@@ -7,6 +7,12 @@ const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.SLACK => 3,
     PSY.ACBusTypes.ISOLATED => 4,
 )
+# Splat this out where the eight ownership fields are necessary
+const PSSE_DEFAULT_OWNERSHIP = let
+    O1, O2, O3, O4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
+    F1, F2, F3, F4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
+    O1, F1, O2, F2, O3, F3, O4, F4
+end
 
 # TODO consider adding this to IS
 """
@@ -93,9 +99,13 @@ function update_exporter!(exporter::PSSEExporter, data::PSY.System)
     exporter.system = deepcopy(data)
 end
 
-"`join` with a newline at the end, delimeter defaults to \", \" "
-function joinln(io::IO, iterator, delim = ", ")  # TODO maybe remove the space from the delim?
-    # We could also strip trailing empty (default) entries here
+"""
+`join` with a newline at the end, delimeter defaults to \", \". If `strip_trailing_empties`,
+trailing entries of `iterator` equal to the empty string are ignored.
+"""
+function joinln(io::IO, iterator, delim = ", "; strip_trailing_empties = true)  # TODO maybe remove the space from the delim?
+    (strip_trailing_empties && ("" in iterator)) &&
+        (iterator = iterator[1:findlast(!=(""), iterator)])
     join(io, iterator, delim)
     println(io)
 end
@@ -103,6 +113,9 @@ end
 _permissive_parse_int(x) = Int64(parse(Float64, x))  # Parses "1.0" as 1, errors on "1.5"
 
 _psse_quote_string(s::String) = "'$s'"
+
+branch_to_bus_numbers(branch) =
+    (PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch))))
 
 "Throw a `NotImplementedError` if the `psse_version` is not `:v33`"
 check_33(psse_version::Symbol) =
@@ -194,7 +207,7 @@ function _psse_bus_numbers(buses::Vector{Int64})
     return mapping
 end
 
-function _is_valid_psse_bus_name(name::String)
+function _is_valid_psse_name(name::String)
     (length(name) <= 12) || (return false)
     (length(name) >= 1) && (first(name) == '-') && (return false)
     return true  # Does the allowance for special characters cover *any* special characters?
@@ -217,7 +230,7 @@ function _psse_bus_names(
     sizehint!(mapping, length(buses))
 
     for original_name in buses
-        if _is_valid_psse_bus_name(original_name)
+        if _is_valid_psse_name(original_name)
             mapping[original_name] = original_name
             push!(used_names, original_name)
         end
@@ -225,13 +238,13 @@ function _psse_bus_names(
     for (original_name, original_number) in zip(buses, bus_numbers)
         haskey(mapping, original_name) && continue
         new_name = first(original_name, 12)
-        if !_is_valid_psse_bus_name(new_name) || new_name in used_names
+        if !_is_valid_psse_name(new_name) || new_name in used_names
             new_name = "BUS_$(bus_number_mapping[original_number])"
             while new_name in used_names
                 new_name *= "-"
             end
         end
-        @assert _is_valid_psse_bus_name(new_name)
+        @assert _is_valid_psse_name(new_name) new_name
         mapping[original_name] = new_name
         push!(used_names, new_name)
     end
@@ -470,14 +483,12 @@ function _write_generator_data(
         catch
             PSSE_DEFAULT
         end
-        O1, O2, O3, O4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
-        F1, F2, F3, F4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
         WMOD = get(PSY.get_ext(generator), "WMOD", PSSE_DEFAULT)
         WPF = get(PSY.get_ext(generator), "WPF", PSSE_DEFAULT)
         joinln(
             io,
             [I, ID, PG, QG, QT, QB, VS, IREG, MBASE, ZR, ZX, RT, XT, GTAP, STAT,
-                RMPCT, PT, PB, O1, F1, O2, F2, O3, F3, O4, F4, WMOD, WPF],
+                RMPCT, PT, PB, PSSE_DEFAULT_OWNERSHIP..., WMOD, WPF],
         )
     end
     println(io, "0")  # End of section
@@ -496,11 +507,7 @@ function _write_non_transformer_branch_data(
     check_33(psse_version)
 
     # TODO can/should we be more general than `Line`?
-    branches = sort!(collect(PSY.get_components(PSY.Line, sys));
-        by = branch ->
-            PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch))))
-    branch_to_bus_numbers(branch) =
-        (PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch))))
+    branches = sort!(collect(PSY.get_components(PSY.Line, sys)); by = branch_to_bus_numbers)
     branch_name_mapping =
         create_component_ids(
             PSY.get_name.(branches),
@@ -509,9 +516,10 @@ function _write_non_transformer_branch_data(
         )
 
     for branch in branches
-        I = md["bus_number_mapping"][PSY.get_number(PSY.get_from_bus(branch))]
-        J = md["bus_number_mapping"][PSY.get_number(PSY.get_to_bus(branch))]
-        CKT = branch_name_mapping[((I, J), PSY.get_name(branch))]
+        from_n, to_n = branch_to_bus_numbers(branch)
+        I = md["bus_number_mapping"][from_n]
+        J = md["bus_number_mapping"][to_n]
+        CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
         @assert !(first(CKT) in ['&', '@', '*'])  # Characters with a special meaning in this context
         CKT = _psse_quote_string(CKT)
         R = PSY.get_r(branch)
@@ -530,17 +538,150 @@ function _write_non_transformer_branch_data(
         ST = PSY.get_available(branch) ? 1 : 0
         MET = PSSE_DEFAULT
         LEN = PSSE_DEFAULT
-        O1, O2, O3, O4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
-        F1, F2, F3, F4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
 
         joinln(
             io,
             [I, J, CKT, R, X, B, RATEA, RATEB, RATEC, GI, BI, GJ, BJ, ST, MET, LEN,
-                O1, F1, O2, F2, O3, F3, O4, F4],
+                PSSE_DEFAULT_OWNERSHIP...],
         )
     end
     println(io, "0")  # End of section
     md["branch_name_mapping"] = branch_name_mapping
+end
+
+"""
+Given a vector of Sienna transformer names, create a dictionary from Sienna transformer name
+to PSS/E-compatible transformer name. Guarantees determinism and minimal changes.
+
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Data
+"""
+function _psse_transformer_names(
+    transformers::Vector{String},
+    bus_numbers::Vector{Tuple{Int64, Int64}},
+    bus_number_mapping::AbstractDict{Int64, Int64},
+    transformer_ckt_mapping,
+)
+    used_names = Set{String}()
+    sizehint!(used_names, length(transformers))
+    mapping = OrderedDict{String, String}()
+    sizehint!(mapping, length(transformers))
+
+    for original_name in transformers
+        if _is_valid_psse_name(original_name)
+            mapping[original_name] = original_name
+            push!(used_names, original_name)
+        end
+    end
+    for (original_name, (orig_from, orig_to)) in zip(transformers, bus_numbers)
+        haskey(mapping, original_name) && continue
+        ckt = transformer_ckt_mapping[((orig_from, orig_to), original_name)]
+        new_name = "B$(bus_number_mapping[orig_from])-$(bus_number_mapping[orig_to])_$ckt"
+        while new_name in used_names
+            new_name *= "-"
+        end
+        @assert _is_valid_psse_name(new_name) new_name
+        mapping[original_name] = new_name
+        push!(used_names, new_name)
+    end
+    return mapping
+end
+
+# TODO support three-winding transformers
+"""
+Currently only supports two-winding transformers
+
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
+"""
+function _write_transformer_data(
+    io::IO,
+    md::AbstractDict,
+    sys::System,
+    psse_version::Symbol,
+)
+    check_33(psse_version)
+    transformer_types =
+        Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
+    transformers = sort!(
+        collect(PSY.get_components(transformer_types, sys));
+        by = branch_to_bus_numbers,
+    )
+    transformer_ckt_mapping =
+        create_component_ids(
+            PSY.get_name.(transformers),
+            branch_to_bus_numbers.(transformers);
+            singles_to_1 = false,
+        )
+    transformer_name_mapping = _psse_transformer_names(
+        PSY.get_name.(transformers),
+        branch_to_bus_numbers.(transformers),
+        md["bus_number_mapping"],
+        transformer_ckt_mapping,
+    )
+    for transformer in transformers
+        from_n, to_n = branch_to_bus_numbers(transformer)
+        I = md["bus_number_mapping"][from_n]
+        J = md["bus_number_mapping"][to_n]
+        K = 0  # no third winding
+        CKT = transformer_ckt_mapping[((from_n, to_n), PSY.get_name(transformer))]
+        @assert !(first(CKT) in ['&', '@', '*'])  # Characters with a special meaning in this context
+        CKT = _psse_quote_string(CKT)
+        CW = 1  # TODO
+        CZ = 1  # TODO
+        CM = 1  # TODO
+        MAG1 = 0.0  # TODO
+        MAG2 = 0.0  # TODO
+        NMETR = PSSE_DEFAULT
+        NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
+        STAT = PSY.get_available(transformer) ? 1 : 0
+        VECGRP = PSSE_DEFAULT
+
+        R1_2 = PSY.get_r(transformer)
+        X1_2 = PSY.get_x(transformer)
+        SBASE1_2 = PSY.get_base_power(transformer)
+
+        # TODO verify correctness
+        WINDV1 = (transformer isa PSY.TapTransformer) ? PSY.get_tap(transformer) : 1.0
+        NOMV1 = 0.0  # special case: identical to bus voltage
+        ANG1 = if (transformer isa PSY.PhaseShiftingTransformer)
+            rad2deg(PSY.get_α(transformer))
+        else
+            0.0
+        end
+        RATA1 =
+            RATB1 =
+                RATC1 =
+                    with_units(
+                        () -> PSY.get_rating(transformer),
+                        sys,
+                        PSY.UnitSystem.NATURAL_UNITS,
+                    )
+        COD1 = PSSE_DEFAULT
+        CONT1 = PSSE_DEFAULT
+        RMA1 = RMI1 = VMA1 = VMI1 = PSSE_DEFAULT
+        NTP1 = PSSE_DEFAULT
+        TAB1 = PSSE_DEFAULT
+        CR1 = CX1 = PSSE_DEFAULT
+        CNXA1 = PSSE_DEFAULT
+
+        WINDV2 = 1.0
+        NOMV2 = 0.0  # special case: identical to bus voltage
+
+        joinln(
+            io,
+            [I, J, K, CKT, CW, CZ, CM, MAG1, MAG2, NMETR, NAME, STAT,
+                PSSE_DEFAULT_OWNERSHIP..., VECGRP],
+        )
+        joinln(io, [R1_2, X1_2, SBASE1_2])
+        joinln(
+            io,
+            [WINDV1, NOMV1, ANG1, RATA1, RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
+                VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1],
+        )
+        joinln(io, [WINDV2, NOMV2])
+    end
+    println(io, "0")  # End of section
+    md["transformer_ckt_mapping"] = transformer_ckt_mapping
+    md["transformer_name_mapping"] = transformer_name_mapping
 end
 
 "Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
@@ -576,6 +717,7 @@ function write_export(
     _write_fixed_bus_shunt_data(raw, md, sys, psse_version)
     _write_generator_data(raw, md, sys, psse_version; sources_as_generators = true)
     _write_non_transformer_branch_data(raw, md, sys, psse_version)
+    _write_transformer_data(raw, md, sys, psse_version)
 
     # Write files
     open(file -> write(file, seekstart(raw)), raw_path; truncate = true)
