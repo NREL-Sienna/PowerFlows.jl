@@ -13,6 +13,29 @@ const PSSE_DEFAULT_OWNERSHIP = let
     F1, F2, F3, F4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
     O1, F1, O2, F2, O3, F3, O4, F4
 end
+const PSSE_GROUPS_33 = [
+    "Case Identification Data",
+    "Bus Data",
+    "Load Data",
+    "Fixed Shunt Data",
+    "Generator Data",
+    "Non-Transformer Branch Data",
+    "Transformer Data",
+    "Area Interchange Data",
+    "Two-Terminal DC Transmission Line Data",
+    "Voltage Source Converter (VSC) DC Transmission Line Data",
+    "Transformer Impedance Correction Tables",
+    "Multi-Terminal DC Transmission Line Data",
+    "Multi-Section Line Grouping Data",
+    "Zone Data",
+    "Interarea Transfer Data",
+    "Owner Data",
+    "FACTS Device Data",
+    "Switched Shunt Data",
+    "GNE Device Data",
+    "Induction Machine Data",
+    "Q Record",
+]
 
 # TODO consider adding this to IS
 """
@@ -45,14 +68,21 @@ using `update_exporter` with any new data as relevant, and perform the export wi
     flow-related values but may not fundamentally alter the system
   - `psse_version::Symbol`: the version of PSS/E to target, must be one of
     `PSSE_EXPORT_SUPPORTED_VERSIONS`
+  - `write_comments::Bool`: whether to add the customary-but-not-in-spec-annotations after a
+    slash on the first line and at group boundaries
 """
 mutable struct PSSEExporter
     # Internal fields are very much subject to change as I iterate on the best way to do
     # this! For instance, the final version will almost certainly not store an entire System
     system::PSY.System
     psse_version::Symbol
+    write_comments::Bool
 
-    function PSSEExporter(base_system::PSY.System, psse_version::Symbol)
+    function PSSEExporter(
+        base_system::PSY.System,
+        psse_version::Symbol,
+        write_comments::Bool = false,
+    )
         (psse_version in PSSE_EXPORT_SUPPORTED_VERSIONS) ||
             throw(
                 ArgumentError(
@@ -60,7 +90,7 @@ mutable struct PSSEExporter
                 ),
             )
         system = deepcopy(base_system)
-        new(system, psse_version)
+        new(system, psse_version, write_comments)
     end
 end
 
@@ -110,6 +140,15 @@ function joinln(io::IO, iterator, delim = ", "; strip_trailing_empties = true)  
     println(io)
 end
 
+function end_group(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name, written)
+    next_group = PSSE_GROUPS_33[only(findall(==(group_name), PSSE_GROUPS_33)) + 1]
+    ender = "0"
+    exporter.write_comments && (ender *= " / End of $group_name")
+    (next_group == "Q Record") || (ender *= ", Begin $next_group")
+    println(io, ender)
+    md["record_groups"][group_name] = written
+end
+
 _permissive_parse_int(x) = Int64(parse(Float64, x))  # Parses "1.0" as 1, errors on "1.5"
 
 _psse_quote_string(s::String) = "'$s'"
@@ -118,6 +157,7 @@ branch_to_bus_numbers(branch) =
     (PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch))))
 
 "Throw a `NotImplementedError` if the `psse_version` is not `:v33`"
+check_33(exporter::PSSEExporter) = check_33(exporter.psse_version)
 check_33(psse_version::Symbol) =
     (psse_version == :v33) ||
     throw(IS.NotImplementedError("Only implemented for psse_version $(:v33)"))
@@ -146,19 +186,21 @@ _psse_container_numbers(container_names::Vector{String}) =
 function _write_case_identification_data(
     io::IO,
     md::AbstractDict,
-    sys::System,
-    psse_version::Symbol,
+    exporter::PSSEExporter,
     case_name::String,
 )
-    check_33(psse_version)
+    check_33(exporter)
+    now = Dates.now()
+    md_string = "PSS/E 33.3 RAW via PowerFlows.jl, $now"
 
     # Record 1
     IC = 0
-    SBASE = PSY.get_base_power(sys)
+    SBASE = PSY.get_base_power(exporter.system)
     REV = 33
     XFRRAT = 0
     NXFRAT = 1  # TODO why?
-    BASFRQ = PSY.get_frequency(sys)
+    BASFRQ = PSY.get_frequency(exporter.system)
+    exporter.write_comments && (BASFRQ = "$BASFRQ    / $md_string")
     joinln(io, [IC, SBASE, REV, XFRRAT, NXFRAT, BASFRQ])
 
     # Record 2
@@ -167,7 +209,7 @@ function _write_case_identification_data(
     println(io, case_name)
 
     # Record 3
-    line3 = "Created by PowerFlows.jl on $(Dates.now())"
+    line3 = md_string
     @assert length(line3) <= 60
     println(io, line3)
     md["record_groups"]["Case Identification Data"] = true
@@ -256,10 +298,11 @@ end
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Bus Data. Sienna voltage limits treated as PSS/E
 normal voltage limits; PSSE emergency voltage limits left as default.
 """
-function _write_bus_data(io::IO, md::AbstractDict, sys::System, psse_version::Symbol)
-    check_33(psse_version)
+function _write_bus_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
+    check_33(exporter)
 
-    buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = PSY.get_number)
+    buses = sort!(collect(PSY.get_components(PSY.Bus, exporter.system));
+        by = PSY.get_number)
     old_bus_numbers = PSY.get_number.(buses)
     bus_number_mapping = _psse_bus_numbers(old_bus_numbers)
     bus_name_mapping =
@@ -280,11 +323,10 @@ function _write_bus_data(io::IO, md::AbstractDict, sys::System, psse_version::Sy
         EVLO = PSSE_DEFAULT
         joinln(io, [I, NAME, BASKV, IDE, AREA, ZONE, OWNER, VM, VA, NVHI, NVLO, EVHI, EVLO])
     end
-    println(io, "0")  # End of section
+    end_group(io, md, exporter, "Bus Data", true)
 
     md["bus_number_mapping"] = bus_number_mapping
     md["bus_name_mapping"] = bus_name_mapping
-    md["record_groups"]["Bus Data"] = true
 end
 
 function _increment_component_char(component_char::Char)
@@ -353,10 +395,11 @@ end
 """
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Load Data
 """
-function _write_load_data(io::IO, md::AbstractDict, sys::System, psse_version::Symbol)
-    check_33(psse_version)
+function _write_load_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
+    check_33(exporter)
 
-    loads = sort!(collect(PSY.get_components(PSY.StaticLoad, sys)); by = PSY.get_name)
+    loads = sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system));
+        by = PSY.get_name)
     load_name_mapping =
         create_component_ids(
             PSY.get_name.(loads),
@@ -372,7 +415,7 @@ function _write_load_data(io::IO, md::AbstractDict, sys::System, psse_version::S
         ZONE = PSSE_DEFAULT  # defaults to zone's area
         PL = PSY.get_constant_active_power(load)
         QL = PSY.get_constant_reactive_power(load)
-        IP, IQ, YP, YQ = with_units(sys, PSY.UnitSystem.DEVICE_BASE) do
+        IP, IQ, YP, YQ = with_units(exporter.system, PSY.UnitSystem.DEVICE_BASE) do
             PSY.get_current_active_power(load),
             PSY.get_current_reactive_power(load),
             PSY.get_impedance_active_power(load),
@@ -386,23 +429,18 @@ function _write_load_data(io::IO, md::AbstractDict, sys::System, psse_version::S
             [I, ID, STATUS, AREA, ZONE, PL, QL, IP, IQ, YP, YQ, OWNER, SCALE, INTRPT],
         )
     end
-    println(io, "0")  # End of section
+    end_group(io, md, exporter, "Load Data", true)
     md["load_name_mapping"] = load_name_mapping  # TODO reshape to be better for import
-    md["record_groups"]["Load Data"] = true
 end
 
 """
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
 """
-function _write_fixed_bus_shunt_data(
-    io::IO,
-    md::AbstractDict,
-    sys::System,
-    psse_version::Symbol,
-)
-    check_33(psse_version)
+function _write_fixed_bus_shunt_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
+    check_33(exporter)
 
-    shunts = sort!(collect(PSY.get_components(PSY.FixedAdmittance, sys)); by = PSY.get_name)
+    shunts = sort!(collect(PSY.get_components(PSY.FixedAdmittance, exporter.system));
+        by = PSY.get_name)
     shunt_name_mapping =
         create_component_ids(
             PSY.get_name.(shunts),
@@ -415,16 +453,15 @@ function _write_fixed_bus_shunt_data(
         ID =
             _psse_quote_string(shunt_name_mapping[(sienna_bus_number, PSY.get_name(shunt))])  # TODO should this be quoted?
         STATUS = PSY.get_available(shunt) ? 1 : 0
-        GL = real(PSY.get_Y(shunt)) * PSY.get_base_power(sys)
-        BL = imag(PSY.get_Y(shunt)) * PSY.get_base_power(sys)
+        GL = real(PSY.get_Y(shunt)) * PSY.get_base_power(exporter.system)
+        BL = imag(PSY.get_Y(shunt)) * PSY.get_base_power(exporter.system)
         joinln(
             io,
             [I, ID, STATUS, GL, BL],
         )
     end
-    println(io, "0")  # End of section
+    end_group(io, md, exporter, "Fixed Shunt Data", true)
     md["shunt_name_mapping"] = shunt_name_mapping  # TODO reshape to be better for import
-    md["record_groups"]["Fixed Bus Shunt Data"] = true
 end
 
 """
@@ -433,19 +470,16 @@ generators in addition to `PSY.Generator`s
 
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
 """
-function _write_generator_data(
-    io::IO,
-    md::AbstractDict,
-    sys::System,
-    psse_version::Symbol;
+function _write_generator_data(io::IO, md::AbstractDict, exporter::PSSEExporter;
     sources_as_generators = false,
 )
-    check_33(psse_version)
+    check_33(exporter)
 
     generators::Vector{PSY.StaticInjection} =
-        sort!(collect(PSY.get_components(PSY.Generator, sys)); by = PSY.get_name)
+        sort!(collect(PSY.get_components(PSY.Generator, exporter.system));
+            by = PSY.get_name)
     sources_as_generators && append!(generators,
-        sort!(collect(PSY.get_components(PSY.Source, sys)); by = PSY.get_name))
+        sort!(collect(PSY.get_components(PSY.Source, exporter.system)); by = PSY.get_name))
     generator_name_mapping =
         create_component_ids(
             PSY.get_name.(generators),
@@ -459,10 +493,10 @@ function _write_generator_data(
             _psse_quote_string(
                 generator_name_mapping[(sienna_bus_number, PSY.get_name(generator))],
             )  # TODO should this be quoted?
-        PG, QG = with_units(sys, PSY.UnitSystem.SYSTEM_BASE) do
+        PG, QG = with_units(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
             # Doing the conversion myself due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1164
-            PSY.get_active_power(generator) * PSY.get_base_power(sys),
-            PSY.get_reactive_power(generator) * PSY.get_base_power(sys)
+            PSY.get_active_power(generator) * PSY.get_base_power(exporter.system),
+            PSY.get_reactive_power(generator) * PSY.get_base_power(exporter.system)
         end  # TODO fix units
         QT = PSY.get_reactive_power_limits(generator).max
         isfinite(QT) || (QT = PSSE_DEFAULT)  # Catch Inf, etc.
@@ -495,9 +529,8 @@ function _write_generator_data(
                 RMPCT, PT, PB, PSSE_DEFAULT_OWNERSHIP..., WMOD, WPF],
         )
     end
-    println(io, "0")  # End of section
+    end_group(io, md, exporter, "Generator Data", true)
     md["generator_name_mapping"] = generator_name_mapping  # TODO reshape to be better for import
-    md["record_groups"]["Generator Data"] = true
 end
 
 """
@@ -506,13 +539,13 @@ WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
 function _write_non_transformer_branch_data(
     io::IO,
     md::AbstractDict,
-    sys::System,
-    psse_version::Symbol,
+    exporter::PSSEExporter,
 )
-    check_33(psse_version)
+    check_33(exporter)
 
     # TODO can/should we be more general than `Line`?
-    branches = sort!(collect(PSY.get_components(PSY.Line, sys)); by = branch_to_bus_numbers)
+    branches = sort!(collect(PSY.get_components(PSY.Line, exporter.system));
+        by = branch_to_bus_numbers)
     branch_name_mapping =
         create_component_ids(
             PSY.get_name.(branches),
@@ -535,7 +568,7 @@ function _write_non_transformer_branch_data(
                 RATEC =
                     with_units(
                         () -> PSY.get_rating(branch),
-                        sys,
+                        exporter.system,
                         PSY.UnitSystem.NATURAL_UNITS,
                     )
         GI, BI = 0.0, PSY.get_b(branch).from
@@ -550,9 +583,8 @@ function _write_non_transformer_branch_data(
                 PSSE_DEFAULT_OWNERSHIP...],
         )
     end
-    println(io, "0")  # End of section
+    end_group(io, md, exporter, "Non-Transformer Branch Data", true)
     md["branch_name_mapping"] = branch_name_mapping
-    md["record_groups"]["Non-Transformer Branch Data"] = true
 end
 
 """
@@ -598,17 +630,12 @@ Currently only supports two-winding transformers
 
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
 """
-function _write_transformer_data(
-    io::IO,
-    md::AbstractDict,
-    sys::System,
-    psse_version::Symbol,
-)
-    check_33(psse_version)
+function _write_transformer_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
+    check_33(exporter)
     transformer_types =
         Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
     transformers = sort!(
-        collect(PSY.get_components(transformer_types, sys));
+        collect(PSY.get_components(transformer_types, exporter.system));
         by = branch_to_bus_numbers,
     )
     transformer_ckt_mapping =
@@ -658,7 +685,7 @@ function _write_transformer_data(
                 RATC1 =
                     with_units(
                         () -> PSY.get_rating(transformer),
-                        sys,
+                        exporter.system,
                         PSY.UnitSystem.NATURAL_UNITS,
                     )
         COD1 = PSSE_DEFAULT
@@ -685,10 +712,9 @@ function _write_transformer_data(
         )
         joinln(io, [WINDV2, NOMV2])
     end
-    println(io, "0")  # End of section
+    end_group(io, md, exporter, "Transformer Data", true)
     md["transformer_ckt_mapping"] = transformer_ckt_mapping
     md["transformer_name_mapping"] = transformer_name_mapping
-    md["record_groups"]["Transformer Data"] = true
 end
 
 # TODO this assumption might not be valid
@@ -697,11 +723,11 @@ Assumes that the Sienna zone names are already PSS/E compatible
 
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Zone Data
 """
-function _write_zone_data(io::IO, md::AbstractDict, sys::System, psse_version::Symbol)
-    check_33(psse_version)
+function _write_zone_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
+    check_33(exporter)
     zone_number_mapping = md["zone_number_mapping"]
     zones = sort!(
-        collect(PSY.get_components(PSY.LoadZone, sys));
+        collect(PSY.get_components(PSY.LoadZone, exporter.system));
         by = x -> zone_number_mapping[PSY.get_name(x)],
     )
     for zone in zones
@@ -712,12 +738,11 @@ function _write_zone_data(io::IO, md::AbstractDict, sys::System, psse_version::S
 
         joinln(io, [I, ZONAME])
     end
-    println(io, "0")  # End of section
-    md["record_groups"]["Zone Data"] = true
+    end_group(io, md, exporter, "Zone Data", true)
 end
 
-function _write_q_record(io::IO, md::AbstractDict, sys::System, psse_version::Symbol)
-    check_33(psse_version)
+function _write_q_record(io::IO, md::AbstractDict, exporter::PSSEExporter)
+    check_33(exporter)
     println(io, "Q")  # End of file
     md["record_groups"]["Q Record"] = true
 end
@@ -725,14 +750,12 @@ end
 function _write_skip_group(
     io::IO,
     md::AbstractDict,
-    sys::System,
-    psse_version::Symbol,
-    section_name::String,
+    exporter::PSSEExporter,
+    this_section_name::String,
 )
-    check_33(psse_version)
-    println(io, "0")
-    haskey(md, "skipped_groups") || (md["skipped_groups"] = Vector{String}())
-    md["record_groups"][section_name] = false
+    check_33(exporter)
+    end_group(io, md, exporter, this_section_name, false)
+    md["record_groups"][this_section_name] = false
 end
 
 "Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
@@ -751,43 +774,41 @@ function write_export(
     # Build export files in buffers
     raw = IOBuffer()
     md = OrderedDict()
-    sys = exporter.system
-    psse_version = exporter.psse_version
     # These mappings are accessed in e.g. _write_bus_data via the metadata
     md["area_mapping"] = _psse_container_numbers(
-        sort!(collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, sys)))),
+        sort!(collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, exporter.system)))),
     )
     md["zone_number_mapping"] = _psse_container_numbers(
-        sort!(collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, sys)))),
+        sort!(collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, exporter.system)))),
     )
     md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
 
     # Each of these corresponds to a group of records in the PSS/E spec
-    _write_case_identification_data(raw, md, sys, psse_version, "$(scenario_name)_$(year)")
-    _write_bus_data(raw, md, sys, psse_version)
-    _write_load_data(raw, md, sys, psse_version)
-    _write_fixed_bus_shunt_data(raw, md, sys, psse_version)
-    _write_generator_data(raw, md, sys, psse_version; sources_as_generators = true)
-    _write_non_transformer_branch_data(raw, md, sys, psse_version)
-    _write_transformer_data(raw, md, sys, psse_version)
+    _write_case_identification_data(raw, md, exporter, "$(scenario_name)_$(year)")
+    _write_bus_data(raw, md, exporter)
+    _write_load_data(raw, md, exporter)
+    _write_fixed_bus_shunt_data(raw, md, exporter)
+    _write_generator_data(raw, md, exporter; sources_as_generators = true)
+    _write_non_transformer_branch_data(raw, md, exporter)
+    _write_transformer_data(raw, md, exporter)
     # TODO we'll eventually need area interchange data
-    _write_skip_group(raw, md, sys, psse_version, "Area Interchange Data")
-    _write_skip_group(raw, md, sys, psse_version, "Two-Terminal DC Transmission Line Data")
-    _write_skip_group(raw, md, sys, psse_version,
+    _write_skip_group(raw, md, exporter, "Area Interchange Data")
+    _write_skip_group(raw, md, exporter, "Two-Terminal DC Transmission Line Data")
+    _write_skip_group(raw, md, exporter,
         "Voltage Source Converter (VSC) DC Transmission Line Data")
-    _write_skip_group(raw, md, sys, psse_version, "Transformer Impedance Correction Tables")
-    _write_skip_group(raw, md, sys, psse_version,
+    _write_skip_group(raw, md, exporter, "Transformer Impedance Correction Tables")
+    _write_skip_group(raw, md, exporter,
         "Multi-Terminal DC Transmission Line Data")
-    _write_skip_group(raw, md, sys, psse_version, "Multi-Section Line Grouping Data")
-    _write_zone_data(raw, md, sys, psse_version)
-    _write_skip_group(raw, md, sys, psse_version, "Interarea Transfer Data")
-    _write_skip_group(raw, md, sys, psse_version, "Owner Data")
-    _write_skip_group(raw, md, sys, psse_version, "FACTS Device Data")
+    _write_skip_group(raw, md, exporter, "Multi-Section Line Grouping Data")
+    _write_zone_data(raw, md, exporter)
+    _write_skip_group(raw, md, exporter, "Interarea Transfer Data")
+    _write_skip_group(raw, md, exporter, "Owner Data")
+    _write_skip_group(raw, md, exporter, "FACTS Device Data")
     # TODO we'll eventually need switched shunt data
-    _write_skip_group(raw, md, sys, psse_version, "Switched Shunt Data")
-    _write_skip_group(raw, md, sys, psse_version, "GNE Device Data")
-    _write_skip_group(raw, md, sys, psse_version, "Induction Machine Data")
-    _write_q_record(raw, md, sys, psse_version)
+    _write_skip_group(raw, md, exporter, "Switched Shunt Data")
+    _write_skip_group(raw, md, exporter, "GNE Device Data")
+    _write_skip_group(raw, md, exporter, "Induction Machine Data")
+    _write_q_record(raw, md, exporter)
 
     skipped_groups = [k for (k, v) in md["record_groups"] if !v]
     !isempty(skipped_groups) && @warn "Skipped groups: $(join(skipped_groups, ", "))"
