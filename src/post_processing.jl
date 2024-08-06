@@ -496,14 +496,10 @@ function _allocate_results_data(
     Q_from_to_vect = zeros(length(branches))
     P_to_from_vect = zeros(length(branches))
     Q_to_from_vect = zeros(length(branches))
+    # branch_flow_values is always from_to direction
     for i in 1:length(branches)
-        if branch_flow_values[i] >= 0
-            P_from_to_vect[i] = branch_flow_values[i]
-            P_to_from_vect[i] = 0
-        else
-            P_from_to_vect[i] = 0
-            P_to_from_vect[i] = branch_flow_values[i]
-        end
+        P_from_to_vect[i] = branch_flow_values[i]
+        P_to_from_vect[i] = -branch_flow_values[i]
     end
 
     bus_df = DataFrames.DataFrame(;
