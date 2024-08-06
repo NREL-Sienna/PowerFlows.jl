@@ -387,13 +387,13 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
                 else
                     PSY.InfrastructureSystems.@assert_op fraction > 0
                 end
-
                 current_q = PSY.get_reactive_power(d)
                 q_frac = q_residual * fraction
                 q_set_point = clamp(q_frac + current_q, q_limits.min, q_limits.max)
-                reallocated_q += q_frac
-                if (q_frac >= q_limits.max + BOUNDS_TOLERANCE) ||
-                   (q_frac <= q_limits.min - BOUNDS_TOLERANCE)
+                # Assign new capacity based on the limits and the fraction
+                reallocated_q += q_set_point - current_q
+                if ((q_frac + current_q) >= q_limits.max + BOUNDS_TOLERANCE) ||
+                   ((q_frac + current_q) <= q_limits.min - BOUNDS_TOLERANCE)
                     push!(units_at_limit, ix)
                     @warn "Unit $(PSY.get_name(d)) set at the limit $(q_set_point). Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
                 end
@@ -405,12 +405,14 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
                 break
             end
             it += 1
-            if it > 1
+            if it > 5
+                @warn "Maximum number of iterations for Q-redistribution reached. Number of devices at Q limit are: $(length(units_at_limit)) of $(length(devices)) available devices"
                 break
             end
         end
     end
 
+    # Last attempt to allocate reactive power
     if !isapprox(q_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
         remaining_unit_index = setdiff(1:length(devices), units_at_limit)
         @assert length(remaining_unit_index) == 1 remaining_unit_index
@@ -424,6 +426,12 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
             @error "Unit $(PSY.get_name(device)) Q=$(q_set_point) above limits. Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
         end
     end
+
+    @assert isapprox(
+        sum(PSY.get_reactive_power.(devices)),
+        Q_gen;
+        atol = ISAPPROX_ZERO_TOLERANCE,
+    )
 
     return
 end
@@ -529,7 +537,7 @@ end
 
 """
 Returns a dictionary containing the DC power flow results. Each key conresponds
-to the name of the considered time periods, storing a DataFrame with the OPF
+to the name of the considered time periods, storing a DataFrame with the PF
 results.
 
 # Arguments:
