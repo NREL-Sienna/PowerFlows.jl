@@ -56,25 +56,19 @@
 
     # case 1
     for i in 1:length(data_1.timestep_map)
-        flow_from_to = results_1[data_1.timestep_map[i]]["flow_results"].P_from_to
-        flow_to_from = results_1[data_1.timestep_map[i]]["flow_results"].P_to_from
-        net_flow = flow_from_to + flow_to_from
+        net_flow = results_1[data_1.timestep_map[i]]["flow_results"].P_from_to
         @test isapprox(net_flow, flows[:, i], atol = 1e-5)
     end
 
     # case 2
     for i in 1:length(data_1.timestep_map)
-        flow_from_to = results_1[data_2.timestep_map[i]]["flow_results"].P_from_to
-        flow_to_from = results_1[data_2.timestep_map[i]]["flow_results"].P_to_from
-        net_flow = flow_from_to + flow_to_from
+        net_flow = results_1[data_2.timestep_map[i]]["flow_results"].P_from_to
         @test isapprox(net_flow, flows[:, i], atol = 1e-5)
     end
 
     # case 3
     for i in 1:length(data_1.timestep_map)
-        flow_from_to = results_1[data_3.timestep_map[i]]["flow_results"].P_from_to
-        flow_to_from = results_1[data_3.timestep_map[i]]["flow_results"].P_to_from
-        net_flow = flow_from_to + flow_to_from
+        net_flow = results_1[data_3.timestep_map[i]]["flow_results"].P_from_to
         @test isapprox(net_flow, flows[:, i], atol = 1e-5)
     end
 end
