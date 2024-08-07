@@ -8,9 +8,15 @@ export ACPowerFlow
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
 export write_results
+export PSSEExporter
+export update_exporter!
+export write_export
+export get_psse_export_paths
 
+import Logging
 import DataFrames
 import PowerSystems
+import PowerSystems: System
 import LinearAlgebra
 import NLsolve
 import SparseArrays
@@ -31,11 +37,12 @@ include("ac_power_flow.jl")
 include("ac_power_flow_jacobian.jl")
 include("nlsolve_ac_powerflow.jl")
 include("post_processing.jl")
+include("psse_export.jl")
 
-# PSSE Exporter
-import PowerSystems: System
+# Old PSSE Exporter
 import DataFrames: DataFrame
 import Dates
+import DataStructures
 import DataStructures: OrderedDict
 import DelimitedFiles
 import JSON

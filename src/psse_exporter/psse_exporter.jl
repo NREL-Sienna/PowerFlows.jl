@@ -1,3 +1,47 @@
+# TODO maybe we want a special System constructor that takes the JSON and handles these mappings internally
+"""
+Given a metadata dictionary parsed from a `raw_metadata_log.json`, yields a function that
+can be passed as the `bus_name_formatter` kwarg to the `System` constructor to properly
+restore Sienna bus names:
+`System("filename.raw"; bus_name_formatter = PF.make_bus_name_formatter_from_metadata(md))`
+"""
+function make_bus_name_formatter_from_metadata(md::Dict)
+    bus_map = Dict(value => key for (key, value) in md["Bus_Name_Mapping"])
+    function md_bus_name_formatter(device_dict::Dict)::String
+        return bus_map[device_dict["name"]]
+    end
+    return md_bus_name_formatter
+end
+
+"""
+Given a metadata dictionary parsed from a `raw_metadata_log.json`, yields a function that
+can be passed as the `gen_name_formatter` kwarg to the `System` constructor to properly
+restore Sienna generator names:
+`System("filename.raw"; gen_name_formatter = PF.make_gen_name_formatter_from_metadata(md))`
+"""
+function make_gen_name_formatter_from_metadata(md::Dict)
+    gen_map = md["Gen_Name_Mapping"]
+    function md_gen_name_formatter(device_dict::Dict)::String
+        bus_n, gen_id = device_dict["source_id"][2:3]
+        return gen_map["$(bus_n)_$(rstrip(gen_id))"]
+    end
+    return md_gen_name_formatter
+end
+
+function make_branch_name_formatter_from_metadata(md::Dict)
+    branch_map = md["Branch_Name_Mapping"]
+    function md_bus_name_formatter(
+        device_dict::Dict,
+        bus_f::PSY.ACBus,
+        bus_t::PSY.ACBus,
+    )::String
+        sid = device_dict["source_id"]
+        key = join((length(sid) == 6) ? [sid[2], sid[3], sid[5]] : last(sid, 3), "_")
+        return branch_map[key]
+    end
+    return md_bus_name_formatter
+end
+
 # TODO document this function
 function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     export_location::Union{Nothing, String} = nothing, base_case = false, setpoint = false,
@@ -8,9 +52,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     raw_file_metadata = OrderedDict()
 
     if (export_location === nothing)
-        export_location = dirname(dirname(@__DIR__))
         @warn "Location to save the incremental raw file not specified. Using the data folder in the test folder of the module."
-        export_location = joinpath(export_location, "test", "data", "Raw_Export")
+        export_location = joinpath(dirname(dirname(@__DIR__)), "test", "data", "Raw_Export")
     else
         export_location = joinpath(export_location, "Raw_Export")
     end
@@ -100,7 +143,7 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
 
     # Buses
     # Find buses in PSY System
-    psy_buses = collect(PSY.get_components(PSY.Bus, sys))
+    psy_buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = PSY.get_number)
 
     bus_mapping = OrderedDict()
     # Metadata
@@ -126,8 +169,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
         push!(raw_file_metadata["Bus_Name_Mapping"], PSY.get_name(bus) => bus_name)
         bus_base_kv = PSY.get_base_voltage(bus)
         bus_ide = PSY.get_bustype(bus).value
-        area = parse(Int, PSY.get_name(PSY.get_area(bus)))
-        l_z = parse(Int, PSY.get_name(PSY.get_load_zone(bus)))
+        area = _permissive_parse_int(PSY.get_name(PSY.get_area(bus)))
+        l_z = _permissive_parse_int(PSY.get_name(PSY.get_load_zone(bus)))
         owner = 1 # DEFAULT
         v_mag = PSY.get_magnitude(bus)
         v_ang = rad2deg(PSY.get_angle(bus))
@@ -152,7 +195,7 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
 
     # Loads
     # Find buses in PSY System where LOADS are available
-    psy_loads = collect(PSY.get_components(PSY.StandardLoad, sys))
+    psy_loads = sort!(collect(PSY.get_components(PSY.StandardLoad, sys)); by = PSY.get_name)
 
     # V34
     dg_enp = 0.0 # DEFAULT
@@ -167,8 +210,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
         load_id = last(PSY.get_name(load))
         load_status = get_PSSE_status(PSY.get_available(load))
         load_bus = PSY.get_bus(load)
-        area = parse(Int, PSY.get_name(PSY.get_area(load_bus)))
-        l_z = parse(Int, PSY.get_name(PSY.get_load_zone(load_bus)))
+        area = _permissive_parse_int(PSY.get_name(PSY.get_area(load_bus)))
+        l_z = _permissive_parse_int(PSY.get_name(PSY.get_load_zone(load_bus)))
         p_l = base_case ? 0.0 : PSY.get_constant_active_power(load)
         q_l = base_case ? 0.0 : PSY.get_constant_reactive_power(load)
         PSY.set_units_base_system!(sys, PSY.IS.UnitSystem.DEVICE_BASE) # These need to be on device base to be parsed correctly for now, everything else, sys base
@@ -199,7 +242,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     end
 
     # Shunts
-    psy_shunts = collect(PSY.get_components(PSY.FixedAdmittance, sys))
+    psy_shunts =
+        sort!(collect(PSY.get_components(PSY.FixedAdmittance, sys)); by = PSY.get_name)
 
     for shunt in psy_shunts
         i = PSY.get_number(PSY.get_bus(shunt))
@@ -227,15 +271,23 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
         )
     end
     # Generators
-    psy_gens = collect(PSY.get_components(PSY.Generator, sys))
+    psy_gens = sort!(collect(PSY.get_components(PSY.Generator, sys)); by = PSY.get_name)
+    sources = sort!(collect(PSY.get_components(PSY.Source, sys)); by = PSY.get_name)
+
+    gens_and_sources = vcat(psy_gens, sources)
+    gen_ids = create_component_ids(
+        PSY.get_name.(gens_and_sources),
+        PSY.get_number.(PSY.get_bus.(gens_and_sources)),
+    )
+    gen_mapping = OrderedDict{String, String}()  # Maps "$(psse_bus_number)_$(psse_gen_id)" to original PSY name
 
     for gen in psy_gens
+        gen_id = gen_ids[(PSY.get_number(PSY.get_bus(gen)), PSY.get_name(gen))]
         if gen isa PSY.ThermalStandard
             gen_bus_num = PSY.get_number(PSY.get_bus(gen))
             if (haskey(bus_mapping, gen_bus_num))
                 gen_bus_num = bus_mapping[gen_bus_num]
             end
-            gen_id = uppercase(first(last(split(PSY.get_name(gen), "-")), 2))
             p_g = base_case ? 0.0 : PSY.get_active_power(gen)
             q_g = base_case ? 0.0 : PSY.get_reactive_power(gen)
             if PSY.get_reactive_power_limits(gen)[:max] > PSY.get_rating(gen)
@@ -278,7 +330,6 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
             if (haskey(bus_mapping, gen_bus_num))
                 gen_bus_num = bus_mapping[gen_bus_num]
             end
-            gen_id = uppercase(first(last(split(PSY.get_name(gen), "-")), 2))
             p_g = base_case ? 0.0 : PSY.get_active_power(gen)
             q_g = base_case ? 0.0 : PSY.get_reactive_power(gen)
             q_t = PSY.get_rating(gen)cos(π / 4)
@@ -310,15 +361,17 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
                 end
             push!(raw_file, gen_entry)
         end
-    end
 
-    sources = collect(PSY.get_components(PSY.Source, sys))
+        gen_mapping["$(gen_bus_num)_$(gen_id)"] = PSY.get_name(gen)
+    end
+    push!(raw_file_metadata, "Gen_Name_Mapping" => gen_mapping)
+
     for source in sources
         gen_bus_num = PSY.get_number(PSY.get_bus(source))
+        gen_id = gen_ids[(gen_bus_num, PSY.get_name(source))]
         if (haskey(bus_mapping, gen_bus_num))
             gen_bus_num = bus_mapping[gen_bus_num]
         end
-        gen_id = uppercase(first(last(split(PSY.get_name(source), "-")), 2))
         p_g = base_case ? 0.0 : PSY.get_active_power(source) * PSY.get_base_power(sys)
         q_g = base_case ? 0.0 : PSY.get_reactive_power(source) * PSY.get_base_power(sys)
         q_t = 10000 * cos(π / 4)
@@ -349,6 +402,8 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
                 "$(gen_bus_num), '$(gen_id) ', $(p_g), $(q_g), $(q_t), $(q_b), $(v_s), $(ireg), $(mbase), $(z_r), $(z_x), $(r_t), $(x_t), $(gtap), $(stat), $(rmpct), $(p_t), $(p_b), $(o_i), $(f_i), $(wmod), $(wpf), $(n_reg)"
             end
         push!(raw_file, gen_entry)
+
+        gen_mapping["$(gen_bus_num)_$(gen_id)"] = PSY.get_name(source)
     end
 
     if (v33)
@@ -362,13 +417,23 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
     end
 
     # Branch
-    psy_branches = collect(
-        PSY.get_components(
-            (x -> PSY.get_from_bus(x) ∈ psy_buses || PSY.get_to_bus(x) ∈ psy_buses),
-            PSY.ACBranch,
-            sys,
-        ),
-    )
+    psy_branches = sort!(
+        collect(
+            PSY.get_components(
+                (x -> PSY.get_from_bus(x) ∈ psy_buses || PSY.get_to_bus(x) ∈ psy_buses),
+                PSY.ACBranch,
+                sys,
+            ),
+        );
+        by = branch ->
+            PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch))))
+    branch_mapping = OrderedDict{String, String}()  # Maps "$(from_bus_number)_$(to_bus_number)" to original PSY name
+    for branch in psy_branches
+        key = "$(PSY.get_number(PSY.get_from_bus(branch)))_$(PSY.get_number(PSY.get_to_bus(branch)))_$(last(split(PSY.get_name(branch), "_")))"
+        @assert !haskey(branch_mapping, key)
+        branch_mapping[key] = PSY.get_name(branch)
+    end
+    push!(raw_file_metadata, "Branch_Name_Mapping" => branch_mapping)
 
     # line_dict = Dict{Tuple{Int64, Int64}, Int64}()
     for branch in psy_branches
@@ -640,13 +705,21 @@ function Write_Sienna2PSSE(sys::System, scenario_name::String, year::Int64;
         push!(raw_file, "0 / END OF INTER-AREA TRANSFER DATA, BEGIN OWNER DATA")
         push!(raw_file, "0 / END OF OWNER DATA, BEGIN FACTS DEVICE DATA")
         push!(raw_file, "0 / END OF FACTS DEVICE DATA, BEGIN SWITCHED SHUNT DATA")
-        ush!(raw_file, "0 / END OF SWITCHED SHUNT DATA, BEGIN GNE DATA")
+        push!(raw_file, "0 / END OF SWITCHED SHUNT DATA, BEGIN GNE DATA")
         push!(raw_file, "0 / END OF GNE DATA, BEGIN INDUCTION MACHINE DATA")
         push!(raw_file, "0 / END OF INDUCTION MACHINE DATA, BEGIN SUBSTATION DATA")
         push!(raw_file, "0 / END OF SUBSTATION DATA")
     end
 
     push!(raw_file, "Q")
+
+    # This is very much overkill, but some systems' load zones are named like 123.0 and others are named like 123
+    lz_mapping = DataStructures.SortedDict{String, String}()  # Maps int(load_zone_name) => load_zone_name
+    for load_zone in PSY.get_components(PSY.LoadZone, sys)
+        lz_mapping[string(_permissive_parse_int(PSY.get_name(load_zone)))] =
+            PSY.get_name(load_zone)
+    end
+    push!(raw_file_metadata, "Load_Zone_Name_Mapping" => lz_mapping)
 
     @info "Exporting raw file and relevant metadata log ..."
 
