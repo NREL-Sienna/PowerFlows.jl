@@ -392,6 +392,29 @@ function create_component_ids(
     return id_mapping
 end
 
+# Fetch PL, QL, IP, IQ, YP, YQ
+_psse_get_load_data(exporter::PSSEExporter, load::PSY.StandardLoad) =
+    with_units(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+        PSY.get_constant_active_power(load),
+        PSY.get_constant_reactive_power(load),
+        PSY.get_current_active_power(load),
+        PSY.get_current_reactive_power(load),
+        PSY.get_impedance_active_power(load),
+        PSY.get_impedance_reactive_power(load)
+    end
+
+# Fallback if not all the data is available
+# This mapping corresponds to `function make_power_load` in the parser
+_psse_get_load_data(exporter::PSSEExporter, load::PSY.StaticLoad) =
+    with_units(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+        PSY.get_active_power(load),
+        PSY.get_reactive_power(load),
+        PSSE_DEFAULT,
+        PSSE_DEFAULT,
+        PSSE_DEFAULT,
+        PSSE_DEFAULT
+    end
+
 """
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Load Data
 """
@@ -413,14 +436,7 @@ function _write_load_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
         STATUS = PSY.get_available(load) ? 1 : 0
         AREA = PSSE_DEFAULT  # defaults to bus's area
         ZONE = PSSE_DEFAULT  # defaults to zone's area
-        PL = PSY.get_constant_active_power(load)
-        QL = PSY.get_constant_reactive_power(load)
-        IP, IQ, YP, YQ = with_units(exporter.system, PSY.UnitSystem.DEVICE_BASE) do
-            PSY.get_current_active_power(load),
-            PSY.get_current_reactive_power(load),
-            PSY.get_impedance_active_power(load),
-            PSY.get_impedance_reactive_power(load)
-        end
+        PL, QL, IP, IQ, YP, YQ = _psse_get_load_data(exporter, load)
         OWNER = PSSE_DEFAULT  # defaults to bus's owner
         SCALE = PSSE_DEFAULT  # TODO reconsider
         INTRPT = PSSE_DEFAULT  # TODO reconsider
@@ -498,6 +514,8 @@ function _write_generator_data(io::IO, md::AbstractDict, exporter::PSSEExporter;
             PSY.get_active_power(generator) * PSY.get_base_power(exporter.system),
             PSY.get_reactive_power(generator) * PSY.get_base_power(exporter.system)
         end  # TODO fix units
+        # TODO approximate a QT for generators that don't have it set
+        # (this is needed to run power flows also)
         QT = PSY.get_reactive_power_limits(generator).max
         isfinite(QT) || (QT = PSSE_DEFAULT)  # Catch Inf, etc.
         QB = PSY.get_reactive_power_limits(generator).min
@@ -776,7 +794,7 @@ function write_export(
     md = OrderedDict()
     # These mappings are accessed in e.g. _write_bus_data via the metadata
     md["area_mapping"] = _psse_container_numbers(
-        sort!(collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, exporter.system)))),
+        sort!(collect(PSY.get_name.(PSY.get_components(PSY.Area, exporter.system)))),
     )
     md["zone_number_mapping"] = _psse_container_numbers(
         sort!(collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, exporter.system)))),
