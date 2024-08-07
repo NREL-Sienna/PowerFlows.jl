@@ -261,10 +261,10 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
             @assert !isnothing(comp2) comp2
 
             comparison = IS.compare_values(
+                loose_system_match_fn,
                 comp1,
                 comp2;
                 exclude = my_excludes,
-                match_fn = loose_system_match_fn,
             )
             result &= comparison
             if !comparison
@@ -506,6 +506,10 @@ end
         [10, 2, 3, 4, 5], Dict(10 => 100, 2 => 20, 3 => 30, 4 => 40, 5 => 50)) ==
           Dict("-bad1" => "BUS_100-", "compliant" => "compliant", "BUS_100" => "BUS_100",
         "-bad2" => "BUS_40", "ok just too long" => "ok just too ")
+    @test PF.create_component_ids(
+        ["generator-1234-AB", "123_CT_7", "load1234", "load1334"], [1, 1, 2, 2]) ==
+          Dict((1, "generator-1234-AB") => "AB", (1, "123_CT_7") => "7",
+        (2, "load1234") => "34", (2, "load1334") => "35")
 end
 
 # TODO test v34
