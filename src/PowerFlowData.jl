@@ -95,7 +95,7 @@ NOTE: use it for AC power flow computations.
 
 # Arguments:
 - `::ACPowerFlow`:
-        use ACPowerFlow() to evaluate the AC OPF.
+        use ACPowerFlow() to evaluate the AC PF.
 - `sys::PSY.System`:
         container storing the system data to consider in the PowerFlowData
         structure.
@@ -109,7 +109,7 @@ NOTE: use it for AC power flow computations.
 - `check_connectivity::Bool`:
         Perform connectivity check on the network matrix. Default value = true.
 
-WARNING: functions for the evaluation of the multi-period AC OPF still to be implemented.
+WARNING: functions for the evaluation of the multi-period AC PF still to be implemented.
 """
 function PowerFlowData(
     ::ACPowerFlow,
@@ -151,17 +151,14 @@ function PowerFlowData(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
 
-    for (bus_no, ix) in bus_lookup
-        bus_name = temp_bus_map[bus_no]
-        bus = PSY.get_component(PSY.Bus, sys, bus_name)
-        bus_type[ix] = PSY.get_bustype(bus)
-        if bus_type[ix] == PSY.ACBusTypes.REF
-            bus_angles[ix] = 0.0
-        else
-            bus_angles[ix] = PSY.get_angle(bus)
-        end
-        bus_magnitude[ix] = PSY.get_magnitude(bus)
-    end
+    _initialize_bus_data!(
+        bus_type,
+        bus_angles,
+        bus_magnitude,
+        temp_bus_map,
+        bus_lookup,
+        sys,
+    )
 
     bus_activepower_injection = zeros(Float64, n_buses)
     bus_reactivepower_injection = zeros(Float64, n_buses)
@@ -281,17 +278,14 @@ function PowerFlowData(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
 
-    for (bus_no, ix) in bus_lookup
-        bus_name = temp_bus_map[bus_no]
-        bus = PSY.get_component(PSY.Bus, sys, bus_name)
-        bus_type[ix] = PSY.get_bustype(bus)
-        if bus_type[ix] == PSY.ACBusTypes.REF
-            bus_angles[ix] = 0.0
-        else
-            bus_angles[ix] = PSY.get_angle(bus)
-        end
-        bus_magnitude[ix] = PSY.get_magnitude(bus)
-    end
+    _initialize_bus_data!(
+        bus_type,
+        bus_angles,
+        bus_magnitude,
+        temp_bus_map,
+        bus_lookup,
+        sys,
+    )
 
     # define injection vectors related to the first timestep
     bus_activepower_injection = zeros(Float64, n_buses)
@@ -410,17 +404,14 @@ function PowerFlowData(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
 
-    for (bus_no, ix) in bus_lookup
-        bus_name = temp_bus_map[bus_no]
-        bus = PSY.get_component(PSY.Bus, sys, bus_name)
-        bus_type[ix] = PSY.get_bustype(bus)
-        if bus_type[ix] == PSY.ACBusTypes.REF
-            bus_angles[ix] = 0.0
-        else
-            bus_angles[ix] = PSY.get_angle(bus)
-        end
-        bus_magnitude[ix] = PSY.get_magnitude(bus)
-    end
+    _initialize_bus_data!(
+        bus_type,
+        bus_angles,
+        bus_magnitude,
+        temp_bus_map,
+        bus_lookup,
+        sys,
+    )
 
     # define injection vectors related to the first timestep
     bus_activepower_injection = zeros(Float64, n_buses)
@@ -539,17 +530,14 @@ function PowerFlowData(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
 
-    for (bus_no, ix) in bus_lookup
-        bus_name = temp_bus_map[bus_no]
-        bus = PSY.get_component(PSY.Bus, sys, bus_name)
-        bus_type[ix] = PSY.get_bustype(bus)
-        if bus_type[ix] == PSY.ACBusTypes.REF
-            bus_angles[ix] = 0.0
-        else
-            bus_angles[ix] = PSY.get_angle(bus)
-        end
-        bus_magnitude[ix] = PSY.get_magnitude(bus)
-    end
+    _initialize_bus_data!(
+        bus_type,
+        bus_angles,
+        bus_magnitude,
+        temp_bus_map,
+        bus_lookup,
+        sys,
+    )
 
     # define injection vectors related to the first timestep
     bus_activepower_injection = zeros(Float64, n_buses)

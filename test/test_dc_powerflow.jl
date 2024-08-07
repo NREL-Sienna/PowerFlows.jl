@@ -28,8 +28,7 @@
     # CASE 1: ABA and BA matrices
     solved_data_ABA = solve_powerflow(DCPowerFlow(), sys)
     @test isapprox(
-        solved_data_ABA["1"]["flow_results"].P_from_to +
-        solved_data_ABA["1"]["flow_results"].P_to_from,
+        solved_data_ABA["1"]["flow_results"].P_from_to,
         ref_flow_values,
         atol = 1e-6,
     )
@@ -38,8 +37,7 @@
     # CASE 2: PTDF and ABA MATRICES
     solved_data_PTDF = solve_powerflow(PTDFDCPowerFlow(), sys)
     @test isapprox(
-        solved_data_PTDF["1"]["flow_results"].P_from_to +
-        solved_data_PTDF["1"]["flow_results"].P_to_from,
+        solved_data_PTDF["1"]["flow_results"].P_from_to,
         ref_flow_values,
         atol = 1e-6,
     )
@@ -48,8 +46,7 @@
     # CASE 3: VirtualPTDF and ABA MATRICES
     solved_data_vPTDF = solve_powerflow(vPTDFDCPowerFlow(), sys)
     @test isapprox(
-        solved_data_vPTDF["1"]["flow_results"].P_from_to +
-        solved_data_vPTDF["1"]["flow_results"].P_to_from,
+        solved_data_vPTDF["1"]["flow_results"].P_from_to,
         ref_flow_values,
         atol = 1e-6,
     )

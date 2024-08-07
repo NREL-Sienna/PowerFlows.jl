@@ -81,6 +81,27 @@ function _get_reactive_power_bound!(
         end
     end
 end
+
+function _initialize_bus_data!(
+    bus_type::Vector{PSY.ACBusTypes},
+    bus_angles::Vector{Float64},
+    bus_magnitude::Vector{Float64},
+    temp_bus_map::Dict{Int, String},
+    bus_lookup::Dict{Int, Int},
+    sys::PSY.System,
+)
+    for (bus_no, ix) in bus_lookup
+        bus_name = temp_bus_map[bus_no]
+        bus = PSY.get_component(PSY.Bus, sys, bus_name)
+        bus_type[ix] = PSY.get_bustype(bus)
+        if bus_type[ix] == PSY.ACBusTypes.REF
+            bus_angles[ix] = 0.0
+        else
+            bus_angles[ix] = PSY.get_angle(bus)
+        end
+        bus_magnitude[ix] = PSY.get_magnitude(bus)
+    end
+end
 ##############################################################################
 # Matrix Methods #############################################################
 
