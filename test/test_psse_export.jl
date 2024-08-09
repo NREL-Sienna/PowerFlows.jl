@@ -2,20 +2,24 @@ test_psse_export_dir = joinpath(TEST_FILES_DIR, "test_psse_exports")  # at some 
 isdir(test_psse_export_dir) && rm(test_psse_export_dir; recursive = true)
 
 # TODO second macro I've ever written, probably wants a refactor
-function _log_assert(result, msg)
-    result || @error "Failed check: $(string(msg))"
+function _log_assert(result, msg, comparison_name)
+    result ||
+        @error "Failed check: $(string(msg))$(isnothing(comparison_name) ? "" :  " ($comparison_name)")"
     return result
 end
-"If the expression is false, log an error; in any case, pass through the result of the expression."
-macro log_assert(ex)
-    return :(_log_assert($(esc(ex)), $(string(ex))))
+"""
+If the expression is false, log an error; in any case, pass through the result of the
+expression. Optionally accepts a name to include in the error log.
+"""
+macro log_assert(ex, comparison_name = nothing)
+    return :(_log_assert($(esc(ex)), $(string(ex)), $(esc(comparison_name))))
 end
 
 """
 Compare the two dataframes by column. Specify tolerances using kwargs; tolerances default to
 default_tol. If tolerance is `nothing`, skip that column. Otherwise, if the column is
 floating point, compare element-wise with `isapprox(atol = tolerance)`; if not, test strict
-equality element-wise.
+equality element-wise. Optionally accepts a name to include in any failure logs.
 """
 function compare_df_within_tolerance(
     comparison_name::String,
@@ -25,19 +29,20 @@ function compare_df_within_tolerance(
     kwargs...,
 )
     result = true
-    result &= (@log_assert names(df1) == names(df2))
-    result &= (@log_assert eltype.(eachcol(df1)) == eltype.(eachcol(df2)))
+    n_rows_match = (@log_assert size(df1, 1) == size(df2, 1) comparison_name)
+    result &= n_rows_match
+    result &= (@log_assert names(df1) == names(df2) comparison_name)
+    result &= (@log_assert eltype.(eachcol(df1)) == eltype.(eachcol(df2)) comparison_name)
+    n_rows_match || return result  # Can't compare the cols if number of rows doesn't match
     for (colname, my_eltype, col1, col2) in
         zip(names(df1), eltype.(eachcol(df1)), eachcol(df1), eachcol(df2))
         my_tol = (Symbol(colname) in keys(kwargs)) ? kwargs[Symbol(colname)] : default_tol
         isnothing(my_tol) && continue
-        inner_result = (
-            if my_eltype <: AbstractFloat
-                @log_assert all(isapprox.(col1, col2; atol = my_tol))
-            else
-                @log_assert all(isequal.(col1, col2))
-            end
-        )
+        inner_result = if (my_eltype <: AbstractFloat)
+            all(isapprox.(col1, col2; atol = my_tol))
+        else
+            all(IS.isequivalent.(col1, col2))
+        end
         inner_result ||
             (@error "Mismatch on $colname$((my_eltype <: AbstractFloat) ? ", max discrepancy $(maximum(abs.(col2 - col1)))" : "") ($comparison_name)")
         result &= inner_result
@@ -57,6 +62,8 @@ function compare_component_values(
     sys2::System;
     exclude_reactive_power = false,
 )
+    (PSY.get_units_base(sys1) == PSY.get_units_base(sys2)) ||
+        throw(ArgumentError("Can only compare systems with the same units system"))
     # TODO rewrite to not depend on the old `_states` DataFrame-based functions
     reactive_power_tol =
         exclude_reactive_power ? nothing : SYSTEM_REIMPORT_COMPARISON_TOLERANCE
@@ -76,9 +83,9 @@ function compare_component_values(
         reactive_flow = nothing,
     )
     result &= compare_df_within_tolerance(
-        "StandardLoad_states",
-        PF.StandardLoad_states(sys1),
-        PF.StandardLoad_states(sys2),
+        "StaticLoad_states",
+        PF.StaticLoad_states(sys1),
+        PF.StaticLoad_states(sys2),
     )
     result &= compare_df_within_tolerance(
         "FixedAdmittance_states",
@@ -138,29 +145,6 @@ function reverse_composite_name(name::String)
     return join([parts[2], parts[1], parts[3:end]...], "-")
 end
 
-# TODO figure out where these are coming from and fix at the source
-# I think it has to do with per-unit conversions creating a division by zero, because `set_[re]active_power!(..., 0.0)` doesn't fix it
-"Iterate over all the `Generator`s in the system and, if any `active_power` or `reactive_power` fields are `NaN`, make them `0.0`"
-function fix_nans!(sys::PSY.System)
-    for gen in PSY.get_components(PSY.Generator, sys)
-        isnan(PSY.get_active_power(gen)) && (gen.active_power = 0.0)
-        isnan(PSY.get_reactive_power(gen)) && (gen.reactive_power = 0.0)
-    end
-end
-
-# TODO this should be a System constructor kwarg, like bus_name_formatter
-# See https://github.com/NREL-Sienna/PowerSystems.jl/issues/1160
-"Rename all the `LoadZone`s in the system according to the `Load_Zone_Name_Mapping` in the metadata"
-function fix_load_zone_names!(sys::PSY.System, md::Dict)
-    lz_map = md["Load_Zone_Name_Mapping"]
-    # `collect` is necessary due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1161
-    for load_zone in collect(PSY.get_components(PSY.LoadZone, sys))
-        old_name = PSY.get_name(load_zone)
-        new_name = lz_map[old_name]
-        (old_name != new_name) && PSY.set_name!(sys, load_zone, new_name)
-    end
-end
-
 loose_system_match_fn(a::Float64, b::Float64) =
     isapprox(a, b; atol = SYSTEM_REIMPORT_COMPARISON_TOLERANCE) || IS.isequivalent(a, b)
 loose_system_match_fn(a, b) = IS.isequivalent(a, b)
@@ -211,7 +195,7 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         ]),
     ),
     ignore_name_order = true,
-    ignore_extra_gens = true,
+    ignore_extra_of_type = Union{PSY.Generator, PSY.StaticLoad},
     exclude_reactive_power = false)
     result = true
     exclude_reactive_power && push!(exclude_fields, :reactive_power)
@@ -238,7 +222,7 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
             end
         end
 
-        if ignore_extra_gens && my_type <: PSY.Generator
+        if my_type <: ignore_extra_of_type
             if !isempty(setdiff(predicted_names2, actual_names2))
                 @error "Predicting generator names that do not exist for $my_type"
                 result = false
@@ -299,14 +283,7 @@ end
 
 function read_system_and_metadata(raw_path, metadata_path)
     md = PF.JSON.parsefile(metadata_path)
-    sys =
-        System(raw_path;
-            bus_name_formatter = PF.make_bus_name_formatter_from_metadata(md),
-            gen_name_formatter = PF.make_gen_name_formatter_from_metadata(md),
-            branch_name_formatter = PF.make_branch_name_formatter_from_metadata(md),
-            load_zone_formatter = x -> throw(error(string(x))))
-    fix_nans!(sys)
-    fix_load_zone_names!(sys, md)
+    sys = System(raw_path, md)
     return sys, md
 end
 
@@ -499,9 +476,9 @@ end
         1_000_001 => 4,
         1 => 1,
     )
-    @test !PF._is_valid_psse_bus_name("a pretty long name")
-    @test !PF._is_valid_psse_bus_name("-bad")
-    @test PF._is_valid_psse_bus_name(raw"¯\_(ツ)_/¯")
+    @test !PF._is_valid_psse_name("a pretty long name")
+    @test !PF._is_valid_psse_name("-bad")
+    @test PF._is_valid_psse_name(raw"¯\_(ツ)_/¯")
     @test PF._psse_bus_names(["-bad1", "compliant", "BUS_100", "-bad2", "ok just too long"],
         [10, 2, 3, 4, 5], Dict(10 => 100, 2 => 20, 3 => 30, 4 => 40, 5 => 50)) ==
           Dict("-bad1" => "BUS_100-", "compliant" => "compliant", "BUS_100" => "BUS_100",
@@ -512,4 +489,4 @@ end
         (2, "load1234") => "34", (2, "load1334") => "35")
 end
 
-# TODO test v34
+# TODO add tests for unit system agnosticism
