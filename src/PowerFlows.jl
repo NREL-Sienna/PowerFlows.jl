@@ -23,6 +23,7 @@ import SparseArrays
 import InfrastructureSystems
 import PowerNetworkMatrices
 import SparseArrays: SparseMatrixCSC
+import JSON3
 
 const IS = InfrastructureSystems
 const PSY = PowerSystems
@@ -45,7 +46,6 @@ import Dates
 import DataStructures
 import DataStructures: OrderedDict
 import DelimitedFiles
-import JSON
 include("psse_exporter/support_tools.jl")
 
 end
