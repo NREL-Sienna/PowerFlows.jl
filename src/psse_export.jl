@@ -846,9 +846,6 @@ function write_export(
     # Write files
     open(file -> write(file, seekstart(raw)), raw_path; truncate = true)
     open(file -> JSON.print(file, md, 4), md_path; truncate = true)
-
-    # Write_Sienna2PSSE(exporter.system, string(scenario_name), Int64(year);
-    #     export_location = string(export_location), v33 = (exporter.psse_version == :v33))
 end
 
 # TODO remove duplication between here and Write_Sienna2PSSE
