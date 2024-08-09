@@ -8,6 +8,7 @@ using InfrastructureSystems
 using LinearAlgebra
 using CSV
 using DataFrames
+using JSON3
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder

@@ -37,7 +37,7 @@ const PSSE_GROUPS_33 = [
     "Q Record",
 ]
 
-# TODO consider adding this to IS
+# TODO move this to IS
 """
 A context manager similar to `Logging.with_logger` that sets the system's units to the given
 value, executes the function, then sets them back. Suppresses logging below `Warn` from
@@ -127,6 +127,7 @@ function update_exporter!(exporter::PSSEExporter, data::PSY.System)
         ),
     )
     exporter.system = deepcopy(data)
+    return
 end
 
 """
@@ -845,7 +846,7 @@ function write_export(
 
     # Write files
     open(file -> write(file, seekstart(raw)), raw_path; truncate = true)
-    open(file -> JSON.print(file, md, 4), md_path; truncate = true)
+    open(file -> JSON3.pretty(file, md), md_path; truncate = true)
 end
 
 # TODO remove duplication between here and Write_Sienna2PSSE

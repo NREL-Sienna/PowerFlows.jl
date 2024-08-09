@@ -282,7 +282,7 @@ function test_power_flow(sys1::System, sys2::System)
 end
 
 function read_system_and_metadata(raw_path, metadata_path)
-    md = PF.JSON.parsefile(metadata_path)
+    md = JSON3.read(metadata_path, Dict)
     sys = System(raw_path, md)
     return sys, md
 end
@@ -328,8 +328,8 @@ function test_psse_export_strict_equality(
         end
     end
 
-    parsed1 = PF.JSON.parsefile(metadata1)
-    parsed2 = PF.JSON.parsefile(metadata2)
+    parsed1 = JSON3.read(metadata1, Dict)
+    parsed2 = JSON3.read(metadata2, Dict)
     for key in exclude_metadata_keys
         parsed1[key] = nothing
         parsed2[key] = nothing
