@@ -201,7 +201,7 @@ function _write_case_identification_data(
     NXFRAT = 1  # TODO why?
     BASFRQ = PSY.get_frequency(exporter.system)
     exporter.write_comments && (BASFRQ = "$BASFRQ    / $md_string")
-    joinln(io, [IC, SBASE, REV, XFRRAT, NXFRAT, BASFRQ])
+    joinln(io, (IC, SBASE, REV, XFRRAT, NXFRAT, BASFRQ))  # Tuple to avoid type promotion
 
     # Record 2
     (length(case_name) <= 60) ||
@@ -392,6 +392,15 @@ function create_component_ids(
     return id_mapping
 end
 
+"Take the output of `create_component_ids` and make it more suitable for JSON serialization"
+serialize_component_ids(id_mapping::Dict{Tuple{Int64, String}, String}) =
+    Dict("$(s_bus_n)_$(s_name)" => p_name for ((s_bus_n, s_name), p_name) in id_mapping)
+serialize_component_ids(id_mapping::Dict{Tuple{Tuple{Int64, Int64}, String}, String}) =
+    Dict(
+        "$(s_bus_1)-$(s_bus_2)_$(s_name)" => p_name for
+        (((s_bus_1, s_bus_2), s_name), p_name) in id_mapping
+    )
+
 # Fetch PL, QL, IP, IQ, YP, YQ
 _psse_get_load_data(exporter::PSSEExporter, load::PSY.StandardLoad) =
     with_units(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
@@ -446,7 +455,7 @@ function _write_load_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
         )
     end
     end_group(io, md, exporter, "Load Data", true)
-    md["load_name_mapping"] = load_name_mapping  # TODO reshape to be better for import
+    md["load_name_mapping"] = serialize_component_ids(load_name_mapping)
 end
 
 """
@@ -477,7 +486,7 @@ function _write_fixed_bus_shunt_data(io::IO, md::AbstractDict, exporter::PSSEExp
         )
     end
     end_group(io, md, exporter, "Fixed Shunt Data", true)
-    md["shunt_name_mapping"] = shunt_name_mapping  # TODO reshape to be better for import
+    md["shunt_name_mapping"] = serialize_component_ids(shunt_name_mapping)
 end
 
 """
@@ -548,7 +557,7 @@ function _write_generator_data(io::IO, md::AbstractDict, exporter::PSSEExporter;
         )
     end
     end_group(io, md, exporter, "Generator Data", true)
-    md["generator_name_mapping"] = generator_name_mapping  # TODO reshape to be better for import
+    md["generator_name_mapping"] = serialize_component_ids(generator_name_mapping)
 end
 
 """
@@ -602,7 +611,7 @@ function _write_non_transformer_branch_data(
         )
     end
     end_group(io, md, exporter, "Non-Transformer Branch Data", true)
-    md["branch_name_mapping"] = branch_name_mapping
+    md["branch_name_mapping"] = serialize_component_ids(branch_name_mapping)
 end
 
 """
@@ -731,7 +740,7 @@ function _write_transformer_data(io::IO, md::AbstractDict, exporter::PSSEExporte
         joinln(io, [WINDV2, NOMV2])
     end
     end_group(io, md, exporter, "Transformer Data", true)
-    md["transformer_ckt_mapping"] = transformer_ckt_mapping
+    md["transformer_ckt_mapping"] = serialize_component_ids(transformer_ckt_mapping)
     md["transformer_name_mapping"] = transformer_name_mapping
 end
 
@@ -785,6 +794,7 @@ function write_export(
 )
     # Construct paths
     export_dir = joinpath(export_location, "Raw_Export", scenario_name, string(year))
+    mkpath(export_dir)
     @info "Exporting to $export_dir"
     raw_path = joinpath(export_dir, "$scenario_name.raw")
     md_path = joinpath(export_dir, "$(scenario_name)_metadata.json")
@@ -801,32 +811,34 @@ function write_export(
     )
     md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
 
-    # Each of these corresponds to a group of records in the PSS/E spec
-    _write_case_identification_data(raw, md, exporter, "$(scenario_name)_$(year)")
-    _write_bus_data(raw, md, exporter)
-    _write_load_data(raw, md, exporter)
-    _write_fixed_bus_shunt_data(raw, md, exporter)
-    _write_generator_data(raw, md, exporter; sources_as_generators = true)
-    _write_non_transformer_branch_data(raw, md, exporter)
-    _write_transformer_data(raw, md, exporter)
-    # TODO we'll eventually need area interchange data
-    _write_skip_group(raw, md, exporter, "Area Interchange Data")
-    _write_skip_group(raw, md, exporter, "Two-Terminal DC Transmission Line Data")
-    _write_skip_group(raw, md, exporter,
-        "Voltage Source Converter (VSC) DC Transmission Line Data")
-    _write_skip_group(raw, md, exporter, "Transformer Impedance Correction Tables")
-    _write_skip_group(raw, md, exporter,
-        "Multi-Terminal DC Transmission Line Data")
-    _write_skip_group(raw, md, exporter, "Multi-Section Line Grouping Data")
-    _write_zone_data(raw, md, exporter)
-    _write_skip_group(raw, md, exporter, "Interarea Transfer Data")
-    _write_skip_group(raw, md, exporter, "Owner Data")
-    _write_skip_group(raw, md, exporter, "FACTS Device Data")
-    # TODO we'll eventually need switched shunt data
-    _write_skip_group(raw, md, exporter, "Switched Shunt Data")
-    _write_skip_group(raw, md, exporter, "GNE Device Data")
-    _write_skip_group(raw, md, exporter, "Induction Machine Data")
-    _write_q_record(raw, md, exporter)
+    with_units(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
+        # Each of these corresponds to a group of records in the PSS/E spec
+        _write_case_identification_data(raw, md, exporter, "$(scenario_name)_$(year)")
+        _write_bus_data(raw, md, exporter)
+        _write_load_data(raw, md, exporter)
+        _write_fixed_bus_shunt_data(raw, md, exporter)
+        _write_generator_data(raw, md, exporter; sources_as_generators = true)
+        _write_non_transformer_branch_data(raw, md, exporter)
+        _write_transformer_data(raw, md, exporter)
+        # TODO we'll eventually need area interchange data
+        _write_skip_group(raw, md, exporter, "Area Interchange Data")
+        _write_skip_group(raw, md, exporter, "Two-Terminal DC Transmission Line Data")
+        _write_skip_group(raw, md, exporter,
+            "Voltage Source Converter (VSC) DC Transmission Line Data")
+        _write_skip_group(raw, md, exporter, "Transformer Impedance Correction Tables")
+        _write_skip_group(raw, md, exporter,
+            "Multi-Terminal DC Transmission Line Data")
+        _write_skip_group(raw, md, exporter, "Multi-Section Line Grouping Data")
+        _write_zone_data(raw, md, exporter)
+        _write_skip_group(raw, md, exporter, "Interarea Transfer Data")
+        _write_skip_group(raw, md, exporter, "Owner Data")
+        _write_skip_group(raw, md, exporter, "FACTS Device Data")
+        # TODO we'll eventually need switched shunt data
+        _write_skip_group(raw, md, exporter, "Switched Shunt Data")
+        _write_skip_group(raw, md, exporter, "GNE Device Data")
+        _write_skip_group(raw, md, exporter, "Induction Machine Data")
+        _write_q_record(raw, md, exporter)
+    end
 
     skipped_groups = [k for (k, v) in md["record_groups"] if !v]
     !isempty(skipped_groups) && @warn "Skipped groups: $(join(skipped_groups, ", "))"
@@ -848,6 +860,125 @@ function get_psse_export_paths(
 )
     base_path = joinpath(export_location, "Raw_Export", string(scenario_name), string(year))
     raw_path = joinpath(base_path, "$scenario_name.raw")
-    metadata_path = joinpath(base_path, "raw_metadata_log.json")
+    metadata_path = joinpath(base_path, "$(scenario_name)_metadata.json")
     return (raw_path, metadata_path)
+end
+
+# REIMPORTING
+# TODO probably this all should be moved to PowerSystems
+reverse_dict(d::Dict) = Dict(map(reverse, collect(d)))
+
+function split_first_rest(s::AbstractString; delim = "_")
+    splitted = split(s, delim)
+    return first(splitted), join(splitted[2:end], delim)
+end
+
+"Convert a s_bus_n_s_name => p_name dictionary to a (p_bus_n, p_name) => s_name dictionary"
+deserialize_reverse_component_ids(
+    mapping,
+    bus_number_mapping,
+    ::T,
+) where {T <: Type{Int64}} =
+    Dict(
+        let
+            (s_bus_n, s_name) = split_first_rest(s_bus_n_s_name)
+            p_bus_n = bus_number_mapping[s_bus_n]
+            (p_bus_n, p_name) => s_name
+        end
+        for (s_bus_n_s_name, p_name) in mapping)
+deserialize_reverse_component_ids(
+    mapping,
+    bus_number_mapping,
+    ::T,
+) where {T <: Type{Tuple{Int64, Int64}}} =
+    Dict(
+        let
+            (s_buses, s_name) = split_first_rest(s_buses_s_name)
+            (s_bus_1, s_bus_2) = split(s_buses, "-")
+            (p_bus_1, p_bus_2) = bus_number_mapping[s_bus_1], bus_number_mapping[s_bus_2]
+            ((p_bus_1, p_bus_2), p_name) => s_name
+        end
+        for (s_buses_s_name, p_name) in mapping)
+
+# TODO figure out where these are coming from and fix at the source
+# I think it has to do with per-unit conversions creating a division by zero, because `set_[re]active_power!(..., 0.0)` doesn't fix it
+"Iterate over all the `Generator`s in the system and, if any `active_power` or `reactive_power` fields are `NaN`, make them `0.0`"
+function fix_nans!(sys::PSY.System)
+    for gen in PSY.get_components(PSY.Generator, sys)
+        isnan(PSY.get_active_power(gen)) && (gen.active_power = 0.0)
+        isnan(PSY.get_reactive_power(gen)) && (gen.reactive_power = 0.0)
+    end
+end
+
+# TODO this should be a System constructor kwarg, like bus_name_formatter
+# See https://github.com/NREL-Sienna/PowerSystems.jl/issues/1160
+"Rename all the `LoadZone`s in the system according to the `Load_Zone_Name_Mapping` in the metadata"
+function fix_load_zone_names!(sys::PSY.System, md::Dict)
+    lz_map = reverse_dict(md["zone_number_mapping"])
+    # `collect` is necessary due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1161
+    for load_zone in collect(PSY.get_components(PSY.LoadZone, sys))
+        old_name = PSY.get_name(load_zone)
+        new_name = lz_map[parse(Int64, old_name)]
+        (old_name != new_name) && PSY.set_name!(sys, load_zone, new_name)
+    end
+end
+
+"""
+Use PSS/E exporter metadata to build a function that maps component names back to their
+original Sienna values.
+"""
+function name_formatter_from_component_ids(raw_name_mapping, bus_number_mapping, sig)
+    reversed_name_mapping =
+        deserialize_reverse_component_ids(raw_name_mapping, bus_number_mapping, sig)
+    function component_id_formatter(device_dict)
+        (p_bus_n, p_name) = device_dict["source_id"][2:3]
+        (p_bus_n isa Integer) || (p_bus_n = parse(Int64, p_bus_n))
+        new_name = reversed_name_mapping[(p_bus_n, p_name)]
+        return new_name
+    end
+    return component_id_formatter
+end
+
+function PSY.System(raw_path::AbstractString, md::Dict)
+    bus_name_map = reverse_dict(md["bus_name_mapping"])  # PSS/E bus name -> Sienna bus name
+    bus_number_map = reverse_dict(md["bus_number_mapping"])  # PSS/E bus number -> Sienna bus number
+    all_branch_name_map = deserialize_reverse_component_ids(
+        merge(md["branch_name_mapping"], md["transformer_ckt_mapping"]),
+        md["bus_number_mapping"],
+        Tuple{Int64, Int64},
+    )
+
+    bus_name_formatter = device_dict -> bus_name_map[device_dict["name"]]
+    gen_name_formatter = name_formatter_from_component_ids(
+        md["generator_name_mapping"],
+        md["bus_number_mapping"],
+        Int64,
+    )
+    load_name_formatter = name_formatter_from_component_ids(
+        md["load_name_mapping"],
+        md["bus_number_mapping"],
+        Int64,
+    )
+    function branch_name_formatter(
+        device_dict::Dict,
+        bus_f::PSY.ACBus,
+        bus_t::PSY.ACBus,
+    )::String
+        sid = device_dict["source_id"]
+        (p_bus_1, p_bus_2, p_name) =
+            (length(sid) == 6) ? [sid[2], sid[3], sid[5]] : last(sid, 3)
+        return all_branch_name_map[((p_bus_1, p_bus_2), p_name)]
+    end
+
+    sys =
+        System(raw_path;
+            bus_name_formatter = bus_name_formatter,
+            gen_name_formatter = gen_name_formatter,
+            load_name_formatter = load_name_formatter,
+            branch_name_formatter = branch_name_formatter)
+    fix_nans!(sys)
+    fix_load_zone_names!(sys, md)
+    # TODO remap bus numbers
+    # TODO remap everything else! Should be reading all the keys in `md`
+    return sys
 end

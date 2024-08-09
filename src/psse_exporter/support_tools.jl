@@ -47,18 +47,42 @@ function Line_states(sys::System)
         ), [:from_bus, :to_bus, "line_name"])
 end
 
-function StandardLoad_states(sys::System)
-    loads = collect(PSY.get_components(PSY.StandardLoad, sys))
+# Hacky, temporary
+function getter_with_default(fn, arg, default = 0.0)
+    try
+        return fn(arg)
+    catch
+        (default isa Function) && return default(arg)
+        return default
+    end
+end
+
+function StaticLoad_states(sys::System)
+    loads = collect(PSY.get_components(PSY.StaticLoad, sys))
     return sort(
         DataFrame(
             "load_name" => PSY.get_name.(loads),
             "load_bus" => PSY.get_number.(PSY.get_bus.(loads)),
-            "constant_active_power" => PSY.get_constant_active_power.(loads),
-            "constant_reactive_power" => PSY.get_constant_reactive_power.(loads),
-            "impedance_active_power" => PSY.get_impedance_active_power.(loads),
-            "impedance reactive_power" => PSY.get_impedance_reactive_power.(loads),
-            "current_active_power" => PSY.get_current_active_power.(loads),
-            "current_reactive_power" => PSY.get_current_reactive_power.(loads),
+            "constant_active_power" =>
+                getter_with_default.(
+                    PSY.get_constant_active_power,
+                    loads,
+                    PSY.get_active_power,
+                ),
+            "constant_reactive_power" =>
+                getter_with_default.(
+                    PSY.get_constant_reactive_power,
+                    loads,
+                    PSY.get_reactive_power,
+                ),
+            "impedance_active_power" =>
+                getter_with_default.(PSY.get_impedance_active_power, loads),
+            "impedance_reactive_power" =>
+                getter_with_default.(PSY.get_impedance_reactive_power, loads),
+            "current_active_power" =>
+                getter_with_default.(PSY.get_current_active_power, loads),
+            "current_reactive_power" =>
+                getter_with_default.(PSY.get_current_reactive_power, loads),
         ),
     )
 end
