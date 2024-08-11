@@ -1,3 +1,5 @@
+# Old test helper functions, soon to be deleted
+
 function Bus_states(sys::System)
     buses = collect(PSY.get_components(PSY.Bus, sys))
     return sort(
