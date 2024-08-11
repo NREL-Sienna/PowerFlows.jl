@@ -13,6 +13,8 @@ const PSSE_DEFAULT_OWNERSHIP = let
     F1, F2, F3, F4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
     O1, F1, O2, F2, O3, F3, O4, F4
 end
+
+# Each of the groups in the PSS/3 v33 standard
 const PSSE_GROUPS_33 = [
     "Case Identification Data",
     "Bus Data",
@@ -187,7 +189,8 @@ _psse_container_numbers(container_names::Vector{String}) =
     )
 
 "WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Case Identification Data"
-function _write_case_identification_data(
+function _write_raw(
+    ::Val{Symbol("Case Identification Data")},
     io::IO,
     md::AbstractDict,
     exporter::PSSEExporter,
@@ -302,7 +305,12 @@ end
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Bus Data. Sienna voltage limits treated as PSS/E
 normal voltage limits; PSSE emergency voltage limits left as default.
 """
-function _write_bus_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
+function _write_raw(
+    ::Val{Symbol("Bus Data")},
+    io::IO,
+    md::AbstractDict,
+    exporter::PSSEExporter,
+)
     check_33(exporter)
 
     buses = sort!(collect(PSY.get_components(PSY.Bus, exporter.system));
@@ -431,7 +439,12 @@ _psse_get_load_data(exporter::PSSEExporter, load::PSY.StaticLoad) =
 """
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Load Data
 """
-function _write_load_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
+function _write_raw(
+    ::Val{Symbol("Load Data")},
+    io::IO,
+    md::AbstractDict,
+    exporter::PSSEExporter,
+)
     check_33(exporter)
 
     loads = sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system));
@@ -465,7 +478,12 @@ end
 """
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
 """
-function _write_fixed_bus_shunt_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
+function _write_raw(
+    ::Val{Symbol("Fixed Shunt Data")},
+    io::IO,
+    md::AbstractDict,
+    exporter::PSSEExporter,
+)
     check_33(exporter)
 
     shunts = sort!(collect(PSY.get_components(PSY.FixedAdmittance, exporter.system));
@@ -497,9 +515,10 @@ end
 If the flag `sources_as_generators` is set, export `PSY.Source` instances as PSS/E
 generators in addition to `PSY.Generator`s
 
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Generator Data
 """
-function _write_generator_data(io::IO, md::AbstractDict, exporter::PSSEExporter;
+function _write_raw(::Val{Symbol("Generator Data")}, io::IO, md::AbstractDict,
+    exporter::PSSEExporter;
     sources_as_generators = false,
 )
     check_33(exporter)
@@ -565,9 +584,9 @@ function _write_generator_data(io::IO, md::AbstractDict, exporter::PSSEExporter;
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Non-Transformer Branch Data
 """
-function _write_non_transformer_branch_data(
+function _write_raw(::Val{Symbol("Non-Transformer Branch Data")},
     io::IO,
     md::AbstractDict,
     exporter::PSSEExporter,
@@ -659,9 +678,10 @@ end
 """
 Currently only supports two-winding transformers
 
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Data
 """
-function _write_transformer_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
+function _write_raw(::Val{Symbol("Transformer Data")},
+    io::IO, md::AbstractDict, exporter::PSSEExporter)
     check_33(exporter)
     transformer_types =
         Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
@@ -754,7 +774,8 @@ Assumes that the Sienna zone names are already PSS/E compatible
 
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Zone Data
 """
-function _write_zone_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
+function _write_raw(::Val{Symbol("Zone Data")},
+    io::IO, md::AbstractDict, exporter::PSSEExporter)
     check_33(exporter)
     zone_number_mapping = md["zone_number_mapping"]
     zones = sort!(
@@ -772,7 +793,15 @@ function _write_zone_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
     end_group_33(io, md, exporter, "Zone Data", true)
 end
 
-function _write_q_record(io::IO, md::AbstractDict, exporter::PSSEExporter)
+"""
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Q Record
+"""
+function _write_raw(
+    ::Val{Symbol("Q Record")},
+    io::IO,
+    md::AbstractDict,
+    exporter::PSSEExporter,
+)
     check_33(exporter)
     println(io, "Q")  # End of file
     md["record_groups"]["Q Record"] = true
@@ -817,13 +846,25 @@ function write_export(
 
     with_units(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
         # Each of these corresponds to a group of records in the PSS/E spec
-        _write_case_identification_data(raw, md, exporter, "$(scenario_name)_$(year)")
-        _write_bus_data(raw, md, exporter)
-        _write_load_data(raw, md, exporter)
-        _write_fixed_bus_shunt_data(raw, md, exporter)
-        _write_generator_data(raw, md, exporter; sources_as_generators = true)
-        _write_non_transformer_branch_data(raw, md, exporter)
-        _write_transformer_data(raw, md, exporter)
+        _write_raw(
+            Val{Symbol("Case Identification Data")}(),
+            raw,
+            md,
+            exporter,
+            "$(scenario_name)_$(year)",
+        )
+        _write_raw(Val{Symbol("Bus Data")}(), raw, md, exporter)
+        _write_raw(Val{Symbol("Load Data")}(), raw, md, exporter)
+        _write_raw(Val{Symbol("Fixed Shunt Data")}(), raw, md, exporter)
+        _write_raw(
+            Val{Symbol("Generator Data")}(),
+            raw,
+            md,
+            exporter;
+            sources_as_generators = true,
+        )
+        _write_raw(Val{Symbol("Non-Transformer Branch Data")}(), raw, md, exporter)
+        _write_raw(Val{Symbol("Transformer Data")}(), raw, md, exporter)
         # TODO we'll eventually need area interchange data
         _write_skip_group(raw, md, exporter, "Area Interchange Data")
         _write_skip_group(raw, md, exporter, "Two-Terminal DC Transmission Line Data")
@@ -833,7 +874,7 @@ function write_export(
         _write_skip_group(raw, md, exporter,
             "Multi-Terminal DC Transmission Line Data")
         _write_skip_group(raw, md, exporter, "Multi-Section Line Grouping Data")
-        _write_zone_data(raw, md, exporter)
+        _write_raw(Val{Symbol("Zone Data")}(), raw, md, exporter)
         _write_skip_group(raw, md, exporter, "Interarea Transfer Data")
         _write_skip_group(raw, md, exporter, "Owner Data")
         _write_skip_group(raw, md, exporter, "FACTS Device Data")
@@ -841,7 +882,7 @@ function write_export(
         _write_skip_group(raw, md, exporter, "Switched Shunt Data")
         _write_skip_group(raw, md, exporter, "GNE Device Data")
         _write_skip_group(raw, md, exporter, "Induction Machine Data")
-        _write_q_record(raw, md, exporter)
+        _write_raw(Val{Symbol("Q Record")}(), raw, md, exporter)
     end
 
     skipped_groups = [k for (k, v) in md["record_groups"] if !v]
