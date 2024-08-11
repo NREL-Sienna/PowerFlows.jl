@@ -194,7 +194,6 @@ function _write_raw(
     io::IO,
     md::AbstractDict,
     exporter::PSSEExporter,
-    case_name::String,
 )
     check_33(exporter)
     now = Dates.now()
@@ -211,6 +210,7 @@ function _write_raw(
     joinln(io, (IC, SBASE, REV, XFRRAT, NXFRAT, BASFRQ))  # Tuple to avoid type promotion
 
     # Record 2
+    case_name = md["case_name"]
     (length(case_name) <= 60) ||
         throw(ArgumentError("case_name may be up to 60 characters"))
     println(io, case_name)
@@ -512,21 +512,23 @@ function _write_raw(
 end
 
 """
-If the flag `sources_as_generators` is set, export `PSY.Source` instances as PSS/E
-generators in addition to `PSY.Generator`s
+If the export_settings flag `sources_as_generators` is set, export `PSY.Source` instances as
+PSS/E generators in addition to `PSY.Generator`s
 
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Generator Data
 """
-function _write_raw(::Val{Symbol("Generator Data")}, io::IO, md::AbstractDict,
+function _write_raw(
+    ::Val{Symbol("Generator Data")},
+    io::IO,
+    md::AbstractDict,
     exporter::PSSEExporter;
-    sources_as_generators = false,
 )
     check_33(exporter)
 
     generators::Vector{PSY.StaticInjection} =
         sort!(collect(PSY.get_components(PSY.Generator, exporter.system));
             by = PSY.get_name)
-    sources_as_generators && append!(generators,
+    get(md["export_settings"], "sources_as_generators", false) && append!(generators,
         sort!(collect(PSY.get_components(PSY.Source, exporter.system)); by = PSY.get_name))
     generator_name_mapping =
         create_component_ids(
@@ -586,7 +588,8 @@ end
 """
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Non-Transformer Branch Data
 """
-function _write_raw(::Val{Symbol("Non-Transformer Branch Data")},
+function _write_raw(
+    ::Val{Symbol("Non-Transformer Branch Data")},
     io::IO,
     md::AbstractDict,
     exporter::PSSEExporter,
@@ -680,8 +683,12 @@ Currently only supports two-winding transformers
 
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Data
 """
-function _write_raw(::Val{Symbol("Transformer Data")},
-    io::IO, md::AbstractDict, exporter::PSSEExporter)
+function _write_raw(
+    ::Val{Symbol("Transformer Data")},
+    io::IO,
+    md::AbstractDict,
+    exporter::PSSEExporter,
+)
     check_33(exporter)
     transformer_types =
         Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
@@ -774,8 +781,12 @@ Assumes that the Sienna zone names are already PSS/E compatible
 
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Zone Data
 """
-function _write_raw(::Val{Symbol("Zone Data")},
-    io::IO, md::AbstractDict, exporter::PSSEExporter)
+function _write_raw(
+    ::Val{Symbol("Zone Data")},
+    io::IO,
+    md::AbstractDict,
+    exporter::PSSEExporter,
+)
     check_33(exporter)
     zone_number_mapping = md["zone_number_mapping"]
     zones = sort!(
@@ -818,6 +829,13 @@ function _write_skip_group(
     md["record_groups"][this_section_name] = false
 end
 
+# If a writer for a given group is not defined, write that we are skipping it
+function _write_raw(::Val{T}, io::IO, md::AbstractDict, exporter::PSSEExporter) where {T}
+    group_name = string(T)
+    @debug "Export for group $group_name not implemented, skipping it"
+    _write_skip_group(io, md, exporter, group_name)
+end
+
 "Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
 function write_export(
     exporter::PSSEExporter,
@@ -835,6 +853,8 @@ function write_export(
     # Build export files in buffers
     raw = IOBuffer()
     md = OrderedDict()
+    md["case_name"] = "$(scenario_name)_$(year)"
+    md["export_settings"] = OrderedDict("sources_as_generators" => true)
     # These mappings are accessed in e.g. _write_bus_data via the metadata
     md["area_mapping"] = _psse_container_numbers(
         sort!(collect(PSY.get_name.(PSY.get_components(PSY.Area, exporter.system)))),
@@ -846,43 +866,10 @@ function write_export(
 
     with_units(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
         # Each of these corresponds to a group of records in the PSS/E spec
-        _write_raw(
-            Val{Symbol("Case Identification Data")}(),
-            raw,
-            md,
-            exporter,
-            "$(scenario_name)_$(year)",
-        )
-        _write_raw(Val{Symbol("Bus Data")}(), raw, md, exporter)
-        _write_raw(Val{Symbol("Load Data")}(), raw, md, exporter)
-        _write_raw(Val{Symbol("Fixed Shunt Data")}(), raw, md, exporter)
-        _write_raw(
-            Val{Symbol("Generator Data")}(),
-            raw,
-            md,
-            exporter;
-            sources_as_generators = true,
-        )
-        _write_raw(Val{Symbol("Non-Transformer Branch Data")}(), raw, md, exporter)
-        _write_raw(Val{Symbol("Transformer Data")}(), raw, md, exporter)
-        # TODO we'll eventually need area interchange data
-        _write_skip_group(raw, md, exporter, "Area Interchange Data")
-        _write_skip_group(raw, md, exporter, "Two-Terminal DC Transmission Line Data")
-        _write_skip_group(raw, md, exporter,
-            "Voltage Source Converter (VSC) DC Transmission Line Data")
-        _write_skip_group(raw, md, exporter, "Transformer Impedance Correction Tables")
-        _write_skip_group(raw, md, exporter,
-            "Multi-Terminal DC Transmission Line Data")
-        _write_skip_group(raw, md, exporter, "Multi-Section Line Grouping Data")
-        _write_raw(Val{Symbol("Zone Data")}(), raw, md, exporter)
-        _write_skip_group(raw, md, exporter, "Interarea Transfer Data")
-        _write_skip_group(raw, md, exporter, "Owner Data")
-        _write_skip_group(raw, md, exporter, "FACTS Device Data")
-        # TODO we'll eventually need switched shunt data
-        _write_skip_group(raw, md, exporter, "Switched Shunt Data")
-        _write_skip_group(raw, md, exporter, "GNE Device Data")
-        _write_skip_group(raw, md, exporter, "Induction Machine Data")
-        _write_raw(Val{Symbol("Q Record")}(), raw, md, exporter)
+        for group_name in PSSE_GROUPS_33
+            @debug "Writing export for group $group_name"
+            _write_raw(Val{Symbol(group_name)}(), raw, md, exporter)
+        end
     end
 
     skipped_groups = [k for (k, v) in md["record_groups"] if !v]
@@ -893,7 +880,6 @@ function write_export(
     open(file -> JSON3.pretty(file, md), md_path; truncate = true)
 end
 
-# TODO remove duplication between here and Write_Sienna2PSSE
 "Calculate the paths of the (raw, metadata) files that would be written by a certain call to `write_export`"
 function get_psse_export_paths(
     scenario_name::AbstractString,

@@ -317,7 +317,7 @@ function test_psse_export_strict_equality(
     metadata1,
     raw2,
     metadata2;
-    exclude_metadata_keys = ["Raw_File_Export_Location"],
+    exclude_metadata_keys = ["case_name"],
 )
     open(raw1, "r") do handle1
         open(raw2, "r") do handle2
