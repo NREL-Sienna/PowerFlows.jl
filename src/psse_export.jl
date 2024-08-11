@@ -141,17 +141,20 @@ function joinln(io::IO, iterator, delim = ", "; strip_trailing_empties = true)  
     println(io)
 end
 
-function end_group(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name, written)
+function end_group_33(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name, written)
     next_group = PSSE_GROUPS_33[only(findall(==(group_name), PSSE_GROUPS_33)) + 1]
-    ender = "0"
-    exporter.write_comments && (ender *= " / End of $group_name")
-    (next_group == "Q Record") || (ender *= ", Begin $next_group")
-    println(io, ender)
+    end_msg = "0"
+    if exporter.write_comments
+        end_msg *= " / End of $group_name"
+        (next_group == "Q Record") || (end_msg *= ", Begin $next_group")
+    end
+    println(io, end_msg)
     md["record_groups"][group_name] = written
 end
 
 _permissive_parse_int(x) = Int64(parse(Float64, x))  # Parses "1.0" as 1, errors on "1.5"
 
+# PERF could be improved by appending to the buffer rather than doing string interpolation, seems unnecessary
 _psse_quote_string(s::String) = "'$s'"
 
 branch_to_bus_numbers(branch) =
@@ -324,7 +327,7 @@ function _write_bus_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
         EVLO = PSSE_DEFAULT
         joinln(io, [I, NAME, BASKV, IDE, AREA, ZONE, OWNER, VM, VA, NVHI, NVLO, EVHI, EVLO])
     end
-    end_group(io, md, exporter, "Bus Data", true)
+    end_group_33(io, md, exporter, "Bus Data", true)
 
     md["bus_number_mapping"] = bus_number_mapping
     md["bus_name_mapping"] = bus_name_mapping
@@ -455,7 +458,7 @@ function _write_load_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
             [I, ID, STATUS, AREA, ZONE, PL, QL, IP, IQ, YP, YQ, OWNER, SCALE, INTRPT],
         )
     end
-    end_group(io, md, exporter, "Load Data", true)
+    end_group_33(io, md, exporter, "Load Data", true)
     md["load_name_mapping"] = serialize_component_ids(load_name_mapping)
 end
 
@@ -486,7 +489,7 @@ function _write_fixed_bus_shunt_data(io::IO, md::AbstractDict, exporter::PSSEExp
             [I, ID, STATUS, GL, BL],
         )
     end
-    end_group(io, md, exporter, "Fixed Shunt Data", true)
+    end_group_33(io, md, exporter, "Fixed Shunt Data", true)
     md["shunt_name_mapping"] = serialize_component_ids(shunt_name_mapping)
 end
 
@@ -557,7 +560,7 @@ function _write_generator_data(io::IO, md::AbstractDict, exporter::PSSEExporter;
                 RMPCT, PT, PB, PSSE_DEFAULT_OWNERSHIP..., WMOD, WPF],
         )
     end
-    end_group(io, md, exporter, "Generator Data", true)
+    end_group_33(io, md, exporter, "Generator Data", true)
     md["generator_name_mapping"] = serialize_component_ids(generator_name_mapping)
 end
 
@@ -611,7 +614,7 @@ function _write_non_transformer_branch_data(
                 PSSE_DEFAULT_OWNERSHIP...],
         )
     end
-    end_group(io, md, exporter, "Non-Transformer Branch Data", true)
+    end_group_33(io, md, exporter, "Non-Transformer Branch Data", true)
     md["branch_name_mapping"] = serialize_component_ids(branch_name_mapping)
 end
 
@@ -740,7 +743,7 @@ function _write_transformer_data(io::IO, md::AbstractDict, exporter::PSSEExporte
         )
         joinln(io, [WINDV2, NOMV2])
     end
-    end_group(io, md, exporter, "Transformer Data", true)
+    end_group_33(io, md, exporter, "Transformer Data", true)
     md["transformer_ckt_mapping"] = serialize_component_ids(transformer_ckt_mapping)
     md["transformer_name_mapping"] = transformer_name_mapping
 end
@@ -766,7 +769,7 @@ function _write_zone_data(io::IO, md::AbstractDict, exporter::PSSEExporter)
 
         joinln(io, [I, ZONAME])
     end
-    end_group(io, md, exporter, "Zone Data", true)
+    end_group_33(io, md, exporter, "Zone Data", true)
 end
 
 function _write_q_record(io::IO, md::AbstractDict, exporter::PSSEExporter)
@@ -782,7 +785,7 @@ function _write_skip_group(
     this_section_name::String,
 )
     check_33(exporter)
-    end_group(io, md, exporter, this_section_name, false)
+    end_group_33(io, md, exporter, this_section_name, false)
     md["record_groups"][this_section_name] = false
 end
 
