@@ -82,7 +82,7 @@ mutable struct PSSEExporter
 
     function PSSEExporter(
         base_system::PSY.System,
-        psse_version::Symbol,
+        psse_version::Symbol;
         write_comments::Bool = false,
     )
         (psse_version in PSSE_EXPORT_SUPPORTED_VERSIONS) ||

@@ -464,6 +464,10 @@ end
         compare_systems_wrapper(sys, reread_sys3, sys3_metadata))
     # test_power_flow(sys3, reread_sys3)  # TODO fix power flow, see above
 
+    # Exporting with write_comments should be comparable to original system
+    exporter = PSSEExporter(sys, :v33; write_comments = true)
+    test_psse_round_trip(sys, exporter, "basic6", 2024, export_location;
+        do_power_flow_test = false)
 end
 
 @testset "Test exporter helper functions" begin
