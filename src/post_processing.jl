@@ -175,6 +175,7 @@ function _power_redistribution_ref(
     P_gen::Float64,
     Q_gen::Float64,
     bus::PSY.Bus,
+    max_iterations::Int,
 )
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
@@ -199,7 +200,7 @@ function _power_redistribution_ref(
     if length(devices_) == 1
         device = first(devices_)
         PSY.set_active_power!(device, P_gen)
-        _reactive_power_redistribution_pv(sys, Q_gen, bus)
+        _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
         return
     elseif length(devices_) > 1
         devices =
@@ -258,7 +259,7 @@ function _power_redistribution_ref(
                 break
             end
             it += 1
-            if it > 10
+            if it > max_iterations
                 break
             end
         end
@@ -276,11 +277,16 @@ function _power_redistribution_ref(
             end
         end
     end
-    _reactive_power_redistribution_pv(sys, Q_gen, bus)
+    _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
     return
 end
 
-function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus::PSY.Bus)
+function _reactive_power_redistribution_pv(
+    sys::PSY.System,
+    Q_gen::Float64,
+    bus::PSY.Bus,
+    max_iterations::Int,
+)
     @debug "Reactive Power Distribution $(PSY.get_name(bus))"
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
@@ -387,13 +393,13 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
                 else
                     PSY.InfrastructureSystems.@assert_op fraction > 0
                 end
-
                 current_q = PSY.get_reactive_power(d)
                 q_frac = q_residual * fraction
                 q_set_point = clamp(q_frac + current_q, q_limits.min, q_limits.max)
-                reallocated_q += q_frac
-                if (q_frac >= q_limits.max + BOUNDS_TOLERANCE) ||
-                   (q_frac <= q_limits.min - BOUNDS_TOLERANCE)
+                # Assign new capacity based on the limits and the fraction
+                reallocated_q += q_set_point - current_q
+                if ((q_frac + current_q) >= q_limits.max + BOUNDS_TOLERANCE) ||
+                   ((q_frac + current_q) <= q_limits.min - BOUNDS_TOLERANCE)
                     push!(units_at_limit, ix)
                     @warn "Unit $(PSY.get_name(d)) set at the limit $(q_set_point). Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
                 end
@@ -405,12 +411,14 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
                 break
             end
             it += 1
-            if it > 1
+            if it > max_iterations
+                @warn "Maximum number of iterations for Q-redistribution reached. Number of devices at Q limit are: $(length(units_at_limit)) of $(length(devices)) available devices"
                 break
             end
         end
     end
 
+    # Last attempt to allocate reactive power
     if !isapprox(q_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
         remaining_unit_index = setdiff(1:length(devices), units_at_limit)
         @assert length(remaining_unit_index) == 1 remaining_unit_index
@@ -425,13 +433,23 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
         end
     end
 
+    @assert isapprox(
+        sum(PSY.get_reactive_power.(devices)),
+        Q_gen;
+        atol = ISAPPROX_ZERO_TOLERANCE,
+    )
+
     return
 end
 
 """
 Updates system voltages and powers with power flow results
 """
-function write_powerflow_solution!(sys::PSY.System, result::Vector{Float64})
+function write_powerflow_solution!(
+    sys::PSY.System,
+    result::Vector{Float64},
+    max_iterations::Int,
+)
     buses = enumerate(
         sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x)),
     )
@@ -440,11 +458,11 @@ function write_powerflow_solution!(sys::PSY.System, result::Vector{Float64})
         if bus.bustype == PSY.ACBusTypes.REF
             P_gen = result[2 * ix - 1]
             Q_gen = result[2 * ix]
-            _power_redistribution_ref(sys, P_gen, Q_gen, bus)
+            _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations)
         elseif bus.bustype == PSY.ACBusTypes.PV
             Q_gen = result[2 * ix - 1]
             bus.angle = result[2 * ix]
-            _reactive_power_redistribution_pv(sys, Q_gen, bus)
+            _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
         elseif bus.bustype == PSY.ACBusTypes.PQ
             Vm = result[2 * ix - 1]
             θ = result[2 * ix]
@@ -488,14 +506,10 @@ function _allocate_results_data(
     Q_from_to_vect = zeros(length(branches))
     P_to_from_vect = zeros(length(branches))
     Q_to_from_vect = zeros(length(branches))
+    # branch_flow_values is always from_to direction
     for i in 1:length(branches)
-        if branch_flow_values[i] >= 0
-            P_from_to_vect[i] = branch_flow_values[i]
-            P_to_from_vect[i] = 0
-        else
-            P_from_to_vect[i] = 0
-            P_to_from_vect[i] = branch_flow_values[i]
-        end
+        P_from_to_vect[i] = branch_flow_values[i]
+        P_to_from_vect[i] = -branch_flow_values[i]
     end
 
     bus_df = DataFrames.DataFrame(;
@@ -529,7 +543,7 @@ end
 
 """
 Returns a dictionary containing the DC power flow results. Each key conresponds
-to the name of the considered time periods, storing a DataFrame with the OPF
+to the name of the considered time periods, storing a DataFrame with the PF
 results.
 
 # Arguments:
