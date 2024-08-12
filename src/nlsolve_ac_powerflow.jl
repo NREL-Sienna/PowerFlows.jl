@@ -41,8 +41,7 @@ function solve_ac_powerflow!(system::PSY.System; kwargs...)
         system;
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
-    max_iterations =
-        get(kwargs, :max_redistribution_iterations, DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
+    max_iterations = DEFAULT_MAX_REDISTRIBUTION_ITERATIONS
     res = _solve_powerflow!(data, check_reactive_power_limits; kwargs...)
     if res.f_converged
         write_powerflow_solution!(system, res.zero, max_iterations)
