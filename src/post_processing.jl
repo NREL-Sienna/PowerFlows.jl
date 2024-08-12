@@ -175,6 +175,7 @@ function _power_redistribution_ref(
     P_gen::Float64,
     Q_gen::Float64,
     bus::PSY.Bus,
+    max_iterations::Int,
 )
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
@@ -199,7 +200,7 @@ function _power_redistribution_ref(
     if length(devices_) == 1
         device = first(devices_)
         PSY.set_active_power!(device, P_gen)
-        _reactive_power_redistribution_pv(sys, Q_gen, bus)
+        _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
         return
     elseif length(devices_) > 1
         devices =
@@ -258,7 +259,7 @@ function _power_redistribution_ref(
                 break
             end
             it += 1
-            if it > 10
+            if it > max_iterations
                 break
             end
         end
@@ -276,11 +277,16 @@ function _power_redistribution_ref(
             end
         end
     end
-    _reactive_power_redistribution_pv(sys, Q_gen, bus)
+    _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
     return
 end
 
-function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus::PSY.Bus)
+function _reactive_power_redistribution_pv(
+    sys::PSY.System,
+    Q_gen::Float64,
+    bus::PSY.Bus,
+    max_iterations::Int,
+)
     @debug "Reactive Power Distribution $(PSY.get_name(bus))"
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
@@ -405,7 +411,7 @@ function _reactive_power_redistribution_pv(sys::PSY.System, Q_gen::Float64, bus:
                 break
             end
             it += 1
-            if it > 5
+            if it > max_iterations
                 @warn "Maximum number of iterations for Q-redistribution reached. Number of devices at Q limit are: $(length(units_at_limit)) of $(length(devices)) available devices"
                 break
             end
@@ -439,7 +445,11 @@ end
 """
 Updates system voltages and powers with power flow results
 """
-function write_powerflow_solution!(sys::PSY.System, result::Vector{Float64})
+function write_powerflow_solution!(
+    sys::PSY.System,
+    result::Vector{Float64},
+    max_iterations::Int,
+)
     buses = enumerate(
         sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x)),
     )
@@ -448,11 +458,11 @@ function write_powerflow_solution!(sys::PSY.System, result::Vector{Float64})
         if bus.bustype == PSY.ACBusTypes.REF
             P_gen = result[2 * ix - 1]
             Q_gen = result[2 * ix]
-            _power_redistribution_ref(sys, P_gen, Q_gen, bus)
+            _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations)
         elseif bus.bustype == PSY.ACBusTypes.PV
             Q_gen = result[2 * ix - 1]
             bus.angle = result[2 * ix]
-            _reactive_power_redistribution_pv(sys, Q_gen, bus)
+            _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
         elseif bus.bustype == PSY.ACBusTypes.PQ
             Vm = result[2 * ix - 1]
             θ = result[2 * ix]
