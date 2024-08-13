@@ -26,12 +26,23 @@ function modify_rts_system!(sys::System)
     ref_bus = get_bus(sys, 113)  # "Arne"
     @assert get_bustype(ref_bus) == ACBusTypes.REF
     # NOTE: we are not testing the correctness of _power_redistribution_ref here, it is used on both sides of the test
-    PF._power_redistribution_ref(sys, 2.4375, 0.1875, ref_bus)
+    PF._power_redistribution_ref(
+        sys,
+        2.4375,
+        0.1875,
+        ref_bus,
+        PF.DEFAULT_MAX_REDISTRIBUTION_ITERATIONS,
+    )
 
     # For PV bus, active and voltage are fixed; update reactive and angle
     pv_bus = get_bus(sys, 202)  # "Bacon"
     @assert get_bustype(pv_bus) == ACBusTypes.PV
-    PF._reactive_power_redistribution_pv(sys, 0.37267, pv_bus)
+    PF._reactive_power_redistribution_pv(
+        sys,
+        0.37267,
+        pv_bus,
+        PF.DEFAULT_MAX_REDISTRIBUTION_ITERATIONS,
+    )
     set_angle!(pv_bus, -0.13778)
 
     # For PQ bus, active and reactive are fixed; update voltage and angle

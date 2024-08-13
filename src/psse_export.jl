@@ -544,15 +544,20 @@ function _write_raw(
                 generator_name_mapping[(sienna_bus_number, PSY.get_name(generator))],
             )  # TODO should this be quoted?
         PG, QG = with_units(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
-            # Doing the conversion myself due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1164
+            # TODO doing the conversion myself due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1164
             PSY.get_active_power(generator) * PSY.get_base_power(exporter.system),
             PSY.get_reactive_power(generator) * PSY.get_base_power(exporter.system)
-        end  # TODO fix units
+        end
         # TODO approximate a QT for generators that don't have it set
         # (this is needed to run power flows also)
-        QT = PSY.get_reactive_power_limits(generator).max
+        reactive_power_limits = with_units(
+            () -> PSY.get_reactive_power_limits(generator),
+            exporter.system,
+            PSY.UnitSystem.NATURAL_UNITS,
+        )
+        QT = reactive_power_limits.max
         isfinite(QT) || (QT = PSSE_DEFAULT)  # Catch Inf, etc.
-        QB = PSY.get_reactive_power_limits(generator).min
+        QB = reactive_power_limits.min
         isfinite(QB) || (QB = PSSE_DEFAULT)
         VS = PSY.get_magnitude(PSY.get_bus(generator))  # TODO is this correct? Should this be `get_internal_voltage` for `PSY.Source`?
         IREG = get(PSY.get_ext(generator), "IREG", PSSE_DEFAULT)
@@ -563,16 +568,17 @@ function _write_raw(
         STAT = PSY.get_available(generator) ? 1 : 0
         RMPCT = PSSE_DEFAULT
         # TODO maybe have a better default here
-        PT = try
-            PSY.get_active_power_limits(generator).max
+        active_power_limits = try
+            with_units(
+                () -> PSY.get_active_power_limits(generator),
+                exporter.system,
+                PSY.UnitSystem.NATURAL_UNITS,
+            )
         catch
-            PSSE_DEFAULT
+            (min = PSSE_DEFAULT, max = PSSE_DEFAULT)
         end
-        PB = try
-            PSY.get_active_power_limits(generator).min
-        catch
-            PSSE_DEFAULT
-        end
+        PT = active_power_limits.max
+        PB = active_power_limits.min
         WMOD = get(PSY.get_ext(generator), "WMOD", PSSE_DEFAULT)
         WPF = get(PSY.get_ext(generator), "WPF", PSSE_DEFAULT)
         joinln(
@@ -935,6 +941,10 @@ function fix_nans!(sys::PSY.System)
     for gen in PSY.get_components(PSY.Generator, sys)
         isnan(PSY.get_active_power(gen)) && (gen.active_power = 0.0)
         isnan(PSY.get_reactive_power(gen)) && (gen.reactive_power = 0.0)
+        all(isnan.(values(PSY.get_reactive_power_limits(gen)))) &&
+            (gen.reactive_power_limits = (min = 0.0, max = 0.0))
+        all(isnan.(values(PSY.get_active_power_limits(gen)))) &&
+            (gen.active_power_limits = (min = 0.0, max = 0.0))
     end
 end
 
