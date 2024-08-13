@@ -704,11 +704,13 @@ function update_system!(sys::PSY.System, data::PowerFlowData)
             # For REF bus, voltage and angle are fixed; update active and reactive
             P_gen = data.bus_activepower_injection[data.bus_lookup[PSY.get_number(bus)]]
             Q_gen = data.bus_reactivepower_injection[data.bus_lookup[PSY.get_number(bus)]]
-            _power_redistribution_ref(sys, P_gen, Q_gen, bus)
+            _power_redistribution_ref(sys, P_gen, Q_gen, bus,
+                DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
         elseif bus.bustype == PSY.ACBusTypes.PV
             # For PV bus, active and voltage are fixed; update reactive and angle
             Q_gen = data.bus_reactivepower_injection[data.bus_lookup[PSY.get_number(bus)]]
-            _reactive_power_redistribution_pv(sys, Q_gen, bus)
+            _reactive_power_redistribution_pv(sys, Q_gen, bus,
+                DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
             PSY.set_angle!(bus, data.bus_angles[data.bus_lookup[PSY.get_number(bus)]])
         elseif bus.bustype == PSY.ACBusTypes.PQ
             # For PQ bus, active and reactive are fixed; update voltage and angle
