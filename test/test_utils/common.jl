@@ -9,16 +9,34 @@ powerflow_match_fn(
 powerflow_match_fn(a, b) = IS.isequivalent(a, b)
 
 # TODO temporary hack, see https://github.com/NREL-Sienna/PowerFlows.jl/issues/39
-function PowerSystems.get_reactive_power_limits(gen::RenewableNonDispatch)
-    gen_pf = get_power_factor(gen)
-    gen_q = get_max_active_power(gen) * sqrt((1 / gen_pf^2) - 1)
-    return (min = 0.0, max = gen_q)
-end
+PowerSystems.get_reactive_power_limits(::RenewableNonDispatch) = (min = 0.0, max = 0.0)
 
-# TODO more hacks
-PowerSystems.get_r(::TwoTerminalHVDCLine) = 0.001
-PowerSystems.get_x(::TwoTerminalHVDCLine) = 0.0
-PowerSystems.get_b(::TwoTerminalHVDCLine) = (from = 0.0, to = 0.0)
+# TODO another temporary hack
+"Create a version of the RTS_GMLC system that plays nice with the current implementation of AC power flow"
+function create_pf_friendly_rts_gmlc()
+    sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
+    remove_component!(sys, only(get_components(TwoTerminalHVDCLine, sys)))  # HVDC power flow not implemented yet
+    # Modify some things so reactive power redistribution succeeds
+    for (component_type, component_name, new_limits) in [
+        (RenewableDispatch, "113_PV_1", (min = -30.0, max = 30.0))
+        (ThermalStandard, "115_STEAM_3", (min = -50.0, max = 100.0))
+        (ThermalStandard, "207_CT_1", (min = -70.0, max = 70.0))
+        (RenewableDispatch, "215_PV_1", (min = -40.0, max = 40.0))
+        (ThermalStandard, "307_CT_1", (min = -70.0, max = 70.0))
+        (ThermalStandard, "315_CT_8", (min = 0.0, max = 80.0))
+    ]
+        set_reactive_power_limits!(
+            get_component(component_type, sys, component_name),
+            new_limits,
+        )
+    end
+
+    # Patch https://github.com/NREL-Sienna/PowerFlows.jl/issues/47
+    sync_conds = filter(c -> occursin("SYNC_COND", get_name(c)),
+        collect(get_components(StaticInjection, sys)))
+    set_base_power!.(sync_conds, 100.0)
+    return sys
+end
 
 "Take RTS_GMLC_DA_sys and make some changes to it that are fully captured in the PowerFlowData(ACPowerFlow(), ...)"
 function modify_rts_system!(sys::System)

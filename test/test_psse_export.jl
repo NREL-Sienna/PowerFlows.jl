@@ -1,7 +1,6 @@
 test_psse_export_dir = joinpath(TEST_FILES_DIR, "test_psse_exports")  # at some point could move this to temp files
 isdir(test_psse_export_dir) && rm(test_psse_export_dir; recursive = true)
 
-# TODO second macro I've ever written, probably wants a refactor
 function _log_assert(result, msg, comparison_name)
     result ||
         @error "Failed check: $(string(msg))$(isnothing(comparison_name) ? "" :  " ($comparison_name)")"
@@ -268,15 +267,18 @@ function compare_systems_wrapper(sys1::System, sys2::System, sys2_metadata = not
     return first_result && second_result
 end
 
-function test_power_flow(sys1::System, sys2::System)
+function test_power_flow(sys1::System, sys2::System; exclude_reactive_flow = false)
     result1 = solve_powerflow(ACPowerFlow(), sys1)
     result2 = solve_powerflow(ACPowerFlow(), sys2)
-    @test compare_df_within_tolerance(result1["bus_results"],
+    reactive_power_tol =
+        exclude_reactive_flow ? nothing : POWERFLOW_COMPARISON_TOLERANCE
+    @test compare_df_within_tolerance("bus_results", result1["bus_results"],
         result2["bus_results"], POWERFLOW_COMPARISON_TOLERANCE)
-    @test compare_df_within_tolerance(
+    @test compare_df_within_tolerance("flow_results",
         sort(result1["flow_results"], names(result1["flow_results"])[2:end]),
         sort(result2["flow_results"], names(result2["flow_results"])[2:end]),
-        POWERFLOW_COMPARISON_TOLERANCE; line_name = nothing)
+        POWERFLOW_COMPARISON_TOLERANCE; line_name = nothing, Q_to_from = reactive_power_tol,
+        Q_from_to = reactive_power_tol, Q_losses = reactive_power_tol)
 end
 
 function read_system_and_metadata(raw_path, metadata_path)
@@ -295,6 +297,7 @@ function test_psse_round_trip(
     year::Int,
     export_location::AbstractString;
     do_power_flow_test = true,
+    exclude_reactive_flow = false,
 )
     raw_path, metadata_path = get_psse_export_paths(scenario_name, year, export_location)
     @test !isfile(raw_path)
@@ -306,7 +309,8 @@ function test_psse_round_trip(
 
     sys2, sys2_metadata = read_system_and_metadata(raw_path, metadata_path)
     @test compare_systems_wrapper(sys, sys2, sys2_metadata)
-    do_power_flow_test && test_power_flow(sys, sys2)
+    do_power_flow_test &&
+        test_power_flow(sys, sys2; exclude_reactive_flow = exclude_reactive_flow)
 end
 
 "Test that the two raw files are exactly identical and the two metadata files parse to identical JSON"
@@ -367,7 +371,7 @@ end
     exporter = PSSEExporter(sys, :v33)
     export_location = joinpath(test_psse_export_dir, "v33", "system_240")
     test_psse_round_trip(sys, exporter, "basic", 2024, export_location;
-        do_power_flow_test = false)  # TODO why is AC power flow not converging for reimport here?
+        exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting the exact same thing again should result in the exact same files
     write_export(exporter, "basic2", 2024, export_location)
@@ -397,11 +401,11 @@ end
     @test_logs((:error, r"Mismatch on rate"), (:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_wrapper(sys, reread_sys2, sys2_metadata))
-    # test_power_flow(sys2, reread_sys2)  # TODO why is power flow broken?
+    test_power_flow(sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 end
 
 @testset "PSSE Exporter with RTS_GMLC_DA_sys, v33" begin
-    sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
+    sys = create_pf_friendly_rts_gmlc()
     set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
 
     # PSS/E version must be one of the supported ones
@@ -411,7 +415,7 @@ end
     exporter = PSSEExporter(sys, :v33)
     export_location = joinpath(test_psse_export_dir, "v33", "rts_gmlc")
     test_psse_round_trip(sys, exporter, "basic", 2024, export_location;
-        do_power_flow_test = false)  # TODO why is AC power flow not converging for reimport here?
+        exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting the exact same thing again should result in the exact same files
     write_export(exporter, "basic2", 2024, export_location)
@@ -442,7 +446,7 @@ end
         (:error, r"Mismatch on Vm"), (:error, r"Mismatch on θ"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_wrapper(sys, reread_sys2, sys2_metadata))
-    # test_power_flow(sys2, reread_sys2)  # TODO fix power flow, see above
+    test_power_flow(sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Updating with changed value should result in a different reimport (PowerFlowData version)
     exporter = PSSEExporter(sys, :v33)
@@ -453,20 +457,19 @@ end
     update_exporter!(exporter, pf2)
     write_export(exporter, "basic5", 2024, export_location)
     reread_sys3, sys3_metadata = read_system_and_metadata("basic5", 2024, export_location)
-    # TODO fix bug in `_reactive_power_redistribution_pv`, see https://github.com/NREL-Sienna/PowerFlows.jl/issues/44
     @test compare_systems_wrapper(sys2, reread_sys3, sys3_metadata;
-        exclude_reactive_power = true)
+        exclude_reactive_power = true)  # TODO why is reactive power not matching?
     @test_logs((:error, r"values do not match"),
         (:error, r"Mismatch on active_power"), (:error, r"Mismatch on reactive_power"),
         (:error, r"Mismatch on Vm"), (:error, r"Mismatch on θ"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_wrapper(sys, reread_sys3, sys3_metadata))
-    # test_power_flow(sys3, reread_sys3)  # TODO fix power flow, see above
+    test_power_flow(sys2, reread_sys3; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting with write_comments should be comparable to original system
     exporter = PSSEExporter(sys, :v33; write_comments = true)
     test_psse_round_trip(sys, exporter, "basic6", 2024, export_location;
-        do_power_flow_test = false)
+        exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 end
 
 @testset "Test exporter helper functions" begin
