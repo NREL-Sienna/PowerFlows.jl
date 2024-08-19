@@ -559,7 +559,7 @@ function _write_raw(
         isfinite(QT) || (QT = PSSE_DEFAULT)  # Catch Inf, etc.
         QB = reactive_power_limits.min
         isfinite(QB) || (QB = PSSE_DEFAULT)
-        VS = PSY.get_magnitude(PSY.get_bus(generator))  # TODO is this correct? Should this be `get_internal_voltage` for `PSY.Source`?
+        VS = PSY.get_magnitude(PSY.get_bus(generator))
         IREG = get(PSY.get_ext(generator), "IREG", PSSE_DEFAULT)
         MBASE = PSY.get_base_power(generator)
         ZR, ZX = PSSE_DEFAULT, PSSE_DEFAULT
