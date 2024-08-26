@@ -59,6 +59,28 @@ function with_units(f::Function, sys::System, units::Union{PSY.UnitSystem, Strin
     end
 end
 
+# TODO a bit hacky, there may be a better way (round trip JSON serialization is too slow).
+# If this ends up being useful, maybe move to PSY?
+"""
+Make a `deepcopy` of the `System` except replace `sys.data.time_series_manager` with a blank
+`TimeSeriesManager` such that time series are not copied.
+"""
+function deepcopy_system_no_time_series(sys::System)
+    old_time_series_manager = sys.data.time_series_manager
+    new_time_series_manager = IS.TimeSeriesManager(
+        IS.InMemoryTimeSeriesStorage(),
+        IS.TimeSeriesMetadataStore(),
+        true
+    )
+    new_sys = try
+        sys.data.time_series_manager = new_time_series_manager
+        deepcopy(sys)
+    finally
+        sys.data.time_series_manager = old_time_series_manager
+    end
+    return new_sys
+end
+
 """
 Structure to perform an export from a Sienna System, plus optional updates from
 `PowerFlowData`, to the PSS/E format. Construct from a `System` and a PSS/E version, update
@@ -91,7 +113,7 @@ mutable struct PSSEExporter
                     "PSS/E version $psse_version is not supported, must be one of $PSSE_EXPORT_SUPPORTED_VERSIONS",
                 ),
             )
-        system = deepcopy(base_system)
+        system = deepcopy_system_no_time_series(base_system)
         new(system, psse_version, write_comments)
     end
 end
@@ -128,7 +150,7 @@ function update_exporter!(exporter::PSSEExporter, data::PSY.System)
             "System passed to update_exporter must be the same system as the one with which the exporter was constructed, just with different values",
         ),
     )
-    exporter.system = deepcopy(data)
+    exporter.system = deepcopy_system_no_time_series(data)
     return
 end
 
