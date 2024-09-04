@@ -9,10 +9,11 @@ const PTDFPowerFlowData = PowerFlowData{
         Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
         PNM.KLU.KLUFactorization{Float64, Int64},
     },
+    Nothing,
 }
 
 # ? change this to have a more detailed definition ?
-const vPTDFPowerFlowData = PowerFlowData{}
+const vPTDFPowerFlowData = PowerFlowData{<:Any, <:Any, Nothing}
 
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
@@ -23,6 +24,7 @@ const ABAPowerFlowData = PowerFlowData{
     PNM.BA_Matrix{
         Tuple{Vector{Int64}, Vector{String}},
         Tuple{Dict{Int64, Int64}, Dict{String, Int64}}},
+    Nothing,
 }
 
 """
