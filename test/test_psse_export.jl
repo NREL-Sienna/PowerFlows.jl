@@ -287,23 +287,23 @@ function read_system_and_metadata(raw_path, metadata_path)
     return sys, md
 end
 
-read_system_and_metadata(scenario_name, year, export_location) = read_system_and_metadata(
-    get_psse_export_paths(scenario_name, year, export_location)...)
+read_system_and_metadata(export_subdir) = read_system_and_metadata(
+    get_psse_export_paths(export_subdir)...)
 
 function test_psse_round_trip(
     sys::System,
     exporter::PSSEExporter,
     scenario_name::AbstractString,
-    year::Int,
     export_location::AbstractString;
     do_power_flow_test = true,
     exclude_reactive_flow = false,
 )
-    raw_path, metadata_path = get_psse_export_paths(scenario_name, year, export_location)
+    raw_path, metadata_path =
+        get_psse_export_paths(joinpath(export_location, scenario_name))
     @test !isfile(raw_path)
     @test !isfile(metadata_path)
 
-    write_export(exporter, scenario_name, year, export_location)
+    write_export(exporter, scenario_name)
     @test isfile(raw_path)
     @test isfile(metadata_path)
 
@@ -365,19 +365,19 @@ end
     sys = load_test_system()
 
     # PSS/E version must be one of the supported ones
-    @test_throws ArgumentError PSSEExporter(sys, :vNonexistent)
+    @test_throws ArgumentError PSSEExporter(sys, :vNonexistent, test_psse_export_dir)
 
     # Reimported export should be comparable to original system
-    exporter = PSSEExporter(sys, :v33)
     export_location = joinpath(test_psse_export_dir, "v33", "system_240")
-    test_psse_round_trip(sys, exporter, "basic", 2024, export_location;
+    exporter = PSSEExporter(sys, :v33, export_location)
+    test_psse_round_trip(sys, exporter, "basic", export_location;
         exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting the exact same thing again should result in the exact same files
-    write_export(exporter, "basic2", 2024, export_location)
+    write_export(exporter, "basic2")
     test_psse_export_strict_equality(
-        get_psse_export_paths("basic", 2024, export_location)...,
-        get_psse_export_paths("basic2", 2024, export_location)...)
+        get_psse_export_paths(joinpath(export_location, "basic"))...,
+        get_psse_export_paths(joinpath(export_location, "basic2"))...)
 
     # Updating with a completely different system should fail
     different_system = build_system(PSITestSystems, "c_sys5_all_components")
@@ -385,18 +385,19 @@ end
 
     # Updating with the exact same system should result in the exact same files
     update_exporter!(exporter, sys)
-    write_export(exporter, "basic3", 2024, export_location)
+    write_export(exporter, "basic3")
     test_psse_export_strict_equality(
-        get_psse_export_paths("basic", 2024, export_location)...,
-        get_psse_export_paths("basic3", 2024, export_location)...)
+        get_psse_export_paths(joinpath(export_location, "basic"))...,
+        get_psse_export_paths(joinpath(export_location, "basic3"))...)
 
     # Updating with changed value should result in a different reimport (System version)
     sys2 = deepcopy(sys)
     line_to_change = first(get_components(Line, sys2))
     set_rating!(line_to_change, get_rating(line_to_change) * 12345.6)
     update_exporter!(exporter, sys2)
-    write_export(exporter, "basic4", 2024, export_location)
-    reread_sys2, sys2_metadata = read_system_and_metadata("basic4", 2024, export_location)
+    write_export(exporter, "basic4")
+    reread_sys2, sys2_metadata =
+        read_system_and_metadata(joinpath(export_location, "basic4"))
     @test compare_systems_wrapper(sys2, reread_sys2, sys2_metadata)
     @test_logs((:error, r"Mismatch on rate"), (:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
@@ -409,19 +410,19 @@ end
     set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
 
     # PSS/E version must be one of the supported ones
-    @test_throws ArgumentError PSSEExporter(sys, :vNonexistent)
+    @test_throws ArgumentError PSSEExporter(sys, :vNonexistent, test_psse_export_dir)
 
     # Reimported export should be comparable to original system
-    exporter = PSSEExporter(sys, :v33)
     export_location = joinpath(test_psse_export_dir, "v33", "rts_gmlc")
-    test_psse_round_trip(sys, exporter, "basic", 2024, export_location;
+    exporter = PSSEExporter(sys, :v33, export_location)
+    test_psse_round_trip(sys, exporter, "basic", export_location;
         exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting the exact same thing again should result in the exact same files
-    write_export(exporter, "basic2", 2024, export_location)
+    write_export(exporter, "basic2")
     test_psse_export_strict_equality(
-        get_psse_export_paths("basic", 2024, export_location)...,
-        get_psse_export_paths("basic2", 2024, export_location)...)
+        get_psse_export_paths(joinpath(export_location, "basic"))...,
+        get_psse_export_paths(joinpath(export_location, "basic2"))...)
 
     # Updating with a completely different system should fail
     different_system = build_system(PSITestSystems, "c_sys5_all_components")
@@ -429,17 +430,18 @@ end
 
     # Updating with the exact same system should result in the exact same files
     update_exporter!(exporter, sys)
-    write_export(exporter, "basic3", 2024, export_location)
+    write_export(exporter, "basic3")
     test_psse_export_strict_equality(
-        get_psse_export_paths("basic", 2024, export_location)...,
-        get_psse_export_paths("basic3", 2024, export_location)...)
+        get_psse_export_paths(joinpath(export_location, "basic"))...,
+        get_psse_export_paths(joinpath(export_location, "basic3"))...)
 
     # Updating with changed value should result in a different reimport (System version)
     sys2 = deepcopy(sys)
     modify_rts_system!(sys2)
     update_exporter!(exporter, sys2)
-    write_export(exporter, "basic4", 2024, export_location)
-    reread_sys2, sys2_metadata = read_system_and_metadata("basic4", 2024, export_location)
+    write_export(exporter, "basic4")
+    reread_sys2, sys2_metadata =
+        read_system_and_metadata(joinpath(export_location, "basic4"))
     @test compare_systems_wrapper(sys2, reread_sys2, sys2_metadata)
     @test_logs((:error, r"values do not match"),
         (:error, r"Mismatch on active_power"), (:error, r"Mismatch on reactive_power"),
@@ -449,14 +451,15 @@ end
     test_power_flow(sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Updating with changed value should result in a different reimport (PowerFlowData version)
-    exporter = PSSEExporter(sys, :v33)
+    exporter = PSSEExporter(sys, :v33, export_location)
     pf2 = PowerFlowData(ACPowerFlow(), sys)
     # This modifies the PowerFlowData in the same way that modify_rts_system! modifies the
     # system, so the reimport should be comparable to sys2 from above
     modify_rts_powerflow!(pf2)
     update_exporter!(exporter, pf2)
-    write_export(exporter, "basic5", 2024, export_location)
-    reread_sys3, sys3_metadata = read_system_and_metadata("basic5", 2024, export_location)
+    write_export(exporter, "basic5")
+    reread_sys3, sys3_metadata =
+        read_system_and_metadata(joinpath(export_location, "basic5"))
     @test compare_systems_wrapper(sys2, reread_sys3, sys3_metadata;
         exclude_reactive_power = true)  # TODO why is reactive power not matching?
     @test_logs((:error, r"values do not match"),
@@ -467,8 +470,8 @@ end
     test_power_flow(sys2, reread_sys3; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting with write_comments should be comparable to original system
-    exporter = PSSEExporter(sys, :v33; write_comments = true)
-    test_psse_round_trip(sys, exporter, "basic6", 2024, export_location;
+    exporter = PSSEExporter(sys, :v33, export_location; write_comments = true)
+    test_psse_round_trip(sys, exporter, "basic6", export_location;
         exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 end
 
