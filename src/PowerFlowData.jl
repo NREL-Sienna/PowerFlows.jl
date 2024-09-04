@@ -171,90 +171,40 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = Dict{String, Int}()
+    temp_bus_map = Dict{Int, String}(
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
+    )
     branch_types = Vector{DataType}(undef, n_branches)
     for (ix, b) in enumerate(branches)
         branch_lookup[PSY.get_name(b)] = ix
         branch_types[ix] = typeof(b)
     end
 
-    # TODO: bus_type might need to also be a Matrix since the type can change for a particular scenario
-    bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
-    bus_angles = zeros(Float64, n_buses)
-    bus_magnitude = zeros(Float64, n_buses)
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
-    )
-
-    _initialize_bus_data!(
-        bus_type,
-        bus_angles,
-        bus_magnitude,
-        temp_bus_map,
-        bus_lookup,
-        sys,
-    )
-
-    bus_activepower_injection = zeros(Float64, n_buses)
-    bus_reactivepower_injection = zeros(Float64, n_buses)
-    _get_injections!(
-        bus_activepower_injection,
-        bus_reactivepower_injection,
-        bus_lookup,
-        sys,
-    )
-
-    bus_activepower_withdrawals = zeros(Float64, n_buses)
-    bus_reactivepower_withdrawals = zeros(Float64, n_buses)
-    _get_withdrawals!(
-        bus_activepower_withdrawals,
-        bus_reactivepower_withdrawals,
-        bus_lookup,
-        sys,
-    )
-
-    # define fields as matrices whose number of columns is eqault to the number of time_steps
-    bus_activepower_injection_1 = zeros(n_buses, time_steps)
-    bus_reactivepower_injection_1 = zeros(n_buses, time_steps)
-    bus_activepower_withdrawals_1 = zeros(n_buses, time_steps)
-    bus_reactivepower_withdrawals_1 = zeros(n_buses, time_steps)
-    bus_magnitude_1 = zeros(n_buses, time_steps)
-    bus_angles_1 = zeros(n_buses, time_steps)
-    branch_flow_values_1 = zeros(n_branches, time_steps)
-
     bus_reactivepower_bounds = Vector{Vector{Float64}}(undef, n_buses)
     for i in 1:n_buses
         bus_reactivepower_bounds[i] = [0.0, 0.0]
     end
     _get_reactive_power_bound!(bus_reactivepower_bounds, bus_lookup, sys)
+    timestep_map = Dict(1 => "1")
+    valid_ix = setdiff(1:n_buses, ref_bus_positions)
+    neighbors = _calculate_neighbors(power_network_matrix)
+    aux_network_matrix = nothing
 
-    # initial values related to first timestep allocated in the first column
-    bus_activepower_injection_1[:, 1] .= bus_activepower_injection
-    bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
-    bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
-    bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
-    bus_magnitude_1[:, 1] .= bus_magnitude
-    bus_angles_1[:, 1] .= bus_angles
-    branch_flow_values_1[:, 1] .= zeros(n_branches)
-
-    return PowerFlowData(
+    return make_powerflowdata(
+        sys,
+        time_steps,
+        power_network_matrix,
+        aux_network_matrix,
+        n_buses,
+        n_branches,
         bus_lookup,
         branch_lookup,
-        bus_activepower_injection_1,
-        bus_reactivepower_injection_1,
-        bus_activepower_withdrawals_1,
-        bus_reactivepower_withdrawals_1,
-        bus_reactivepower_bounds,
-        bus_type,
+        temp_bus_map,
         branch_types,
-        bus_magnitude_1,
-        bus_angles_1,
-        branch_flow_values_1,
-        Dict(1 => "1"),
-        setdiff(1:n_buses, ref_bus_positions),
-        power_network_matrix,
-        nothing,
-        _calculate_neighbors(power_network_matrix),
-        nothing,
+        bus_reactivepower_bounds,
+        timestep_map,
+        valid_ix,
+        neighbors,
     )
 end
 
@@ -307,99 +257,20 @@ function PowerFlowData(
 
     bus_lookup = aux_network_matrix.lookup[1]
     branch_lookup = aux_network_matrix.lookup[2]
-    bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
-    bus_angles = zeros(Float64, n_buses)
-    bus_magnitude = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
-
-    branch_types = Vector{DataType}(undef, length(branch_lookup))
-    for (ix, b) in enumerate(PNM.get_ac_branches(sys))
-        branch_types[ix] = typeof(b)
-    end
-
-    for (bus_no, ix) in bus_lookup
-        bus_name = temp_bus_map[bus_no]
-        bus = PSY.get_component(PSY.Bus, sys, bus_name)
-        bus_type[ix] = PSY.get_bustype(bus)
-        if bus_type[ix] == PSY.ACBusTypes.REF
-            bus_angles[ix] = 0.0
-        else
-            bus_angles[ix] = PSY.get_angle(bus)
-        end
-        bus_magnitude[ix] = PSY.get_magnitude(bus)
-    end
-    
-    _initialize_bus_data!(
-        bus_type,
-        bus_angles,
-        bus_magnitude,
-        temp_bus_map,
-        bus_lookup,
+    return make_dc_powerflowdata(
         sys,
-    )
-
-    # define injection vectors related to the first timestep
-    bus_activepower_injection = zeros(Float64, n_buses)
-    bus_reactivepower_injection = zeros(Float64, n_buses)
-    _get_injections!(
-        bus_activepower_injection,
-        bus_reactivepower_injection,
-        bus_lookup,
-        sys,
-    )
-
-    bus_activepower_withdrawals = zeros(Float64, n_buses)
-    bus_reactivepower_withdrawals = zeros(Float64, n_buses)
-    _get_withdrawals!(
-        bus_activepower_withdrawals,
-        bus_reactivepower_withdrawals,
-        bus_lookup,
-        sys,
-    )
-
-    # initialize data
-    init_1 = zeros(n_buses, time_steps)
-    init_2 = zeros(n_branches, time_steps)
-
-    # define fields as matrices whose number of columns is eqault to the number of time_steps
-    bus_activepower_injection_1 = deepcopy(init_1)
-    bus_reactivepower_injection_1 = deepcopy(init_1)
-    bus_activepower_withdrawals_1 = deepcopy(init_1)
-    bus_reactivepower_withdrawals_1 = deepcopy(init_1)
-    bus_magnitude_1 = zeros(n_buses, 1)
-    bus_angles_1 = deepcopy(init_1)
-    branch_flow_values_1 = deepcopy(init_2)
-
-    # initial values related to first timestep allocated in the first column
-    bus_activepower_injection_1[:, 1] .= bus_activepower_injection
-    bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
-    bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
-    bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
-    bus_magnitude_1[:, 1] .= bus_magnitude  # for DC case same value accross all time_steps
-    bus_angles_1[:, 1] .= bus_angles
-    branch_flow_values_1[:, 1] .= zeros(n_branches)
-
-    return PowerFlowData(
-        bus_lookup,
-        branch_lookup,
-        bus_activepower_injection_1,
-        bus_reactivepower_injection_1,
-        bus_activepower_withdrawals_1,
-        bus_reactivepower_withdrawals_1,
-        Vector{Vector{Float64}}(),
-        bus_type,
-        branch_types,
-        bus_magnitude_1,
-        bus_angles_1,
-        branch_flow_values_1,
-        Dict(zip([i for i in 1:time_steps], timestep_names)),
-        setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
+        time_steps,
+        timestep_names,
         power_network_matrix,
         aux_network_matrix,
-        Vector{Set{Int}}(),
-        nothing,
+        n_buses,
+        n_branches,
+        bus_lookup,
+        branch_lookup,
+        temp_bus_map,
     )
 end
 
@@ -425,6 +296,7 @@ NOTE: use it for DC power flow computations.
         names of the time periods defines by the argmunet "time_steps". Default
         value = String[].
 """
+THREE
 function PowerFlowData(
     ::PTDFDCPowerFlow,
     sys::PSY.System;
@@ -452,99 +324,20 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
-    bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
-    bus_angles = zeros(Float64, n_buses)
-    bus_magnitude = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
-
-    branch_types = Vector{DataType}(undef, length(branch_lookup))
-    for (ix, b) in enumerate(PNM.get_ac_branches(sys))
-        branch_types[ix] = typeof(b)
-    end
-
-    for (bus_no, ix) in bus_lookup
-        bus_name = temp_bus_map[bus_no]
-        bus = PSY.get_component(PSY.Bus, sys, bus_name)
-        bus_type[ix] = PSY.get_bustype(bus)
-        if bus_type[ix] == PSY.ACBusTypes.REF
-            bus_angles[ix] = 0.0
-        else
-            bus_angles[ix] = PSY.get_angle(bus)
-        end
-        bus_magnitude[ix] = PSY.get_magnitude(bus)
-    end
-
-    _initialize_bus_data!(
-        bus_type,
-        bus_angles,
-        bus_magnitude,
-        temp_bus_map,
-        bus_lookup,
+    return make_dc_powerflowdata(
         sys,
-    )
-
-    # define injection vectors related to the first timestep
-    bus_activepower_injection = zeros(Float64, n_buses)
-    bus_reactivepower_injection = zeros(Float64, n_buses)
-    _get_injections!(
-        bus_activepower_injection,
-        bus_reactivepower_injection,
-        bus_lookup,
-        sys,
-    )
-
-    bus_activepower_withdrawals = zeros(Float64, n_buses)
-    bus_reactivepower_withdrawals = zeros(Float64, n_buses)
-    _get_withdrawals!(
-        bus_activepower_withdrawals,
-        bus_reactivepower_withdrawals,
-        bus_lookup,
-        sys,
-    )
-
-    # initialize data
-    init_1 = zeros(n_buses, time_steps)
-    init_2 = zeros(n_branches, time_steps)
-
-    # define fields as matrices whose number of columns is eqault to the number of time_steps
-    bus_activepower_injection_1 = deepcopy(init_1)
-    bus_reactivepower_injection_1 = deepcopy(init_1)
-    bus_activepower_withdrawals_1 = deepcopy(init_1)
-    bus_reactivepower_withdrawals_1 = deepcopy(init_1)
-    bus_magnitude_1 = zeros(n_buses, 1)
-    bus_angles_1 = deepcopy(init_1)
-    branch_flow_values_1 = deepcopy(init_2)
-
-    # initial values related to first timestep allocated in the first column
-    bus_activepower_injection_1[:, 1] .= bus_activepower_injection
-    bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
-    bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
-    bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
-    bus_magnitude_1[:, 1] .= bus_magnitude  # for DC case same value accross all time_steps
-    bus_angles_1[:, 1] .= bus_angles
-    branch_flow_values_1[:, 1] .= zeros(n_branches)
-
-    return PowerFlowData(
-        bus_lookup,
-        branch_lookup,
-        bus_activepower_injection_1,
-        bus_reactivepower_injection_1,
-        bus_activepower_withdrawals_1,
-        bus_reactivepower_withdrawals_1,
-        Vector{Vector{Float64}}(),
-        bus_type,
-        branch_types,
-        bus_magnitude_1,
-        bus_angles_1,
-        branch_flow_values_1,
-        Dict(zip([i for i in 1:time_steps], timestep_names)),
-        setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
+        time_steps,
+        timestep_names,
         power_network_matrix,
         aux_network_matrix,
-        Vector{Set{Int}}(),
-        nothing,
+        n_buses,
+        n_branches,
+        bus_lookup,
+        branch_lookup,
+        temp_bus_map,
     )
 end
 
@@ -597,98 +390,19 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
-    bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
-    bus_angles = zeros(Float64, n_buses)
-    bus_magnitude = zeros(Float64, n_buses)
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
-
-    branch_types = Vector{DataType}(undef, length(branch_lookup))
-    for (ix, b) in enumerate(PNM.get_ac_branches(sys))
-        branch_types[ix] = typeof(b)
-    end
-
-    for (bus_no, ix) in bus_lookup
-        bus_name = temp_bus_map[bus_no]
-        bus = PSY.get_component(PSY.Bus, sys, bus_name)
-        bus_type[ix] = PSY.get_bustype(bus)
-        if bus_type[ix] == PSY.ACBusTypes.REF
-            bus_angles[ix] = 0.0
-        else
-            bus_angles[ix] = PSY.get_angle(bus)
-        end
-        bus_magnitude[ix] = PSY.get_magnitude(bus)
-    end
-
-    _initialize_bus_data!(
-        bus_type,
-        bus_angles,
-        bus_magnitude,
-        temp_bus_map,
-        bus_lookup,
+    return make_dc_powerflowdata(
         sys,
-    )
-
-    # define injection vectors related to the first timestep
-    bus_activepower_injection = zeros(Float64, n_buses)
-    bus_reactivepower_injection = zeros(Float64, n_buses)
-    _get_injections!(
-        bus_activepower_injection,
-        bus_reactivepower_injection,
-        bus_lookup,
-        sys,
-    )
-
-    bus_activepower_withdrawals = zeros(Float64, n_buses)
-    bus_reactivepower_withdrawals = zeros(Float64, n_buses)
-    _get_withdrawals!(
-        bus_activepower_withdrawals,
-        bus_reactivepower_withdrawals,
-        bus_lookup,
-        sys,
-    )
-
-    # initialize data
-    init_1 = zeros(n_buses, time_steps)
-    init_2 = zeros(n_branches, time_steps)
-
-    # define fields as matrices whose number of columns is eqault to the number of time_steps
-    bus_activepower_injection_1 = deepcopy(init_1)
-    bus_reactivepower_injection_1 = deepcopy(init_1)
-    bus_activepower_withdrawals_1 = deepcopy(init_1)
-    bus_reactivepower_withdrawals_1 = deepcopy(init_1)
-    bus_magnitude_1 = zeros(n_buses, 1)
-    bus_angles_1 = deepcopy(init_1)
-    branch_flow_values_1 = deepcopy(init_2)
-
-    # initial values related to first timestep allocated in the first column
-    bus_activepower_injection_1[:, 1] .= bus_activepower_injection
-    bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
-    bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
-    bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
-    bus_magnitude_1[:, 1] .= bus_magnitude  # for DC case same value accross all time_steps
-    bus_angles_1[:, 1] .= bus_angles
-    branch_flow_values_1[:, 1] .= zeros(n_branches)
-
-    return PowerFlowData(
-        bus_lookup,
-        branch_lookup,
-        bus_activepower_injection_1,
-        bus_reactivepower_injection_1,
-        bus_activepower_withdrawals_1,
-        bus_reactivepower_withdrawals_1,
-        Vector{Vector{Float64}}(),
-        bus_type,
-        branch_types,
-        bus_magnitude_1,
-        bus_angles_1,
-        branch_flow_values_1,
-        Dict(zip([i for i in 1:time_steps], timestep_names)),
-        setdiff(1:n_buses, aux_network_matrix.ref_bus_positions),
+        time_steps,
+        timestep_names,
         power_network_matrix,
         aux_network_matrix,
-        Vector{Set{Int}}(),
-        nothing,
+        n_buses,
+        n_branches,
+        bus_lookup,
+        branch_lookup,
+        temp_bus_map,
     )
 end
