@@ -39,11 +39,13 @@ const PSSE_GROUPS_33 = [
     "Q Record",
 ]
 
+const PSSE_DEFAULT_EXPORT_NAME = "export"
+
 # TODO move this to IS
 """
 A context manager similar to `Logging.with_logger` that sets the system's units to the given
 value, executes the function, then sets them back. Suppresses logging below `Warn` from
-internal calls to `set_units_base_system!`.
+internal calls to `set_units_base_system!`. Not thread safe.
 """
 function with_units(f::Function, sys::System, units::Union{PSY.UnitSystem, String})
     old_units = PSY.get_units_base(sys)
@@ -70,7 +72,7 @@ function deepcopy_system_no_time_series(sys::System)
     new_time_series_manager = IS.TimeSeriesManager(
         IS.InMemoryTimeSeriesStorage(),
         IS.TimeSeriesMetadataStore(),
-        true
+        true,
     )
     new_sys = try
         sys.data.time_series_manager = new_time_series_manager
@@ -100,11 +102,13 @@ mutable struct PSSEExporter
     # this! For instance, the final version will almost certainly not store an entire System
     system::PSY.System
     psse_version::Symbol
+    export_dir::AbstractString
     write_comments::Bool
 
     function PSSEExporter(
         base_system::PSY.System,
-        psse_version::Symbol;
+        psse_version::Symbol,
+        export_dir::AbstractString;
         write_comments::Bool = false,
     )
         (psse_version in PSSE_EXPORT_SUPPORTED_VERSIONS) ||
@@ -114,7 +118,8 @@ mutable struct PSSEExporter
                 ),
             )
         system = deepcopy_system_no_time_series(base_system)
-        new(system, psse_version, write_comments)
+        mkpath(export_dir)
+        new(system, psse_version, export_dir, write_comments)
     end
 end
 
@@ -867,21 +872,18 @@ end
 "Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
 function write_export(
     exporter::PSSEExporter,
-    scenario_name::AbstractString,
-    year::Int,
-    export_location::AbstractString,
+    name::AbstractString,
 )
     # Construct paths
-    export_dir = joinpath(export_location, "Raw_Export", scenario_name, string(year))
-    mkpath(export_dir)
-    @info "Exporting to $export_dir"
-    raw_path = joinpath(export_dir, "$scenario_name.raw")
-    md_path = joinpath(export_dir, "$(scenario_name)_metadata.json")
+    export_subdir = joinpath(exporter.export_dir, name)
+    mkdir(export_subdir)
+    @info "Exporting to $export_subdir"
+    raw_path, md_path = get_psse_export_paths(export_subdir)
 
     # Build export files in buffers
     raw = IOBuffer()
     md = OrderedDict()
-    md["case_name"] = "$(scenario_name)_$(year)"
+    md["case_name"] = name
     md["export_settings"] = OrderedDict("sources_as_generators" => true)
     # These mappings are accessed in e.g. _write_bus_data via the metadata
     md["area_mapping"] = _psse_container_numbers(
@@ -908,15 +910,16 @@ function write_export(
     open(file -> JSON3.pretty(file, md), md_path; truncate = true)
 end
 
+# TODO test this method
+write_export(exporter::PSSEExporter) = write_export(exporter, PSSE_DEFAULT_EXPORT_NAME)
+
 "Calculate the paths of the (raw, metadata) files that would be written by a certain call to `write_export`"
 function get_psse_export_paths(
-    scenario_name::AbstractString,
-    year::Int,
-    export_location::AbstractString,
+    export_subdir::AbstractString,
 )
-    base_path = joinpath(export_location, "Raw_Export", string(scenario_name), string(year))
-    raw_path = joinpath(base_path, "$scenario_name.raw")
-    metadata_path = joinpath(base_path, "$(scenario_name)_metadata.json")
+    name = last(splitdir(export_subdir))
+    raw_path = joinpath(export_subdir, "$name.raw")
+    metadata_path = joinpath(export_subdir, "$(name)_metadata.json")
     return (raw_path, metadata_path)
 end
 
