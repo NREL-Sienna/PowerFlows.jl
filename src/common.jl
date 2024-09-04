@@ -116,3 +116,134 @@ function my_mul_mt(
     end
     return y
 end
+
+function make_dc_powerflowdata(
+    sys,
+    time_steps,
+    timestep_names,
+    power_network_matrix,
+    aux_network_matrix,
+    n_buses,
+    n_branches,
+    bus_lookup,
+    branch_lookup,
+    temp_bus_map,
+)
+    branch_types = Vector{DataType}(undef, length(branch_lookup))
+    for (ix, b) in enumerate(PNM.get_ac_branches(sys))
+        branch_types[ix] = typeof(b)
+    end
+    bus_reactivepower_bounds = Vector{Vector{Float64}}()
+    timestep_map = Dict(zip([i for i in 1:time_steps], timestep_names))
+    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
+    neighbors = Vector{Set{Int}}()
+    return make_powerflowdata(
+        sys,
+        time_steps,
+        power_network_matrix,
+        aux_network_matrix,
+        n_buses,
+        n_branches,
+        bus_lookup,
+        branch_lookup,
+        temp_bus_map,
+        branch_types,
+        bus_reactivepower_bounds,
+        timestep_map,
+        valid_ix,
+        neighbors,
+    )
+end
+
+function make_powerflowdata(
+    sys,
+    time_steps,
+    power_network_matrix,
+    aux_network_matrix,
+    n_buses,
+    n_branches,
+    bus_lookup,
+    branch_lookup,
+    temp_bus_map,
+    branch_types,
+    bus_reactivepower_bounds,
+    timestep_map,
+    valid_ix,
+    neighbors,
+)
+    # TODO: bus_type might need to also be a Matrix since the type can change for a particular scenario
+    bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
+    bus_angles = zeros(Float64, n_buses)
+    bus_magnitude = zeros(Float64, n_buses)
+
+    _initialize_bus_data!(
+        bus_type,
+        bus_angles,
+        bus_magnitude,
+        temp_bus_map,
+        bus_lookup,
+        sys,
+    )
+
+    # define injection vectors related to the first timestep
+    bus_activepower_injection = zeros(Float64, n_buses)
+    bus_reactivepower_injection = zeros(Float64, n_buses)
+    _get_injections!(
+        bus_activepower_injection,
+        bus_reactivepower_injection,
+        bus_lookup,
+        sys,
+    )
+
+    bus_activepower_withdrawals = zeros(Float64, n_buses)
+    bus_reactivepower_withdrawals = zeros(Float64, n_buses)
+    _get_withdrawals!(
+        bus_activepower_withdrawals,
+        bus_reactivepower_withdrawals,
+        bus_lookup,
+        sys,
+    )
+
+    # initialize data
+    init_1 = zeros(n_buses, time_steps)
+    init_2 = zeros(n_branches, time_steps)
+
+    # define fields as matrices whose number of columns is eqault to the number of time_steps
+    bus_activepower_injection_1 = deepcopy(init_1)
+    bus_reactivepower_injection_1 = deepcopy(init_1)
+    bus_activepower_withdrawals_1 = deepcopy(init_1)
+    bus_reactivepower_withdrawals_1 = deepcopy(init_1)
+    bus_magnitude_1 = deepcopy(init_1)
+    bus_angles_1 = deepcopy(init_1)
+    branch_flow_values_1 = deepcopy(init_2)
+
+    # initial values related to first timestep allocated in the first column
+    bus_activepower_injection_1[:, 1] .= bus_activepower_injection
+    bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
+    bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
+    bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
+    bus_magnitude_1[:, 1] .= bus_magnitude
+    bus_angles_1[:, 1] .= bus_angles
+    branch_flow_values_1[:, 1] .= zeros(n_branches)
+
+    return PowerFlowData(
+        bus_lookup,
+        branch_lookup,
+        bus_activepower_injection_1,
+        bus_reactivepower_injection_1,
+        bus_activepower_withdrawals_1,
+        bus_reactivepower_withdrawals_1,
+        bus_reactivepower_bounds,
+        bus_type,
+        branch_types,
+        bus_magnitude_1,
+        bus_angles_1,
+        branch_flow_values_1,
+        timestep_map,
+        valid_ix,
+        power_network_matrix,
+        aux_network_matrix,
+        neighbors,
+        nothing,
+    )
+end
