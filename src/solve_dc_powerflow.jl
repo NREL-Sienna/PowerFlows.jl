@@ -9,11 +9,10 @@ const PTDFPowerFlowData = PowerFlowData{
         Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
         PNM.KLU.KLUFactorization{Float64, Int64},
     },
-    Nothing,
 }
 
 # ? change this to have a more detailed definition ?
-const vPTDFPowerFlowData = PowerFlowData{<:Any, <:Any, Nothing}
+const vPTDFPowerFlowData = PowerFlowData{<:Any, <:Any}
 
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
@@ -24,7 +23,6 @@ const ABAPowerFlowData = PowerFlowData{
     PNM.BA_Matrix{
         Tuple{Vector{Int64}, Vector{String}},
         Tuple{Dict{Int64, Int64}, Dict{String, Int64}}},
-    Nothing,
 }
 
 """
@@ -90,17 +88,6 @@ function solve_powerflow!(
         data.power_network_matrix.K \ @view power_injection[data.valid_ix, :]
     data.branch_flow_values .= data.aux_network_matrix.data' * data.bus_angles
     return
-end
-
-function solve_powerflow!(data::PowerFlowData{Nothing, Nothing, PSSEExporter})
-    exporter = data.extra_data
-    update_exporter!(exporter, data)
-    # TODO come up with a better name, probably pass it through from the simulation
-    timestamp = round(Int, Dates.datetime2unix(Dates.now()) * 1000)
-    hashstamp = string(hash(data); base = 16)[(end - 7):end]  # temporary
-    name = "sys_$(timestamp)_$(hashstamp)"
-    sap = sum(PSY.get_magnitude.(PSY.get_components(PSY.ACBus, exporter.system)))
-    write_export(exporter, name)
 end
 
 # SINGLE PERIOD ##############################################################

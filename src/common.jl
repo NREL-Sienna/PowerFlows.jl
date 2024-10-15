@@ -123,7 +123,6 @@ function make_dc_powerflowdata(
     timestep_names,
     power_network_matrix,
     aux_network_matrix,
-    extra_data,
     n_buses,
     n_branches,
     bus_lookup,
@@ -143,7 +142,6 @@ function make_dc_powerflowdata(
         time_steps,
         power_network_matrix,
         aux_network_matrix,
-        extra_data,
         n_buses,
         n_branches,
         bus_lookup,
@@ -162,7 +160,6 @@ function make_powerflowdata(
     time_steps,
     power_network_matrix,
     aux_network_matrix,
-    extra_data,
     n_buses,
     n_branches,
     bus_lookup,
@@ -247,6 +244,5 @@ function make_powerflowdata(
         power_network_matrix,
         aux_network_matrix,
         neighbors,
-        extra_data,
     )
 end

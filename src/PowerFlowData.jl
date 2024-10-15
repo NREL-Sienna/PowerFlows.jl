@@ -58,7 +58,6 @@ flows and angles, as well as these ones.
 struct PowerFlowData{
     M <: Union{PNM.PowerNetworkMatrix, Nothing},
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
-    E,
 } <: PowerFlowContainer
     bus_lookup::Dict{Int, Int}
     branch_lookup::Dict{String, Int}
@@ -77,7 +76,6 @@ struct PowerFlowData{
     power_network_matrix::M
     aux_network_matrix::N
     neighbors::Vector{Set{Int}}
-    extra_data::E
 end
 
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
@@ -97,7 +95,6 @@ get_valid_ix(pfd::PowerFlowData) = pfd.valid_ix
 get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
 get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
 get_neighbor(pfd::PowerFlowData) = pfd.neighbors
-get_extra_data(pfd::PowerFlowData) = pfd.extra_data
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
@@ -202,7 +199,6 @@ function PowerFlowData(
         time_steps,
         power_network_matrix,
         aux_network_matrix,
-        nothing,
         n_buses,
         n_branches,
         bus_lookup,
@@ -275,7 +271,6 @@ function PowerFlowData(
         timestep_names,
         power_network_matrix,
         aux_network_matrix,
-        nothing,
         n_buses,
         n_branches,
         bus_lookup,
@@ -345,7 +340,6 @@ function PowerFlowData(
         timestep_names,
         power_network_matrix,
         aux_network_matrix,
-        nothing,
         n_buses,
         n_branches,
         bus_lookup,
@@ -414,7 +408,6 @@ function PowerFlowData(
         timestep_names,
         power_network_matrix,
         aux_network_matrix,
-        nothing,
         n_buses,
         n_branches,
         bus_lookup,
@@ -465,7 +458,6 @@ function PowerFlowData(
         timestep_names,
         nothing,
         nothing,
-        exporter,
         n_buses,
         n_branches,
         bus_lookup,
