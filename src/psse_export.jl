@@ -97,9 +97,7 @@ using `update_exporter` with any new data as relevant, and perform the export wi
   - `write_comments::Bool`: whether to add the customary-but-not-in-spec-annotations after a
     slash on the first line and at group boundaries
 """
-mutable struct PSSEExporter
-    # Internal fields are very much subject to change as I iterate on the best way to do
-    # this! For instance, the final version will almost certainly not store an entire System
+mutable struct PSSEExporter <: SystemPowerFlowContainer
     system::PSY.System
     psse_version::Symbol
     export_dir::AbstractString
@@ -1053,3 +1051,12 @@ function PSY.System(raw_path::AbstractString, md::Dict)
     # TODO remap everything else! Should be reading all the keys in `md`
     return sys
 end
+
+# TODO handle kwargs
+make_power_flow_container(pfem::PSSEExportPowerFlow, sys::PSY.System; kwargs...) =
+    PSSEExporter(
+        sys,
+        pfem.psse_version,
+        pfem.export_dir;
+        write_comments = pfem.write_comments,
+    )
