@@ -1,18 +1,20 @@
 @testset "PowerFlowData" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    PowerFlowData(ACPowerFlow(), sys)
-    PowerFlowData(DCPowerFlow(), sys)
-    PowerFlowData(PTDFDCPowerFlow(), sys)
-    PowerFlowData(vPTDFDCPowerFlow(), sys)
+    @test PowerFlowData(ACPowerFlow(), sys) isa PF.ACPowerFlowData
+    @test PowerFlowData(DCPowerFlow(), sys) isa PF.ABAPowerFlowData
+    @test PowerFlowData(PTDFDCPowerFlow(), sys) isa PF.PTDFPowerFlowData
+    @test PowerFlowData(vPTDFDCPowerFlow(), sys) isa PF.vPTDFPowerFlowData
 end
 
 @testset "PowerFlowData multiperiod" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     time_steps = 24
     # TODO: "multiperiod AC still to implement"
-    PowerFlowData(DCPowerFlow(), sys; time_steps = time_steps)
-    PowerFlowData(PTDFDCPowerFlow(), sys; time_steps = time_steps)
-    PowerFlowData(vPTDFDCPowerFlow(), sys; time_steps = time_steps)
+    @test PowerFlowData(DCPowerFlow(), sys; time_steps = time_steps) isa PF.ABAPowerFlowData
+    @test PowerFlowData(PTDFDCPowerFlow(), sys; time_steps = time_steps) isa
+          PF.PTDFPowerFlowData
+    @test PowerFlowData(vPTDFDCPowerFlow(), sys; time_steps = time_steps) isa
+          PF.vPTDFPowerFlowData
 end
 
 @testset "System <-> PowerFlowData round trip" begin
