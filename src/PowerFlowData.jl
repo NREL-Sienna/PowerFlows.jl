@@ -1,3 +1,10 @@
+abstract type PowerFlowContainer end
+
+"A `PowerFlowContainer` that represents its data as a `PSY.System`"
+abstract type SystemPowerFlowContainer <: PowerFlowContainer end
+
+get_system(container::SystemPowerFlowContainer) = container.system
+
 """
 Structure containing all the data required for the evaluation of the power
 flows and angles, as well as these ones.
@@ -52,7 +59,7 @@ struct PowerFlowData{
     M <: Union{PNM.PowerNetworkMatrix, Nothing},
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
     E,
-}
+} <: PowerFlowContainer
     bus_lookup::Dict{Int, Int}
     branch_lookup::Dict{String, Int}
     bus_activepower_injection::Matrix{Float64}
@@ -468,3 +475,27 @@ function PowerFlowData(
     )
     return data
 end
+
+"""
+Create an appropriate `PowerFlowContainer` for the given `PowerFlowEvaluationModel` and initialize it from the given `PSY.System`.
+
+# Arguments:
+- `pfem::PowerFlowEvaluationModel`: power flow model to construct a container for (e.g., `DCPowerFlow()`)
+- `sys::PSY.System`: the system from which to initialize the power flow container
+- `time_steps::Int`: number of time periods to consider (default is `1`)
+- `timestep_names::Vector{String}`: names of the time periods defines by the argument "time_steps". Default value is `String[]`.
+- `check_connectivity::Bool`: Perform connectivity check on the network matrix. Default value is `true`.
+"""
+function make_power_flow_container end
+
+make_power_flow_container(pfem::ACPowerFlow, sys::PSY.System; kwargs...) =
+    PowerFlowData(pfem, sys; kwargs...)
+
+make_power_flow_container(pfem::DCPowerFlow, sys::PSY.System; kwargs...) =
+    PowerFlowData(pfem, sys; kwargs...)
+
+make_power_flow_container(pfem::PTDFDCPowerFlow, sys::PSY.System; kwargs...) =
+    PowerFlowData(pfem, sys; kwargs...)
+
+make_power_flow_container(pfem::vPTDFDCPowerFlow, sys::PSY.System; kwargs...) =
+    PowerFlowData(pfem, sys; kwargs...)
