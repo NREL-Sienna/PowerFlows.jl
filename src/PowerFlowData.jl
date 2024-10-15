@@ -93,10 +93,10 @@ get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 get_extra_data(pfd::PowerFlowData) = pfd.extra_data
 
 function clear_injection_data!(pfd::PowerFlowData)
-    pfd.bus_activepower_injection[:] = 0.0
-    pfd.bus_reactivepower_injection[:] = 0.0
-    pfd.bus_activepower_withdrawals[:] = 0.0
-    pfd.bus_reactivepower_withdrawals[:] = 0.0
+    pfd.bus_activepower_injection .= 0.0
+    pfd.bus_reactivepower_injection .= 0.0
+    pfd.bus_activepower_withdrawals .= 0.0
+    pfd.bus_reactivepower_withdrawals .= 0.0
     return
 end
 
