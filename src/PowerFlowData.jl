@@ -195,6 +195,7 @@ function PowerFlowData(
         time_steps,
         power_network_matrix,
         aux_network_matrix,
+        nothing,
         n_buses,
         n_branches,
         bus_lookup,
@@ -260,17 +261,20 @@ function PowerFlowData(
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
+    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     return make_dc_powerflowdata(
         sys,
         time_steps,
         timestep_names,
         power_network_matrix,
         aux_network_matrix,
+        nothing,
         n_buses,
         n_branches,
         bus_lookup,
         branch_lookup,
         temp_bus_map,
+        valid_ix,
     )
 end
 
@@ -296,7 +300,7 @@ NOTE: use it for DC power flow computations.
         names of the time periods defines by the argmunet "time_steps". Default
         value = String[].
 """
-THREE
+
 function PowerFlowData(
     ::PTDFDCPowerFlow,
     sys::PSY.System;
@@ -327,17 +331,20 @@ function PowerFlowData(
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
+    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     return make_dc_powerflowdata(
         sys,
         time_steps,
         timestep_names,
         power_network_matrix,
         aux_network_matrix,
+        nothing,
         n_buses,
         n_branches,
         bus_lookup,
         branch_lookup,
         temp_bus_map,
+        valid_ix,
     )
 end
 
@@ -393,16 +400,71 @@ function PowerFlowData(
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
+    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     return make_dc_powerflowdata(
         sys,
         time_steps,
         timestep_names,
         power_network_matrix,
         aux_network_matrix,
+        nothing,
         n_buses,
         n_branches,
         bus_lookup,
         branch_lookup,
         temp_bus_map,
+        valid_ix,
     )
+end
+
+# TODO further deduplication is in order
+function PowerFlowData(
+    model::PSSEExportPowerFlow,
+    sys::PSY.System;
+    time_steps::Int = 1,
+    timestep_names::Vector{String} = String[],
+    check_connectivity::Bool = true)
+
+    # assign timestep_names
+    # timestep names are then allocated in a dictionary to map matrix columns
+    if time_steps != 0
+        if length(timestep_names) == 0
+            timestep_names = [string(i) for i in 1:time_steps]
+        elseif length(timestep_names) != time_steps
+            error("timestep_names field must have same length as time_steps")
+        end
+    end
+
+    # TODO quick and dirty way to get the parameters we need; refactor
+    power_network_matrix = PNM.VirtualPTDF(sys) # evaluates an empty virtual PTDF
+    aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
+
+    # get number of buses and branches
+    n_buses = length(axes(power_network_matrix, 2))
+    n_branches = length(axes(power_network_matrix, 1))
+
+    bus_lookup = power_network_matrix.lookup[2]
+    branch_lookup = power_network_matrix.lookup[1]
+    temp_bus_map = Dict{Int, String}(
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
+    )
+    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
+
+    exporter = PSSEExporter(sys, model.psse_version, model.export_dir;
+        write_comments = model.write_comments)
+    data = make_dc_powerflowdata(
+        sys,
+        time_steps,
+        timestep_names,
+        nothing,
+        nothing,
+        exporter,
+        n_buses,
+        n_branches,
+        bus_lookup,
+        branch_lookup,
+        temp_bus_map,
+        valid_ix,
+    )
+    return data
 end

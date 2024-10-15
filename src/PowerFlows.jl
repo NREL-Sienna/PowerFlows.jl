@@ -7,6 +7,7 @@ export DCPowerFlow
 export ACPowerFlow
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
+export PSSEExportPowerFlow
 export write_results
 export PSSEExporter
 export update_exporter!
@@ -33,12 +34,12 @@ include("common.jl")
 include("definitions.jl")
 include("powerflow_types.jl")
 include("PowerFlowData.jl")
+include("psse_export.jl")
 include("solve_dc_powerflow.jl")
 include("ac_power_flow.jl")
 include("ac_power_flow_jacobian.jl")
 include("nlsolve_ac_powerflow.jl")
 include("post_processing.jl")
-include("psse_export.jl")
 
 # Old PSSE Exporter
 import DataFrames: DataFrame
