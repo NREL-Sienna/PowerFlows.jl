@@ -123,11 +123,13 @@ function make_dc_powerflowdata(
     timestep_names,
     power_network_matrix,
     aux_network_matrix,
+    extra_data,
     n_buses,
     n_branches,
     bus_lookup,
     branch_lookup,
     temp_bus_map,
+    valid_ix,
 )
     branch_types = Vector{DataType}(undef, length(branch_lookup))
     for (ix, b) in enumerate(PNM.get_ac_branches(sys))
@@ -135,13 +137,13 @@ function make_dc_powerflowdata(
     end
     bus_reactivepower_bounds = Vector{Vector{Float64}}()
     timestep_map = Dict(zip([i for i in 1:time_steps], timestep_names))
-    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     neighbors = Vector{Set{Int}}()
     return make_powerflowdata(
         sys,
         time_steps,
         power_network_matrix,
         aux_network_matrix,
+        extra_data,
         n_buses,
         n_branches,
         bus_lookup,
@@ -160,6 +162,7 @@ function make_powerflowdata(
     time_steps,
     power_network_matrix,
     aux_network_matrix,
+    extra_data,
     n_buses,
     n_branches,
     bus_lookup,
@@ -244,6 +247,6 @@ function make_powerflowdata(
         power_network_matrix,
         aux_network_matrix,
         neighbors,
-        nothing,
+        extra_data,
     )
 end

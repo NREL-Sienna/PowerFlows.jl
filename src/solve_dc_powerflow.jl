@@ -92,6 +92,17 @@ function solve_powerflow!(
     return
 end
 
+function solve_powerflow!(data::PowerFlowData{Nothing, Nothing, PSSEExporter})
+    exporter = data.extra_data
+    update_exporter!(exporter, data)
+    # TODO come up with a better name, probably pass it through from the simulation
+    timestamp = round(Int, Dates.datetime2unix(Dates.now()) * 1000)
+    hashstamp = string(hash(data); base = 16)[(end - 7):end]  # temporary
+    name = "sys_$(timestamp)_$(hashstamp)"
+    sap = sum(PSY.get_magnitude.(PSY.get_components(PSY.ACBus, exporter.system)))
+    write_export(exporter, name)
+end
+
 # SINGLE PERIOD ##############################################################
 
 """
