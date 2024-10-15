@@ -872,11 +872,18 @@ end
 "Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
 function write_export(
     exporter::PSSEExporter,
-    name::AbstractString,
+    name::AbstractString;
+    overwrite = false,
 )
     # Construct paths
     export_subdir = joinpath(exporter.export_dir, name)
-    mkdir(export_subdir)
+    dir_exists = isdir(export_subdir)
+    (dir_exists && !overwrite) && throw(
+        ArgumentError(
+            "Target export directory $export_subdir already exists; specify `overwrite = true` if it should be overwritten",
+        ),
+    )
+    dir_exists || mkdir(export_subdir)  # TODO why already exists?
     @info "Exporting to $export_subdir"
     raw_path, md_path = get_psse_export_paths(export_subdir)
 
@@ -911,7 +918,8 @@ function write_export(
 end
 
 # TODO test this method
-write_export(exporter::PSSEExporter) = write_export(exporter, PSSE_DEFAULT_EXPORT_NAME)
+write_export(exporter::PSSEExporter; kwargs...) =
+    write_export(exporter, PSSE_DEFAULT_EXPORT_NAME; kwargs...)
 
 "Calculate the paths of the (raw, metadata) files that would be written by a certain call to `write_export`"
 function get_psse_export_paths(
