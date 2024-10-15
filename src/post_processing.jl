@@ -693,10 +693,12 @@ function write_results(
     return Dict("bus_results" => bus_df, "flow_results" => branch_df)
 end
 
+# TODO figure out how to handle multiple time periods here
 """
 Modify the values in the given `System` to correspond to the given `PowerFlowData` such that
 if a new `PowerFlowData` is constructed from the resulting system it is the same as `data`.
-See also `write_powerflow_solution!`.
+See also `write_powerflow_solution!`. NOTE that this assumes that `data` was initialized
+from `sys` and then solved with no further modifications.
 """
 function update_system!(sys::PSY.System, data::PowerFlowData)
     for bus in PSY.get_components(PSY.Bus, sys)
@@ -719,5 +721,4 @@ function update_system!(sys::PSY.System, data::PowerFlowData)
             PSY.set_angle!(bus, data.bus_angles[data.bus_lookup[PSY.get_number(bus)]])
         end
     end
-    # TODO
 end
