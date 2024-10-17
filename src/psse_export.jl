@@ -102,12 +102,18 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
     psse_version::Symbol
     export_dir::AbstractString
     write_comments::Bool
+    name::AbstractString
+    step::Union{Nothing, Int}
+    overwrite::Bool
 
     function PSSEExporter(
         base_system::PSY.System,
         psse_version::Symbol,
         export_dir::AbstractString;
         write_comments::Bool = false,
+        name::AbstractString = PSSE_DEFAULT_EXPORT_NAME,
+        step::Union{Nothing, Int} = nothing,
+        overwrite::Bool = false,
     )
         (psse_version in PSSE_EXPORT_SUPPORTED_VERSIONS) ||
             throw(
@@ -117,7 +123,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
             )
         system = deepcopy_system_no_time_series(base_system)
         mkpath(export_dir)
-        new(system, psse_version, export_dir, write_comments)
+        new(system, psse_version, export_dir, write_comments, name, step, overwrite)
     end
 end
 
@@ -873,6 +879,7 @@ function write_export(
     name::AbstractString;
     overwrite = false,
 )
+    isnothing(exporter.step) || (name *= "_$(exporter.step)")
     # Construct paths
     export_subdir = joinpath(exporter.export_dir, name)
     dir_exists = isdir(export_subdir)
@@ -882,7 +889,7 @@ function write_export(
         ),
     )
     dir_exists || mkdir(export_subdir)  # TODO why already exists?
-    @info "Exporting to $export_subdir"
+    @info "Exporting $name to $export_subdir"
     raw_path, md_path = get_psse_export_paths(export_subdir)
 
     # Build export files in buffers
@@ -917,7 +924,11 @@ end
 
 # TODO test this method
 write_export(exporter::PSSEExporter; kwargs...) =
-    write_export(exporter, PSSE_DEFAULT_EXPORT_NAME; kwargs...)
+    write_export(
+        exporter,
+        exporter.name;
+        merge(Dict(:overwrite => exporter.overwrite), kwargs)...,
+    )
 
 "Calculate the paths of the (raw, metadata) files that would be written by a certain call to `write_export`"
 function get_psse_export_paths(
@@ -1059,4 +1070,7 @@ make_power_flow_container(pfem::PSSEExportPowerFlow, sys::PSY.System; kwargs...)
         pfem.psse_version,
         pfem.export_dir;
         write_comments = pfem.write_comments,
+        step = 0,
     )
+
+solve_powerflow!(exporter::PSSEExporter) = write_export(exporter)
