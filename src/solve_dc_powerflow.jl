@@ -12,7 +12,7 @@ const PTDFPowerFlowData = PowerFlowData{
 }
 
 # ? change this to have a more detailed definition ?
-const vPTDFPowerFlowData = PowerFlowData{}
+const vPTDFPowerFlowData = PowerFlowData{<:Any, <:Any}
 
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
