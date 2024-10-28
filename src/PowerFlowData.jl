@@ -1,5 +1,15 @@
 abstract type PowerFlowContainer end
 
+"""
+Trait signifying whether the `PowerFlowContainer` can represent multi-period data. Must be
+implemented for all concrete subtypes.
+"""
+supports_multi_period(x::PowerFlowContainer) =
+    throw(
+        IS.NotImplementedError(
+            "supports_multi_period must be implemented for $(typeof(x))"),
+    )
+
 "A `PowerFlowContainer` that represents its data as a `PSY.System`"
 abstract type SystemPowerFlowContainer <: PowerFlowContainer end
 
@@ -95,6 +105,7 @@ get_valid_ix(pfd::PowerFlowData) = pfd.valid_ix
 get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
 get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
 get_neighbor(pfd::PowerFlowData) = pfd.neighbors
+supports_multi_period(::PowerFlowData) = true
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
