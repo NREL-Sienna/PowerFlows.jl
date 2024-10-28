@@ -94,8 +94,14 @@ using `update_exporter` with any new data as relevant, and perform the export wi
     flow-related values but may not fundamentally alter the system
   - `psse_version::Symbol`: the version of PSS/E to target, must be one of
     `PSSE_EXPORT_SUPPORTED_VERSIONS`
-  - `write_comments::Bool`: whether to add the customary-but-not-in-spec-annotations after a
-    slash on the first line and at group boundaries
+  - `write_comments::Bool` = false: whether to add the customary-but-not-in-spec-annotations
+    after a slash on the first line and at group boundaries
+  - `name::AbstractString = "export"`: the base name of the export
+  - `step::Union{Nothing, Integer, Tuple{Vararg{Integer}}} = nothing`: optional step number
+    or tuple of step numbers (e.g., step and timestamp within step) to append to the base
+    export name. User is responsible for updating the step.
+  - `overwrite::Bool = false`: `true` to silently overwrite existing exports, `false` to
+    throw an error if existing results are encountered
 """
 mutable struct PSSEExporter <: SystemPowerFlowContainer
     system::PSY.System
@@ -103,7 +109,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
     export_dir::AbstractString
     write_comments::Bool
     name::AbstractString
-    step::Union{Nothing, Int}
+    step::Union{Nothing, Integer, Tuple{Vararg{Integer}}}
     overwrite::Bool
 
     function PSSEExporter(
@@ -112,7 +118,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
         export_dir::AbstractString;
         write_comments::Bool = false,
         name::AbstractString = PSSE_DEFAULT_EXPORT_NAME,
-        step::Union{Nothing, Int} = nothing,
+        step::Union{Nothing, Integer, Tuple{Vararg{Integer}}} = nothing,
         overwrite::Bool = false,
     )
         (psse_version in PSSE_EXPORT_SUPPORTED_VERSIONS) ||
@@ -126,6 +132,8 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
         new(system, psse_version, export_dir, write_comments, name, step, overwrite)
     end
 end
+
+supports_multi_period(::PSSEExporter) = false
 
 function _validate_same_system(sys1::PSY.System, sys2::PSY.System)
     return IS.get_uuid(PSY.get_internal(sys1)) == IS.get_uuid(PSY.get_internal(sys2))
@@ -873,13 +881,17 @@ function _write_raw(::Val{T}, io::IO, md::AbstractDict, exporter::PSSEExporter) 
     _write_skip_group(io, md, exporter, group_name)
 end
 
+_step_to_string(::Nothing) = ""
+_step_to_string(step::Integer) = "_$step"
+_step_to_string(step::Tuple{Vararg{Integer}}) = "_" * join(step, "_")
+
 "Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
 function write_export(
     exporter::PSSEExporter,
     name::AbstractString;
     overwrite = false,
 )
-    isnothing(exporter.step) || (name *= "_$(exporter.step)")
+    name *= _step_to_string(exporter.step)
     # Construct paths
     export_subdir = joinpath(exporter.export_dir, name)
     dir_exists = isdir(export_subdir)
@@ -1070,7 +1082,7 @@ make_power_flow_container(pfem::PSSEExportPowerFlow, sys::PSY.System; kwargs...)
         pfem.psse_version,
         pfem.export_dir;
         write_comments = pfem.write_comments,
-        step = 0,
+        step = (0, 0),
     )
 
 solve_powerflow!(exporter::PSSEExporter) = write_export(exporter)
