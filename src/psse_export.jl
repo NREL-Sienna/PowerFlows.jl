@@ -900,7 +900,7 @@ function write_export(
             "Target export directory $export_subdir already exists; specify `overwrite = true` if it should be overwritten",
         ),
     )
-    dir_exists || mkdir(export_subdir)  # TODO why already exists?
+    dir_exists || mkdir(export_subdir)
     @info "Exporting $name to $export_subdir"
     raw_path, md_path = get_psse_export_paths(export_subdir)
 
@@ -934,7 +934,6 @@ function write_export(
     open(file -> JSON3.pretty(file, md), md_path; truncate = true)
 end
 
-# TODO test this method
 write_export(exporter::PSSEExporter; kwargs...) =
     write_export(
         exporter,
