@@ -125,7 +125,7 @@ function run_tests()
         end
 
         # Testing Topological components of the schema
-        @time @testset "Begin PowerSystems tests" begin
+        @time @testset "Begin PowerFlows tests" begin
             @includetests ARGS
         end
 
