@@ -51,8 +51,11 @@ end
         data_modified,
     )
 
-    # The big one: update_system! with modified PowerFlowData should result in sys_modified
+    # The big one: update_system! with modified PowerFlowData should result in sys_modified,
+    # modulo information that is inherently lost in the PowerFlowData representation
     sys_modify_updated = deepcopy(sys_original)
     PF.update_system!(sys_modify_updated, data_modified)
-    @test IS.compare_values(powerflow_match_fn, sys_modify_updated, sys_modified)
+    sys_mod_redist = deepcopy(sys_modified)
+    PF.update_system!(sys_mod_redist, PowerFlowData(ACPowerFlow(), sys_mod_redist))
+    @test IS.compare_values(powerflow_match_fn, sys_modify_updated, sys_mod_redist)
 end
