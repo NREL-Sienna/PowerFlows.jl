@@ -363,8 +363,16 @@ function _write_raw(
         NAME = _psse_quote_string(bus_name_mapping[PSY.get_name(bus)])
         BASKV = PSY.get_base_voltage(bus)
         IDE = PSSE_BUS_TYPE_MAP[PSY.get_bustype(bus)]
-        AREA = md["area_mapping"][PSY.get_name(PSY.get_area(bus))]
-        ZONE = md["zone_number_mapping"][PSY.get_name(PSY.get_load_zone(bus))]
+        AREA = if isnothing(PSY.get_area(bus))
+            PSSE_DEFAULT
+        else
+            md["area_mapping"][PSY.get_name(PSY.get_area(bus))]
+        end
+        ZONE = if isnothing(PSY.get_load_zone(bus))
+            PSSE_DEFAULT
+        else
+            md["zone_number_mapping"][PSY.get_name(PSY.get_load_zone(bus))]
+        end
         OWNER = PSSE_DEFAULT
         VM = PSY.get_magnitude(bus)
         VA = rad2deg(PSY.get_angle(bus))
@@ -897,7 +905,7 @@ function write_export(
     dir_exists = isdir(export_subdir)
     (dir_exists && !overwrite) && throw(
         ArgumentError(
-            "Target export directory $export_subdir already exists; specify `overwrite = true` if it should be overwritten",
+            "Target export directory $(abspath(export_subdir)) already exists; specify `overwrite = true` if it should be overwritten",
         ),
     )
     dir_exists || mkdir(export_subdir)
@@ -1009,7 +1017,7 @@ function fix_load_zone_names!(sys::PSY.System, md::Dict)
     # `collect` is necessary due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1161
     for load_zone in collect(PSY.get_components(PSY.LoadZone, sys))
         old_name = PSY.get_name(load_zone)
-        new_name = lz_map[parse(Int64, old_name)]
+        new_name = get(lz_map, parse(Int64, old_name), old_name)
         (old_name != new_name) && PSY.set_name!(sys, load_zone, new_name)
     end
 end
