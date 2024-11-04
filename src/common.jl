@@ -1,10 +1,6 @@
-function get_total_p(l::PSY.PowerLoad)
-    return PSY.get_active_power(l)
-end
-
-function get_total_q(l::PSY.PowerLoad)
-    return PSY.get_reactive_power(l)
-end
+_SingleComponentLoad = Union{PSY.PowerLoad, PSY.ExponentialLoad, PSY.InterruptiblePowerLoad}
+get_total_p(l::_SingleComponentLoad) = PSY.get_active_power(l)
+get_total_q(l::_SingleComponentLoad) = PSY.get_reactive_power(l)
 
 function get_total_p(l::PSY.StandardLoad)
     return PSY.get_constant_active_power(l) +
@@ -16,14 +12,6 @@ function get_total_q(l::PSY.StandardLoad)
     return PSY.get_constant_reactive_power(l) +
            PSY.get_current_reactive_power(l) +
            PSY.get_impedance_reactive_power(l)
-end
-
-function get_total_p(l::PSY.ExponentialLoad)
-    return PSY.get_active_power(l)
-end
-
-function get_total_q(l::PSY.ExponentialLoad)
-    return PSY.get_reactive_power(l)
 end
 
 function _get_injections!(
