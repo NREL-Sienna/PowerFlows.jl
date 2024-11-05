@@ -61,24 +61,45 @@ function with_units(f::Function, sys::System, units::Union{PSY.UnitSystem, Strin
     end
 end
 
-# TODO a bit hacky, there may be a better way (round trip JSON serialization is too slow).
-# If this ends up being useful, maybe move to PSY?
 """
-Make a `deepcopy` of the `System` except replace `sys.data.time_series_manager` with a blank
-`TimeSeriesManager` such that time series are not copied.
+Make a `deepcopy` of the `System` except replace the time series manager and supplemental
+attribute manager with blank versions so these are not copied.
 """
-function deepcopy_system_no_time_series(sys::System)
+function deepcopy_system_no_time_series_no_supplementals(sys::System)
     old_time_series_manager = sys.data.time_series_manager
+    old_supplemental_attribute_manager = sys.data.supplemental_attribute_manager
+
     new_time_series_manager = IS.TimeSeriesManager(
         IS.InMemoryTimeSeriesStorage(),
         IS.TimeSeriesMetadataStore(),
         true,
     )
+    new_supplemental_attribute_manager = IS.SupplementalAttributeManager()
+
+    sys.data.time_series_manager = new_time_series_manager
+    sys.data.supplemental_attribute_manager = new_supplemental_attribute_manager
+
+    old_refs = Dict{Tuple{DataType, String}, IS.SharedSystemReferences}()
+    for comp in PSY.iterate_components(sys)
+        old_refs[(typeof(comp), PSY.get_name(comp))] =
+            comp.internal.shared_system_references
+        new_refs = IS.SharedSystemReferences(;
+            time_series_manager = new_time_series_manager,
+            supplemental_attribute_manager = new_supplemental_attribute_manager,
+        )
+        IS.set_shared_system_references!(comp, new_refs)
+    end
+
     new_sys = try
-        sys.data.time_series_manager = new_time_series_manager
         deepcopy(sys)
     finally
         sys.data.time_series_manager = old_time_series_manager
+        sys.data.supplemental_attribute_manager = old_supplemental_attribute_manager
+
+        for comp in PSY.iterate_components(sys)
+            IS.set_shared_system_references!(comp,
+                old_refs[(typeof(comp), PSY.get_name(comp))])
+        end
     end
     return new_sys
 end
@@ -127,7 +148,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
                     "PSS/E version $psse_version is not supported, must be one of $PSSE_EXPORT_SUPPORTED_VERSIONS",
                 ),
             )
-        system = deepcopy_system_no_time_series(base_system)
+        system = deepcopy_system_no_time_series_no_supplementals(base_system)
         mkpath(export_dir)
         new(system, psse_version, export_dir, write_comments, name, step, overwrite)
     end
@@ -167,7 +188,7 @@ function update_exporter!(exporter::PSSEExporter, data::PSY.System)
             "System passed to update_exporter must be the same system as the one with which the exporter was constructed, just with different values",
         ),
     )
-    exporter.system = deepcopy_system_no_time_series(data)
+    exporter.system = deepcopy_system_no_time_series_no_supplementals(data)
     return
 end
 
