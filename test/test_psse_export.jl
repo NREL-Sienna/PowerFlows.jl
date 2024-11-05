@@ -341,7 +341,8 @@ end
 
 function load_test_system()
     # TODO commit to either providing this file or not requiring it
-    sys_file = joinpath(PF.DATA_DIR, "twofortybus", "Marenas", "system_240[32].json")
+    data_dir = joinpath(dirname(dirname(dirname(pathof(PowerFlows)))), "pf_data")
+    sys_file = joinpath(data_dir, "twofortybus", "Marenas", "system_240[32].json")
     if !isfile(sys_file)
         @warn "Skipping test with system_240[32].json, file does not exist"
         return
