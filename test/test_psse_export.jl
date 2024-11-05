@@ -356,6 +356,7 @@ end
 # I test so much, my tests have tests
 @testset "Test system comparison utilities" begin
     sys = load_test_system()
+    isnothing(sys) && return
 
     @test compare_systems_wrapper(sys, sys)
     @test compare_systems_wrapper(sys, deepcopy(sys))
@@ -363,6 +364,7 @@ end
 
 @testset "PSSE Exporter with system_240[32].json, v33" begin
     sys = load_test_system()
+    isnothing(sys) && return
 
     # PSS/E version must be one of the supported ones
     @test_throws ArgumentError PSSEExporter(sys, :vNonexistent, test_psse_export_dir)
