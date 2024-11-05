@@ -11,8 +11,17 @@ const PTDFPowerFlowData = PowerFlowData{
     },
 }
 
-# ? change this to have a more detailed definition ?
-const vPTDFPowerFlowData = PowerFlowData{<:Any, <:Any}
+const vPTDFPowerFlowData = PowerFlowData{
+    PNM.VirtualPTDF{
+        Tuple{Vector{String}, Vector{Int64}},
+        Tuple{Dict{String, Int64}, Dict{Int64, Int64}},
+    },
+    PNM.ABA_Matrix{
+        Tuple{Vector{Int64}, Vector{Int64}},
+        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
+        PNM.KLU.KLUFactorization{Float64, Int64},
+    },
+}
 
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
@@ -30,7 +39,7 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
 
 # Arguments:
 - `data::PTDFPowerFlowData`:
-        PTDFPowerFlowData structure containig all the information related to the system's power flow.
+        PTDFPowerFlowData structure containing all the information related to the system's power flow.
 """
 function solve_powerflow!(
     data::PTDFPowerFlowData,
@@ -50,7 +59,7 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
 
 # Arguments:
 - `data::vPTDFPowerFlowData`:
-        vPTDFPowerFlowData structure containig all the information related to the system's power flow.
+        vPTDFPowerFlowData structure containing all the information related to the system's power flow.
 """
 function solve_powerflow!(
     data::vPTDFPowerFlowData,
@@ -75,7 +84,7 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
 
 # Arguments:
 - `data::ABAPowerFlowData`:
-        ABAPowerFlowData structure containig all the information related to the system's power flow.
+        ABAPowerFlowData structure containing all the information related to the system's power flow.
 """
 # DC flow: ABA and BA case
 function solve_powerflow!(
