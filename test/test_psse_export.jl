@@ -160,24 +160,16 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         PSY.Transformer2W,
         PSY.ThermalStandard,
     ],
-    # TODO when possible, don't exclude: :bustype, :number, :angle, :magnitude, :variable, :load_zone, probably more
+    # TODO when possible, don't exclude so many fields
     exclude_fields = Set([
-        :name,
         :ext,
-        :bustype,  # bustype currently fails round trip due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1175
-        :angle,
-        :magnitude,
         :active_power_flow,
         :reactive_power_flow,
-        :internal,
-        :voltage_limits,
-        :load_zone,
         :ramp_limits,
         :time_limits,
         :services,
         :angle_limits,
     ]),
-    # TODO when possible, don't exclude these things
     exclude_fields_for_type = Dict(
         PSY.ThermalStandard => Set([
             :prime_mover_type,
