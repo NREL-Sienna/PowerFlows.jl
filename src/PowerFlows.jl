@@ -25,6 +25,8 @@ import InfrastructureSystems
 import PowerNetworkMatrices
 import SparseArrays: SparseMatrixCSC
 import JSON3
+import DataStructures: OrderedDict
+import Dates
 
 const IS = InfrastructureSystems
 const PSY = PowerSystems
@@ -40,12 +42,4 @@ include("ac_power_flow.jl")
 include("ac_power_flow_jacobian.jl")
 include("nlsolve_ac_powerflow.jl")
 include("post_processing.jl")
-
-# Old PSSE Exporter
-import DataFrames: DataFrame
-import Dates
-import DataStructures
-import DataStructures: OrderedDict
-include("psse_exporter/support_tools.jl")
-
 end

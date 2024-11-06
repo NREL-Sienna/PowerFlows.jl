@@ -56,87 +56,6 @@ compare_df_within_tolerance(
     kwargs...,
 ) = compare_df_within_tolerance("unnamed", df1, df2, default_tol; kwargs...)
 
-function compare_component_values(
-    sys1::System,
-    sys2::System;
-    exclude_reactive_power = false,
-)
-    (PSY.get_units_base(sys1) == PSY.get_units_base(sys2)) ||
-        throw(ArgumentError("Can only compare systems with the same units system"))
-    # TODO rewrite to not depend on the old `_states` DataFrame-based functions
-    reactive_power_tol =
-        exclude_reactive_power ? nothing : SYSTEM_REIMPORT_COMPARISON_TOLERANCE
-    result = true
-    result &= compare_df_within_tolerance(
-        "Bus_states",
-        PF.Bus_states(sys1),
-        PF.Bus_states(sys2);
-        bus_name = nothing,
-    )
-    result &= compare_df_within_tolerance(
-        "Line_states",
-        PF.Line_states(sys1),
-        PF.Line_states(sys2);
-        line_name = nothing,
-        active_flow = nothing,
-        reactive_flow = nothing,
-    )
-    result &= compare_df_within_tolerance(
-        "StaticLoad_states",
-        PF.StaticLoad_states(sys1),
-        PF.StaticLoad_states(sys2),
-    )
-    result &= compare_df_within_tolerance(
-        "FixedAdmittance_states",
-        PF.FixedAdmittance_states(sys1),
-        PF.FixedAdmittance_states(sys2);
-        load_name = nothing,
-    )
-    thermals1 = sort(PF.ThermalStandard_states(sys1))
-    thermals2 = filter(
-        :Generator_name => in(thermals1[!, :Generator_name]),
-        sort(PF.ThermalStandard_states(sys2)),
-    )
-    result &= compare_df_within_tolerance(
-        "ThermalStandard_states",
-        thermals1,
-        thermals2;
-        rating = nothing,
-        reactive_power = reactive_power_tol,
-    )
-    gens1 = sort(append!(PF.Generator_states(sys1), PF.Source_states(sys1)))
-    gens2 = sort(append!(PF.Generator_states(sys2), PF.Source_states(sys2)))
-    result &=
-        compare_df_within_tolerance(
-            "Generator_states_Source_states",
-            gens1,
-            gens2;
-            rating = nothing,
-            reactive_power = reactive_power_tol,
-        )
-    result &= compare_df_within_tolerance(
-        "Transformer2W_states",
-        PF.Transformer2W_states(sys1),
-        PF.Transformer2W_states(sys2);
-        Transformer_name = nothing,
-        active_power_flow = nothing,
-        reactive_power_flow = nothing,
-    )
-    result &= compare_df_within_tolerance(
-        "TapTransformer_states",
-        PF.TapTransformer_states(sys1),
-        PF.TapTransformer_states(sys2);
-        r = 1e-4, x = 0.005,
-    )
-    result &= compare_df_within_tolerance(
-        "FixedAdmittance_states",
-        PF.FixedAdmittance_states(sys1),
-        PF.FixedAdmittance_states(sys2);
-        load_name = nothing,
-    )
-    return result
-end
-
 # If we have a name like "Bus1-Bus2-OtherInfo," reverse it to "Bus2-Bus1-OtherInfo"
 function reverse_composite_name(name::String)
     parts = split(name, "-")
@@ -158,13 +77,14 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         PSY.LoadZone,
         PSY.StandardLoad,
         PSY.Transformer2W,
+        PSY.TapTransformer,
+        PSY.PhaseShiftingTransformer,
         PSY.ThermalStandard,
+        PSY.FixedAdmittance,
     ],
     # TODO when possible, don't exclude so many fields
     exclude_fields = Set([
         :ext,
-        :active_power_flow,
-        :reactive_power_flow,
         :ramp_limits,
         :time_limits,
         :services,
@@ -182,12 +102,31 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
             :peak_active_power,
             :peak_reactive_power,
         ]),
+        PSY.Line => Set([
+            :active_power_flow,
+            :reactive_power_flow,
+        ]),
+        PSY.Transformer2W => Set([
+            :active_power_flow,
+            :reactive_power_flow,
+        ]),
     ),
+    generator_comparison_fns = [  # TODO rating
+        PSY.get_name,
+        PSY.get_bus,
+        PSY.get_active_power,
+        PSY.get_reactive_power,
+        PSY.get_base_power,
+    ],
     ignore_name_order = true,
-    ignore_extra_of_type = Union{PSY.Generator, PSY.StaticLoad},
+    ignore_extra_of_type = Union{PSY.ThermalStandard, PSY.StaticLoad},
     exclude_reactive_power = false)
     result = true
-    exclude_reactive_power && push!(exclude_fields, :reactive_power)
+    if exclude_reactive_power
+        push!(exclude_fields, :reactive_power)
+        generator_comparison_fns =
+            filter(!=(PSY.get_reactive_power), generator_comparison_fns)
+    end
 
     # Compare everything about the systems except the actual components
     result &= IS.compare_values(sys1, sys2; exclude = [:data])
@@ -221,6 +160,8 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         else
             if Set(predicted_names2) != Set(actual_names2)
                 @error "Predicted names do not match actual names for $my_type"
+                @error "Predicted: $(sort(collect(Set(predicted_names2))))"
+                @error "Actual: $(sort(collect(Set(actual_names2))))"
                 result = false
             end
         end
@@ -246,17 +187,39 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
             end
         end
     end
-    return result
-end
 
-# We currently have two imperfect methods of comparing systems. TODO at some point combine into one good method
-function compare_systems_wrapper(sys1::System, sys2::System, sys2_metadata = nothing;
-    exclude_reactive_power = false)
-    first_result = compare_component_values(sys1, sys2;
-        exclude_reactive_power = exclude_reactive_power)
-    second_result = compare_systems_loosely(sys1, sys2;
-        exclude_reactive_power = exclude_reactive_power)
-    return first_result && second_result
+    # Extra checks for other types of generators
+    GenSource = Union{Generator, Source}
+    gen1_names = sort(PSY.get_name.(PSY.get_components(GenSource, sys1)))
+    gen2_names = sort(PSY.get_name.(PSY.get_components(GenSource, sys2)))
+    if gen1_names != gen2_names
+        @error "Predicted Generator/Source names do not match actual generator names"
+        @error "Predicted: $gen1_names"
+        @error "Actual: $gen2_names"
+        result = false
+    end
+    gen_common_names = intersect(gen1_names, gen2_names)
+    for (gen1, gen2) in zip(
+        PSY.get_component.(GenSource, [sys1], gen_common_names),
+        PSY.get_component.(GenSource, [sys2], gen_common_names),
+    )
+        # Skip pairs we've already compared
+        # e.g., if they're both ThermalStandards, we've already compared them
+        any(Union{typeof(gen1), typeof(gen2)} .<: include_types) && continue
+        for comp_fn in generator_comparison_fns
+            comparison = IS.compare_values(
+                loose_system_match_fn,
+                comp_fn(gen1),
+                comp_fn(gen2);
+                exclude = exclude_fields,
+            )
+            result &= comparison
+            if !comparison
+                @error "Generator $(get_name(gen1)) mismatch on $comp_fn: $(comp_fn(gen1)) vs. $(comp_fn(gen2))"
+            end
+        end
+    end
+    return result
 end
 
 function test_power_flow(sys1::System, sys2::System; exclude_reactive_flow = false)
@@ -300,7 +263,7 @@ function test_psse_round_trip(
     @test isfile(metadata_path)
 
     sys2, sys2_metadata = read_system_and_metadata(raw_path, metadata_path)
-    @test compare_systems_wrapper(sys, sys2, sys2_metadata)
+    @test compare_systems_loosely(sys, sys2)
     do_power_flow_test &&
         test_power_flow(sys, sys2; exclude_reactive_flow = exclude_reactive_flow)
 end
@@ -351,8 +314,8 @@ end
     sys = load_test_system()
     isnothing(sys) && return
 
-    @test compare_systems_wrapper(sys, sys)
-    @test compare_systems_wrapper(sys, deepcopy(sys))
+    @test compare_systems_loosely(sys, sys)
+    @test compare_systems_loosely(sys, deepcopy(sys))
 end
 
 @testset "PSSE Exporter with system_240[32].json, v33" begin
@@ -393,10 +356,10 @@ end
     write_export(exporter, "basic4")
     reread_sys2, sys2_metadata =
         read_system_and_metadata(joinpath(export_location, "basic4"))
-    @test compare_systems_wrapper(sys2, reread_sys2, sys2_metadata)
-    @test_logs((:error, r"Mismatch on rate"), (:error, r"values do not match"),
+    @test compare_systems_loosely(sys2, reread_sys2)
+    @test_logs((:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
-        compare_systems_wrapper(sys, reread_sys2, sys2_metadata))
+        compare_systems_loosely(sys, reread_sys2))
     test_power_flow(sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 end
 
@@ -437,12 +400,10 @@ end
     write_export(exporter, "basic4")
     reread_sys2, sys2_metadata =
         read_system_and_metadata(joinpath(export_location, "basic4"))
-    @test compare_systems_wrapper(sys2, reread_sys2, sys2_metadata)
+    @test compare_systems_loosely(sys2, reread_sys2)
     @test_logs((:error, r"values do not match"),
-        (:error, r"Mismatch on active_power"), (:error, r"Mismatch on reactive_power"),
-        (:error, r"Mismatch on Vm"), (:error, r"Mismatch on θ"),
         match_mode = :any, min_level = Logging.Error,
-        compare_systems_wrapper(sys, reread_sys2, sys2_metadata))
+        compare_systems_loosely(sys, reread_sys2))
     test_power_flow(sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Updating with changed value should result in a different reimport (PowerFlowData version)
@@ -455,13 +416,11 @@ end
     write_export(exporter, "basic5")
     reread_sys3, sys3_metadata =
         read_system_and_metadata(joinpath(export_location, "basic5"))
-    @test compare_systems_wrapper(sys2, reread_sys3, sys3_metadata;
+    @test compare_systems_loosely(sys2, reread_sys3;
         exclude_reactive_power = true)  # TODO why is reactive power not matching?
     @test_logs((:error, r"values do not match"),
-        (:error, r"Mismatch on active_power"), (:error, r"Mismatch on reactive_power"),
-        (:error, r"Mismatch on Vm"), (:error, r"Mismatch on θ"),
         match_mode = :any, min_level = Logging.Error,
-        compare_systems_wrapper(sys, reread_sys3, sys3_metadata))
+        compare_systems_loosely(sys, reread_sys3))
     test_power_flow(sys2, reread_sys3; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting with write_comments should be comparable to original system
