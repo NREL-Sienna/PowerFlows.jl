@@ -244,9 +244,7 @@ end
 
 "Validate that the Sienna area/zone names parse as PSS/E-compatible area/zone numbers, output a mapping"
 _psse_container_numbers(container_names::Vector{String}) =
-    DataStructures.OrderedDict(
-        name => _validate_container_number(name) for name in container_names
-    )
+    OrderedDict(name => _validate_container_number(name) for name in container_names)
 
 "WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Case Identification Data"
 function _write_raw(
@@ -1089,13 +1087,19 @@ function PSY.System(raw_path::AbstractString, md::Dict)
             (length(sid) == 6) ? [sid[2], sid[3], sid[5]] : last(sid, 3)
         return all_branch_name_map[((p_bus_1, p_bus_2), p_name)]
     end
+    shunt_name_formatter = name_formatter_from_component_ids(
+        md["shunt_name_mapping"],
+        md["bus_number_mapping"],
+        Int64,
+    )
 
     sys =
         System(raw_path;
             bus_name_formatter = bus_name_formatter,
             gen_name_formatter = gen_name_formatter,
             load_name_formatter = load_name_formatter,
-            branch_name_formatter = branch_name_formatter)
+            branch_name_formatter = branch_name_formatter,
+            shunt_name_formatter = shunt_name_formatter)
     fix_nans!(sys)
     fix_load_zone_names!(sys, md)
     # TODO remap bus numbers
