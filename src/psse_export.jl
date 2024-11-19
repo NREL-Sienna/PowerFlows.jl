@@ -214,13 +214,19 @@ function end_group_33(io::IO, md::AbstractDict, exporter::PSSEExporter, group_na
     md["record_groups"][group_name] = written
 end
 
-_permissive_parse_int(x) = Int64(parse(Float64, x))  # Parses "1.0" as 1, errors on "1.5"
+# Parses "1" and "1.0" as 1, returns nothing on "1.5" and "a"
+function _permissive_parse_int(x)
+    n = tryparse(Float64, x)
+    isnothing(n) && return nothing
+    (round(n) == n) || return nothing
+    return Int64(n)
+end
 
 # PERF could be improved by appending to the buffer rather than doing string interpolation, seems unnecessary
 _psse_quote_string(s::String) = "'$s'"
 
 branch_to_bus_numbers(branch) =
-    (PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch))))
+    PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch)))::Tuple{Int, Int}
 
 "Throw a `NotImplementedError` if the `psse_version` is not `:v33`"
 check_33(exporter::PSSEExporter) = check_33(exporter.psse_version)
@@ -228,23 +234,35 @@ check_33(psse_version::Symbol) =
     (psse_version == :v33) ||
     throw(IS.NotImplementedError("Only implemented for psse_version $(:v33)"))
 
-function _validate_container_number(unparsed::String)
-    parsed = try
-        _permissive_parse_int(unparsed)
-    catch e
-        if e isa Union{InexactError, ArgumentError}
-            throw(ArgumentError("container name $unparsed could not be parsed as an integer"))
-        else
-            rethrow(e)
-        end
-    end
-    (parsed in 1:9999) && (return parsed)
-    throw(ArgumentError("container number $parsed is out of range"))
-end
-
 "Validate that the Sienna area/zone names parse as PSS/E-compatible area/zone numbers, output a mapping"
-_psse_container_numbers(container_names::Vector{String}) =
-    OrderedDict(name => _validate_container_number(name) for name in container_names)
+function _map_psse_container_names(container_names::Vector{String})
+    (length(container_names) <= 9999) || throw(ArgumentError("Too many container_names"))
+    mapping = DataStructures.OrderedDict{String, Int}()
+    used = Set{Int}()
+    for name in container_names
+        try
+            # Ideally it's a number and we just parse it
+            parsed = _permissive_parse_int(name)
+            if !isnothing(parsed) && (parsed in 1:9999) && !(parsed in used)
+                mapping[name] = parsed
+                push!(used, parsed)
+                continue
+            end
+        catch e
+            (e isa Union{InexactError, ArgumentError}) || rethrow(e)
+        end
+
+        # If parsing fails or the number doesn't work, assign it the lowest unused number
+        i = 1
+        while i in used  # PERF inefficient but unlikely to matter
+            i += 1
+        end
+        @assert i <= 9999
+        mapping[name] = i
+        push!(used, i)
+    end
+    return mapping
+end
 
 "WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Case Identification Data"
 function _write_raw(
@@ -683,7 +701,11 @@ function _write_raw(
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
         CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
-        @assert !(first(CKT) in ['&', '@', '*'])  # Characters with a special meaning in this context
+        if (first(CKT) in ['&', '@', '*'])  # Characters with a special meaning in this context
+            # TODO solidify desired behavior
+            @warn "Branch export not implemented for $(PSY.get_name(branch)) with CKT='$CKT'; skipping"
+            continue
+        end
         CKT = _psse_quote_string(CKT)
         R = PSY.get_r(branch)
         X = PSY.get_x(branch)
@@ -741,6 +763,14 @@ function _psse_transformer_names(
         new_name = "B$(bus_number_mapping[orig_from])-$(bus_number_mapping[orig_to])_$ckt"
         while new_name in used_names
             new_name *= "-"
+        end
+        # If both bus numbers are large, that new_name might be too long
+        if !_is_valid_psse_name(new_name)
+            n = 0
+            while !_is_valid_psse_name(new_name) || (new_name in used_names)
+                new_name = "B$(bus_number_mapping[orig_from])-N$n"
+                n += 1
+            end
         end
         @assert _is_valid_psse_name(new_name) new_name
         mapping[original_name] = new_name
@@ -937,10 +967,10 @@ function write_export(
     md["case_name"] = name
     md["export_settings"] = OrderedDict("sources_as_generators" => true)
     # These mappings are accessed in e.g. _write_bus_data via the metadata
-    md["area_mapping"] = _psse_container_numbers(
+    md["area_mapping"] = _map_psse_container_names(
         sort!(collect(PSY.get_name.(PSY.get_components(PSY.Area, exporter.system)))),
     )
-    md["zone_number_mapping"] = _psse_container_numbers(
+    md["zone_number_mapping"] = _map_psse_container_names(
         sort!(collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, exporter.system)))),
     )
     md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
@@ -1103,6 +1133,7 @@ function PSY.System(raw_path::AbstractString, md::Dict)
     fix_nans!(sys)
     fix_load_zone_names!(sys, md)
     # TODO remap bus numbers
+    # TODO remap areas
     # TODO remap everything else! Should be reading all the keys in `md`
     return sys
 end

@@ -9,6 +9,7 @@ using LinearAlgebra
 using CSV
 using DataFrames
 using JSON3
+using DataStructures
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder

@@ -450,6 +450,13 @@ end
         ["generator-1234-AB", "123_CT_7", "load1234", "load1334"], [1, 1, 2, 2]) ==
           Dict((1, "generator-1234-AB") => "AB", (1, "123_CT_7") => "7",
         (2, "load1234") => "34", (2, "load1334") => "35")
+
+    @test PowerFlows._map_psse_container_names(["1", "3", "2"]) ==
+          OrderedDict("1" => 1, "3" => 3, "2" => 2)
+    @test PowerFlows._map_psse_container_names(["1", "a", "2"]) ==
+          OrderedDict("1" => 1, "a" => 2, "2" => 3)
+    @test PowerFlows._map_psse_container_names(["2.0", "1.0"]) ==
+          OrderedDict("2.0" => 2, "1.0" => 1)
 end
 
 # TODO add tests for unit system agnosticism
