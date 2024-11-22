@@ -132,6 +132,8 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
     name::AbstractString
     step::Union{Nothing, Integer, Tuple{Vararg{Integer}}}
     overwrite::Bool
+    buffer::IOBuffer
+    components_cache::Dict{String, Vector{<:PSY.Component}}
 
     function PSSEExporter(
         base_system::PSY.System,
@@ -150,7 +152,17 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
             )
         system = deepcopy_system_no_time_series_no_supplementals(base_system)
         mkpath(export_dir)
-        new(system, psse_version, export_dir, write_comments, name, step, overwrite)
+        new(
+            system,
+            psse_version,
+            export_dir,
+            write_comments,
+            name,
+            step,
+            overwrite,
+            IOBuffer(),
+            Dict{String, Vector{<:PSY.Component}}(),
+        )
     end
 end
 
@@ -189,6 +201,7 @@ function update_exporter!(exporter::PSSEExporter, data::PSY.System)
         ),
     )
     exporter.system = deepcopy_system_no_time_series_no_supplementals(data)
+    empty!(exporter.components_cache)
     return
 end
 
@@ -237,7 +250,7 @@ check_33(psse_version::Symbol) =
 "Validate that the Sienna area/zone names parse as PSS/E-compatible area/zone numbers, output a mapping"
 function _map_psse_container_names(container_names::Vector{String})
     (length(container_names) <= 9999) || throw(ArgumentError("Too many container_names"))
-    mapping = DataStructures.OrderedDict{String, Int}()
+    mapping = OrderedDict{String, Int}()
     used = Set{Int}()
     for name in container_names
         try
@@ -389,8 +402,9 @@ function _write_raw(
 )
     check_33(exporter)
 
-    buses = sort!(collect(PSY.get_components(PSY.Bus, exporter.system));
-        by = PSY.get_number)
+    buses = get!(exporter.components_cache, "buses") do
+        sort!(collect(PSY.get_components(PSY.Bus, exporter.system)); by = PSY.get_number)
+    end
     old_bus_numbers = PSY.get_number.(buses)
     bus_number_mapping = _psse_bus_numbers(old_bus_numbers)
     bus_name_mapping =
@@ -531,8 +545,9 @@ function _write_raw(
 )
     check_33(exporter)
 
-    loads = sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system));
-        by = PSY.get_name)
+    loads = get!(exporter.components_cache, "loads") do
+        sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system)); by = PSY.get_name)
+    end
     load_name_mapping =
         create_component_ids(
             PSY.get_name.(loads),
@@ -570,8 +585,12 @@ function _write_raw(
 )
     check_33(exporter)
 
-    shunts = sort!(collect(PSY.get_components(PSY.FixedAdmittance, exporter.system));
-        by = PSY.get_name)
+    shunts = get!(exporter.components_cache, "shunts") do
+        sort!(
+            collect(PSY.get_components(PSY.FixedAdmittance, exporter.system));
+            by = PSY.get_name,
+        )
+    end
     shunt_name_mapping =
         create_component_ids(
             PSY.get_name.(shunts),
@@ -609,11 +628,20 @@ function _write_raw(
 )
     check_33(exporter)
 
-    generators::Vector{PSY.StaticInjection} =
-        sort!(collect(PSY.get_components(PSY.Generator, exporter.system));
-            by = PSY.get_name)
-    get(md["export_settings"], "sources_as_generators", false) && append!(generators,
-        sort!(collect(PSY.get_components(PSY.Source, exporter.system)); by = PSY.get_name))
+    generators = get!(exporter.components_cache, "generators") do
+        temp_gens::Vector{PSY.StaticInjection} = sort!(
+            collect(PSY.get_components(PSY.Generator, exporter.system));
+            by = PSY.get_name,
+        )
+        get(md["export_settings"], "sources_as_generators", false) && append!(
+            temp_gens,
+            sort!(
+                collect(PSY.get_components(PSY.Source, exporter.system));
+                by = PSY.get_name,
+            ),
+        )
+        return temp_gens
+    end
     generator_name_mapping =
         create_component_ids(
             PSY.get_name.(generators),
@@ -687,8 +715,12 @@ function _write_raw(
     check_33(exporter)
 
     # TODO can/should we be more general than `Line`?
-    branches = sort!(collect(PSY.get_components(PSY.Line, exporter.system));
-        by = branch_to_bus_numbers)
+    branches = get!(exporter.components_cache, "branches") do
+        sort!(
+            collect(PSY.get_components(PSY.Line, exporter.system));
+            by = branch_to_bus_numbers,
+        )
+    end
     branch_name_mapping =
         create_component_ids(
             PSY.get_name.(branches),
@@ -794,10 +826,12 @@ function _write_raw(
     check_33(exporter)
     transformer_types =
         Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
-    transformers = sort!(
-        collect(PSY.get_components(transformer_types, exporter.system));
-        by = branch_to_bus_numbers,
-    )
+    transformers = get!(exporter.components_cache, "transformers") do
+        sort!(
+            collect(PSY.get_components(transformer_types, exporter.system));
+            by = branch_to_bus_numbers,
+        )
+    end
     transformer_ckt_mapping =
         create_component_ids(
             PSY.get_name.(transformers),
@@ -891,10 +925,12 @@ function _write_raw(
 )
     check_33(exporter)
     zone_number_mapping = md["zone_number_mapping"]
-    zones = sort!(
-        collect(PSY.get_components(PSY.LoadZone, exporter.system));
-        by = x -> zone_number_mapping[PSY.get_name(x)],
-    )
+    zones = get!(exporter.components_cache, "zones") do
+        sort!(
+            collect(PSY.get_components(PSY.LoadZone, exporter.system));
+            by = x -> zone_number_mapping[PSY.get_name(x)],
+        )
+    end
     for zone in zones
         name = PSY.get_name(zone)
         I = zone_number_mapping[name]
@@ -962,7 +998,7 @@ function write_export(
     raw_path, md_path = get_psse_export_paths(export_subdir)
 
     # Build export files in buffers
-    raw = IOBuffer()
+    raw = exporter.buffer
     md = OrderedDict()
     md["case_name"] = name
     md["export_settings"] = OrderedDict("sources_as_generators" => true)
@@ -987,7 +1023,7 @@ function write_export(
     !isempty(skipped_groups) && @warn "Skipped groups: $(join(skipped_groups, ", "))"
 
     # Write files
-    open(file -> write(file, seekstart(raw)), raw_path; truncate = true)
+    open(file -> write(file, take!(raw)), raw_path; truncate = true)
     open(file -> JSON3.pretty(file, md), md_path; truncate = true)
 end
 
