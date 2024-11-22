@@ -132,8 +132,11 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
     name::AbstractString
     step::Union{Nothing, Integer, Tuple{Vararg{Integer}}}
     overwrite::Bool
-    buffer::IOBuffer
-    components_cache::Dict{String, Vector{<:PSY.Component}}
+    raw_buffer::IOBuffer  # Persist an IOBuffer to reduce allocations on repeated exports
+    md_dict::OrderedDict{String}  # Persist metadata to avoid unnecessary recomputation
+    md_valid::Bool  # If this is true, the metadata need not be reserialized
+    md_buffer::IOBuffer  # Cache a serialized version of the metadata
+    components_cache::AbstractDict{String, Vector{<:PSY.Component}}  # Cache sorted lists of components to reduce allocations
 
     function PSSEExporter(
         base_system::PSY.System,
@@ -161,6 +164,9 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
             step,
             overwrite,
             IOBuffer(),
+            OrderedDict{String, Any}(),
+            false,
+            IOBuffer(),
             Dict{String, Vector{<:PSY.Component}}(),
         )
     end
@@ -185,6 +191,14 @@ function update_exporter!(exporter::PSSEExporter, data::PowerFlowData)
     update_system!(exporter.system, data)
 end
 
+"Force all cached information (serialized metadata, component lists, etc.) to be regenerated"
+function reset_caches(exporter::PSSEExporter)
+    take!(exporter.raw_buffer)
+    empty!(exporter.components_cache)
+    exporter.md_valid = false
+    # We do not clear the md_buffer here, but !md_valid implies that its contents are not valid
+end
+
 # TODO solidify the notion of sameness we care about here
 """
 Update the `PSSEExporter` with new `data`.
@@ -201,7 +215,7 @@ function update_exporter!(exporter::PSSEExporter, data::PSY.System)
         ),
     )
     exporter.system = deepcopy_system_no_time_series_no_supplementals(data)
-    empty!(exporter.components_cache)
+    reset_caches(exporter)
     return
 end
 
@@ -224,7 +238,7 @@ function end_group_33(io::IO, md::AbstractDict, exporter::PSSEExporter, group_na
         (next_group == "Q Record") || (end_msg *= ", Begin $next_group")
     end
     println(io, end_msg)
-    md["record_groups"][group_name] = written
+    exporter.md_valid || (md["record_groups"][group_name] = written)
 end
 
 # Parses "1" and "1.0" as 1, returns nothing on "1.5" and "a"
@@ -278,12 +292,13 @@ function _map_psse_container_names(container_names::Vector{String})
 end
 
 "WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Case Identification Data"
-function _write_raw(
-    ::Val{Symbol("Case Identification Data")},
-    io::IO,
-    md::AbstractDict,
+function write_to_buffers!(
     exporter::PSSEExporter,
+    ::Val{Symbol("Case Identification Data")},
 )
+    io = exporter.raw_buffer
+    md = exporter.md_dict
+
     check_33(exporter)
     now = Dates.now()
     md_string = "PSS/E 33.3 RAW via PowerFlows.jl, $now"
@@ -308,7 +323,7 @@ function _write_raw(
     line3 = md_string
     @assert length(line3) <= 60
     println(io, line3)
-    md["record_groups"]["Case Identification Data"] = true
+    exporter.md_valid || (md["record_groups"]["Case Identification Data"] = true)
 end
 
 """
@@ -394,12 +409,12 @@ end
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Bus Data. Sienna voltage limits treated as PSS/E
 normal voltage limits; PSSE emergency voltage limits left as default.
 """
-function _write_raw(
-    ::Val{Symbol("Bus Data")},
-    io::IO,
-    md::AbstractDict,
+function write_to_buffers!(
     exporter::PSSEExporter,
+    ::Val{Symbol("Bus Data")},
 )
+    io = exporter.raw_buffer
+    md = exporter.md_dict
     check_33(exporter)
 
     buses = get!(exporter.components_cache, "buses") do
@@ -435,8 +450,8 @@ function _write_raw(
     end
     end_group_33(io, md, exporter, "Bus Data", true)
 
-    md["bus_number_mapping"] = bus_number_mapping
-    md["bus_name_mapping"] = bus_name_mapping
+    exporter.md_valid || (md["bus_number_mapping"] = bus_number_mapping)
+    exporter.md_valid || (md["bus_name_mapping"] = bus_name_mapping)
 end
 
 function _increment_component_char(component_char::Char)
@@ -537,12 +552,12 @@ _psse_get_load_data(exporter::PSSEExporter, load::PSY.StaticLoad) =
 """
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Load Data
 """
-function _write_raw(
-    ::Val{Symbol("Load Data")},
-    io::IO,
-    md::AbstractDict,
+function write_to_buffers!(
     exporter::PSSEExporter,
+    ::Val{Symbol("Load Data")},
 )
+    io = exporter.raw_buffer
+    md = exporter.md_dict
     check_33(exporter)
 
     loads = get!(exporter.components_cache, "loads") do
@@ -571,18 +586,19 @@ function _write_raw(
         )
     end
     end_group_33(io, md, exporter, "Load Data", true)
-    md["load_name_mapping"] = serialize_component_ids(load_name_mapping)
+    exporter.md_valid ||
+        (md["load_name_mapping"] = serialize_component_ids(load_name_mapping))
 end
 
 """
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
 """
-function _write_raw(
-    ::Val{Symbol("Fixed Shunt Data")},
-    io::IO,
-    md::AbstractDict,
+function write_to_buffers!(
     exporter::PSSEExporter,
+    ::Val{Symbol("Fixed Shunt Data")},
 )
+    io = exporter.raw_buffer
+    md = exporter.md_dict
     check_33(exporter)
 
     shunts = get!(exporter.components_cache, "shunts") do
@@ -611,7 +627,8 @@ function _write_raw(
         )
     end
     end_group_33(io, md, exporter, "Fixed Shunt Data", true)
-    md["shunt_name_mapping"] = serialize_component_ids(shunt_name_mapping)
+    exporter.md_valid ||
+        (md["shunt_name_mapping"] = serialize_component_ids(shunt_name_mapping))
 end
 
 """
@@ -620,12 +637,12 @@ PSS/E generators in addition to `PSY.Generator`s
 
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Generator Data
 """
-function _write_raw(
+function write_to_buffers!(
+    exporter::PSSEExporter,
     ::Val{Symbol("Generator Data")},
-    io::IO,
-    md::AbstractDict,
-    exporter::PSSEExporter;
 )
+    io = exporter.raw_buffer
+    md = exporter.md_dict
     check_33(exporter)
 
     generators = get!(exporter.components_cache, "generators") do
@@ -700,18 +717,19 @@ function _write_raw(
         )
     end
     end_group_33(io, md, exporter, "Generator Data", true)
-    md["generator_name_mapping"] = serialize_component_ids(generator_name_mapping)
+    exporter.md_valid ||
+        (md["generator_name_mapping"] = serialize_component_ids(generator_name_mapping))
 end
 
 """
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Non-Transformer Branch Data
 """
-function _write_raw(
-    ::Val{Symbol("Non-Transformer Branch Data")},
-    io::IO,
-    md::AbstractDict,
+function write_to_buffers!(
     exporter::PSSEExporter,
+    ::Val{Symbol("Non-Transformer Branch Data")},
 )
+    io = exporter.raw_buffer
+    md = exporter.md_dict
     check_33(exporter)
 
     # TODO can/should we be more general than `Line`?
@@ -763,7 +781,8 @@ function _write_raw(
         )
     end
     end_group_33(io, md, exporter, "Non-Transformer Branch Data", true)
-    md["branch_name_mapping"] = serialize_component_ids(branch_name_mapping)
+    exporter.md_valid ||
+        (md["branch_name_mapping"] = serialize_component_ids(branch_name_mapping))
 end
 
 """
@@ -817,12 +836,12 @@ Currently only supports two-winding transformers
 
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Data
 """
-function _write_raw(
-    ::Val{Symbol("Transformer Data")},
-    io::IO,
-    md::AbstractDict,
+function write_to_buffers!(
     exporter::PSSEExporter,
+    ::Val{Symbol("Transformer Data")},
 )
+    io = exporter.raw_buffer
+    md = exporter.md_dict
     check_33(exporter)
     transformer_types =
         Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
@@ -907,8 +926,10 @@ function _write_raw(
         joinln(io, [WINDV2, NOMV2])
     end
     end_group_33(io, md, exporter, "Transformer Data", true)
-    md["transformer_ckt_mapping"] = serialize_component_ids(transformer_ckt_mapping)
-    md["transformer_name_mapping"] = transformer_name_mapping
+    if !exporter.md_valid
+        md["transformer_ckt_mapping"] = serialize_component_ids(transformer_ckt_mapping)
+        md["transformer_name_mapping"] = transformer_name_mapping
+    end
 end
 
 # TODO this assumption might not be valid
@@ -917,12 +938,12 @@ Assumes that the Sienna zone names are already PSS/E compatible
 
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Zone Data
 """
-function _write_raw(
-    ::Val{Symbol("Zone Data")},
-    io::IO,
-    md::AbstractDict,
+function write_to_buffers!(
     exporter::PSSEExporter,
+    ::Val{Symbol("Zone Data")},
 )
+    io = exporter.raw_buffer
+    md = exporter.md_dict
     check_33(exporter)
     zone_number_mapping = md["zone_number_mapping"]
     zones = get!(exporter.components_cache, "zones") do
@@ -945,15 +966,15 @@ end
 """
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Q Record
 """
-function _write_raw(
-    ::Val{Symbol("Q Record")},
-    io::IO,
-    md::AbstractDict,
+function write_to_buffers!(
     exporter::PSSEExporter,
+    ::Val{Symbol("Q Record")},
 )
+    io = exporter.raw_buffer
+    md = exporter.md_dict
     check_33(exporter)
     println(io, "Q")  # End of file
-    md["record_groups"]["Q Record"] = true
+    exporter.md_valid || (md["record_groups"]["Q Record"] = true)
 end
 
 function _write_skip_group(
@@ -964,11 +985,13 @@ function _write_skip_group(
 )
     check_33(exporter)
     end_group_33(io, md, exporter, this_section_name, false)
-    md["record_groups"][this_section_name] = false
+    exporter.md_valid || (md["record_groups"][this_section_name] = false)
 end
 
 # If a writer for a given group is not defined, write that we are skipping it
-function _write_raw(::Val{T}, io::IO, md::AbstractDict, exporter::PSSEExporter) where {T}
+function write_to_buffers!(exporter::PSSEExporter, ::Val{T}) where {T}
+    io = exporter.raw_buffer
+    md = exporter.md_dict
     group_name = string(T)
     @debug "Export for group $group_name not implemented, skipping it"
     _write_skip_group(io, md, exporter, group_name)
@@ -998,33 +1021,44 @@ function write_export(
     raw_path, md_path = get_psse_export_paths(export_subdir)
 
     # Build export files in buffers
-    raw = exporter.buffer
-    md = OrderedDict()
-    md["case_name"] = name
-    md["export_settings"] = OrderedDict("sources_as_generators" => true)
-    # These mappings are accessed in e.g. _write_bus_data via the metadata
-    md["area_mapping"] = _map_psse_container_names(
-        sort!(collect(PSY.get_name.(PSY.get_components(PSY.Area, exporter.system)))),
-    )
-    md["zone_number_mapping"] = _map_psse_container_names(
-        sort!(collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, exporter.system)))),
-    )
-    md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
+    md = exporter.md_dict
+    if !exporter.md_valid
+        md["case_name"] = name
+        md["export_settings"] = OrderedDict("sources_as_generators" => true)
+        # These mappings are accessed in e.g. _write_bus_data via the metadata
+        md["area_mapping"] = _map_psse_container_names(
+            sort!(
+                collect(PSY.get_name.(PSY.get_components(PSY.Area, exporter.system)))),
+        )
+        md["zone_number_mapping"] = _map_psse_container_names(
+            sort!(
+                collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, exporter.system)))),
+        )
+        md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
+    end
 
     with_units(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
         # Each of these corresponds to a group of records in the PSS/E spec
         for group_name in PSSE_GROUPS_33
             @debug "Writing export for group $group_name"
-            _write_raw(Val{Symbol(group_name)}(), raw, md, exporter)
+            write_to_buffers!(exporter, Val{Symbol(group_name)}())
         end
     end
 
     skipped_groups = [k for (k, v) in md["record_groups"] if !v]
     !isempty(skipped_groups) && @warn "Skipped groups: $(join(skipped_groups, ", "))"
 
+    if !exporter.md_valid
+        @debug "Serializing PSS/E export metadata to in-memory buffer"
+        take!(exporter.md_buffer)
+        JSON3.pretty(exporter.md_buffer, md)
+    end
+    exporter.md_valid = true
+
     # Write files
-    open(file -> write(file, take!(raw)), raw_path; truncate = true)
-    open(file -> JSON3.pretty(file, md), md_path; truncate = true)
+    open(file -> write(file, take!(exporter.raw_buffer)), raw_path; truncate = true)
+    open(file -> write(file, seekstart(exporter.md_buffer)), md_path; truncate = true)
+    return
 end
 
 write_export(exporter::PSSEExporter; kwargs...) =
