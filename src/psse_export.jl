@@ -7,12 +7,6 @@ const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.SLACK => 3,
     PSY.ACBusTypes.ISOLATED => 4,
 )
-# Splat this out where the eight ownership fields are necessary
-const PSSE_DEFAULT_OWNERSHIP = let
-    O1, O2, O3, O4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
-    F1, F2, F3, F4 = PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT
-    O1, F1, O2, F2, O3, F3, O4, F4
-end
 
 # Each of the groups in the PSS/3 v33 standard
 const PSSE_GROUPS_33 = [
@@ -256,18 +250,41 @@ function better_float_to_buf(buf::_FloatToBufSupportedTypes, n::Float64)
     return
 end
 
-# Could be done in a less piratelike way (just for joinln or something) if this were to stick around
-Base.show(buf::_FloatToBufSupportedTypes, n::Float64) = better_float_to_buf(buf, n)
+fastprint(io::IO, val) = print(io, val)
+fastprint(io::_FloatToBufSupportedTypes, val::Float64) = better_float_to_buf(io, val)
 
-"""
-`join` with a newline at the end, delimeter defaults to \", \". If `strip_trailing_empties`,
-trailing entries of `iterator` equal to the empty string are ignored.
-"""
-function joinln(io::IO, iterator, delim = ", "; strip_trailing_empties = true)  # TODO maybe remove the space from the delim?
-    (strip_trailing_empties && ("" in iterator)) &&
-        (iterator = iterator[1:findlast(!=(""), iterator)])
-    join(io, iterator, delim)
-    println(io)
+function fastprintdelim(io, val, delim = ", ")
+    fastprint(io, val)
+    fastprint(io, delim)
+end
+
+function fastprintln(io, val, ln = "\n")
+    fastprint(io, val)
+    fastprint(io, ln)
+end
+
+function fastprintdelim_psse_default_ownership(io)
+    # See PERF note below regarding this implementation
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+end
+
+function fastprintln_psse_default_ownership(io)
+    # See PERF note below regarding this implementation
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintdelim(io, PSSE_DEFAULT)
+    fastprintln(io, PSSE_DEFAULT)
 end
 
 function end_group_33(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name, written)
@@ -351,7 +368,15 @@ function write_to_buffers!(
     NXFRAT = 1  # TODO why?
     BASFRQ = PSY.get_frequency(exporter.system)
     exporter.write_comments && (BASFRQ = "$BASFRQ    / $md_string")
-    joinln(io, (IC, SBASE, REV, XFRRAT, NXFRAT, BASFRQ))  # Tuple to avoid type promotion
+
+    # PERF we use manually unrolled loops because the vector/tuple allocation was a performance issue
+    # TODO this could almost certaintly be done more elegantly using a macro 
+    fastprintdelim(io, IC)
+    fastprintdelim(io, SBASE)
+    fastprintdelim(io, REV)
+    fastprintdelim(io, XFRRAT)
+    fastprintdelim(io, NXFRAT)
+    fastprintln(io, BASFRQ)
 
     # Record 2
     case_name = md["case_name"]
@@ -486,7 +511,20 @@ function write_to_buffers!(
         NVLO = PSY.get_voltage_limits(bus).min
         EVHI = PSSE_DEFAULT
         EVLO = PSSE_DEFAULT
-        joinln(io, [I, NAME, BASKV, IDE, AREA, ZONE, OWNER, VM, VA, NVHI, NVLO, EVHI, EVLO])
+
+        fastprintdelim(io, I)
+        fastprintdelim(io, NAME)
+        fastprintdelim(io, BASKV)
+        fastprintdelim(io, IDE)
+        fastprintdelim(io, AREA)
+        fastprintdelim(io, ZONE)
+        fastprintdelim(io, OWNER)
+        fastprintdelim(io, VM)
+        fastprintdelim(io, VA)
+        fastprintdelim(io, NVHI)
+        fastprintdelim(io, NVLO)
+        fastprintdelim(io, EVHI)
+        fastprintln(io, EVLO)
     end
     end_group_33(io, md, exporter, "Bus Data", true)
 
@@ -620,10 +658,21 @@ function write_to_buffers!(
         OWNER = PSSE_DEFAULT  # defaults to bus's owner
         SCALE = PSSE_DEFAULT  # TODO reconsider
         INTRPT = PSSE_DEFAULT  # TODO reconsider
-        joinln(
-            io,
-            [I, ID, STATUS, AREA, ZONE, PL, QL, IP, IQ, YP, YQ, OWNER, SCALE, INTRPT],
-        )
+
+        fastprintdelim(io, I)
+        fastprintdelim(io, ID)
+        fastprintdelim(io, STATUS)
+        fastprintdelim(io, AREA)
+        fastprintdelim(io, ZONE)
+        fastprintdelim(io, PL)
+        fastprintdelim(io, QL)
+        fastprintdelim(io, IP)
+        fastprintdelim(io, IQ)
+        fastprintdelim(io, YP)
+        fastprintdelim(io, YQ)
+        fastprintdelim(io, OWNER)
+        fastprintdelim(io, SCALE)
+        fastprintln(io, INTRPT)
     end
     end_group_33(io, md, exporter, "Load Data", true)
     exporter.md_valid ||
@@ -661,10 +710,12 @@ function write_to_buffers!(
         STATUS = PSY.get_available(shunt) ? 1 : 0
         GL = real(PSY.get_Y(shunt)) * PSY.get_base_power(exporter.system)
         BL = imag(PSY.get_Y(shunt)) * PSY.get_base_power(exporter.system)
-        joinln(
-            io,
-            [I, ID, STATUS, GL, BL],
-        )
+
+        fastprintdelim(io, I)
+        fastprintdelim(io, ID)
+        fastprintdelim(io, STATUS)
+        fastprintdelim(io, GL)
+        fastprintln(io, BL)
     end
     end_group_33(io, md, exporter, "Fixed Shunt Data", true)
     exporter.md_valid ||
@@ -750,11 +801,28 @@ function write_to_buffers!(
         PB = active_power_limits.min
         WMOD = get(PSY.get_ext(generator), "WMOD", PSSE_DEFAULT)
         WPF = get(PSY.get_ext(generator), "WPF", PSSE_DEFAULT)
-        joinln(
-            io,
-            [I, ID, PG, QG, QT, QB, VS, IREG, MBASE, ZR, ZX, RT, XT, GTAP, STAT,
-                RMPCT, PT, PB, PSSE_DEFAULT_OWNERSHIP..., WMOD, WPF],
-        )
+
+        fastprintdelim(io, I)
+        fastprintdelim(io, ID)
+        fastprintdelim(io, PG)
+        fastprintdelim(io, QG)
+        fastprintdelim(io, QT)
+        fastprintdelim(io, QB)
+        fastprintdelim(io, VS)
+        fastprintdelim(io, IREG)
+        fastprintdelim(io, MBASE)
+        fastprintdelim(io, ZR)
+        fastprintdelim(io, ZX)
+        fastprintdelim(io, RT)
+        fastprintdelim(io, XT)
+        fastprintdelim(io, GTAP)
+        fastprintdelim(io, STAT)
+        fastprintdelim(io, RMPCT)
+        fastprintdelim(io, PT)
+        fastprintdelim(io, PB)
+        fastprintdelim_psse_default_ownership(io)
+        fastprintdelim(io, WMOD)
+        fastprintln(io, WPF)
     end
     end_group_33(io, md, exporter, "Generator Data", true)
     exporter.md_valid ||
@@ -814,11 +882,23 @@ function write_to_buffers!(
         MET = PSSE_DEFAULT
         LEN = PSSE_DEFAULT
 
-        joinln(
-            io,
-            [I, J, CKT, R, X, B, RATEA, RATEB, RATEC, GI, BI, GJ, BJ, ST, MET, LEN,
-                PSSE_DEFAULT_OWNERSHIP...],
-        )
+        fastprintdelim(io, I)
+        fastprintdelim(io, J)
+        fastprintdelim(io, CKT)
+        fastprintdelim(io, R)
+        fastprintdelim(io, X)
+        fastprintdelim(io, B)
+        fastprintdelim(io, RATEA)
+        fastprintdelim(io, RATEB)
+        fastprintdelim(io, RATEC)
+        fastprintdelim(io, GI)
+        fastprintdelim(io, BI)
+        fastprintdelim(io, GJ)
+        fastprintdelim(io, BJ)
+        fastprintdelim(io, ST)
+        fastprintdelim(io, MET)
+        fastprintdelim(io, LEN)
+        fastprintln_psse_default_ownership(io)
     end
     end_group_33(io, md, exporter, "Non-Transformer Branch Data", true)
     exporter.md_valid ||
@@ -952,18 +1032,45 @@ function write_to_buffers!(
         WINDV2 = 1.0
         NOMV2 = 0.0  # special case: identical to bus voltage
 
-        joinln(
-            io,
-            [I, J, K, CKT, CW, CZ, CM, MAG1, MAG2, NMETR, NAME, STAT,
-                PSSE_DEFAULT_OWNERSHIP..., VECGRP],
-        )
-        joinln(io, [R1_2, X1_2, SBASE1_2])
-        joinln(
-            io,
-            [WINDV1, NOMV1, ANG1, RATA1, RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
-                VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1],
-        )
-        joinln(io, [WINDV2, NOMV2])
+        fastprintdelim(io, I)
+        fastprintdelim(io, J)
+        fastprintdelim(io, K)
+        fastprintdelim(io, CKT)
+        fastprintdelim(io, CW)
+        fastprintdelim(io, CZ)
+        fastprintdelim(io, CM)
+        fastprintdelim(io, MAG1)
+        fastprintdelim(io, MAG2)
+        fastprintdelim(io, NMETR)
+        fastprintdelim(io, NAME)
+        fastprintdelim(io, STAT)
+        fastprintdelim_psse_default_ownership(io)
+        fastprintln(io, VECGRP)
+
+        fastprintdelim(io, R1_2)
+        fastprintdelim(io, X1_2)
+        fastprintln(io, SBASE1_2)
+
+        fastprintdelim(io, WINDV1)
+        fastprintdelim(io, NOMV1)
+        fastprintdelim(io, ANG1)
+        fastprintdelim(io, RATA1)
+        fastprintdelim(io, RATB1)
+        fastprintdelim(io, RATC1)
+        fastprintdelim(io, COD1)
+        fastprintdelim(io, CONT1)
+        fastprintdelim(io, RMA1)
+        fastprintdelim(io, RMI1)
+        fastprintdelim(io, VMA1)
+        fastprintdelim(io, VMI1)
+        fastprintdelim(io, NTP1)
+        fastprintdelim(io, TAB1)
+        fastprintdelim(io, CR1)
+        fastprintdelim(io, CX1)
+        fastprintln(io, CNXA1)
+
+        fastprintdelim(io, WINDV2)
+        fastprintln(io, NOMV2)
     end
     end_group_33(io, md, exporter, "Transformer Data", true)
     if !exporter.md_valid
@@ -998,7 +1105,8 @@ function write_to_buffers!(
         @assert _is_valid_psse_name(name) name
         ZONAME = _psse_quote_string(name)
 
-        joinln(io, [I, ZONAME])
+        fastprintdelim(io, I)
+        fastprintln(io, ZONAME)
     end
     end_group_33(io, md, exporter, "Zone Data", true)
 end
