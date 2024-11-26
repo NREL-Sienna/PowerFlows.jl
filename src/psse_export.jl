@@ -41,6 +41,9 @@ const PSSE_GROUPS_33 = [
 
 const PSSE_DEFAULT_EXPORT_NAME = "export"
 
+const PSSE_RAW_BUFFER_SIZEHINT = 1024
+const PSSE_MD_BUFFER_SIZEHINT = 1024
+
 # TODO move this to IS
 """
 A context manager similar to `Logging.with_logger` that sets the system's units to the given
@@ -218,6 +221,37 @@ function update_exporter!(exporter::PSSEExporter, data::PSY.System)
     reset_caches(exporter)
     return
 end
+
+_FloatToBufSupportedTypes = Union{
+    Base.GenericIOBuffer{<:Array{UInt8}},
+    Base.GenericIOBuffer{<:GenericMemory{:not_atomic, UInt8}},
+}
+
+get_data_array(buf::Base.GenericIOBuffer{<:Array{UInt8}}) =  # < 1.11
+    buf.data
+
+get_data_array(buf::Base.GenericIOBuffer{<:GenericMemory{:not_atomic, UInt8}}) =  # >= 1.11
+    Base.wrap(Array, buf.data)
+
+(IOBuffer <: _FloatToBufSupportedTypes) ||
+    @warn "Fast Float64 to IOBuffer implementation is out of date, will not be used"
+
+"Temporary, very specialized proof of concept patch for https://github.com/JuliaLang/julia/issues/55835"
+function better_float_to_buf(buf::_FloatToBufSupportedTypes, n::Float64)
+    Base.ensureroom(buf, Base.Ryu.neededdigits(Float64))
+    # get_data_array incurs an allocation on Julia >= 1.11. I think writeshortest could work
+    # with the underlying Memory with minimal modification, which would be nice because
+    # other than this, better_float_to_buf is completely allocation free.
+    data_array = get_data_array(buf)
+    new_pos = Base.Ryu.writeshortest(data_array, buf.ptr, n, false, false, true, -1,
+        UInt8('e'), false, UInt8('.'), true, false)
+    buf.ptr = new_pos
+    buf.size = new_pos - 1
+    return
+end
+
+# Could be done in a less piratelike way (just for joinln or something) if this were to stick around
+Base.show(buf::IOBuffer, n::Float64) = better_float_to_buf(buf, n)
 
 """
 `join` with a newline at the end, delimeter defaults to \", \". If `strip_trailing_empties`,
