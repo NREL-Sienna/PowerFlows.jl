@@ -222,16 +222,22 @@ function update_exporter!(exporter::PSSEExporter, data::PSY.System)
     return
 end
 
-_FloatToBufSupportedTypes = Union{
-    Base.GenericIOBuffer{<:Array{UInt8}},
-    Base.GenericIOBuffer{<:GenericMemory{:not_atomic, UInt8}},
-}
-
-get_data_array(buf::Base.GenericIOBuffer{<:Array{UInt8}}) =  # < 1.11
+get_data_array(buf::Base.GenericIOBuffer{<:Array{UInt8}}) =  # < Julia 1.11
     buf.data
 
-get_data_array(buf::Base.GenericIOBuffer{<:GenericMemory{:not_atomic, UInt8}}) =  # >= 1.11
-    Base.wrap(Array, buf.data)
+(@isdefined GenericMemory) && (  # >= Julia 1.11
+    get_data_array(buf::Base.GenericIOBuffer{<:GenericMemory{:not_atomic, UInt8}}) =
+        Base.wrap(Array, buf.data)
+)
+
+const _FloatToBufSupportedTypes = if (@isdefined GenericMemory)
+    Union{
+        Base.GenericIOBuffer{<:Array{UInt8}},
+        Base.GenericIOBuffer{<:GenericMemory{:not_atomic, UInt8}},
+    }
+else
+    Base.GenericIOBuffer{<:Array{UInt8}}
+end
 
 (IOBuffer <: _FloatToBufSupportedTypes) ||
     @warn "Fast Float64 to IOBuffer implementation is out of date, will not be used"
@@ -251,7 +257,7 @@ function better_float_to_buf(buf::_FloatToBufSupportedTypes, n::Float64)
 end
 
 # Could be done in a less piratelike way (just for joinln or something) if this were to stick around
-Base.show(buf::IOBuffer, n::Float64) = better_float_to_buf(buf, n)
+Base.show(buf::_FloatToBufSupportedTypes, n::Float64) = better_float_to_buf(buf, n)
 
 """
 `join` with a newline at the end, delimeter defaults to \", \". If `strip_trailing_empties`,
