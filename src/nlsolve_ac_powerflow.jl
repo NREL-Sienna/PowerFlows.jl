@@ -159,54 +159,64 @@ end
 
 function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_kwargs...)
     pf = PolarPowerFlow(data)
-    J_function = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
+    #J_function = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
 
     maxIter = 30
     tol = 1e-6
+    i = 0
 
-    V = pf.x0
+    V = copy(pf.x0)
     Vm = abs.(V)
     Va = angle.(V)
 
-    mis = V .* conj(Ybus * V) - Sbus
-    F = [real(mis[[pv;pq]]); imag(mis[pq])]
+    Ybus = pf.data.power_network_matrix
 
-    npv = length(pv)
-    npq = length(pq)
-    
+    mis = V .* conj(Ybus * V) - Sbus  # TODO Sbus
+    F = [real(mis[[pv; pq]]); imag(mis[pq])]
+
+    npv = length(pv) # TODO
+    npq = length(pq) # TODO
+
     converged = false
 
-    while i < maxIter && converged
+    while i < maxIter && !converged
         i += 1
-        #diagV = Diagonal(V)
-        #diagIbus = Diagonal(Ybus * V)
-        #diagVnorm = Diagonal(V./abs.(V))
-        #dSbus_dVm = Diagonal(V) * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-        #dSbus_dVa = im * diagV * conj(diagIbus - Ybus * diagV)
-        #j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
-        #j12 = real(dSbus_dVm[[pv; pq], pq])
-        #j21 = imag(dSbus_dVa[pq, [pv; pq]])
-        #j22 = imag(dSbus_dVm[pq, pq])
-        #J = [j11 j12; j21 j22]
-        J_function(J_function.Jv, x)
-        dx = - (J_function.Jv \ F)
+        diagV = Diagonal(V)
+        diagIbus = Diagonal(Ybus * V)
+        diagVnorm = Diagonal(V ./ abs.(V))
+        dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
+        dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
 
-        Va[pv] += dx[1:npv]
-        Va[pq] += dx[npv+1:(npv+npq)]
-        Vm[pq] += dx[(npv+npq+1):end]
+        j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
+        j12 = real(dSbus_dVm[[pv; pq], pq])
+        j21 = imag(dSbus_dVa[pq, [pv; pq]])
+        j22 = imag(dSbus_dVm[pq, pq])
+        J = [j11 j12; j21 j22]
 
-        V = Vm .* exp.(im*Va)
-        
+        factor_J = klu(J)
+        dx = -(factor_J \ F)
+
+        #J_function(J_function.Jv, x)
+        #dx = - (J_function.Jv \ F)
+
+        Va[pv] .+= dx[1:npv]
+        Va[pq] .+= dx[(npv+1):(npv+npq)]
+        Vm[pq] .+= dx[(npv+npq+1):(npv+2*npq)]
+
+        V = Vm .* exp.(1im * Va)
+
         Vm = abs.(V)
         Va = angle.(V)
 
         mis = V .* conj(Ybus * V) - Sbus
-        F = [real(mis[[pv;pq]]); imag(mis[pq])]
+        F = [real(mis[[pv; pq]]); imag(mis[pq])]
         converged = norm(F, Inf) < tol
     end
-    
+
     if !converged
-        @error("The powerflow solver with KLU did not converge after $maxIter iterations")
+        @error("The powerflow solver with KLU did not converge after $i iterations")
+    else
+        @info("The powerflow solver with KLU converged after $i iterations")
     end
-    return converged, V
+    return converged, V  # TODO make sure the structure of V matches the structure of res.zero
 end
