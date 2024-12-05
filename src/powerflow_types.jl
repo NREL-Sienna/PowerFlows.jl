@@ -1,6 +1,10 @@
 abstract type PowerFlowEvaluationModel end
 
-Base.@kwdef struct ACPowerFlow <: PowerFlowEvaluationModel
+Base.@kwdef struct NLSolveACPowerFlow <: PowerFlowEvaluationModel
+    check_reactive_power_limits::Bool = false
+end
+
+Base.@kwdef struct KLUACPowerFlow <: PowerFlowEvaluationModel
     check_reactive_power_limits::Bool = false
 end
 

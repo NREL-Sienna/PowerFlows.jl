@@ -157,7 +157,7 @@ NOTE: use it for AC power flow computations.
 WARNING: functions for the evaluation of the multi-period AC PF still to be implemented.
 """
 function PowerFlowData(
-    ::ACPowerFlow,
+    ::Union{NLSolveACPowerFlow, KLUACPowerFlow},
     sys::PSY.System;
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
@@ -440,7 +440,7 @@ Create an appropriate `PowerFlowContainer` for the given `PowerFlowEvaluationMod
 """
 function make_power_flow_container end
 
-make_power_flow_container(pfem::ACPowerFlow, sys::PSY.System; kwargs...) =
+make_power_flow_container(pfem::NLSolveACPowerFlow, sys::PSY.System; kwargs...) =
     PowerFlowData(pfem, sys; kwargs...)
 
 make_power_flow_container(pfem::DCPowerFlow, sys::PSY.System; kwargs...) =

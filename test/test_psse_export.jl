@@ -223,8 +223,8 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
 end
 
 function test_power_flow(sys1::System, sys2::System; exclude_reactive_flow = false)
-    result1 = solve_powerflow(ACPowerFlow(), sys1)
-    result2 = solve_powerflow(ACPowerFlow(), sys2)
+    result1 = solve_powerflow(NLSolveACPowerFlow(), sys1)
+    result2 = solve_powerflow(NLSolveACPowerFlow(), sys2)
     reactive_power_tol =
         exclude_reactive_flow ? nothing : POWERFLOW_COMPARISON_TOLERANCE
     @test compare_df_within_tolerance("bus_results", result1["bus_results"],
@@ -408,7 +408,7 @@ end
 
     # Updating with changed value should result in a different reimport (PowerFlowData version)
     exporter = PSSEExporter(sys, :v33, export_location)
-    pf2 = PowerFlowData(ACPowerFlow(), sys)
+    pf2 = PowerFlowData(NLSolveACPowerFlow(), sys)
     # This modifies the PowerFlowData in the same way that modify_rts_system! modifies the
     # system, so the reimport should be comparable to sys2 from above
     modify_rts_powerflow!(pf2)

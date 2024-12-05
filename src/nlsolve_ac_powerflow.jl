@@ -30,29 +30,29 @@ solve_ac_powerflow!(sys)
 solve_ac_powerflow!(sys, method=:newton)
 ```
 """
-function solve_ac_powerflow!(system::PSY.System; kwargs...)
+function solve_ac_powerflow!(pf::Union{NLSolveACPowerFlow, KLUACPowerFlow}, system::PSY.System; kwargs...)
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
     #Work in System per unit
     PSY.set_units_base_system!(system, "SYSTEM_BASE")
     check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
     data = PowerFlowData(
-        ACPowerFlow(; check_reactive_power_limits = check_reactive_power_limits),
+        NLSolveACPowerFlow(; check_reactive_power_limits = check_reactive_power_limits),
         system;
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
     max_iterations = DEFAULT_MAX_REDISTRIBUTION_ITERATIONS
-    res = _solve_powerflow!(data, check_reactive_power_limits; kwargs...)
-    if res.f_converged
-        write_powerflow_solution!(system, res.zero, max_iterations)
+    converged, x = _solve_powerflow!(pf, data, check_reactive_power_limits; kwargs...)
+    if converged
+        write_powerflow_solution!(system, x, max_iterations)
         @info("PowerFlow solve converged, the results have been stored in the system")
         #Restore original per unit base
         PSY.set_units_base_system!(system, settings_unit_cache)
-        return res.f_converged
+        return converged
     end
-    @error("The powerflow solver returned convergence = $(res.f_converged)")
+    @error("The powerflow solver returned convergence = $(converged)")
     PSY.set_units_base_system!(system, settings_unit_cache)
-    return res.f_converged
+    return converged
 end
 
 """
@@ -68,7 +68,7 @@ res = solve_powerflow(sys, method=:newton)
 ```
 """
 function solve_powerflow(
-    pf::ACPowerFlow,
+    pf::Union{NLSolveACPowerFlow, KLUACPowerFlow},
     system::PSY.System;
     kwargs...,
 )
@@ -82,18 +82,18 @@ function solve_powerflow(
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
 
-    res = _solve_powerflow!(data, pf.check_reactive_power_limits; kwargs...)
+    converged, x = _solve_powerflow!(pf, data, pf.check_reactive_power_limits; kwargs...)
 
-    if res.f_converged
+    if converged
         @info("PowerFlow solve converged, the results are exported in DataFrames")
-        df_results = write_results(pf, system, data, res.zero)
+        df_results = write_results(pf, system, data, x)
         #Restore original per unit base
         PSY.set_units_base_system!(system, settings_unit_cache)
         return df_results
     end
-    @error("The powerflow solver returned convergence = $(res.f_converged)")
+    @error("The powerflow solver returned convergence = $(converged)")
     PSY.set_units_base_system!(system, settings_unit_cache)
-    return res.f_converged
+    return converged
 end
 
 function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
@@ -124,27 +124,28 @@ function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
 end
 
 function _solve_powerflow!(
+    pf::Union{NLSolveACPowerFlow, KLUACPowerFlow},
     data::ACPowerFlowData,
     check_reactive_power_limits;
     nlsolve_kwargs...,
 )
     if check_reactive_power_limits
         for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
-            res = _nlsolve_powerflow(data; nlsolve_kwargs...)
-            if res.f_converged
-                if _check_q_limit_bounds!(data, res.zero)
-                    return res
+            converged, x = _nlsolve_powerflow(pf, data; nlsolve_kwargs...)
+            if converged
+                if _check_q_limit_bounds!(data, x)
+                    return converged, x
                 end
             else
-                return res
+                return converged, x
             end
         end
     else
-        return _nlsolve_powerflow(data; nlsolve_kwargs...)
+        return _nlsolve_powerflow(pf, data; nlsolve_kwargs...)
     end
 end
 
-function _nlsolve_powerflow(data::ACPowerFlowData; nlsolve_kwargs...)
+function _nlsolve_powerflow(pf::NLSolveACPowerFlow, data::ACPowerFlowData; nlsolve_kwargs...)
     pf = PolarPowerFlow(data)
     J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
 
@@ -153,5 +154,59 @@ function _nlsolve_powerflow(data::ACPowerFlowData; nlsolve_kwargs...)
     if !res.f_converged
         @error("The powerflow solver returned convergence = $(res.f_converged)")
     end
-    return res
+    return res.f_converged, res.zero
+end
+
+function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_kwargs...)
+    pf = PolarPowerFlow(data)
+    J_function = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
+
+    maxIter = 30
+    tol = 1e-6
+
+    V = pf.x0
+    Vm = abs.(V)
+    Va = angle.(V)
+
+    mis = V .* conj(Ybus * V) - Sbus
+    F = [real(mis[[pv;pq]]); imag(mis[pq])]
+
+    npv = length(pv)
+    npq = length(pq)
+    
+    converged = false
+
+    while i < maxIter && converged
+        i += 1
+        #diagV = Diagonal(V)
+        #diagIbus = Diagonal(Ybus * V)
+        #diagVnorm = Diagonal(V./abs.(V))
+        #dSbus_dVm = Diagonal(V) * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
+        #dSbus_dVa = im * diagV * conj(diagIbus - Ybus * diagV)
+        #j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
+        #j12 = real(dSbus_dVm[[pv; pq], pq])
+        #j21 = imag(dSbus_dVa[pq, [pv; pq]])
+        #j22 = imag(dSbus_dVm[pq, pq])
+        #J = [j11 j12; j21 j22]
+        J_function(J_function.Jv, x)
+        dx = - (J_function.Jv \ F)
+
+        Va[pv] += dx[1:npv]
+        Va[pq] += dx[npv+1:(npv+npq)]
+        Vm[pq] += dx[(npv+npq+1):end]
+
+        V = Vm .* exp.(im*Va)
+        
+        Vm = abs.(V)
+        Va = angle.(V)
+
+        mis = V .* conj(Ybus * V) - Sbus
+        F = [real(mis[[pv;pq]]); imag(mis[pq])]
+        converged = norm(F, Inf) < tol
+    end
+    
+    if !converged
+        @error("The powerflow solver with KLU did not converge after $maxIter iterations")
+    end
+    return converged, V
 end
