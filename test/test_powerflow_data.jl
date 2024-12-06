@@ -1,5 +1,5 @@
 @testset "PowerFlowData" begin
-    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts=false)
     @test PowerFlowData(NLSolveACPowerFlow(), sys) isa PF.ACPowerFlowData
     @test PowerFlowData(DCPowerFlow(), sys) isa PF.ABAPowerFlowData
     @test PowerFlowData(PTDFDCPowerFlow(), sys) isa PF.PTDFPowerFlowData
@@ -7,13 +7,13 @@
 end
 
 @testset "PowerFlowData multiperiod" begin
-    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts=false)
     time_steps = 24
     # TODO: "multiperiod AC still to implement"
-    @test PowerFlowData(DCPowerFlow(), sys; time_steps = time_steps) isa PF.ABAPowerFlowData
-    @test PowerFlowData(PTDFDCPowerFlow(), sys; time_steps = time_steps) isa
+    @test PowerFlowData(DCPowerFlow(), sys; time_steps=time_steps) isa PF.ABAPowerFlowData
+    @test PowerFlowData(PTDFDCPowerFlow(), sys; time_steps=time_steps) isa
           PF.PTDFPowerFlowData
-    @test PowerFlowData(vPTDFDCPowerFlow(), sys; time_steps = time_steps) isa
+    @test PowerFlowData(vPTDFDCPowerFlow(), sys; time_steps=time_steps) isa
           PF.vPTDFPowerFlowData
 end
 
