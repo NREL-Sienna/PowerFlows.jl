@@ -5,6 +5,7 @@ export solve_ac_powerflow!
 export PowerFlowData
 export DCPowerFlow
 export NLSolveACPowerFlow
+export KLUACPowerFlow
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
 export PSSEExportPowerFlow
@@ -20,6 +21,7 @@ import PowerSystems
 import PowerSystems: System
 import LinearAlgebra
 import NLsolve
+import KLU
 import SparseArrays
 import InfrastructureSystems
 import PowerNetworkMatrices

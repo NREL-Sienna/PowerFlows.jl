@@ -165,25 +165,33 @@ function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_k
     tol = 1e-6    # TODO
     i = 0
 
-    V = copy(pf.x0)
-    Vm = abs.(V)
-    Va = angle.(V)
+    Vm = data.bus_magnitude[:]
+    Va = data.bus_angles[:]
+    V = Vm .* exp.(1im * Va)
 
-    Ybus = pf.data.power_network_matrix
+    # Find indices for each bus type
+    ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type)
+    pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type)
+    pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type)
 
-    mis = V .* conj(Ybus * V) - Sbus  # TODO Sbus
+    Ybus = pf.data.power_network_matrix.data
+
+    Sbus = data.bus_activepower_injection[:] - data.bus_activepower_withdrawals[:] + 1im * (data.bus_reactivepower_injection[:] - data.bus_reactivepower_withdrawals[:])
+
+    mis = V .* conj(Ybus * V) - Sbus
     F = [real(mis[[pv; pq]]); imag(mis[pq])]
 
-    npv = length(pv) # TODO
-    npq = length(pq) # TODO
+    # nref = length(ref)
+    npv = length(pv)
+    npq = length(pq)
 
-    converged = false
+    converged = (npv + npq) == 0  # if only ref buses present, we do not need to enter the loop
 
     while i < maxIter && !converged
         i += 1
-        diagV = Diagonal(V)
-        diagIbus = Diagonal(Ybus * V)
-        diagVnorm = Diagonal(V ./ abs.(V))
+        diagV = LinearAlgebra.Diagonal(V)
+        diagIbus = LinearAlgebra.Diagonal(Ybus * V)
+        diagVnorm = LinearAlgebra.Diagonal(V ./ abs.(V))
         dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
         dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
 
@@ -193,7 +201,7 @@ function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_k
         j22 = imag(dSbus_dVm[pq, pq])
         J = [j11 j12; j21 j22]
 
-        factor_J = klu(J)
+        factor_J = KLU.klu(J)
         dx = -(factor_J \ F)
 
         #J_function(J_function.Jv, x)
@@ -210,13 +218,35 @@ function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_k
 
         mis = V .* conj(Ybus * V) - Sbus
         F = [real(mis[[pv; pq]]); imag(mis[pq])]
-        converged = norm(F, Inf) < tol
+        converged = LinearAlgebra.norm(F, Inf) < tol
     end
+
 
     if !converged
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
-        @info("The powerflow solver with KLU converged after $i iterations")
+        @debug("The powerflow solver with KLU converged after $i iterations")
     end
-    return converged, V  # TODO make sure the structure of V matches the structure of res.zero
+
+    # mock the expected x format, where the values depend on the type of the bus:
+    n_buses = length(data.bus_type)
+    x = Float64[0.0 for _ in 1:(2*n_buses)]
+    Sbus_result = V .* conj(Ybus * V)
+    for (ix, b) in enumerate(data.bus_type)
+        if b == PSY.ACBusTypes.REF
+            # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
+            x[2 * ix - 1] = real(Sbus_result[ix]) + data.bus_activepower_withdrawals[ix]
+            x[2 * ix] = imag(Sbus_result[ix]) + data.bus_reactivepower_withdrawals[ix]
+        elseif b == PSY.ACBusTypes.PV
+            # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
+            x[2 * ix - 1] = imag(Sbus_result[ix]) + data.bus_reactivepower_withdrawals[ix]
+            x[2 * ix] = Va[ix]
+        elseif b == PSY.ACBusTypes.PQ
+            # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
+            x[2 * ix - 1] = Vm[ix]
+            x[2 * ix] = Va[ix]
+        end
+    end
+
+    return converged, x
 end
