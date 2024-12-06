@@ -66,11 +66,11 @@ flows and angles, as well as these ones.
 - `neighbors::Vector{Set{Int}}`: Vector with the sets of adjacent buses.
 """
 struct PowerFlowData{
-    M<:PNM.PowerNetworkMatrix,
-    N<:Union{PNM.PowerNetworkMatrix,Nothing},
+    M <: PNM.PowerNetworkMatrix,
+    N <: Union{PNM.PowerNetworkMatrix, Nothing},
 } <: PowerFlowContainer
-    bus_lookup::Dict{Int,Int}
-    branch_lookup::Dict{String,Int}
+    bus_lookup::Dict{Int, Int}
+    branch_lookup::Dict{String, Int}
     bus_activepower_injection::Matrix{Float64}
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
@@ -81,7 +81,7 @@ struct PowerFlowData{
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
     branch_flow_values::Matrix{Float64}
-    timestep_map::Dict{Int,String}
+    timestep_map::Dict{Int, String}
     valid_ix::Vector{Int}
     power_network_matrix::M
     aux_network_matrix::N
@@ -119,8 +119,8 @@ end
 # TODO -> MULTI PERIOD: AC Power Flow Data
 function _calculate_neighbors(
     Yb::PNM.Ybus{
-        Tuple{Vector{Int64},Vector{Int64}},
-        Tuple{Dict{Int64,Int64},Dict{Int64,Int64}},
+        Tuple{Vector{Int64}, Vector{Int64}},
+        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
     },
 )
     I, J, V = SparseArrays.findnz(Yb.data)
@@ -157,11 +157,11 @@ NOTE: use it for AC power flow computations.
 WARNING: functions for the evaluation of the multi-period AC PF still to be implemented.
 """
 function PowerFlowData(
-    ::Union{NLSolveACPowerFlow,KLUACPowerFlow},
+    ::Union{NLSolveACPowerFlow, KLUACPowerFlow},
     sys::PSY.System;
-    time_steps::Int=1,
-    timestep_names::Vector{String}=String[],
-    check_connectivity::Bool=true)
+    time_steps::Int = 1,
+    timestep_names::Vector{String} = String[],
+    check_connectivity::Bool = true)
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
@@ -174,7 +174,7 @@ function PowerFlowData(
     end
 
     # get data for calculations
-    power_network_matrix = PNM.Ybus(sys; check_connectivity=check_connectivity)
+    power_network_matrix = PNM.Ybus(sys; check_connectivity = check_connectivity)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 1))
@@ -185,8 +185,8 @@ function PowerFlowData(
     n_branches = length(branches)
 
     bus_lookup = power_network_matrix.lookup[2]
-    branch_lookup = Dict{String,Int}()
-    temp_bus_map = Dict{Int,String}(
+    branch_lookup = Dict{String, Int}()
+    temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
     branch_types = Vector{DataType}(undef, n_branches)
@@ -250,9 +250,9 @@ NOTE: use it for DC power flow computations.
 function PowerFlowData(
     ::DCPowerFlow,
     sys::PSY.System;
-    time_steps::Int=1,
-    timestep_names::Vector{String}=String[],
-    check_connectivity::Bool=true)
+    time_steps::Int = 1,
+    timestep_names::Vector{String} = String[],
+    check_connectivity::Bool = true)
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
@@ -263,7 +263,7 @@ function PowerFlowData(
     end
 
     # get the network matrices
-    power_network_matrix = PNM.ABA_Matrix(sys; factorize=true)
+    power_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
     aux_network_matrix = PNM.BA_Matrix(sys)
 
     # get number of buses and branches
@@ -272,7 +272,7 @@ function PowerFlowData(
 
     bus_lookup = aux_network_matrix.lookup[1]
     branch_lookup = aux_network_matrix.lookup[2]
-    temp_bus_map = Dict{Int,String}(
+    temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
@@ -317,9 +317,9 @@ NOTE: use it for DC power flow computations.
 function PowerFlowData(
     ::PTDFDCPowerFlow,
     sys::PSY.System;
-    time_steps::Int=1,
-    timestep_names::Vector{String}=String[],
-    check_connectivity::Bool=true)
+    time_steps::Int = 1,
+    timestep_names::Vector{String} = String[],
+    check_connectivity::Bool = true)
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
@@ -333,7 +333,7 @@ function PowerFlowData(
 
     # get the network matrices
     power_network_matrix = PNM.PTDF(sys)
-    aux_network_matrix = PNM.ABA_Matrix(sys; factorize=true)
+    aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 1))
@@ -341,7 +341,7 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
-    temp_bus_map = Dict{Int,String}(
+    temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
@@ -385,9 +385,9 @@ NOTE: use it for DC power flow computations.
 function PowerFlowData(
     ::vPTDFDCPowerFlow,
     sys::PSY.System;
-    time_steps::Int=1,
-    timestep_names::Vector{String}=String[],
-    check_connectivity::Bool=true)
+    time_steps::Int = 1,
+    timestep_names::Vector{String} = String[],
+    check_connectivity::Bool = true)
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
@@ -401,7 +401,7 @@ function PowerFlowData(
 
     # get the network matrices
     power_network_matrix = PNM.VirtualPTDF(sys) # evaluates an empty virtual PTDF
-    aux_network_matrix = PNM.ABA_Matrix(sys; factorize=true)
+    aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 2))
@@ -409,7 +409,7 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
-    temp_bus_map = Dict{Int,String}(
+    temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)

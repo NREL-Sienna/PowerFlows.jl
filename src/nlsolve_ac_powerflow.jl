@@ -30,16 +30,20 @@ solve_ac_powerflow!(sys)
 solve_ac_powerflow!(sys, method=:newton)
 ```
 """
-function solve_ac_powerflow!(pf::Union{NLSolveACPowerFlow,KLUACPowerFlow}, system::PSY.System; kwargs...)
+function solve_ac_powerflow!(
+    pf::Union{NLSolveACPowerFlow, KLUACPowerFlow},
+    system::PSY.System;
+    kwargs...,
+)
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
     #Work in System per unit
     PSY.set_units_base_system!(system, "SYSTEM_BASE")
     check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
     data = PowerFlowData(
-        NLSolveACPowerFlow(; check_reactive_power_limits=check_reactive_power_limits),
+        NLSolveACPowerFlow(; check_reactive_power_limits = check_reactive_power_limits),
         system;
-        check_connectivity=get(kwargs, :check_connectivity, true),
+        check_connectivity = get(kwargs, :check_connectivity, true),
     )
     max_iterations = DEFAULT_MAX_REDISTRIBUTION_ITERATIONS
     converged, x = _solve_powerflow!(pf, data, check_reactive_power_limits; kwargs...)
@@ -68,7 +72,7 @@ res = solve_powerflow(sys, method=:newton)
 ```
 """
 function solve_powerflow(
-    pf::Union{NLSolveACPowerFlow,KLUACPowerFlow},
+    pf::Union{NLSolveACPowerFlow, KLUACPowerFlow},
     system::PSY.System;
     kwargs...,
 )
@@ -79,7 +83,7 @@ function solve_powerflow(
     data = PowerFlowData(
         pf,
         system;
-        check_connectivity=get(kwargs, :check_connectivity, true),
+        check_connectivity = get(kwargs, :check_connectivity, true),
     )
 
     converged, x = _solve_powerflow!(pf, data, pf.check_reactive_power_limits; kwargs...)
@@ -101,7 +105,7 @@ function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
     within_limits = true
     for (ix, b) in enumerate(data.bus_type)
         if b == PSY.ACBusTypes.PV
-            Q_gen = zero[2*ix-1]
+            Q_gen = zero[2 * ix - 1]
         else
             continue
         end
@@ -124,7 +128,7 @@ function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
 end
 
 function _solve_powerflow!(
-    pf::Union{NLSolveACPowerFlow,KLUACPowerFlow},
+    pf::Union{NLSolveACPowerFlow, KLUACPowerFlow},
     data::ACPowerFlowData,
     check_reactive_power_limits;
     nlsolve_kwargs...,
@@ -145,7 +149,11 @@ function _solve_powerflow!(
     end
 end
 
-function _nlsolve_powerflow(pf::NLSolveACPowerFlow, data::ACPowerFlowData; nlsolve_kwargs...)
+function _nlsolve_powerflow(
+    pf::NLSolveACPowerFlow,
+    data::ACPowerFlowData;
+    nlsolve_kwargs...,
+)
     pf = PolarPowerFlow(data)
     J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
 
@@ -176,7 +184,9 @@ function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_k
 
     Ybus = pf.data.power_network_matrix.data
 
-    Sbus = data.bus_activepower_injection[:] - data.bus_activepower_withdrawals[:] + 1im * (data.bus_reactivepower_injection[:] - data.bus_reactivepower_withdrawals[:])
+    Sbus =
+        data.bus_activepower_injection[:] - data.bus_activepower_withdrawals[:] +
+        1im * (data.bus_reactivepower_injection[:] - data.bus_reactivepower_withdrawals[:])
 
     mis = V .* conj(Ybus * V) - Sbus
     F = [real(mis[[pv; pq]]); imag(mis[pq])]
@@ -208,8 +218,8 @@ function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_k
         #dx = - (J_function.Jv \ F)
 
         Va[pv] .+= dx[1:npv]
-        Va[pq] .+= dx[(npv+1):(npv+npq)]
-        Vm[pq] .+= dx[(npv+npq+1):(npv+2*npq)]
+        Va[pq] .+= dx[(npv + 1):(npv + npq)]
+        Vm[pq] .+= dx[(npv + npq + 1):(npv + 2 * npq)]
 
         V = Vm .* exp.(1im * Va)
 
@@ -221,7 +231,6 @@ function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_k
         converged = LinearAlgebra.norm(F, Inf) < tol
     end
 
-
     if !converged
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
@@ -230,21 +239,21 @@ function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_k
 
     # mock the expected x format, where the values depend on the type of the bus:
     n_buses = length(data.bus_type)
-    x = Float64[0.0 for _ in 1:(2*n_buses)]
+    x = Float64[0.0 for _ in 1:(2 * n_buses)]
     Sbus_result = V .* conj(Ybus * V)
     for (ix, b) in enumerate(data.bus_type)
         if b == PSY.ACBusTypes.REF
             # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
-            x[2*ix-1] = real(Sbus_result[ix]) + data.bus_activepower_withdrawals[ix]
-            x[2*ix] = imag(Sbus_result[ix]) + data.bus_reactivepower_withdrawals[ix]
+            x[2 * ix - 1] = real(Sbus_result[ix]) + data.bus_activepower_withdrawals[ix]
+            x[2 * ix] = imag(Sbus_result[ix]) + data.bus_reactivepower_withdrawals[ix]
         elseif b == PSY.ACBusTypes.PV
             # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
-            x[2*ix-1] = imag(Sbus_result[ix]) + data.bus_reactivepower_withdrawals[ix]
-            x[2*ix] = Va[ix]
+            x[2 * ix - 1] = imag(Sbus_result[ix]) + data.bus_reactivepower_withdrawals[ix]
+            x[2 * ix] = Va[ix]
         elseif b == PSY.ACBusTypes.PQ
             # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
-            x[2*ix-1] = Vm[ix]
-            x[2*ix] = Va[ix]
+            x[2 * ix - 1] = Vm[ix]
+            x[2 * ix] = Va[ix]
         end
     end
 

@@ -1,5 +1,5 @@
 test_psse_export_dir = joinpath(TEST_FILES_DIR, "test_exports")
-isdir(test_psse_export_dir) && rm(test_psse_export_dir; recursive=true)
+isdir(test_psse_export_dir) && rm(test_psse_export_dir; recursive = true)
 
 function _log_assert(result, msg, comparison_name)
     result ||
@@ -10,7 +10,7 @@ end
 If the expression is false, log an error; in any case, pass through the result of the
 expression. Optionally accepts a name to include in the error log.
 """
-macro log_assert(ex, comparison_name=nothing)
+macro log_assert(ex, comparison_name = nothing)
     return :(_log_assert($(esc(ex)), $(string(ex)), $(esc(comparison_name))))
 end
 
@@ -24,7 +24,7 @@ function compare_df_within_tolerance(
     comparison_name::String,
     df1::DataFrame,
     df2::DataFrame,
-    default_tol=SYSTEM_REIMPORT_COMPARISON_TOLERANCE;
+    default_tol = SYSTEM_REIMPORT_COMPARISON_TOLERANCE;
     kwargs...,
 )
     result = true
@@ -38,7 +38,7 @@ function compare_df_within_tolerance(
         my_tol = (Symbol(colname) in keys(kwargs)) ? kwargs[Symbol(colname)] : default_tol
         isnothing(my_tol) && continue
         inner_result = if (my_eltype <: AbstractFloat)
-            all(isapprox.(col1, col2; atol=my_tol))
+            all(isapprox.(col1, col2; atol = my_tol))
         else
             all(IS.isequivalent.(col1, col2))
         end
@@ -52,7 +52,7 @@ end
 compare_df_within_tolerance(
     df1::DataFrame,
     df2::DataFrame,
-    default_tol=SYSTEM_REIMPORT_COMPARISON_TOLERANCE;
+    default_tol = SYSTEM_REIMPORT_COMPARISON_TOLERANCE;
     kwargs...,
 ) = compare_df_within_tolerance("unnamed", df1, df2, default_tol; kwargs...)
 
@@ -64,13 +64,13 @@ function reverse_composite_name(name::String)
 end
 
 loose_system_match_fn(a::Float64, b::Float64) =
-    isapprox(a, b; atol=SYSTEM_REIMPORT_COMPARISON_TOLERANCE) || IS.isequivalent(a, b)
+    isapprox(a, b; atol = SYSTEM_REIMPORT_COMPARISON_TOLERANCE) || IS.isequivalent(a, b)
 loose_system_match_fn(a, b) = IS.isequivalent(a, b)
 
 function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
-    bus_name_mapping=Dict{String,String}(),
+    bus_name_mapping = Dict{String, String}(),
     # TODO when possible, also include: PSY.FixedAdmittance, PSY.Arc
-    include_types=[
+    include_types = [
         PSY.ACBus,
         PSY.Area,
         PSY.Line,
@@ -83,14 +83,14 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         PSY.FixedAdmittance,
     ],
     # TODO when possible, don't exclude so many fields
-    exclude_fields=Set([
+    exclude_fields = Set([
         :ext,
         :ramp_limits,
         :time_limits,
         :services,
         :angle_limits,
     ]),
-    exclude_fields_for_type=Dict(
+    exclude_fields_for_type = Dict(
         PSY.ThermalStandard => Set([
             :prime_mover_type,
             :rating,
@@ -111,16 +111,16 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
             :reactive_power_flow,
         ]),
     ),
-    generator_comparison_fns=[  # TODO rating
+    generator_comparison_fns = [  # TODO rating
         PSY.get_name,
         PSY.get_bus,
         PSY.get_active_power,
         PSY.get_reactive_power,
         PSY.get_base_power,
     ],
-    ignore_name_order=true,
-    ignore_extra_of_type=Union{PSY.ThermalStandard,PSY.StaticLoad},
-    exclude_reactive_power=false)
+    ignore_name_order = true,
+    ignore_extra_of_type = Union{PSY.ThermalStandard, PSY.StaticLoad},
+    exclude_reactive_power = false)
     result = true
     if exclude_reactive_power
         push!(exclude_fields, :reactive_power)
@@ -129,7 +129,7 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
     end
 
     # Compare everything about the systems except the actual components
-    result &= IS.compare_values(sys1, sys2; exclude=[:data])
+    result &= IS.compare_values(sys1, sys2; exclude = [:data])
 
     # Compare the components by concrete type
     for my_type in include_types
@@ -178,7 +178,7 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
                 loose_system_match_fn,
                 comp1,
                 comp2;
-                exclude=my_excludes,
+                exclude = my_excludes,
             )
             result &= comparison
             if !comparison
@@ -189,7 +189,7 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
     end
 
     # Extra checks for other types of generators
-    GenSource = Union{Generator,Source}
+    GenSource = Union{Generator, Source}
     gen1_names = sort(PSY.get_name.(PSY.get_components(GenSource, sys1)))
     gen2_names = sort(PSY.get_name.(PSY.get_components(GenSource, sys2)))
     if gen1_names != gen2_names
@@ -205,13 +205,13 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
     )
         # Skip pairs we've already compared
         # e.g., if they're both ThermalStandards, we've already compared them
-        any(Union{typeof(gen1),typeof(gen2)} .<: include_types) && continue
+        any(Union{typeof(gen1), typeof(gen2)} .<: include_types) && continue
         for comp_fn in generator_comparison_fns
             comparison = IS.compare_values(
                 loose_system_match_fn,
                 comp_fn(gen1),
                 comp_fn(gen2);
-                exclude=exclude_fields,
+                exclude = exclude_fields,
             )
             result &= comparison
             if !comparison
@@ -222,7 +222,7 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
     return result
 end
 
-function test_power_flow(sys1::System, sys2::System; exclude_reactive_flow=false)
+function test_power_flow(sys1::System, sys2::System; exclude_reactive_flow = false)
     result1 = solve_powerflow(NLSolveACPowerFlow(), sys1)
     result2 = solve_powerflow(NLSolveACPowerFlow(), sys2)
     reactive_power_tol =
@@ -232,8 +232,8 @@ function test_power_flow(sys1::System, sys2::System; exclude_reactive_flow=false
     @test compare_df_within_tolerance("flow_results",
         sort(result1["flow_results"], names(result1["flow_results"])[2:end]),
         sort(result2["flow_results"], names(result2["flow_results"])[2:end]),
-        POWERFLOW_COMPARISON_TOLERANCE; line_name=nothing, Q_to_from=reactive_power_tol,
-        Q_from_to=reactive_power_tol, Q_losses=reactive_power_tol)
+        POWERFLOW_COMPARISON_TOLERANCE; line_name = nothing, Q_to_from = reactive_power_tol,
+        Q_from_to = reactive_power_tol, Q_losses = reactive_power_tol)
 end
 
 function read_system_and_metadata(raw_path, metadata_path)
@@ -250,8 +250,8 @@ function test_psse_round_trip(
     exporter::PSSEExporter,
     scenario_name::AbstractString,
     export_location::AbstractString;
-    do_power_flow_test=true,
-    exclude_reactive_flow=false,
+    do_power_flow_test = true,
+    exclude_reactive_flow = false,
 )
     raw_path, metadata_path =
         get_psse_export_paths(joinpath(export_location, scenario_name))
@@ -265,7 +265,7 @@ function test_psse_round_trip(
     sys2, sys2_metadata = read_system_and_metadata(raw_path, metadata_path)
     @test compare_systems_loosely(sys, sys2)
     do_power_flow_test &&
-        test_power_flow(sys, sys2; exclude_reactive_flow=exclude_reactive_flow)
+        test_power_flow(sys, sys2; exclude_reactive_flow = exclude_reactive_flow)
 end
 
 "Test that the two raw files are exactly identical and the two metadata files parse to identical JSON"
@@ -274,7 +274,7 @@ function test_psse_export_strict_equality(
     metadata1,
     raw2,
     metadata2;
-    exclude_metadata_keys=["case_name"],
+    exclude_metadata_keys = ["case_name"],
 )
     open(raw1, "r") do handle1
         open(raw2, "r") do handle2
@@ -329,7 +329,7 @@ end
     export_location = joinpath(test_psse_export_dir, "v33", "system_240")
     exporter = PSSEExporter(sys, :v33, export_location)
     test_psse_round_trip(sys, exporter, "basic", export_location;
-        exclude_reactive_flow=true)  # TODO why is reactive flow not matching?
+        exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting the exact same thing again should result in the exact same files
     write_export(exporter, "basic2")
@@ -360,7 +360,7 @@ end
     @test_logs((:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_loosely(sys, reread_sys2))
-    test_power_flow(sys2, reread_sys2; exclude_reactive_flow=true)  # TODO why is reactive flow not matching?
+    test_power_flow(sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 end
 
 @testset "PSSE Exporter with RTS_GMLC_DA_sys, v33" begin
@@ -374,7 +374,7 @@ end
     export_location = joinpath(test_psse_export_dir, "v33", "rts_gmlc")
     exporter = PSSEExporter(sys, :v33, export_location)
     test_psse_round_trip(sys, exporter, "basic", export_location;
-        exclude_reactive_flow=true)  # TODO why is reactive flow not matching?
+        exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting the exact same thing again should result in the exact same files
     write_export(exporter, "basic2")
@@ -404,7 +404,7 @@ end
     @test_logs((:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_loosely(sys, reread_sys2))
-    test_power_flow(sys2, reread_sys2; exclude_reactive_flow=true)  # TODO why is reactive flow not matching?
+    test_power_flow(sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Updating with changed value should result in a different reimport (PowerFlowData version)
     exporter = PSSEExporter(sys, :v33, export_location)
@@ -417,16 +417,16 @@ end
     reread_sys3, sys3_metadata =
         read_system_and_metadata(joinpath(export_location, "basic5"))
     @test compare_systems_loosely(sys2, reread_sys3;
-        exclude_reactive_power=true)  # TODO why is reactive power not matching?
+        exclude_reactive_power = true)  # TODO why is reactive power not matching?
     @test_logs((:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_loosely(sys, reread_sys3))
-    test_power_flow(sys2, reread_sys3; exclude_reactive_flow=true)  # TODO why is reactive flow not matching?
+    test_power_flow(sys2, reread_sys3; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting with write_comments should be comparable to original system
-    exporter = PSSEExporter(sys, :v33, export_location; write_comments=true)
+    exporter = PSSEExporter(sys, :v33, export_location; write_comments = true)
     test_psse_round_trip(sys, exporter, "basic6", export_location;
-        exclude_reactive_flow=true)  # TODO why is reactive flow not matching?
+        exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 end
 
 @testset "Test exporter helper functions" begin
