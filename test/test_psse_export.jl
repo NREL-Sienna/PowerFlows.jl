@@ -222,7 +222,12 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
     return result
 end
 
-function test_power_flow(pf::ACPowerFlow{<:ACPowerFlowSolverType}, sys1::System, sys2::System; exclude_reactive_flow = false)
+function test_power_flow(
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
+    sys1::System,
+    sys2::System;
+    exclude_reactive_flow = false,
+)
     result1 = solve_powerflow(pf, sys1)
     result2 = solve_powerflow(pf, sys2)
     reactive_power_tol =
@@ -319,7 +324,10 @@ end
     @test compare_systems_loosely(sys, deepcopy(sys))
 end
 
-@testset "PSSE Exporter with system_240[32].json, v33" for (ACSolver, folder_name) in ((NLSolveACPowerFlow, "system_240_NLSolve"), (KLUACPowerFlow, "system_240_KLU"))
+@testset "PSSE Exporter with system_240[32].json, v33" for (ACSolver, folder_name) in (
+    (NLSolveACPowerFlow, "system_240_NLSolve"),
+    (KLUACPowerFlow, "system_240_KLU"),
+)
     sys = load_test_system()
     pf = ACPowerFlow{ACSolver}()
     isnothing(sys) && return
@@ -365,7 +373,10 @@ end
     test_power_flow(pf, sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 end
 
-@testset "PSSE Exporter with RTS_GMLC_DA_sys, v33" for (ACSolver, folder_name) in ((NLSolveACPowerFlow, "rts_gmlc_NLSolve"), (KLUACPowerFlow, "rts_gmlc_KLU"))
+@testset "PSSE Exporter with RTS_GMLC_DA_sys, v33" for (ACSolver, folder_name) in (
+    (NLSolveACPowerFlow, "rts_gmlc_NLSolve"),
+    (KLUACPowerFlow, "rts_gmlc_KLU"),
+)
     sys = create_pf_friendly_rts_gmlc()
     pf = ACPowerFlow{ACSolver}()
     set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)

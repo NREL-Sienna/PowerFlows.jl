@@ -18,7 +18,8 @@ end
           PF.vPTDFPowerFlowData
 end
 
-@testset "System <-> PowerFlowData round trip" for ACSolver in (NLSolveACPowerFlow, KLUACPowerFlow)
+@testset "System <-> PowerFlowData round trip" for ACSolver in
+                                                   (NLSolveACPowerFlow, KLUACPowerFlow)
     # TODO currently only tested with ACPowerFlow
     # TODO test that update_system! errors if the PowerFlowData doesn't correspond to the system
 
@@ -57,6 +58,9 @@ end
     sys_modify_updated = deepcopy(sys_original)
     PF.update_system!(sys_modify_updated, data_modified)
     sys_mod_redist = deepcopy(sys_modified)
-    PF.update_system!(sys_mod_redist, PowerFlowData(ACPowerFlow{ACSolver}(), sys_mod_redist))
+    PF.update_system!(
+        sys_mod_redist,
+        PowerFlowData(ACPowerFlow{ACSolver}(), sys_mod_redist),
+    )
     @test IS.compare_values(powerflow_match_fn, sys_modify_updated, sys_mod_redist)
 end

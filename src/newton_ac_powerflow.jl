@@ -31,7 +31,7 @@ solve_ac_powerflow!(sys, method=:newton)
 ```
 """
 function solve_ac_powerflow!(
-    pf::ACPowerFlow{<: ACPowerFlowSolverType},
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
     kwargs...,
 )
@@ -72,7 +72,7 @@ res = solve_powerflow(sys, method=:newton)
 ```
 """
 function solve_powerflow(
-    pf::ACPowerFlow{<: ACPowerFlowSolverType},
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
     kwargs...,
 )
@@ -128,7 +128,7 @@ function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
 end
 
 function _solve_powerflow!(
-    pf::ACPowerFlow{<: ACPowerFlowSolverType},
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
     data::ACPowerFlowData,
     check_reactive_power_limits;
     nlsolve_kwargs...,
@@ -160,12 +160,18 @@ function _newton_powerflow(
     df = NLsolve.OnceDifferentiable(pf, J, pf.x0, pf.residual, J.Jv)
     res = NLsolve.nlsolve(df, pf.x0; nlsolve_kwargs...)
     if !res.f_converged
-        @error("The powerflow solver NLSolve did not converge (returned convergence = $(res.f_converged))")
+        @error(
+            "The powerflow solver NLSolve did not converge (returned convergence = $(res.f_converged))"
+        )
     end
     return res.f_converged, res.zero
 end
 
-function _newton_powerflow(pf::ACPowerFlow{KLUACPowerFlow}, data::ACPowerFlowData; nlsolve_kwargs...)
+function _newton_powerflow(
+    pf::ACPowerFlow{KLUACPowerFlow},
+    data::ACPowerFlowData;
+    nlsolve_kwargs...,
+)
     # Fetch maxIter and tol from kwargs, or use defaults if not provided
     maxIter = get(nlsolve_kwargs, :maxIter, DEFAULT_NR_MAX_ITER)
     tol = get(nlsolve_kwargs, :tol, DEFAULT_NR_TOL)
@@ -180,7 +186,7 @@ function _newton_powerflow(pf::ACPowerFlow{KLUACPowerFlow}, data::ACPowerFlowDat
 
     Vm = data.bus_magnitude[:]
     # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
-    Vm[pq] = clamp.(Vm[pq], 0.9, 1.1) 
+    Vm[pq] = clamp.(Vm[pq], 0.9, 1.1)
     Va = data.bus_angles[:]
     V = Vm .* exp.(1im * Va)
 
