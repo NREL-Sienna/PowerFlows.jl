@@ -31,7 +31,7 @@ solve_ac_powerflow!(sys, method=:newton)
 ```
 """
 function solve_ac_powerflow!(
-    pf::Union{NLSolveACPowerFlow, KLUACPowerFlow},
+    pf::ACPowerFlow{<: ACPowerFlowSolverType},
     system::PSY.System;
     kwargs...,
 )
@@ -41,7 +41,7 @@ function solve_ac_powerflow!(
     PSY.set_units_base_system!(system, "SYSTEM_BASE")
     check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
     data = PowerFlowData(
-        NLSolveACPowerFlow(; check_reactive_power_limits = check_reactive_power_limits),
+        pf,
         system;
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
@@ -72,7 +72,7 @@ res = solve_powerflow(sys, method=:newton)
 ```
 """
 function solve_powerflow(
-    pf::Union{NLSolveACPowerFlow, KLUACPowerFlow},
+    pf::ACPowerFlow{<: ACPowerFlowSolverType},
     system::PSY.System;
     kwargs...,
 )
@@ -128,14 +128,14 @@ function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
 end
 
 function _solve_powerflow!(
-    pf::Union{NLSolveACPowerFlow, KLUACPowerFlow},
+    pf::ACPowerFlow{<: ACPowerFlowSolverType},
     data::ACPowerFlowData,
     check_reactive_power_limits;
     nlsolve_kwargs...,
 )
     if check_reactive_power_limits
         for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
-            converged, x = _nlsolve_powerflow(pf, data; nlsolve_kwargs...)
+            converged, x = _newton_powerflow(pf, data; nlsolve_kwargs...)
             if converged
                 if _check_q_limit_bounds!(data, x)
                     return converged, x
@@ -145,12 +145,12 @@ function _solve_powerflow!(
             end
         end
     else
-        return _nlsolve_powerflow(pf, data; nlsolve_kwargs...)
+        return _newton_powerflow(pf, data; nlsolve_kwargs...)
     end
 end
 
-function _nlsolve_powerflow(
-    pf::NLSolveACPowerFlow,
+function _newton_powerflow(
+    pf::ACPowerFlow{NLSolveACPowerFlow},
     data::ACPowerFlowData;
     nlsolve_kwargs...,
 )
@@ -160,29 +160,31 @@ function _nlsolve_powerflow(
     df = NLsolve.OnceDifferentiable(pf, J, pf.x0, pf.residual, J.Jv)
     res = NLsolve.nlsolve(df, pf.x0; nlsolve_kwargs...)
     if !res.f_converged
-        @error("The powerflow solver returned convergence = $(res.f_converged)")
+        @error("The powerflow solver NLSolve did not converge (returned convergence = $(res.f_converged))")
     end
     return res.f_converged, res.zero
 end
 
-function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_kwargs...)
-    pf = PolarPowerFlow(data)
-    #J_function = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
-
-    maxIter = 30  # TODO
-    tol = 1e-6    # TODO
+function _newton_powerflow(pf::ACPowerFlow{KLUACPowerFlow}, data::ACPowerFlowData; nlsolve_kwargs...)
+    # Fetch maxIter and tol from kwargs, or use defaults if not provided
+    maxIter = get(nlsolve_kwargs, :maxIter, DEFAULT_NR_MAX_ITER)
+    tol = get(nlsolve_kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
 
-    Vm = data.bus_magnitude[:]
-    Va = data.bus_angles[:]
-    V = Vm .* exp.(1im * Va)
+    pf = PolarPowerFlow(data)
 
     # Find indices for each bus type
     ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type)
     pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type)
     pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type)
 
-    Ybus = pf.data.power_network_matrix.data
+    Vm = data.bus_magnitude[:]
+    # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
+    Vm[pq] = clamp.(Vm[pq], 0.9, 1.1) 
+    Va = data.bus_angles[:]
+    V = Vm .* exp.(1im * Va)
+
+    Ybus = data.power_network_matrix.data
 
     Sbus =
         data.bus_activepower_injection[:] - data.bus_activepower_withdrawals[:] +
@@ -214,9 +216,6 @@ function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_k
         factor_J = KLU.klu(J)
         dx = -(factor_J \ F)
 
-        #J_function(J_function.Jv, x)
-        #dx = - (J_function.Jv \ F)
-
         Va[pv] .+= dx[1:npv]
         Va[pq] .+= dx[(npv + 1):(npv + npq)]
         Vm[pq] .+= dx[(npv + npq + 1):(npv + 2 * npq)]
@@ -239,7 +238,7 @@ function _nlsolve_powerflow(pf::KLUACPowerFlow, data::ACPowerFlowData; nlsolve_k
 
     # mock the expected x format, where the values depend on the type of the bus:
     n_buses = length(data.bus_type)
-    x = Float64[0.0 for _ in 1:(2 * n_buses)]
+    x = zeros(Float64, 2 * n_buses)
     Sbus_result = V .* conj(Ybus * V)
     for (ix, b) in enumerate(data.bus_type)
         if b == PSY.ACBusTypes.REF

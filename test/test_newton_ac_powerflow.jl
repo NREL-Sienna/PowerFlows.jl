@@ -1,4 +1,4 @@
-@testset "AC Power Flow 14-Bus testing" for ACPowerFlow in
+@testset "AC Power Flow 14-Bus testing" for ACSolver in
                                             (NLSolveACPowerFlow, KLUACPowerFlow)
     result_14 = [
         2.3255081760423684
@@ -32,36 +32,38 @@
     ]
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    data = PowerFlows.PowerFlowData(ACPowerFlow(), sys; check_connectivity = true)
+    pf = ACPowerFlow{ACSolver}()
+    data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
     #Compare results between finite diff methods and Jacobian method
-    converged1, x1 = PowerFlows._solve_powerflow!(ACPowerFlow(), data, false)
+    converged1, x1 = PowerFlows._solve_powerflow!(pf, data, false)
     @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6
-    @test solve_ac_powerflow!(ACPowerFlow(), sys; method = :newton)
+    @test solve_ac_powerflow!(pf, sys; method = :newton)
 
     # Test enforcing the reactive power Limits
     set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
-    data = PowerFlows.PowerFlowData(ACPowerFlow(), sys; check_connectivity = true)
-    converged2, x2 = PowerFlows._solve_powerflow!(ACPowerFlow(), data, true)
+    data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
+    converged2, x2 = PowerFlows._solve_powerflow!(pf, data, true)
     @test LinearAlgebra.norm(result_14 - x2, Inf) >= 1e-6
     @test 1.08 <= x2[15] <= 1.09
 end
 
-@testset "AC Power Flow 14-Bus Line Configurations" for ACPowerFlow in
+@testset "AC Power Flow 14-Bus Line Configurations" for ACSolver in
                                                         (NLSolveACPowerFlow, KLUACPowerFlow)
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    base_res = solve_powerflow(ACPowerFlow(), sys)
+    pf = ACPowerFlow{ACSolver}()
+    base_res = solve_powerflow(pf, sys)
     branch = first(PSY.get_components(Line, sys))
     dyn_branch = DynamicBranch(branch)
     add_component!(sys, dyn_branch)
-    @test dyn_pf = solve_ac_powerflow!(ACPowerFlow(), sys)
-    dyn_pf = solve_powerflow(ACPowerFlow(), sys)
+    @test dyn_pf = solve_ac_powerflow!(pf, sys)
+    dyn_pf = solve_powerflow(pf, sys)
     @test LinearAlgebra.norm(dyn_pf["bus_results"].Vm - base_res["bus_results"].Vm, Inf) <=
           1e-6
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
     PSY.set_available!(line, false)
-    solve_ac_powerflow!(ACPowerFlow(), sys)
+    solve_ac_powerflow!(pf, sys)
     @test PSY.get_active_power_flow(line) == 0.0
     test_bus = get_component(PSY.Bus, sys, "Bus 4")
     @test isapprox(PSY.get_magnitude(test_bus), 1.002; atol = 1e-3, rtol = 0)
@@ -69,12 +71,12 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
     PSY.set_available!(line, false)
-    res = solve_powerflow(ACPowerFlow(), sys)
+    res = solve_powerflow(pf, sys)
     @test res["flow_results"].P_from_to[4] == 0.0
     @test res["flow_results"].P_to_from[4] == 0.0
 end
 
-@testset "AC Power Flow 3-Bus Fixed FixedAdmittance testing" for ACPowerFlow in (
+@testset "AC Power Flow 3-Bus Fixed FixedAdmittance testing" for ACSolver in (
     NLSolveACPowerFlow,
     KLUACPowerFlow,
 )
@@ -84,12 +86,13 @@ end
     bus_103 = get_component(PSY.Bus, sys_3bus, "BUS 3")
     fix_shunt = PSY.FixedAdmittance("FixAdmBus3", true, bus_103, 0.0 + 0.2im)
     add_component!(sys_3bus, fix_shunt)
-    df = solve_powerflow(ACPowerFlow(), sys_3bus)
+    pf = ACPowerFlow{ACSolver}()
+    df = solve_powerflow(pf, sys_3bus)
     @test isapprox(df["bus_results"].P_gen, p_gen_matpower_3bus, atol = 1e-4)
     @test isapprox(df["bus_results"].Q_gen, q_gen_matpower_3bus, atol = 1e-4)
 end
 
-@testset "AC Power Flow convergence fail testing" for ACPowerFlow in
+@testset "AC Power Flow convergence fail testing" for ACSolver in
                                                       (NLSolveACPowerFlow, KLUACPowerFlow)
     pf_sys5_re = PSB.build_system(PSB.PSITestSystems, "c_sys5_re"; add_forecasts = false)
     remove_component!(Line, pf_sys5_re, "1")
@@ -98,15 +101,17 @@ end
     PSY.set_x!(br, 20.0)
     PSY.set_r!(br, 2.0)
 
+    pf = ACPowerFlow{ACSolver}()
+
     # This is a negative test. The data passed for sys5_re is known to be infeasible.
     @test_logs(
         (:error, "The powerflow solver returned convergence = false"),
         match_mode = :any,
-        @test !solve_ac_powerflow!(ACPowerFlow(), pf_sys5_re)
+        @test !solve_ac_powerflow!(pf, pf_sys5_re)
     )
 end
 
-@testset "AC Test 240 Case PSS/e results" for ACPowerFlow in
+@testset "AC Test 240 Case PSS/e results" for ACSolver in
                                               (NLSolveACPowerFlow, KLUACPowerFlow)
     file = joinpath(
         TEST_FILES_DIR,
@@ -122,9 +127,11 @@ end
     pf_bus_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_bus_results.csv")
     pf_gen_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_gen_results.csv")
 
-    pf = solve_ac_powerflow!(ACPowerFlow(), system)
-    @test pf
-    pf_result_df = solve_powerflow(ACPowerFlow(), system)
+    pf = ACPowerFlow{ACSolver}()
+
+    pf1 = solve_ac_powerflow!(pf, system)
+    @test pf1
+    pf_result_df = solve_powerflow(pf, system)
 
     v_diff, angle_diff, number = psse_bus_results_compare(pf_bus_result_file, pf_result_df)
     p_diff, q_diff, names = psse_gen_results_compare(pf_gen_result_file, system)
@@ -140,7 +147,7 @@ end
     @test norm(q_diff, 2) / length(q_diff) < DIFF_L2_TOLERANCE
 end
 
-@testset "AC Multiple sources at ref" for ACPowerFlow in
+@testset "AC Multiple sources at ref" for ACSolver in
                                           (NLSolveACPowerFlow, KLUACPowerFlow)
     sys = System(100.0)
     b = ACBus(;
@@ -175,16 +182,17 @@ end
         X_th = 1e-5,
     )
     add_component!(sys, s2)
-    @test solve_ac_powerflow!(ACPowerFlow(), sys)
+    pf = ACPowerFlow{ACSolver}()
+    @test solve_ac_powerflow!(pf, sys)
 
     #Create power mismatch, test for error
     set_active_power!(get_component(Source, sys, "source_1"), -0.4)
     @test_throws ErrorException(
         "Sources do not match P and/or Q requirements for reference bus.",
-    ) solve_ac_powerflow!(ACPowerFlow(), sys)
+    ) solve_ac_powerflow!(pf, sys)
 end
 
-@testset "AC PowerFlow with Multiple sources at PV" for ACPowerFlow in
+@testset "AC PowerFlow with Multiple sources at PV" for ACSolver in
                                                         (NLSolveACPowerFlow, KLUACPowerFlow)
     sys = System(100.0)
     b1 = ACBus(;
@@ -255,17 +263,19 @@ end
     )
     add_component!(sys, s3)
 
-    @test solve_ac_powerflow!(ACPowerFlow(), sys)
+    pf = ACPowerFlow{ACSolver}()
+
+    @test solve_ac_powerflow!(pf, sys)
 
     #Create power mismatch, test for error
     set_reactive_power!(get_component(Source, sys, "source_3"), -0.5)
     @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_ac_powerflow!(
-        ACPowerFlow(),
+        pf,
         sys,
     )
 end
 
-@testset "AC PowerFlow Source + non-source at Ref" for ACPowerFlow in
+@testset "AC PowerFlow Source + non-source at Ref" for ACSolver in
                                                        (NLSolveACPowerFlow, KLUACPowerFlow)
     sys = System(100.0)
     b = ACBus(;
@@ -312,7 +322,9 @@ end
     )
     add_component!(sys, g1)
 
-    @test solve_ac_powerflow!(ACPowerFlow(), sys)
+    pf = ACPowerFlow{ACSolver}()
+
+    @test solve_ac_powerflow!(pf, sys)
     @test isapprox(
         get_active_power(get_component(Source, sys, "source_1")),
         0.5;
@@ -325,7 +337,7 @@ end
     )
 end
 
-@testset "AC PowerFlow Source + non-source at PV" for ACPowerFlow in
+@testset "AC PowerFlow Source + non-source at PV" for ACSolver in
                                                       (NLSolveACPowerFlow, KLUACPowerFlow)
     sys = System(100.0)
     b1 = ACBus(;
@@ -407,7 +419,9 @@ end
     )
     add_component!(sys, g1)
 
-    @test solve_ac_powerflow!(ACPowerFlow(), sys)
+    pf = ACPowerFlow{ACSolver}()
+
+    @test solve_ac_powerflow!(pf, sys)
     @test isapprox(
         get_active_power(get_component(Source, sys, "source_2")),
         0.5;

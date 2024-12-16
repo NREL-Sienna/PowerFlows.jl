@@ -608,7 +608,7 @@ dictionary will therefore feature just one key linked to one DataFrame.
         vector containing the reults for one single time-period.
 """
 function write_results(
-    ::Union{NLSolveACPowerFlow, KLUACPowerFlow},
+    ::ACPowerFlow{<: ACPowerFlowSolverType},
     sys::PSY.System,
     data::ACPowerFlowData,
     result::Vector{Float64},
