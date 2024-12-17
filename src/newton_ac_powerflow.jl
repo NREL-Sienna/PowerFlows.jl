@@ -177,8 +177,6 @@ function _newton_powerflow(
     tol = get(nlsolve_kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
 
-    pf = PolarPowerFlow(data)
-
     # Find indices for each bus type
     ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type)
     pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type)
