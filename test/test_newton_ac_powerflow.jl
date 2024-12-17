@@ -433,3 +433,23 @@ end
         atol = 0.001,
     )
 end
+
+
+@testset "Compare larger grid results KLU vs NLSolve" begin
+    sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
+
+    pf_default = ACPowerFlow()
+    pf_klu = ACPowerFlow(KLUACPowerFlow)
+    pf_nlsolve = ACPowerFlow(NLSolveACPowerFlow)
+    
+    res_default = solve_powerflow(pf_default, sys)  # must be the same as KLU
+    res_klu = solve_powerflow(pf_klu, sys)
+    res_nlsolve = solve_powerflow(pf_nlsolve, sys)
+
+
+    @test all(isapprox.(res_klu["bus_results"][!, :Vm], res_default["bus_results"][!, :Vm], rtol=0, atol=1e-12))
+    @test all(isapprox.(res_klu["bus_results"][!, :θ], res_default["bus_results"][!, :θ], rtol=0, atol=1e-12))
+
+    @test all(isapprox.(res_klu["bus_results"][!, :Vm], res_nlsolve["bus_results"][!, :Vm], rtol=0, atol=1e-8))
+    @test all(isapprox.(res_klu["bus_results"][!, :θ], res_nlsolve["bus_results"][!, :θ], rtol=0, atol=1e-8))
+end

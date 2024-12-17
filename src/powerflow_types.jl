@@ -10,9 +10,8 @@ Base.@kwdef struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <:
 end
 
 # Create a constructor that defaults to KLUACPowerFlow
-function ACPowerFlow(;
+function ACPowerFlow(ACSolver::Type{<:ACPowerFlowSolverType} = KLUACPowerFlow;
     check_reactive_power_limits::Bool = false,
-    ACSolver::Type{<:ACPowerFlowSolverType} = KLUACPowerFlow,
 )
     return ACPowerFlow{ACSolver}(check_reactive_power_limits)
 end
