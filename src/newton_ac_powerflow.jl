@@ -191,10 +191,10 @@ function _newton_powerflow(
 
     Vm = data.bus_magnitude[:]
     # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
-    Vm[pq] .= clamp.(Vm[pq], 0.9, 1.1)
+    @. Vm[pq] = clamp.(Vm[pq], 0.9, 1.1)
     Va = data.bus_angles[:]
     V = zeros(Complex{Float64}, length(Vm))
-    V .= Vm .* exp.(1im * Va)
+    @. V = Vm .* exp.(1im * Va)
 
     Va_pv = view(Va, pv)
     Va_pq = view(Va, pq)
@@ -212,7 +212,7 @@ function _newton_powerflow(
     Sbus =
         data.bus_activepower_injection[:] - data.bus_activepower_withdrawals[:] +
         1im * (data.bus_reactivepower_injection[:] - data.bus_reactivepower_withdrawals[:])
-
+    
     # Pre-allocate mis and F and create views for the respective real and imaginary sections of the arrays:
     mis = zeros(Complex{Float64}, length(V))
     mis_pvpq = view(mis, pvpq)
@@ -222,9 +222,9 @@ function _newton_powerflow(
     F_real = view(F, 1:npvpq)
     F_imag = view(F, npvpq + 1:npvpq + npq)
 
-    mis .= V .* conj(Ybus * V) .- Sbus
-    F_real .= real(mis_pvpq)  # In-place assignment to the real part, using views
-    F_imag .= imag(mis_pq)  # In-place assignment to the imaginary part, using views
+    mis .= V .* conj.(Ybus * V) .- Sbus
+    @. F_real = real(mis_pvpq)  # In-place assignment to the real part, using views
+    @. F_imag = imag(mis_pq)  # In-place assignment to the imaginary part, using views
 
     converged = npvpq == 0  # if only ref buses present, we do not need to enter the loop
 
@@ -244,18 +244,6 @@ function _newton_powerflow(
     j12 = view(J, pvpq_lookup[pvpq], npvpq .+ pq_lookup[pq])
     j21 = view(J, npvpq .+ pq_lookup[pq], pvpq_lookup[pvpq])
     j22 = view(J, npvpq .+ pq_lookup[pq], npvpq .+ pq_lookup[pq])
-
-    # pre-allocate the dSbus_dVm, dSbus_dVa to have the same structure as Ybus 
-    # they will follow the structure of Ybus except maybe when Ybus has zero values in its diagonal, which we do not expect here
-    rows, cols, _ = SparseArrays.findnz(Ybus)
-    dSbus_dVm = sparse(rows, cols, Complex{Float64}(0))
-    dSbus_dVa = sparse(rows, cols, Complex{Float64}(0))
-
-    # create views for the sub-arrays of Sbus_dVa, Sbus_dVm for updating the J:
-    Sbus_dVa_j11 = view(dSbus_dVa, pvpq, pvpq)
-    Sbus_dVm_j12 = view(dSbus_dVm, pvpq, pq)
-    Sbus_dVa_j21 = view(dSbus_dVa, pq, pvpq)
-    Sbus_dVm_j22 = view(dSbus_dVm, pq, pq)
     
     # we need views of the diagonals to avoid using LinearAlgebra.Diagonal:
     diagV = sparse(1:n_buses, 1:n_buses, Complex{Float64}(1))
@@ -268,21 +256,37 @@ function _newton_powerflow(
     diagVnorm = sparse(1:n_buses, 1:n_buses, Complex{Float64}(1))
     diagVnorm_diag = view(diagVnorm, diag_idx)
 
+    # pre-allocate the dSbus_dVm, dSbus_dVa to have the same structure as Ybus 
+    # they will follow the structure of Ybus except maybe when Ybus has zero values in its diagonal, which we do not expect here
+    #rows, cols, _ = SparseArrays.findnz(Ybus)
+    #dSbus_dVm = sparse(rows, cols, Complex{Float64}(0))
+    #dSbus_dVa = sparse(rows, cols, Complex{Float64}(0))
+
+    # preallocate dSbus_dVm, dSbus_dVa with correct structure:
+    dSbus_dVm = diagV * conj.(Ybus * diagVnorm) + conj.(diagIbus) * diagVnorm
+    dSbus_dVa = 1im * diagV * conj.(diagIbus - Ybus * diagV)
+
+    # create views for the sub-arrays of Sbus_dVa, Sbus_dVm for updating the J:
+    Sbus_dVa_j11 = view(dSbus_dVa, pvpq, pvpq)
+    Sbus_dVm_j12 = view(dSbus_dVm, pvpq, pq)
+    Sbus_dVa_j21 = view(dSbus_dVa, pq, pvpq)
+    Sbus_dVm_j22 = view(dSbus_dVm, pq, pq)
+
     while i < maxIter && !converged
         i += 1
  
         ## use the new value of V to update dSbus_dVa, dSbus_dVm:
         diagV_diag .= V
         diagIbus_diag .= Ybus * V
-        diagVnorm_diag .= V ./ abs.(V)
-        dSbus_dVm .= diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-        dSbus_dVa .= 1im * diagV * conj(diagIbus - Ybus * diagV)
+        @. diagVnorm_diag = V ./ abs.(V)
+        dSbus_dVm .= diagV * conj.(Ybus * diagVnorm) + conj.(diagIbus) * diagVnorm
+        dSbus_dVa .= 1im * diagV * conj.(diagIbus - Ybus * diagV)
 
         # update the Jacobian by setting values through the pre-defined views for j11, j12, j21, j22
-        j11 .= real(Sbus_dVa_j11)
-        j12 .= real(Sbus_dVm_j12)
-        j21 .= imag(Sbus_dVa_j21)
-        j22 .= imag(Sbus_dVm_j22)
+        @. j11 = real(Sbus_dVa_j11)
+        @. j12 = real(Sbus_dVm_j12)
+        @. j21 = imag(Sbus_dVa_j21)
+        @. j22 = imag(Sbus_dVm_j22)
 
         factor_J = KLU.klu(J)
         dx .= -(factor_J \ F)
@@ -291,21 +295,21 @@ function _newton_powerflow(
         Va_pq .+= dx_Va_pq
         Vm_pq .+= dx_Vm_pq
 
-        V .= Vm .* exp.(1im * Va)
+        @. V = Vm .* exp.(1im * Va)
 
         Vm .= abs.(V)
         Va .= angle.(V)
 
-        mis .= V .* conj(Ybus * V) .- Sbus
-        F_real .= real(mis_pvpq)  # In-place assignment to the real part
-        F_imag .= imag(mis_pq)  # In-place assignment to the imaginary part
+        mis .= V .* conj.(Ybus * V) .- Sbus
+        @. F_real = real(mis_pvpq)  # In-place assignment to the real part
+        @. F_imag = imag(mis_pq)  # In-place assignment to the imaginary part
         converged = LinearAlgebra.norm(F, Inf) < tol
     end
 
     if !converged
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
-        @debug("The powerflow solver with KLU converged after $i iterations")
+        @info("The powerflow solver with KLU converged after $i iterations")
     end
 
     # mock the expected x format, where the values depend on the type of the bus:
