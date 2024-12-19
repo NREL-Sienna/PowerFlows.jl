@@ -181,12 +181,31 @@ function _newton_powerflow(
     ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type)
     pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type)
     pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type)
+    pvpq = [pv; pq]
+
+    #nref = length(ref)
+    npv = length(pv)
+    npq = length(pq)
+    npvpq = npv + npq
+    n_buses = length(data.bus_type)
 
     Vm = data.bus_magnitude[:]
     # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
-    Vm[pq] = clamp.(Vm[pq], 0.9, 1.1)
+    Vm[pq] .= clamp.(Vm[pq], 0.9, 1.1)
     Va = data.bus_angles[:]
-    V = Vm .* exp.(1im * Va)
+    V = zeros(Complex{Float64}, length(Vm))
+    V .= Vm .* exp.(1im * Va)
+
+    Va_pv = view(Va, pv)
+    Va_pq = view(Va, pq)
+    Vm_pq = view(Vm, pq)
+
+    # pre-allocate dx
+    dx = zeros(Float64, npv + 2 * npq)
+
+    dx_Va_pv = view(dx, 1:npv)
+    dx_Va_pq = view(dx, (npv + 1):(npv + npq))
+    dx_Vm_pq = view(dx, (npv + npq + 1):(npv + 2 * npq))
 
     Ybus = data.power_network_matrix.data
 
@@ -194,43 +213,92 @@ function _newton_powerflow(
         data.bus_activepower_injection[:] - data.bus_activepower_withdrawals[:] +
         1im * (data.bus_reactivepower_injection[:] - data.bus_reactivepower_withdrawals[:])
 
-    mis = V .* conj(Ybus * V) - Sbus
-    F = [real(mis[[pv; pq]]); imag(mis[pq])]
+    # Pre-allocate mis and F and create views for the respective real and imaginary sections of the arrays:
+    mis = zeros(Complex{Float64}, length(V))
+    mis_pvpq = view(mis, pvpq)
+    mis_pq = view(mis, pq)
 
-    # nref = length(ref)
-    npv = length(pv)
-    npq = length(pq)
+    F = zeros(Float64, npvpq + npq)
+    F_real = view(F, 1:npvpq)
+    F_imag = view(F, npvpq + 1:npvpq + npq)
 
-    converged = (npv + npq) == 0  # if only ref buses present, we do not need to enter the loop
+    mis .= V .* conj(Ybus * V) .- Sbus
+    F_real .= real(mis_pvpq)  # In-place assignment to the real part, using views
+    F_imag .= imag(mis_pq)  # In-place assignment to the imaginary part, using views
+
+    converged = npvpq == 0  # if only ref buses present, we do not need to enter the loop
+
+    # preallocate Jacobian matrix
+    rows = vcat(1:npvpq, 1:npvpq, npvpq+1:npvpq+npq, npvpq+1:npvpq+npq)
+    cols = vcat(1:npvpq, npvpq+1:npvpq+npq, 1:npvpq, npvpq+1:npvpq+npq)
+    J = sparse(rows, cols, Float64(0))
+
+    # we need to define lookups for mappings of pv, pq buses onto the internal J indexing
+    pvpq_lookup = zeros(Int64, maximum([ref; pvpq]) + 1)
+    pvpq_lookup[pvpq] .= 1:npvpq
+    pq_lookup = zeros(Int64, maximum([ref; pvpq]) + 1)
+    pq_lookup[pq] .= 1:npq
+
+    # with the pre-allocated J and lookups, we can define views into the sub-matrices of the J matrix for updating the J matrix in the NR loop
+    j11 = view(J, pvpq_lookup[pvpq], pvpq_lookup[pvpq])
+    j12 = view(J, pvpq_lookup[pvpq], npvpq .+ pq_lookup[pq])
+    j21 = view(J, npvpq .+ pq_lookup[pq], pvpq_lookup[pvpq])
+    j22 = view(J, npvpq .+ pq_lookup[pq], npvpq .+ pq_lookup[pq])
+
+    # pre-allocate the dSbus_dVm, dSbus_dVa to have the same structure as Ybus 
+    # they will follow the structure of Ybus except maybe when Ybus has zero values in its diagonal, which we do not expect here
+    rows, cols, _ = SparseArrays.findnz(Ybus)
+    dSbus_dVm = sparse(rows, cols, Complex{Float64}(0))
+    dSbus_dVa = sparse(rows, cols, Complex{Float64}(0))
+
+    # create views for the sub-arrays of Sbus_dVa, Sbus_dVm for updating the J:
+    Sbus_dVa_j11 = view(dSbus_dVa, pvpq, pvpq)
+    Sbus_dVm_j12 = view(dSbus_dVm, pvpq, pq)
+    Sbus_dVa_j21 = view(dSbus_dVa, pq, pvpq)
+    Sbus_dVm_j22 = view(dSbus_dVm, pq, pq)
+    
+    # we need views of the diagonals to avoid using LinearAlgebra.Diagonal:
+    diagV = sparse(1:n_buses, 1:n_buses, Complex{Float64}(1))
+    diag_idx = LinearAlgebra.diagind(diagV)
+    diagV_diag = view(diagV, diag_idx)
+
+    diagIbus = sparse(1:n_buses, 1:n_buses, Complex{Float64}(1))
+    diagIbus_diag = view(diagIbus, diag_idx)
+
+    diagVnorm = sparse(1:n_buses, 1:n_buses, Complex{Float64}(1))
+    diagVnorm_diag = view(diagVnorm, diag_idx)
 
     while i < maxIter && !converged
         i += 1
-        diagV = LinearAlgebra.Diagonal(V)
-        diagIbus = LinearAlgebra.Diagonal(Ybus * V)
-        diagVnorm = LinearAlgebra.Diagonal(V ./ abs.(V))
-        dSbus_dVm = diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
-        dSbus_dVa = 1im * diagV * conj(diagIbus - Ybus * diagV)
+ 
+        ## use the new value of V to update dSbus_dVa, dSbus_dVm:
+        diagV_diag .= V
+        diagIbus_diag .= Ybus * V
+        diagVnorm_diag .= V ./ abs.(V)
+        dSbus_dVm .= diagV * conj(Ybus * diagVnorm) + conj(diagIbus) * diagVnorm
+        dSbus_dVa .= 1im * diagV * conj(diagIbus - Ybus * diagV)
 
-        j11 = real(dSbus_dVa[[pv; pq], [pv; pq]])
-        j12 = real(dSbus_dVm[[pv; pq], pq])
-        j21 = imag(dSbus_dVa[pq, [pv; pq]])
-        j22 = imag(dSbus_dVm[pq, pq])
-        J = [j11 j12; j21 j22]
+        # update the Jacobian by setting values through the pre-defined views for j11, j12, j21, j22
+        j11 .= real(Sbus_dVa_j11)
+        j12 .= real(Sbus_dVm_j12)
+        j21 .= imag(Sbus_dVa_j21)
+        j22 .= imag(Sbus_dVm_j22)
 
         factor_J = KLU.klu(J)
-        dx = -(factor_J \ F)
+        dx .= -(factor_J \ F)
 
-        Va[pv] .+= dx[1:npv]
-        Va[pq] .+= dx[(npv + 1):(npv + npq)]
-        Vm[pq] .+= dx[(npv + npq + 1):(npv + 2 * npq)]
+        Va_pv .+= dx_Va_pv
+        Va_pq .+= dx_Va_pq
+        Vm_pq .+= dx_Vm_pq
 
-        V = Vm .* exp.(1im * Va)
+        V .= Vm .* exp.(1im * Va)
 
-        Vm = abs.(V)
-        Va = angle.(V)
+        Vm .= abs.(V)
+        Va .= angle.(V)
 
-        mis = V .* conj(Ybus * V) - Sbus
-        F = [real(mis[[pv; pq]]); imag(mis[pq])]
+        mis .= V .* conj(Ybus * V) .- Sbus
+        F_real .= real(mis_pvpq)  # In-place assignment to the real part
+        F_imag .= imag(mis_pq)  # In-place assignment to the imaginary part
         converged = LinearAlgebra.norm(F, Inf) < tol
     end
 

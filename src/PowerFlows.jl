@@ -27,7 +27,7 @@ import KLU
 import SparseArrays
 import InfrastructureSystems
 import PowerNetworkMatrices
-import SparseArrays: SparseMatrixCSC
+import SparseArrays: SparseMatrixCSC, sparse
 import JSON3
 import DataStructures: OrderedDict
 import Dates
