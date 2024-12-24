@@ -17,7 +17,7 @@ export get_psse_export_paths
 import Logging
 import DataFrames
 import PowerSystems
-import PowerSystems: System
+import PowerSystems: System, with_units_base
 import LinearAlgebra
 import NLsolve
 import SparseArrays

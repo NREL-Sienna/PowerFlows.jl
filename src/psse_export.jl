@@ -38,26 +38,6 @@ const PSSE_DEFAULT_EXPORT_NAME = "export"
 const PSSE_RAW_BUFFER_SIZEHINT = 1024
 const PSSE_MD_BUFFER_SIZEHINT = 1024
 
-# TODO move this to IS
-"""
-A context manager similar to `Logging.with_logger` that sets the system's units to the given
-value, executes the function, then sets them back. Suppresses logging below `Warn` from
-internal calls to `set_units_base_system!`. Not thread safe.
-"""
-function with_units(f::Function, sys::System, units::Union{PSY.UnitSystem, String})
-    old_units = PSY.get_units_base(sys)
-    Logging.with_logger(Logging.SimpleLogger(Logging.Warn)) do
-        PSY.set_units_base_system!(sys, units)
-    end
-    try
-        f()
-    finally
-        Logging.with_logger(Logging.SimpleLogger(Logging.Warn)) do
-            PSY.set_units_base_system!(sys, old_units)
-        end
-    end
-end
-
 """
 Make a `deepcopy` of the `System` except replace the time series manager and supplemental
 attribute manager with blank versions so these are not copied.
@@ -606,7 +586,7 @@ serialize_component_ids(id_mapping::Dict{Tuple{Tuple{Int64, Int64}, String}, Str
 
 # Fetch PL, QL, IP, IQ, YP, YQ
 _psse_get_load_data(exporter::PSSEExporter, load::PSY.StandardLoad) =
-    with_units(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+    with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
         PSY.get_constant_active_power(load),
         PSY.get_constant_reactive_power(load),
         PSY.get_current_active_power(load),
@@ -618,7 +598,7 @@ _psse_get_load_data(exporter::PSSEExporter, load::PSY.StandardLoad) =
 # Fallback if not all the data is available
 # This mapping corresponds to `function make_power_load` in the parser
 _psse_get_load_data(exporter::PSSEExporter, load::PSY.StaticLoad) =
-    with_units(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+    with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
         PSY.get_active_power(load),
         PSY.get_reactive_power(load),
         PSSE_DEFAULT,
@@ -763,14 +743,14 @@ function write_to_buffers!(
             _psse_quote_string(
                 generator_name_mapping[(sienna_bus_number, PSY.get_name(generator))],
             )  # TODO should this be quoted?
-        PG, QG = with_units(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
+        PG, QG = with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
             # TODO doing the conversion myself due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1164
             PSY.get_active_power(generator) * PSY.get_base_power(exporter.system),
             PSY.get_reactive_power(generator) * PSY.get_base_power(exporter.system)
         end
         # TODO approximate a QT for generators that don't have it set
         # (this is needed to run power flows also)
-        reactive_power_limits = with_units(
+        reactive_power_limits = with_units_base(
             () -> PSY.get_reactive_power_limits(generator),
             exporter.system,
             PSY.UnitSystem.NATURAL_UNITS,
@@ -789,7 +769,7 @@ function write_to_buffers!(
         RMPCT = PSSE_DEFAULT
         # TODO maybe have a better default here
         active_power_limits = try
-            with_units(
+            with_units_base(
                 () -> PSY.get_active_power_limits(generator),
                 exporter.system,
                 PSY.UnitSystem.NATURAL_UNITS,
@@ -871,7 +851,7 @@ function write_to_buffers!(
         RATEA =
             RATEB =
                 RATEC =
-                    with_units(
+                    with_units_base(
                         () -> PSY.get_rating(branch),
                         exporter.system,
                         PSY.UnitSystem.NATURAL_UNITS,
@@ -1016,7 +996,7 @@ function write_to_buffers!(
         RATA1 =
             RATB1 =
                 RATC1 =
-                    with_units(
+                    with_units_base(
                         () -> PSY.get_rating(transformer),
                         exporter.system,
                         PSY.UnitSystem.NATURAL_UNITS,
@@ -1185,7 +1165,7 @@ function write_export(
         md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
     end
 
-    with_units(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
+    with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
         # Each of these corresponds to a group of records in the PSS/E spec
         for group_name in PSSE_GROUPS_33
             @debug "Writing export for group $group_name"
