@@ -39,49 +39,6 @@ const PSSE_RAW_BUFFER_SIZEHINT = 1024
 const PSSE_MD_BUFFER_SIZEHINT = 1024
 
 """
-Make a `deepcopy` of the `System` except replace the time series manager and supplemental
-attribute manager with blank versions so these are not copied.
-"""
-function deepcopy_system_no_time_series_no_supplementals(sys::System)
-    old_time_series_manager = sys.data.time_series_manager
-    old_supplemental_attribute_manager = sys.data.supplemental_attribute_manager
-
-    new_time_series_manager = IS.TimeSeriesManager(
-        IS.InMemoryTimeSeriesStorage(),
-        IS.TimeSeriesMetadataStore(),
-        true,
-    )
-    new_supplemental_attribute_manager = IS.SupplementalAttributeManager()
-
-    sys.data.time_series_manager = new_time_series_manager
-    sys.data.supplemental_attribute_manager = new_supplemental_attribute_manager
-
-    old_refs = Dict{Tuple{DataType, String}, IS.SharedSystemReferences}()
-    for comp in PSY.iterate_components(sys)
-        old_refs[(typeof(comp), PSY.get_name(comp))] =
-            comp.internal.shared_system_references
-        new_refs = IS.SharedSystemReferences(;
-            time_series_manager = new_time_series_manager,
-            supplemental_attribute_manager = new_supplemental_attribute_manager,
-        )
-        IS.set_shared_system_references!(comp, new_refs)
-    end
-
-    new_sys = try
-        deepcopy(sys)
-    finally
-        sys.data.time_series_manager = old_time_series_manager
-        sys.data.supplemental_attribute_manager = old_supplemental_attribute_manager
-
-        for comp in PSY.iterate_components(sys)
-            IS.set_shared_system_references!(comp,
-                old_refs[(typeof(comp), PSY.get_name(comp))])
-        end
-    end
-    return new_sys
-end
-
-"""
 Structure to perform an export from a Sienna System, plus optional updates from
 `PowerFlowData`, to the PSS/E format. Construct from a `System` and a PSS/E version, update
 using `update_exporter` with any new data as relevant, and perform the export with
@@ -130,7 +87,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
                     "PSS/E version $psse_version is not supported, must be one of $PSSE_EXPORT_SUPPORTED_VERSIONS",
                 ),
             )
-        system = deepcopy_system_no_time_series_no_supplementals(base_system)
+        system = PSY.fast_deepcopy_system(base_system)
         mkpath(export_dir)
         new(
             system,
@@ -191,7 +148,7 @@ function update_exporter!(exporter::PSSEExporter, data::PSY.System)
             "System passed to update_exporter must be the same system as the one with which the exporter was constructed, just with different values",
         ),
     )
-    exporter.system = deepcopy_system_no_time_series_no_supplementals(data)
+    exporter.system = PSY.fast_deepcopy_system(data)
     reset_caches(exporter)
     return
 end
