@@ -70,7 +70,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
     md_dict::OrderedDict{String}  # Persist metadata to avoid unnecessary recomputation
     md_valid::Bool  # If this is true, the metadata need not be reserialized
     md_buffer::IOBuffer  # Cache a serialized version of the metadata
-    components_cache::AbstractDict{String, Vector{<:PSY.Component}}  # Cache sorted lists of components to reduce allocations
+    components_cache::Dict{String}  # Cache sorted lists of components to reduce allocations
 
     function PSSEExporter(
         base_system::PSY.System,
@@ -101,7 +101,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
             OrderedDict{String, Any}(),
             false,
             IOBuffer(),
-            Dict{String, Vector{<:PSY.Component}}(),
+            Dict{String, Any}(),
         )
     end
 end
@@ -423,9 +423,15 @@ function write_to_buffers!(
         sort!(collect(PSY.get_components(PSY.Bus, exporter.system)); by = PSY.get_number)
     end
     old_bus_numbers = PSY.get_number.(buses)
-    bus_number_mapping = _psse_bus_numbers(old_bus_numbers)
-    bus_name_mapping =
-        _psse_bus_names(PSY.get_name.(buses), old_bus_numbers, bus_number_mapping)
+
+    if !exporter.md_valid
+        md["bus_number_mapping"] = _psse_bus_numbers(old_bus_numbers)
+        md["bus_name_mapping"] =
+            _psse_bus_names(PSY.get_name.(buses), old_bus_numbers, md["bus_number_mapping"])
+    end
+    bus_number_mapping = md["bus_number_mapping"]
+    bus_name_mapping = md["bus_name_mapping"]
+
     for bus in buses
         I = bus_number_mapping[PSY.get_number(bus)]
         NAME = _psse_quote_string(bus_name_mapping[PSY.get_name(bus)])
@@ -464,9 +470,6 @@ function write_to_buffers!(
         fastprintln(io, EVLO)
     end
     end_group_33(io, md, exporter, "Bus Data", true)
-
-    exporter.md_valid || (md["bus_number_mapping"] = bus_number_mapping)
-    exporter.md_valid || (md["bus_name_mapping"] = bus_name_mapping)
 end
 
 function _increment_component_char(component_char::Char)
@@ -578,12 +581,13 @@ function write_to_buffers!(
     loads = get!(exporter.components_cache, "loads") do
         sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system)); by = PSY.get_name)
     end
-    load_name_mapping =
+    load_name_mapping = get!(exporter.components_cache, "load_name_mapping") do
         create_component_ids(
             PSY.get_name.(loads),
             PSY.get_number.(PSY.get_bus.(loads));
             singles_to_1 = true,
         )
+    end
     for load in loads
         sienna_bus_number = PSY.get_number(PSY.get_bus(load))
         I = md["bus_number_mapping"][sienna_bus_number]
@@ -633,12 +637,13 @@ function write_to_buffers!(
             by = PSY.get_name,
         )
     end
-    shunt_name_mapping =
+    shunt_name_mapping = get!(exporter.components_cache, "shunt_name_mapping") do
         create_component_ids(
             PSY.get_name.(shunts),
             PSY.get_number.(PSY.get_bus.(shunts));
             singles_to_1 = true,
         )
+    end
     for shunt in shunts
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
@@ -687,12 +692,13 @@ function write_to_buffers!(
         )
         return temp_gens
     end
-    generator_name_mapping =
+    generator_name_mapping = get!(exporter.components_cache, "generator_name_mapping") do
         create_component_ids(
             PSY.get_name.(generators),
             PSY.get_number.(PSY.get_bus.(generators));
             singles_to_1 = false,
         )
+    end
     for generator in generators
         sienna_bus_number = PSY.get_number(PSY.get_bus(generator))
         I = md["bus_number_mapping"][sienna_bus_number]
@@ -725,15 +731,12 @@ function write_to_buffers!(
         STAT = PSY.get_available(generator) ? 1 : 0
         RMPCT = PSSE_DEFAULT
         # TODO maybe have a better default here
-        active_power_limits = try
+        active_power_limits =
             with_units_base(
                 () -> PSY.get_active_power_limits(generator),
                 exporter.system,
                 PSY.UnitSystem.NATURAL_UNITS,
             )
-        catch
-            (min = PSSE_DEFAULT, max = PSSE_DEFAULT)
-        end
         PT = active_power_limits.max
         PB = active_power_limits.min
         WMOD = get(PSY.get_ext(generator), "WMOD", PSSE_DEFAULT)
@@ -778,21 +781,22 @@ function write_to_buffers!(
     check_33(exporter)
 
     # TODO can/should we be more general than `Line`?
-    branches = get!(exporter.components_cache, "branches") do
-        sort!(
+    branches_with_numbers = get!(exporter.components_cache, "branches") do
+        branches = sort!(
             collect(PSY.get_components(PSY.Line, exporter.system));
             by = branch_to_bus_numbers,
         )
+        [(branch, branch_to_bus_numbers(branch)) for branch in branches]
     end
-    branch_name_mapping =
+    branch_name_mapping = get!(exporter.components_cache, "branch_name_mapping") do
         create_component_ids(
-            PSY.get_name.(branches),
-            branch_to_bus_numbers.(branches);
+            PSY.get_name.(first.(branches_with_numbers)),
+            last.(branches_with_numbers);
             singles_to_1 = false,
         )
+    end
 
-    for branch in branches
-        from_n, to_n = branch_to_bus_numbers(branch)
+    for (branch, (from_n, to_n)) in branches_with_numbers
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
         CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
@@ -902,28 +906,36 @@ function write_to_buffers!(
     check_33(exporter)
     transformer_types =
         Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
-    transformers = get!(exporter.components_cache, "transformers") do
-        sort!(
+    transformers_with_numbers = get!(exporter.components_cache, "transformers") do
+        transformers = sort!(
             collect(PSY.get_components(transformer_types, exporter.system));
             by = branch_to_bus_numbers,
         )
+        [(transformer, branch_to_bus_numbers(transformer)) for transformer in transformers]
     end
-    transformer_ckt_mapping =
+    transformer_ckt_mapping = get!(exporter.components_cache, "transformer_ckt_mapping") do
         create_component_ids(
-            PSY.get_name.(transformers),
-            branch_to_bus_numbers.(transformers);
+            PSY.get_name.(first.(transformers_with_numbers)),
+            last.(transformers_with_numbers);
             singles_to_1 = false,
         )
-    transformer_name_mapping = _psse_transformer_names(
-        PSY.get_name.(transformers),
-        branch_to_bus_numbers.(transformers),
-        md["bus_number_mapping"],
-        transformer_ckt_mapping,
-    )
-    for transformer in transformers
+    end
+    if !exporter.md_valid
+        md["transformer_name_mapping"] = _psse_transformer_names(
+            PSY.get_name.(first.(transformers_with_numbers)),
+            last.(transformers_with_numbers),
+            md["bus_number_mapping"],
+            transformer_ckt_mapping,
+        )
+    end
+
+    bus_number_mapping = md["bus_number_mapping"]
+    transformer_name_mapping = md["transformer_name_mapping"]
+
+    for (transformer, (from_n, to_n)) in transformers_with_numbers
         from_n, to_n = branch_to_bus_numbers(transformer)
-        I = md["bus_number_mapping"][from_n]
-        J = md["bus_number_mapping"][to_n]
+        I = bus_number_mapping[from_n]
+        J = bus_number_mapping[to_n]
         K = 0  # no third winding
         CKT = transformer_ckt_mapping[((from_n, to_n), PSY.get_name(transformer))]
         @assert !(first(CKT) in ['&', '@', '*'])  # Characters with a special meaning in this context
@@ -1012,7 +1024,6 @@ function write_to_buffers!(
     end_group_33(io, md, exporter, "Transformer Data", true)
     if !exporter.md_valid
         md["transformer_ckt_mapping"] = serialize_component_ids(transformer_ckt_mapping)
-        md["transformer_name_mapping"] = transformer_name_mapping
     end
 end
 
