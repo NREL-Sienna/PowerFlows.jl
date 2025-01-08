@@ -278,20 +278,21 @@ function _update_dSbus_dV!(rows::Vector{Int64}, cols::Vector{Int64},
     #dSbus_dVa .*= 1im
     LinearAlgebra.mul!(dSbus_dVa, dSbus_dVa, 1im)
 
-    for c in cols
-        for r in rows
-            r_dSbus_dVa[r, c] = real(dSbus_dVa[r, c])
-            i_dSbus_dVa[r, c] = imag(dSbus_dVa[r, c])
-            r_dSbus_dVm[r, c] = real(dSbus_dVm[r, c])
-            i_dSbus_dVm[r, c] = imag(dSbus_dVm[r, c])
-        end
-    end
+    # this loop is slower so we should use vectorize assignments below
+    # for c in cols
+    #     for r in rows
+    #         r_dSbus_dVa[r, c] = real(dSbus_dVa[r, c])
+    #         i_dSbus_dVa[r, c] = imag(dSbus_dVa[r, c])
+    #         r_dSbus_dVm[r, c] = real(dSbus_dVm[r, c])
+    #         i_dSbus_dVm[r, c] = imag(dSbus_dVm[r, c])
+    #     end
+    # end
 
     # sometimes can allocate so we have to use the for loop above
-    # r_dSbus_dVa .= real.(dSbus_dVa)
-    # r_dSbus_dVm .= real.(dSbus_dVm)
-    # i_dSbus_dVa .= imag.(dSbus_dVa)
-    # i_dSbus_dVm .= imag.(dSbus_dVm)
+    r_dSbus_dVa .= real.(dSbus_dVa)
+    r_dSbus_dVm .= real.(dSbus_dVm)
+    i_dSbus_dVa .= imag.(dSbus_dVa)
+    i_dSbus_dVm .= imag.(dSbus_dVm)
     return
 end
 
