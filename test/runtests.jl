@@ -10,6 +10,8 @@ using CSV
 using DataFrames
 using JSON3
 using DataStructures
+import SparseArrays
+import SparseArrays: SparseMatrixCSC, sparse
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder

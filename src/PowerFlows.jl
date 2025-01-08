@@ -6,6 +6,7 @@ export PowerFlowData
 export DCPowerFlow
 export NLSolveACPowerFlow
 export KLUACPowerFlow
+export LUACPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow
