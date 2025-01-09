@@ -33,7 +33,7 @@ solve_ac_powerflow!(sys, method=:newton)
 function solve_powerflow!(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
-    kwargs...
+    kwargs...,
 )
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
@@ -45,7 +45,7 @@ function solve_powerflow!(
         system;
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
-    
+
     converged, x = _ac_powereflow(data, pf, system; kwargs...)
 
     if converged
@@ -76,7 +76,7 @@ res = solve_powerflow(sys, method=:newton)
 function solve_powerflow(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
-    kwargs...
+    kwargs...,
 )
     #Save per-unit flag
     settings_unit_cache = deepcopy(system.units_settings.unit_system)
@@ -91,7 +91,7 @@ function solve_powerflow(
     # @error(typeof(data))
 
     converged, x = _ac_powereflow(data, pf, system; kwargs...)
-    
+
     if converged
         @info("PowerFlow solve converged, the results are exported in DataFrames")
         df_results = write_results(pf, system, data, x)
@@ -106,13 +106,12 @@ function solve_powerflow(
     return df_results
 end
 
-
 function _ac_powereflow(
     data::PowerFlowData,
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
-    kwargs...
-    )
+    kwargs...,
+)
     check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
 
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
@@ -159,7 +158,6 @@ function _solve_powerflow!(
     check_reactive_power_limits;
     nlsolve_kwargs...,
 )
-
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
         converged, x = _newton_powerflow(pf, data; nlsolve_kwargs...)
         if !converged || !check_reactive_power_limits || _check_q_limit_bounds!(data, x)
