@@ -162,7 +162,7 @@ function make_powerflowdata(
     # TODO: bus_type might need to also be a Matrix since the type can change for a particular scenario
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
-    bus_magnitude = zeros(Float64, n_buses)
+    bus_magnitude = ones(Float64, n_buses)
 
     _initialize_bus_data!(
         bus_type,
@@ -193,15 +193,16 @@ function make_powerflowdata(
     )
 
     # initialize data
-    init_1 = zeros(n_buses, time_steps)
-    init_2 = zeros(n_branches, time_steps)
+    init_1 = zeros(Float64, n_buses, time_steps)
+    init_1m = ones(Float64, n_buses, time_steps)
+    init_2 = zeros(Float64, n_branches, time_steps)
 
     # define fields as matrices whose number of columns is eqault to the number of time_steps
     bus_activepower_injection_1 = deepcopy(init_1)
     bus_reactivepower_injection_1 = deepcopy(init_1)
     bus_activepower_withdrawals_1 = deepcopy(init_1)
     bus_reactivepower_withdrawals_1 = deepcopy(init_1)
-    bus_magnitude_1 = deepcopy(init_1)
+    bus_magnitude_1 = deepcopy(init_1m)
     bus_angles_1 = deepcopy(init_1)
     branch_flow_values_1 = deepcopy(init_2)
 

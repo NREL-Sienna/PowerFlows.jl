@@ -106,16 +106,59 @@ function solve_powerflow(
     return df_results
 end
 
+# Multiperiod power flow - work in progress
+function solve_powerflow(
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
+    data::ACPowerFlowData,
+    system::PSY.System;
+    kwargs...,
+)
+    #Save per-unit flag
+    settings_unit_cache = deepcopy(system.units_settings.unit_system)
+    #Work in System per unit
+    PSY.set_units_base_system!(system, "SYSTEM_BASE")
+
+    sorted_time_steps = sort(collect(keys(data.timestep_map)))
+    # preallocate results
+    ts_converged = zeros(Bool, 1, length(sorted_time_steps))
+    ts_x = zeros(Float64, 2 * length(data.bus_type), length(sorted_time_steps))
+
+    for t in sorted_time_steps
+        converged, x = _ac_powereflow(data, pf, system; time_step = t, kwargs...)
+        ts_converged[1, t] = converged
+        ts_x[:, t] .= x
+
+        #todo: implement write_results for multiperiod power flow
+
+        # if converged
+        #     @info("PowerFlow solve converged, the results are exported in DataFrames")
+        #     df_results = write_results(pf, system, data, x)
+        # else
+        #     df_results = missing
+        #     @error("The powerflow solver returned convergence = $(converged)")
+        # end
+    end
+
+    #Restore original per unit base
+    PSY.set_units_base_system!(system, settings_unit_cache)
+
+    # todo:
+    # return df_results
+
+    return ts_converged, ts_x
+end
+
 function _ac_powereflow(
-    data::PowerFlowData,
+    data::ACPowerFlowData,
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
+    time_step::Int64 = 1,
     kwargs...,
 )
     check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
 
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
-        converged, x = _newton_powerflow(pf, data; kwargs...)
+        converged, x = _newton_powerflow(pf, data; time_step = time_step, kwargs...)
         if !converged || !check_reactive_power_limits || _check_q_limit_bounds!(data, x)
             return converged, x
         end
@@ -125,7 +168,7 @@ function _ac_powereflow(
     return converged, x
 end
 
-function _check_q_limit_bounds!(data::PowerFlowData, zero::Vector{Float64})
+function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
     bus_names = data.power_network_matrix.axes[1]
     within_limits = true
     for (ix, b) in enumerate(data.bus_type)
@@ -172,8 +215,17 @@ end
 function _newton_powerflow(
     pf::ACPowerFlow{NLSolveACPowerFlow},
     data::ACPowerFlowData;
+    time_step::Int64 = 1,  # not implemented for NLSolve and not used
     nlsolve_kwargs...,
 )
+    if time_step != 1
+        throw(
+            ArgumentError(
+                "Multiperiod power flow not implemented for NLSolve AC power flow",
+            ),
+        )
+    end
+
     pf = PolarPowerFlow(data)
     J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
 
@@ -409,6 +461,7 @@ end
 function _newton_powerflow(
     pf::ACPowerFlow{KLUACPowerFlow},
     data::ACPowerFlowData;
+    time_step::Int64 = 1,
     kwargs...,
 )
     # Fetch maxIter and tol from kwargs, or use defaults if not provided
@@ -430,10 +483,10 @@ function _newton_powerflow(
     npvpq = npv + npq
     n_buses = length(data.bus_type)
 
-    Vm = data.bus_magnitude[:]
+    Vm = data.bus_magnitude[:, time_step]
     # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
     Vm[pq] .= clamp.(Vm[pq], 0.9, 1.1)
-    Va = data.bus_angles[:]
+    Va = data.bus_angles[:, time_step]
     V = zeros(Complex{Float64}, length(Vm))
     V .= Vm .* exp.(1im .* Va)
 
@@ -461,8 +514,12 @@ function _newton_powerflow(
     dx_Vm_pq = Vector{Int64}([(npv + npq + 1):(npv + 2 * npq)...])
 
     Sbus =
-        data.bus_activepower_injection[:] - data.bus_activepower_withdrawals[:] +
-        1im * (data.bus_reactivepower_injection[:] - data.bus_reactivepower_withdrawals[:])
+        data.bus_activepower_injection[:, time_step] -
+        data.bus_activepower_withdrawals[:, time_step] +
+        1im * (
+            data.bus_reactivepower_injection[:, time_step] -
+            data.bus_reactivepower_withdrawals[:, time_step]
+        )
 
     # Pre-allocate mis and F and create views for the respective real and imaginary sections of the arrays:
     mis = zeros(Complex{Float64}, length(V))
@@ -588,6 +645,7 @@ end
 function _newton_powerflow(
     pf::ACPowerFlow{LUACPowerFlow},
     data::ACPowerFlowData;
+    time_step::Int64 = 1,
     kwargs...,
 )
     # Fetch maxIter and tol from kwargs, or use defaults if not provided
@@ -609,10 +667,10 @@ function _newton_powerflow(
     npvpq = npv + npq
     n_buses = length(data.bus_type)
 
-    Vm = data.bus_magnitude[:]
+    Vm = data.bus_magnitude[:, time_step]
     # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
     Vm[pq] .= clamp.(Vm[pq], 0.9, 1.1)
-    Va = data.bus_angles[:]
+    Va = data.bus_angles[:, time_step]
     V = zeros(Complex{Float64}, length(Vm))
     V .= Vm .* exp.(1im .* Va)
 
@@ -622,8 +680,12 @@ function _newton_powerflow(
     Ybus = data.power_network_matrix.data
 
     Sbus =
-        data.bus_activepower_injection[:] - data.bus_activepower_withdrawals[:] +
-        1im * (data.bus_reactivepower_injection[:] - data.bus_reactivepower_withdrawals[:])
+        data.bus_activepower_injection[:, time_step] -
+        data.bus_activepower_withdrawals[:, time_step] +
+        1im * (
+            data.bus_reactivepower_injection[:, time_step] -
+            data.bus_reactivepower_withdrawals[:, time_step]
+        )
 
     mis = V .* conj.(Ybus * V) .- Sbus
     F = [real(mis[pvpq]); imag(mis[pq])]

@@ -611,7 +611,7 @@ function write_results(
     ::ACPowerFlow{<:ACPowerFlowSolverType},
     sys::PSY.System,
     data::ACPowerFlowData,
-    result::Vector{Float64},
+    result::Union{Vector{Float64}, Matrix{Float64}}, #todo
 )
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
     buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x))

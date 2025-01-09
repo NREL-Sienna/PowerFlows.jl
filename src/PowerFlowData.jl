@@ -173,6 +173,8 @@ function PowerFlowData(
         end
     end
 
+    timestep_map = Dict(zip([i for i in 1:time_steps], timestep_names))
+
     # get data for calculations
     power_network_matrix = PNM.Ybus(sys; check_connectivity = check_connectivity)
 
@@ -200,7 +202,6 @@ function PowerFlowData(
         bus_reactivepower_bounds[i] = [0.0, 0.0]
     end
     _get_reactive_power_bound!(bus_reactivepower_bounds, bus_lookup, sys)
-    timestep_map = Dict(1 => "1")
     valid_ix = setdiff(1:n_buses, ref_bus_positions)
     neighbors = _calculate_neighbors(power_network_matrix)
     aux_network_matrix = nothing
