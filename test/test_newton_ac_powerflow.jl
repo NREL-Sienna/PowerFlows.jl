@@ -41,7 +41,7 @@
     #Compare results between finite diff methods and Jacobian method
     converged1, x1 = PowerFlows._solve_powerflow!(pf, data, false)
     @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6
-    @test solve_ac_powerflow!(pf, sys; method = :newton)
+    @test solve_powerflow!(pf, sys; method = :newton)
 
     # Test enforcing the reactive power Limits
     set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
@@ -63,7 +63,7 @@ end
     branch = first(PSY.get_components(Line, sys))
     dyn_branch = DynamicBranch(branch)
     add_component!(sys, dyn_branch)
-    @test dyn_pf = solve_ac_powerflow!(pf, sys)
+    @test dyn_pf = solve_powerflow!(pf, sys)
     dyn_pf = solve_powerflow(pf, sys)
     @test LinearAlgebra.norm(dyn_pf["bus_results"].Vm - base_res["bus_results"].Vm, Inf) <=
           1e-6
@@ -71,7 +71,7 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
     PSY.set_available!(line, false)
-    solve_ac_powerflow!(pf, sys)
+    solve_powerflow!(pf, sys)
     @test PSY.get_active_power_flow(line) == 0.0
     test_bus = get_component(PSY.Bus, sys, "Bus 4")
     @test isapprox(PSY.get_magnitude(test_bus), 1.002; atol = 1e-3, rtol = 0)
@@ -119,7 +119,7 @@ end
     @test_logs(
         (:error, "The powerflow solver returned convergence = false"),
         match_mode = :any,
-        @test !solve_ac_powerflow!(pf, pf_sys5_re)
+        @test !solve_powerflow!(pf, pf_sys5_re)
     )
 end
 
@@ -145,7 +145,7 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
-    pf1 = solve_ac_powerflow!(pf, system)
+    pf1 = solve_powerflow!(pf, system)
     @test pf1
     pf_result_df = solve_powerflow(pf, system)
 
@@ -203,13 +203,13 @@ end
     )
     add_component!(sys, s2)
     pf = ACPowerFlow{ACSolver}()
-    @test solve_ac_powerflow!(pf, sys)
+    @test solve_powerflow!(pf, sys)
 
     #Create power mismatch, test for error
     set_active_power!(get_component(Source, sys, "source_1"), -0.4)
     @test_throws ErrorException(
         "Sources do not match P and/or Q requirements for reference bus.",
-    ) solve_ac_powerflow!(pf, sys)
+    ) solve_powerflow!(pf, sys)
 end
 
 @testset "AC PowerFlow with Multiple sources at PV" for ACSolver in
@@ -289,11 +289,11 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
-    @test solve_ac_powerflow!(pf, sys)
+    @test solve_powerflow!(pf, sys)
 
     #Create power mismatch, test for error
     set_reactive_power!(get_component(Source, sys, "source_3"), -0.5)
-    @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_ac_powerflow!(
+    @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_powerflow!(
         pf,
         sys,
     )
@@ -352,7 +352,7 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
-    @test solve_ac_powerflow!(pf, sys)
+    @test solve_powerflow!(pf, sys)
     @test isapprox(
         get_active_power(get_component(Source, sys, "source_1")),
         0.5;
@@ -453,7 +453,7 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
-    @test solve_ac_powerflow!(pf, sys)
+    @test solve_powerflow!(pf, sys)
     @test isapprox(
         get_active_power(get_component(Source, sys, "source_2")),
         0.5;

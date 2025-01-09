@@ -15,8 +15,8 @@ function psse_bus_results_compare(file_name::String, pf_results::Dict)
     return v_diff, angle_diff, number
 end
 
-function psse_bus_results_compare(file_name::String, pf_results::Bool)
-    throw(ArgumentError("pf_results not available - calculation failed"))
+function psse_bus_results_compare(file_name::String, pf_results::Missing)
+    throw(ArgumentError("pf_results are missing - calculation failed"))
 end
 
 function psse_gen_results_compare(file_name, system::PSY.System)

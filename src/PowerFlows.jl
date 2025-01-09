@@ -1,7 +1,7 @@
 module PowerFlows
 
 export solve_powerflow
-export solve_ac_powerflow!
+export solve_powerflow!
 export PowerFlowData
 export DCPowerFlow
 export NLSolveACPowerFlow
