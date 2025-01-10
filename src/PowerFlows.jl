@@ -6,7 +6,6 @@ export PowerFlowData
 export DCPowerFlow
 export NLSolveACPowerFlow
 export KLUACPowerFlow
-export LUACPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow
@@ -46,5 +45,6 @@ include("solve_dc_powerflow.jl")
 include("ac_power_flow.jl")
 include("ac_power_flow_jacobian.jl")
 include("newton_ac_powerflow.jl")
+include("nlsolve_powerflow.jl")
 include("post_processing.jl")
 end

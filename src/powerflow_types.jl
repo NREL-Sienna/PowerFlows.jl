@@ -3,7 +3,6 @@ abstract type ACPowerFlowSolverType end
 
 struct KLUACPowerFlow <: ACPowerFlowSolverType end
 struct NLSolveACPowerFlow <: ACPowerFlowSolverType end
-struct LUACPowerFlow <: ACPowerFlowSolverType end  # Only for testing, a basic implementation using LinearAlgebra.lu, allocates a lot of memory
 
 Base.@kwdef struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <:
                    PowerFlowEvaluationModel

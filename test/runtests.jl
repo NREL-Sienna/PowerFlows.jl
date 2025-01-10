@@ -35,6 +35,9 @@ MAIN_DIR = dirname(@__DIR__)
 
 include("test_utils/common.jl")
 include("test_utils/psse_results_compare.jl")
+#include("test_utils/legacy_pf.jl")
+#Base.eval(PF, Meta.parse("include(\"test/test_utils/legacy_pf.jl\")"))
+Base.eval(PowerFlows, :(include("./test_utils/legacy_pf.jl")))
 
 LOG_FILE = "power-systems.log"
 

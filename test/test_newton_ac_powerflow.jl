@@ -1,8 +1,11 @@
+include("test_utils/legacy_pf.jl")
+
+
 @testset "AC Power Flow 14-Bus testing" for ACSolver in
                                             (
     NLSolveACPowerFlow,
     KLUACPowerFlow,
-    LUACPowerFlow,
+    PowerFlows.LUACPowerFlow,
 )
     result_14 = [
         2.3255081760423684
@@ -55,7 +58,7 @@ end
                                                         (
     NLSolveACPowerFlow,
     KLUACPowerFlow,
-    LUACPowerFlow,
+    PowerFlows.LUACPowerFlow,
 )
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     pf = ACPowerFlow{ACSolver}()
@@ -86,7 +89,7 @@ end
 
 @testset "AC Power Flow 3-Bus Fixed FixedAdmittance testing" for ACSolver in (
     NLSolveACPowerFlow,
-    KLUACPowerFlow, LUACPowerFlow,
+    KLUACPowerFlow, PowerFlows.LUACPowerFlow,
 )
     p_gen_matpower_3bus = [20.3512373930753, 100.0, 100.0]
     q_gen_matpower_3bus = [45.516916781567232, 10.453799727283879, -31.992561631394636]
@@ -104,7 +107,7 @@ end
                                                       (
     NLSolveACPowerFlow,
     KLUACPowerFlow,
-    LUACPowerFlow,
+    PowerFlows.LUACPowerFlow,
 )
     pf_sys5_re = PSB.build_system(PSB.PSITestSystems, "c_sys5_re"; add_forecasts = false)
     remove_component!(Line, pf_sys5_re, "1")
@@ -127,7 +130,7 @@ end
                                               (
     NLSolveACPowerFlow,
     KLUACPowerFlow,
-    LUACPowerFlow,
+    PowerFlows.LUACPowerFlow,
 )
     file = joinpath(
         TEST_FILES_DIR,
@@ -167,7 +170,7 @@ end
                                           (
     NLSolveACPowerFlow,
     KLUACPowerFlow,
-    LUACPowerFlow,
+    PowerFlows.LUACPowerFlow,
 )
     sys = System(100.0)
     b = ACBus(;
@@ -216,7 +219,7 @@ end
                                                         (
     NLSolveACPowerFlow,
     KLUACPowerFlow,
-    LUACPowerFlow,
+    PowerFlows.LUACPowerFlow,
 )
     sys = System(100.0)
     b1 = ACBus(;
@@ -303,7 +306,7 @@ end
                                                        (
     NLSolveACPowerFlow,
     KLUACPowerFlow,
-    LUACPowerFlow,
+    PowerFlows.LUACPowerFlow,
 )
     sys = System(100.0)
     b = ACBus(;
@@ -369,7 +372,7 @@ end
                                                       (
     NLSolveACPowerFlow,
     KLUACPowerFlow,
-    LUACPowerFlow,
+    PowerFlows.LUACPowerFlow,
 )
     sys = System(100.0)
     b1 = ACBus(;
@@ -594,7 +597,7 @@ end
     )
 
     # test against legacy implementation
-    pf_legacy = ACPowerFlow(LUACPowerFlow)
+    pf_legacy = ACPowerFlow(PowerFlows.LUACPowerFlow)
     res_legacy = solve_powerflow(pf_legacy, sys)
 
     @test all(

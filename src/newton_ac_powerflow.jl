@@ -212,32 +212,6 @@ function _solve_powerflow!(
     return converged, x
 end
 
-function _newton_powerflow(
-    pf::ACPowerFlow{NLSolveACPowerFlow},
-    data::ACPowerFlowData;
-    time_step::Int64 = 1,  # not implemented for NLSolve and not used
-    nlsolve_kwargs...,
-)
-    if time_step != 1
-        throw(
-            ArgumentError(
-                "Multiperiod power flow not implemented for NLSolve AC power flow",
-            ),
-        )
-    end
-
-    pf = PolarPowerFlow(data)
-    J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
-
-    df = NLsolve.OnceDifferentiable(pf, J, pf.x0, pf.residual, J.Jv)
-    res = NLsolve.nlsolve(df, pf.x0; nlsolve_kwargs...)
-    if !res.f_converged
-        @error(
-            "The powerflow solver NLSolve did not converge (returned convergence = $(res.f_converged))"
-        )
-    end
-    return res.f_converged, res.zero
-end
 
 function _update_V!(dx::Vector{Float64}, V::Vector{Complex{Float64}}, Vm::Vector{Float64},
     Va::Vector{Float64},
@@ -368,33 +342,6 @@ function _update_dSbus_dV!(rows::Vector{Int64}, cols::Vector{Int64},
     return
 end
 
-# this function is for testing purposes only
-function _legacy_dSbus_dV(
-    V::Vector{Complex{Float64}},
-    Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
-)
-    diagV = LinearAlgebra.Diagonal(V)
-    diagVnorm = LinearAlgebra.Diagonal(V ./ abs.(V))
-    diagIbus = LinearAlgebra.Diagonal(Ybus * V)
-    dSbus_dVm = diagV * conj.(Ybus * diagVnorm) + conj.(diagIbus) * diagVnorm
-    dSbus_dVa = 1im * diagV * conj.(diagIbus - Ybus * diagV)
-    return dSbus_dVa, dSbus_dVm
-end
-
-# this function is for testing purposes only
-function _legacy_J(
-    dSbus_dVa::SparseMatrixCSC{Complex{Float64}, Int64},
-    dSbus_dVm::SparseMatrixCSC{Complex{Float64}, Int64},
-    pvpq::Vector{Int64},
-    pq::Vector{Int64},
-)
-    j11 = real(dSbus_dVa[pvpq, pvpq])
-    j12 = real(dSbus_dVm[pvpq, pq])
-    j21 = imag(dSbus_dVa[pq, pvpq])
-    j22 = imag(dSbus_dVm[pq, pq])
-    J = sparse([j11 j12; j21 j22])
-    return J
-end
 
 function _update_submatrix!(
     A::SparseMatrixCSC,
@@ -456,6 +403,12 @@ function _calc_x(
         end
     end
     return x
+end
+
+function _preallocate_J(rows::Vector{Int64}, cols::Vector{Int64}, pvpq::Vector{Int64}, pq::Vector{Int64})
+    J_block = sparse(rows, cols, Float64(0), maximum(rows), maximum(cols))
+    J = [J_block[pvpq, pvpq] J_block[pvpq, pq]; J_block[pq, pvpq] J_block[pq, pq]]
+    return J
 end
 
 function _newton_powerflow(
@@ -558,8 +511,7 @@ function _newton_powerflow(
     # pq_rows = pq_lookup[rows][pq_lookup[rows] .!= 0] 
     # pq_cols = pq_lookup[cols][pq_lookup[cols] .!= 0]
 
-    J_block = sparse(rows, cols, Float64(0), maximum(rows), maximum(cols))
-    J = [J_block[pvpq, pvpq] J_block[pvpq, pq]; J_block[pq, pvpq] J_block[pq, pq]]
+    J = _preallocate_J(rows, cols, pvpq, pq)
 
     # preallocate the KLU factorization object - symbolic object only
     colptr = KLU.decrement(J.colptr)
@@ -601,115 +553,41 @@ function _newton_powerflow(
                 KLU.klu_l_factor(colptr, rowval, J.nzval, factor_J._symbolic, rf)
         end
 
-        # factorize the numeric object of KLU inplace, while reusing the symbolic object
-        KLU.klu_l_refactor(
-            colptr,
-            rowval,
-            J.nzval,
-            factor_J._symbolic,
-            factor_J._numeric,
-            rf,
-        )
+        try
+            # factorize the numeric object of KLU inplace, while reusing the symbolic object
+            KLU.klu_l_refactor(
+                colptr,
+                rowval,
+                J.nzval,
+                factor_J._symbolic,
+                factor_J._numeric,
+                rf,
+            )
 
-        # solve inplace - the results are written to F, so that we must use F instead of dx for updating V
-        KLU.klu_l_solve(
-            factor_J._symbolic,
-            factor_J._numeric,
-            size(F, 1),
-            size(F, 2),
-            F,
-            rf,
-        )
+            # solve inplace - the results are written to F, so that we must use F instead of dx for updating V
+            KLU.klu_l_solve(
+                factor_J._symbolic,
+                factor_J._numeric,
+                size(F, 1),
+                size(F, 2),
+                F,
+                rf,
+            )
+
+        catch e
+            @error("KLU factorization failed: $e")
+            converged = false
+            x = missing
+            return (converged, x)
+        end
+
+        
 
         # KLU.solve! overwrites F with the solution instead of returning it as dx, so -F is used here to update V
         _update_V!(F, V, Vm, Va, pv, pq, dx_Va_pv, dx_Va_pq, dx_Vm_pq)
 
         # here F is mismatch again
         _update_F!(F, mis, dx_Va_pv, dx_Va_pq, dx_Vm_pq, V, Ybus, Sbus, pv, pq)
-
-        converged = LinearAlgebra.norm(F, Inf) < tol
-    end
-
-    if !converged
-        @error("The powerflow solver with KLU did not converge after $i iterations")
-    else
-        @info("The powerflow solver with KLU converged after $i iterations")
-    end
-
-    x = _calc_x(data, V, Va, Vm, Ybus, n_buses)
-
-    return (converged, x)
-end
-
-# legacy NR implementation - here we do not care about allocations, we use this function only for testing purposes
-function _newton_powerflow(
-    pf::ACPowerFlow{LUACPowerFlow},
-    data::ACPowerFlowData;
-    time_step::Int64 = 1,
-    kwargs...,
-)
-    # Fetch maxIter and tol from kwargs, or use defaults if not provided
-    maxIter = get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER)
-    tol = get(kwargs, :tol, DEFAULT_NR_TOL)
-    i = 0
-
-    Ybus = data.power_network_matrix.data
-
-    # Find indices for each bus type
-    #ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type)
-    pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type)
-    pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type)
-    pvpq = [pv; pq]
-
-    #nref = length(ref)
-    npv = length(pv)
-    npq = length(pq)
-    npvpq = npv + npq
-    n_buses = length(data.bus_type)
-
-    Vm = data.bus_magnitude[:, time_step]
-    # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
-    Vm[pq] .= clamp.(Vm[pq], 0.9, 1.1)
-    Va = data.bus_angles[:, time_step]
-    V = zeros(Complex{Float64}, length(Vm))
-    V .= Vm .* exp.(1im .* Va)
-
-    # pre-allocate dx
-    dx = zeros(Float64, npv + 2 * npq)
-
-    Ybus = data.power_network_matrix.data
-
-    Sbus =
-        data.bus_activepower_injection[:, time_step] -
-        data.bus_activepower_withdrawals[:, time_step] +
-        1im * (
-            data.bus_reactivepower_injection[:, time_step] -
-            data.bus_reactivepower_withdrawals[:, time_step]
-        )
-
-    mis = V .* conj.(Ybus * V) .- Sbus
-    F = [real(mis[pvpq]); imag(mis[pq])]
-
-    converged = npvpq == 0
-
-    while i < maxIter && !converged
-        i += 1
-        dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus)
-        J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
-
-        # using a different factorization that KLU for testing
-        factor_J = LinearAlgebra.lu(J)
-        dx .= factor_J \ F
-
-        Va[pv] .-= dx[1:npv]
-        Va[pq] .-= dx[(npv + 1):(npv + npq)]
-        Vm[pq] .-= dx[(npv + npq + 1):(npv + 2 * npq)]
-        V .= Vm .* exp.(1im .* Va)
-        Vm .= abs.(V)
-        Va .= angle.(V)
-
-        mis = V .* conj.(Ybus * V) .- Sbus
-        F .= [real(mis[pvpq]); imag(mis[pq])]
 
         converged = LinearAlgebra.norm(F, Inf) < tol
     end
