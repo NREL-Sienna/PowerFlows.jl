@@ -46,7 +46,8 @@ function solve_powerflow!(
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
 
-    converged, x = _ac_powereflow(data, pf, system; kwargs...)
+    converged, V, Sbus_result = _ac_powereflow(data, pf, system; kwargs...)
+    x = _calc_x(data, V, Sbus_result)
 
     if converged
         write_powerflow_solution!(system, x, get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER))
@@ -88,9 +89,9 @@ function solve_powerflow(
         system;
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
-    # @error(typeof(data))
 
-    converged, x = _ac_powereflow(data, pf, system; kwargs...)
+    converged, V, Sbus_result = _ac_powereflow(data, pf, system; kwargs...)
+    x = _calc_x(data, V, Sbus_result)
 
     if converged
         @info("PowerFlow solve converged, the results are exported in DataFrames")
@@ -121,12 +122,25 @@ function solve_powerflow(
     sorted_time_steps = sort(collect(keys(data.timestep_map)))
     # preallocate results
     ts_converged = zeros(Bool, 1, length(sorted_time_steps))
-    ts_x = zeros(Float64, 2 * length(data.bus_type), length(sorted_time_steps))
+    ts_V = zeros(Complex{Float64}, length(data.bus_type), length(sorted_time_steps))
+    ts_S = zeros(Complex{Float64}, length(data.bus_type), length(sorted_time_steps))
+
+    results = Dict()
 
     for t in sorted_time_steps
-        converged, x = _ac_powereflow(data, pf, system; time_step = t, kwargs...)
+        converged, V, Sbus_result =
+            _ac_powereflow(data, pf, system; time_step = t, kwargs...)
         ts_converged[1, t] = converged
-        ts_x[:, t] .= x
+        ts_V[:, t] .= V
+        ts_S[:, t] .= Sbus_result
+
+        # temporary implementation that will need to be improved:
+        if converged
+            x = _calc_x(data, V, Sbus_result)
+            results[data.timestep_map[t]] = write_results(pf, system, data, x)
+        else
+            results[data.timestep_map[t]] = missing
+        end
 
         #todo: implement write_results for multiperiod power flow
 
@@ -145,7 +159,7 @@ function solve_powerflow(
     # todo:
     # return df_results
 
-    return ts_converged, ts_x
+    return results
 end
 
 function _ac_powereflow(
@@ -158,22 +172,27 @@ function _ac_powereflow(
     check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
 
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
-        converged, x = _newton_powerflow(pf, data; time_step = time_step, kwargs...)
-        if !converged || !check_reactive_power_limits || _check_q_limit_bounds!(data, x)
-            return converged, x
+        converged, V, Sbus_result =
+            _newton_powerflow(pf, data; time_step = time_step, kwargs...)
+        if !converged || !check_reactive_power_limits ||
+           _check_q_limit_bounds!(data, Sbus_result)
+            return converged, V, Sbus_result
         end
     end
 
     @error("could not enforce reactive power limits after $MAX_REACTIVE_POWER_ITERATIONS")
-    return converged, x
+    return converged, V
 end
 
-function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
+function _check_q_limit_bounds!(
+    data::ACPowerFlowData,
+    Sbus_result::Vector{Complex{Float64}},
+)
     bus_names = data.power_network_matrix.axes[1]
     within_limits = true
     for (ix, b) in enumerate(data.bus_type)
         if b == PSY.ACBusTypes.PV
-            Q_gen = zero[2 * ix - 1]
+            Q_gen = imag(Sbus_result[ix])
         else
             continue
         end
@@ -199,19 +218,19 @@ function _solve_powerflow!(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     data::ACPowerFlowData,
     check_reactive_power_limits;
-    nlsolve_kwargs...,
+    kwargs...,
 )
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
-        converged, x = _newton_powerflow(pf, data; nlsolve_kwargs...)
-        if !converged || !check_reactive_power_limits || _check_q_limit_bounds!(data, x)
-            return converged, x
+        converged, V, Sbus_result = _newton_powerflow(pf, data; kwargs...)
+        if !converged || !check_reactive_power_limits ||
+           _check_q_limit_bounds!(data, Sbus_result)
+            return converged, V, Sbus_result
         end
     end
     # todo: throw error? set converged to false?
     @error("could not enforce reactive power limits after $MAX_REACTIVE_POWER_ITERATIONS")
-    return converged, x
+    return converged, V, Sbus_result
 end
-
 
 function _update_V!(dx::Vector{Float64}, V::Vector{Complex{Float64}}, Vm::Vector{Float64},
     Va::Vector{Float64},
@@ -236,15 +255,17 @@ function _update_V!(dx::Vector{Float64}, V::Vector{Complex{Float64}}, Vm::Vector
     return
 end
 
-function _update_F!(F::Vector{Float64}, mis::Vector{Complex{Float64}},
+function _update_F!(F::Vector{Float64}, Sbus_result::Vector{Complex{Float64}},
+    mis::Vector{Complex{Float64}},
     dx_Va_pv::Vector{Int64}, dx_Va_pq::Vector{Int64}, dx_Vm_pq::Vector{Int64},
     V::Vector{Complex{Float64}}, Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
     Sbus::Vector{Complex{Float64}},
     pv::Vector{Int64}, pq::Vector{Int64})
 
     #mis .= V .* conj.(Ybus * V) .- Sbus
-    LinearAlgebra.mul!(mis, Ybus, V)
-    mis .= V .* conj.(mis) .- Sbus
+    LinearAlgebra.mul!(Sbus_result, Ybus, V)
+    Sbus_result .= V .* conj(Sbus_result)
+    mis .= Sbus_result .- Sbus
 
     for (i, j) in zip(dx_Va_pv, pv)
         F[i] = real(mis[j])
@@ -342,7 +363,6 @@ function _update_dSbus_dV!(rows::Vector{Int64}, cols::Vector{Int64},
     return
 end
 
-
 function _update_submatrix!(
     A::SparseMatrixCSC,
     B::SparseMatrixCSC,
@@ -379,14 +399,13 @@ end
 function _calc_x(
     data::ACPowerFlowData,
     V::Vector{Complex{Float64}},
-    Va::Vector{Float64},
-    Vm::Vector{Float64},
-    Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
-    n_buses::Int64,
+    Sbus_result::Vector{Complex{Float64}},
 )
+    Vm = abs.(V)
+    Va = angle.(V)
+    n_buses = length(V)
     # mock the expected x format, where the values depend on the type of the bus:
     x = zeros(Float64, 2 * n_buses)
-    Sbus_result = V .* conj(Ybus * V)  # todo preallocate and pass as parameter
     for (ix, b) in enumerate(data.bus_type)
         if b == PSY.ACBusTypes.REF
             # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
@@ -405,7 +424,12 @@ function _calc_x(
     return x
 end
 
-function _preallocate_J(rows::Vector{Int64}, cols::Vector{Int64}, pvpq::Vector{Int64}, pq::Vector{Int64})
+function _preallocate_J(
+    rows::Vector{Int64},
+    cols::Vector{Int64},
+    pvpq::Vector{Int64},
+    pq::Vector{Int64},
+)
     J_block = sparse(rows, cols, Float64(0), maximum(rows), maximum(cols))
     J = [J_block[pvpq, pvpq] J_block[pvpq, pq]; J_block[pq, pvpq] J_block[pq, pq]]
     return J
@@ -447,8 +471,8 @@ function _newton_powerflow(
     converged = npvpq == 0
     if converged
         # if only ref buses present, we do not need to enter the power flow loop
-        x = _calc_x(data, V, Va, Vm, Ybus, n_buses)
-        return (converged, x)
+        Sbus_result = V .* conj(Ybus * V)
+        return (converged, V, Sbus_result)
     end
 
     # we need to define lookups for mappings of pv, pq buses onto the internal J indexing
@@ -476,6 +500,7 @@ function _newton_powerflow(
 
     # Pre-allocate mis and F and create views for the respective real and imaginary sections of the arrays:
     mis = zeros(Complex{Float64}, length(V))
+    Sbus_result = zeros(Complex{Float64}, length(V))
     F = zeros(Float64, npvpq + npq)
     mis .= V .* conj.(Ybus * V) .- Sbus
     F .= [real(mis[pvpq]); imag(mis[pq])]
@@ -576,18 +601,14 @@ function _newton_powerflow(
 
         catch e
             @error("KLU factorization failed: $e")
-            converged = false
-            x = missing
-            return (converged, x)
+            return (converged, V)
         end
-
-        
 
         # KLU.solve! overwrites F with the solution instead of returning it as dx, so -F is used here to update V
         _update_V!(F, V, Vm, Va, pv, pq, dx_Va_pv, dx_Va_pq, dx_Vm_pq)
 
         # here F is mismatch again
-        _update_F!(F, mis, dx_Va_pv, dx_Va_pq, dx_Vm_pq, V, Ybus, Sbus, pv, pq)
+        _update_F!(F, Sbus_result, mis, dx_Va_pv, dx_Va_pq, dx_Vm_pq, V, Ybus, Sbus, pv, pq)
 
         converged = LinearAlgebra.norm(F, Inf) < tol
     end
@@ -598,7 +619,5 @@ function _newton_powerflow(
         @info("The powerflow solver with KLU converged after $i iterations")
     end
 
-    x = _calc_x(data, V, Va, Vm, Ybus, n_buses)
-
-    return (converged, x)
+    return (converged, V, Sbus_result)
 end

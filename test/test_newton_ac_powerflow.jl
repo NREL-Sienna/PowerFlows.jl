@@ -1,5 +1,3 @@
-include("test_utils/legacy_pf.jl")
-
 
 @testset "AC Power Flow 14-Bus testing" for ACSolver in
                                             (
@@ -42,14 +40,16 @@ include("test_utils/legacy_pf.jl")
     pf = ACPowerFlow{ACSolver}()
     data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
     #Compare results between finite diff methods and Jacobian method
-    converged1, x1 = PowerFlows._solve_powerflow!(pf, data, false)
+    converged1, V1, S1 = PowerFlows._solve_powerflow!(pf, data, false)
+    x1 = PowerFlows._calc_x(data, V1, S1)
     @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6
     @test solve_powerflow!(pf, sys; method = :newton)
 
     # Test enforcing the reactive power Limits
     set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
     data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
-    converged2, x2 = PowerFlows._solve_powerflow!(pf, data, true)
+    converged2, V2, S2 = PowerFlows._solve_powerflow!(pf, data, true)
+    x2 = PowerFlows._calc_x(data, V2, S2)
     @test LinearAlgebra.norm(result_14 - x2, Inf) >= 1e-6
     @test 1.08 <= x2[15] <= 1.09
 end

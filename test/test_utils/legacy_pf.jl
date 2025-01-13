@@ -3,7 +3,6 @@ import PowerFlows
 
 struct LUACPowerFlow <: ACPowerFlowSolverType end  # Only for testing, a basic implementation using LinearAlgebra.lu, allocates a lot of memory
 
-
 # this function is for testing purposes only
 function _legacy_dSbus_dV(
     V::Vector{Complex{Float64}},
@@ -31,7 +30,6 @@ function _legacy_J(
     J = sparse([j11 j12; j21 j22])
     return J
 end
-
 
 # legacy NR implementation - here we do not care about allocations, we use this function only for testing purposes
 function _newton_powerflow(
@@ -111,8 +109,6 @@ function _newton_powerflow(
     else
         @info("The powerflow solver with KLU converged after $i iterations")
     end
-
-    x = _calc_x(data, V, Va, Vm, Ybus, n_buses)
-
-    return (converged, x)
+    Sbus_result = V .* conj(Ybus * V)
+    return (converged, V, Sbus_result)
 end
