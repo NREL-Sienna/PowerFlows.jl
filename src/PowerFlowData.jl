@@ -38,19 +38,23 @@ flows and angles, as well as these ones.
 - `bus_reactivepower_withdrawals::Matrix{Float64}`:
         "(b, t)" matrix containing the bus reactive power withdrawals. b:
         number of buses, t: number of time period.
-- `bus_reactivepower_bounds::Vector{Float64}`: Upper and Lower bounds for the reactive supply
-        at each bus.
-- `bus_type::Vector{PSY.ACBusTypes}`:
-        vector containing type of buses present in the system, ordered
-        according to "bus_lookup".
+- `bus_reactivepower_bounds::Matrix{Float64}`:
+        "(b, t)" matrix containing upper and lower bounds for the reactive supply at each
+        bus at each time period.
+- `bus_type::Matrix{PSY.ACBusTypes}`:
+        "(b, t)" matrix containing type of buses present in the system, ordered
+        according to "bus_lookup," at each time period.
 - `bus_magnitude::Matrix{Float64}`:
         "(b, t)" matrix containing the bus magnitudes, ordered according to
         "bus_lookup". b: number of buses, t: number of time period.
 - `bus_angles::Matrix{Float64}`:
         "(b, t)" matrix containing the bus angles, ordered according to
         "bus_lookup". b: number of buses, t: number of time period.
-- `branch_flow_values::Matrix{Float64}`:
-        "(br, t)" matrix containing the power flows, ordered according to
+- `branch_activepower_flow_values::Matrix{Float64}`:
+        "(br, t)" matrix containing the active power flows, ordered according to
+        "branch_lookup". br: number of branches, t: number of time period.
+- `branch_reactivepower_flow_values::Matrix{Float64}`:
+        "(br, t)" matrix containing the reactive power flows, ordered according to
         "branch_lookup". br: number of branches, t: number of time period.
 - `timestep_map::Dict{Int, S}`:
         dictonary mapping the number of the time periods (corresponding to the
@@ -75,12 +79,13 @@ struct PowerFlowData{
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
     bus_reactivepower_withdrawals::Matrix{Float64}
-    bus_reactivepower_bounds::Vector{Vector{Float64}}
-    bus_type::Vector{PSY.ACBusTypes}
+    bus_reactivepower_bounds::Matrix{Vector{Float64}}
+    bus_type::Matrix{PSY.ACBusTypes}
     branch_type::Vector{DataType}
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
-    branch_flow_values::Matrix{Float64}
+    branch_activepower_flow_values::Matrix{Float64}
+    branch_reactivepower_flow_values::Matrix{Float64}
     timestep_map::Dict{Int, String}
     valid_ix::Vector{Int}
     power_network_matrix::M
