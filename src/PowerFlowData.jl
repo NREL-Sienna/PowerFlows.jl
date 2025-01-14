@@ -50,12 +50,21 @@ flows and angles, as well as these ones.
 - `bus_angles::Matrix{Float64}`:
         "(b, t)" matrix containing the bus angles, ordered according to
         "bus_lookup". b: number of buses, t: number of time period.
-- `branch_activepower_flow_values::Matrix{Float64}`:
-        "(br, t)" matrix containing the active power flows, ordered according to
-        "branch_lookup". br: number of branches, t: number of time period.
-- `branch_reactivepower_flow_values::Matrix{Float64}`:
-        "(br, t)" matrix containing the reactive power flows, ordered according to
-        "branch_lookup". br: number of branches, t: number of time period.
+- `branch_activepower_flow_from_to::Matrix{Float64}`:
+        "(br, t)" matrix containing the active power flows measured at the `from` bus,
+        ordered according to "branch_lookup". br: number of branches, t: number of time
+        period.
+- `branch_reactivepower_flow_from_to::Matrix{Float64}`:
+        "(br, t)" matrix containing the reactive power flows measured at the `from` bus,
+        ordered according to "branch_lookup". br: number of branches, t: number of time
+        period.
+- `branch_activepower_flow_to_from::Matrix{Float64}`:
+        "(br, t)" matrix containing the active power flows measured at the `to` bus, ordered
+        according to "branch_lookup". br: number of branches, t: number of time period.
+- `branch_reactivepower_flow_to_from::Matrix{Float64}`:
+        "(br, t)" matrix containing the reactive power flows measured at the `to` bus,
+        ordered according to "branch_lookup". br: number of branches, t: number of time
+        period.
 - `timestep_map::Dict{Int, S}`:
         dictonary mapping the number of the time periods (corresponding to the
         column number of the previosly mentioned matrices) and their names.
@@ -84,10 +93,10 @@ struct PowerFlowData{
     branch_type::Vector{DataType}
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
-    branch_activepower_flow_to_from::Matrix{Float64}
-    branch_reactivepower_flow_to_from::Matrix{Float64}
     branch_activepower_flow_from_to::Matrix{Float64}
     branch_reactivepower_flow_from_to::Matrix{Float64}
+    branch_activepower_flow_to_from::Matrix{Float64}
+    branch_reactivepower_flow_to_from::Matrix{Float64}
     timestep_map::Dict{Int, String}
     valid_ix::Vector{Int}
     power_network_matrix::M
