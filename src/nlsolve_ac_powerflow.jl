@@ -1,3 +1,4 @@
+const _SOLVE_AC_POWERFLOW_KWARGS = Set([:check_reactive_power_limits, :check_connectivity])
 """
 Solves a the power flow into the system and writes the solution into the relevant structs.
 Updates generators active and reactive power setpoints and branches active and reactive
@@ -42,9 +43,10 @@ function solve_ac_powerflow!(system::PSY.System; kwargs...)
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
     max_iterations = DEFAULT_MAX_REDISTRIBUTION_ITERATIONS
-    res = _solve_powerflow!(data, check_reactive_power_limits; kwargs...)
+    solver_kwargs = filter(p -> !(p.first in _SOLVE_AC_POWERFLOW_KWARGS), kwargs)
+    res = _solve_powerflow!(data, check_reactive_power_limits; solver_kwargs...)
     if res.f_converged
-        write_powerflow_solution!(system, res.zero, max_iterations)
+        write_powerflow_solution!(system, res.zero, data, max_iterations)
         @info("PowerFlow solve converged, the results have been stored in the system")
         #Restore original per unit base
         PSY.set_units_base_system!(system, settings_unit_cache)

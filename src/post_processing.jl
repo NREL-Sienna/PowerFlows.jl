@@ -448,11 +448,26 @@ Updates system voltages and powers with power flow results
 function write_powerflow_solution!(
     sys::PSY.System,
     result::Vector{Float64},
+    data::PowerFlowData,
     max_iterations::Int,
 )
     buses = enumerate(
         sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x)),
     )
+
+    # Handle any changes made manually to the PowerFlowData, not necessarily reflected in the solver result
+    # Right now the only such change we handle is the one in _check_q_limit_bounds!
+    for (ix, bus) in buses
+        system_bustype = PSY.get_bustype(bus)
+        data_bustype = data.bus_type[ix]
+        (system_bustype == data_bustype) && continue
+        @assert system_bustype == PSY.ACBusTypes.PV
+        @assert data_bustype == PSY.ACBusTypes.PQ
+        @debug "Updating bus $(PSY.get_name(bus)) reactive power and type to PQ due to check_reactive_power_limits"
+        Q_gen = data.bus_reactivepower_injection[ix]
+        _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+        PSY.set_bustype!(bus, data_bustype)
+    end
 
     for (ix, bus) in buses
         if bus.bustype == PSY.ACBusTypes.REF
