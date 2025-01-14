@@ -84,8 +84,10 @@ struct PowerFlowData{
     branch_type::Vector{DataType}
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
-    branch_activepower_flow_values::Matrix{Float64}
-    branch_reactivepower_flow_values::Matrix{Float64}
+    branch_activepower_flow_to_from::Matrix{Float64}
+    branch_reactivepower_flow_to_from::Matrix{Float64}
+    branch_activepower_flow_from_to::Matrix{Float64}
+    branch_reactivepower_flow_from_to::Matrix{Float64}
     timestep_map::Dict{Int, String}
     valid_ix::Vector{Int}
     power_network_matrix::M
