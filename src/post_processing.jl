@@ -448,11 +448,26 @@ Updates system voltages and powers with power flow results
 function write_powerflow_solution!(
     sys::PSY.System,
     result::Vector{Float64},
+    data::PowerFlowData,
     max_iterations::Int,
 )
     buses = enumerate(
         sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x)),
     )
+
+    # Handle any changes made manually to the PowerFlowData, not necessarily reflected in the solver result
+    # Right now the only such change we handle is the one in _check_q_limit_bounds!
+    for (ix, bus) in buses
+        system_bustype = PSY.get_bustype(bus)
+        data_bustype = data.bus_type[ix]
+        (system_bustype == data_bustype) && continue
+        @assert system_bustype == PSY.ACBusTypes.PV
+        @assert data_bustype == PSY.ACBusTypes.PQ
+        @debug "Updating bus $(PSY.get_name(bus)) reactive power and type to PQ due to check_reactive_power_limits"
+        Q_gen = data.bus_reactivepower_injection[ix]
+        _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+        PSY.set_bustype!(bus, data_bustype)
+    end
 
     for (ix, bus) in buses
         if bus.bustype == PSY.ACBusTypes.REF
@@ -499,19 +514,10 @@ function _allocate_results_data(
     Q_gen_vect::Vector{Float64},
     P_load_vect::Vector{Float64},
     Q_load_vect::Vector{Float64},
-    branch_flow_values::Vector{Float64})
-
-    # get flows on each line
-    P_from_to_vect = zeros(length(branches))
-    Q_from_to_vect = zeros(length(branches))
-    P_to_from_vect = zeros(length(branches))
-    Q_to_from_vect = zeros(length(branches))
-    # branch_flow_values is always from_to direction
-    for i in 1:length(branches)
-        P_from_to_vect[i] = branch_flow_values[i]
-        P_to_from_vect[i] = -branch_flow_values[i]
-    end
-
+    branch_activepower_flow_from_to::Vector{Float64},
+    branch_reactivepower_flow_from_to::Vector{Float64},
+    branch_activepower_flow_to_from::Vector{Float64},
+    branch_reactivepower_flow_to_from::Vector{Float64})
     bus_df = DataFrames.DataFrame(;
         bus_number = buses,
         Vm = bus_magnitude,
@@ -529,10 +535,10 @@ function _allocate_results_data(
         line_name = branches,
         bus_from = from_bus,
         bus_to = to_bus,
-        P_from_to = P_from_to_vect,
-        Q_from_to = Q_from_to_vect,
-        P_to_from = P_to_from_vect,
-        Q_to_from = Q_to_from_vect,
+        P_from_to = branch_activepower_flow_from_to,
+        Q_from_to = branch_reactivepower_flow_from_to,
+        P_to_from = branch_activepower_flow_to_from,
+        Q_to_from = branch_reactivepower_flow_to_from,
         P_losses = zeros(length(branches)),
         Q_losses = zeros(length(branches)),
     )
@@ -585,7 +591,10 @@ function write_results(
             data.bus_reactivepower_injection[:, i],
             data.bus_activepower_withdrawals[:, i],
             data.bus_reactivepower_withdrawals[:, i],
-            data.branch_flow_values[:, i],
+            data.branch_activepower_flow_from_to[:, i],
+            data.branch_reactivepower_flow_from_to[:, i],
+            data.branch_activepower_flow_to_from[:, i],
+            data.branch_reactivepower_flow_to_from[:, i],
         )
         result_dict[data.timestep_map[i]] = temp_dict
     end

@@ -1,3 +1,4 @@
+const _SOLVE_AC_POWERFLOW_KWARGS = Set([:check_reactive_power_limits, :check_connectivity])
 """
 Solves a the power flow into the system and writes the solution into the relevant structs.
 Updates generators active and reactive power setpoints and branches active and reactive
@@ -46,11 +47,12 @@ function solve_powerflow!(
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
 
-    converged, V, Sbus_result = _ac_powereflow(data, pf; kwargs...)
+    solver_kwargs = filter(p -> !(p.first in _SOLVE_AC_POWERFLOW_KWARGS), kwargs)
+    converged, V, Sbus_result = _ac_powereflow(data, pf; solver_kwargs...)
     x = _calc_x(data, V, Sbus_result)
 
     if converged
-        write_powerflow_solution!(system, x, get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER))
+        write_powerflow_solution!(system, x, data, get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER))
         @info("PowerFlow solve converged, the results have been stored in the system")
     else
         @error("The powerflow solver returned convergence = $(converged)")
@@ -253,6 +255,7 @@ end
 function _check_q_limit_bounds!(
     data::ACPowerFlowData,
     Sbus_result::Vector{Complex{Float64}},
+    time_step::Int64,
 )
     bus_names = data.power_network_matrix.axes[1]
     within_limits = true
@@ -263,16 +266,16 @@ function _check_q_limit_bounds!(
             continue
         end
 
-        if Q_gen <= data.bus_reactivepower_bounds[ix][1]
+        if Q_gen <= data.bus_reactivepower_bounds[ix, time_step][1]
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
-            data.bus_type[ix] = PSY.ACBusTypes.PQ
-            data.bus_reactivepower_injection[ix] = data.bus_reactivepower_bounds[ix][1]
+            data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
+            data.bus_reactivepower_injection[ix, time_step] = data.bus_reactivepower_bounds[ix, time_step][1]
         elseif Q_gen >= data.bus_reactivepower_bounds[ix][2]
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
-            data.bus_type[ix] = PSY.ACBusTypes.PQ
-            data.bus_reactivepower_injection[ix] = data.bus_reactivepower_bounds[ix][2]
+            data.bus_type[ixm, time_step] = PSY.ACBusTypes.PQ
+            data.bus_reactivepower_injection[ix, time_step] = data.bus_reactivepower_bounds[ix, time_step][2]
         else
             @debug "Within Limits"
         end
@@ -284,12 +287,13 @@ function _solve_powerflow!(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     data::ACPowerFlowData,
     check_reactive_power_limits;
+    time_step::Int64 = 1,
     kwargs...,
 )
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
-        converged, V, Sbus_result = _newton_powerflow(pf, data; kwargs...)
+        converged, V, Sbus_result = _newton_powerflow(pf, data; time_step=time_step, kwargs...)
         if !converged || !check_reactive_power_limits ||
-           _check_q_limit_bounds!(data, Sbus_result)
+           _check_q_limit_bounds!(data, Sbus_result, time_step)
             return converged, V, Sbus_result
         end
     end

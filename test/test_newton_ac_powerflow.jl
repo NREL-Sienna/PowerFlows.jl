@@ -37,15 +37,35 @@
     ]
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
     pf = ACPowerFlow{ACSolver}()
     data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
     #Compare results between finite diff methods and Jacobian method
     converged1, V1, S1 = PowerFlows._solve_powerflow!(pf, data, false)
     x1 = PowerFlows._calc_x(data, V1, S1)
     @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6
-    @test solve_powerflow!(pf, sys; method = :newton)
 
-    # Test enforcing the reactive power Limits
+    # Test that solve_ac_powerflow! succeeds
+    solved1 = deepcopy(sys)
+    @test solve_powerflow!(pf, solved1)
+
+    # Test that passing check_reactive_power_limits=false is the default and violates limits
+    solved2 = deepcopy(sys)
+    @test solve_ac_powerflow!(solved2; check_reactive_power_limits = false)
+    @test IS.compare_values(solved1, solved2)
+    @test get_reactive_power(get_component(ThermalStandard, solved2, "Bus8")) >
+          get_reactive_power_limits(get_component(ThermalStandard, solved2, "Bus8")).max
+
+    # Test that passing check_reactive_power_limits=true fixes that
+    solved3 = deepcopy(sys)
+    @test solve_ac_powerflow!(solved3; check_reactive_power_limits = true)
+    @test get_reactive_power(get_component(ThermalStandard, solved3, "Bus8")) <=
+          get_reactive_power_limits(get_component(ThermalStandard, solved3, "Bus8")).max
+
+    # Test Newton method
+    @test solve_ac_powerflow!(deepcopy(sys); method = :newton)
+
+    # Test enforcing the reactive power limits in closer detail
     set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
     data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
     converged2, V2, S2 = PowerFlows._solve_powerflow!(pf, data, true)

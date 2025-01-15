@@ -38,69 +38,6 @@ const PSSE_DEFAULT_EXPORT_NAME = "export"
 const PSSE_RAW_BUFFER_SIZEHINT = 1024
 const PSSE_MD_BUFFER_SIZEHINT = 1024
 
-# TODO move this to IS
-"""
-A context manager similar to `Logging.with_logger` that sets the system's units to the given
-value, executes the function, then sets them back. Suppresses logging below `Warn` from
-internal calls to `set_units_base_system!`. Not thread safe.
-"""
-function with_units(f::Function, sys::System, units::Union{PSY.UnitSystem, String})
-    old_units = PSY.get_units_base(sys)
-    Logging.with_logger(Logging.SimpleLogger(Logging.Warn)) do
-        PSY.set_units_base_system!(sys, units)
-    end
-    try
-        f()
-    finally
-        Logging.with_logger(Logging.SimpleLogger(Logging.Warn)) do
-            PSY.set_units_base_system!(sys, old_units)
-        end
-    end
-end
-
-"""
-Make a `deepcopy` of the `System` except replace the time series manager and supplemental
-attribute manager with blank versions so these are not copied.
-"""
-function deepcopy_system_no_time_series_no_supplementals(sys::System)
-    old_time_series_manager = sys.data.time_series_manager
-    old_supplemental_attribute_manager = sys.data.supplemental_attribute_manager
-
-    new_time_series_manager = IS.TimeSeriesManager(
-        IS.InMemoryTimeSeriesStorage(),
-        IS.TimeSeriesMetadataStore(),
-        true,
-    )
-    new_supplemental_attribute_manager = IS.SupplementalAttributeManager()
-
-    sys.data.time_series_manager = new_time_series_manager
-    sys.data.supplemental_attribute_manager = new_supplemental_attribute_manager
-
-    old_refs = Dict{Tuple{DataType, String}, IS.SharedSystemReferences}()
-    for comp in PSY.iterate_components(sys)
-        old_refs[(typeof(comp), PSY.get_name(comp))] =
-            comp.internal.shared_system_references
-        new_refs = IS.SharedSystemReferences(;
-            time_series_manager = new_time_series_manager,
-            supplemental_attribute_manager = new_supplemental_attribute_manager,
-        )
-        IS.set_shared_system_references!(comp, new_refs)
-    end
-
-    new_sys = try
-        deepcopy(sys)
-    finally
-        sys.data.time_series_manager = old_time_series_manager
-        sys.data.supplemental_attribute_manager = old_supplemental_attribute_manager
-
-        for comp in PSY.iterate_components(sys)
-            IS.set_shared_system_references!(comp,
-                old_refs[(typeof(comp), PSY.get_name(comp))])
-        end
-    end
-    return new_sys
-end
-
 """
 Structure to perform an export from a Sienna System, plus optional updates from
 `PowerFlowData`, to the PSS/E format. Construct from a `System` and a PSS/E version, update
@@ -133,7 +70,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
     md_dict::OrderedDict{String}  # Persist metadata to avoid unnecessary recomputation
     md_valid::Bool  # If this is true, the metadata need not be reserialized
     md_buffer::IOBuffer  # Cache a serialized version of the metadata
-    components_cache::AbstractDict{String, Vector{<:PSY.Component}}  # Cache sorted lists of components to reduce allocations
+    components_cache::Dict{String}  # Cache sorted lists of components to reduce allocations
 
     function PSSEExporter(
         base_system::PSY.System,
@@ -150,7 +87,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
                     "PSS/E version $psse_version is not supported, must be one of $PSSE_EXPORT_SUPPORTED_VERSIONS",
                 ),
             )
-        system = deepcopy_system_no_time_series_no_supplementals(base_system)
+        system = PSY.fast_deepcopy_system(base_system)
         mkpath(export_dir)
         new(
             system,
@@ -164,7 +101,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
             OrderedDict{String, Any}(),
             false,
             IOBuffer(),
-            Dict{String, Vector{<:PSY.Component}}(),
+            Dict{String, Any}(),
         )
     end
 end
@@ -211,7 +148,7 @@ function update_exporter!(exporter::PSSEExporter, data::PSY.System)
             "System passed to update_exporter must be the same system as the one with which the exporter was constructed, just with different values",
         ),
     )
-    exporter.system = deepcopy_system_no_time_series_no_supplementals(data)
+    exporter.system = PSY.fast_deepcopy_system(data)
     reset_caches(exporter)
     return
 end
@@ -486,9 +423,15 @@ function write_to_buffers!(
         sort!(collect(PSY.get_components(PSY.Bus, exporter.system)); by = PSY.get_number)
     end
     old_bus_numbers = PSY.get_number.(buses)
-    bus_number_mapping = _psse_bus_numbers(old_bus_numbers)
-    bus_name_mapping =
-        _psse_bus_names(PSY.get_name.(buses), old_bus_numbers, bus_number_mapping)
+
+    if !exporter.md_valid
+        md["bus_number_mapping"] = _psse_bus_numbers(old_bus_numbers)
+        md["bus_name_mapping"] =
+            _psse_bus_names(PSY.get_name.(buses), old_bus_numbers, md["bus_number_mapping"])
+    end
+    bus_number_mapping = md["bus_number_mapping"]
+    bus_name_mapping = md["bus_name_mapping"]
+
     for bus in buses
         I = bus_number_mapping[PSY.get_number(bus)]
         NAME = _psse_quote_string(bus_name_mapping[PSY.get_name(bus)])
@@ -527,9 +470,6 @@ function write_to_buffers!(
         fastprintln(io, EVLO)
     end
     end_group_33(io, md, exporter, "Bus Data", true)
-
-    exporter.md_valid || (md["bus_number_mapping"] = bus_number_mapping)
-    exporter.md_valid || (md["bus_name_mapping"] = bus_name_mapping)
 end
 
 function _increment_component_char(component_char::Char)
@@ -606,7 +546,7 @@ serialize_component_ids(id_mapping::Dict{Tuple{Tuple{Int64, Int64}, String}, Str
 
 # Fetch PL, QL, IP, IQ, YP, YQ
 _psse_get_load_data(exporter::PSSEExporter, load::PSY.StandardLoad) =
-    with_units(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+    with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
         PSY.get_constant_active_power(load),
         PSY.get_constant_reactive_power(load),
         PSY.get_current_active_power(load),
@@ -618,7 +558,7 @@ _psse_get_load_data(exporter::PSSEExporter, load::PSY.StandardLoad) =
 # Fallback if not all the data is available
 # This mapping corresponds to `function make_power_load` in the parser
 _psse_get_load_data(exporter::PSSEExporter, load::PSY.StaticLoad) =
-    with_units(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+    with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
         PSY.get_active_power(load),
         PSY.get_reactive_power(load),
         PSSE_DEFAULT,
@@ -641,12 +581,13 @@ function write_to_buffers!(
     loads = get!(exporter.components_cache, "loads") do
         sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system)); by = PSY.get_name)
     end
-    load_name_mapping =
+    load_name_mapping = get!(exporter.components_cache, "load_name_mapping") do
         create_component_ids(
             PSY.get_name.(loads),
             PSY.get_number.(PSY.get_bus.(loads));
             singles_to_1 = true,
         )
+    end
     for load in loads
         sienna_bus_number = PSY.get_number(PSY.get_bus(load))
         I = md["bus_number_mapping"][sienna_bus_number]
@@ -696,12 +637,13 @@ function write_to_buffers!(
             by = PSY.get_name,
         )
     end
-    shunt_name_mapping =
+    shunt_name_mapping = get!(exporter.components_cache, "shunt_name_mapping") do
         create_component_ids(
             PSY.get_name.(shunts),
             PSY.get_number.(PSY.get_bus.(shunts));
             singles_to_1 = true,
         )
+    end
     for shunt in shunts
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
@@ -750,12 +692,13 @@ function write_to_buffers!(
         )
         return temp_gens
     end
-    generator_name_mapping =
+    generator_name_mapping = get!(exporter.components_cache, "generator_name_mapping") do
         create_component_ids(
             PSY.get_name.(generators),
             PSY.get_number.(PSY.get_bus.(generators));
             singles_to_1 = false,
         )
+    end
     for generator in generators
         sienna_bus_number = PSY.get_number(PSY.get_bus(generator))
         I = md["bus_number_mapping"][sienna_bus_number]
@@ -763,14 +706,14 @@ function write_to_buffers!(
             _psse_quote_string(
                 generator_name_mapping[(sienna_bus_number, PSY.get_name(generator))],
             )  # TODO should this be quoted?
-        PG, QG = with_units(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
+        PG, QG = with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
             # TODO doing the conversion myself due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1164
             PSY.get_active_power(generator) * PSY.get_base_power(exporter.system),
             PSY.get_reactive_power(generator) * PSY.get_base_power(exporter.system)
         end
         # TODO approximate a QT for generators that don't have it set
         # (this is needed to run power flows also)
-        reactive_power_limits = with_units(
+        reactive_power_limits = with_units_base(
             () -> PSY.get_reactive_power_limits(generator),
             exporter.system,
             PSY.UnitSystem.NATURAL_UNITS,
@@ -788,15 +731,12 @@ function write_to_buffers!(
         STAT = PSY.get_available(generator) ? 1 : 0
         RMPCT = PSSE_DEFAULT
         # TODO maybe have a better default here
-        active_power_limits = try
-            with_units(
+        active_power_limits =
+            with_units_base(
                 () -> PSY.get_active_power_limits(generator),
                 exporter.system,
                 PSY.UnitSystem.NATURAL_UNITS,
             )
-        catch
-            (min = PSSE_DEFAULT, max = PSSE_DEFAULT)
-        end
         PT = active_power_limits.max
         PB = active_power_limits.min
         WMOD = get(PSY.get_ext(generator), "WMOD", PSSE_DEFAULT)
@@ -841,21 +781,22 @@ function write_to_buffers!(
     check_33(exporter)
 
     # TODO can/should we be more general than `Line`?
-    branches = get!(exporter.components_cache, "branches") do
-        sort!(
+    branches_with_numbers = get!(exporter.components_cache, "branches") do
+        branches = sort!(
             collect(PSY.get_components(PSY.Line, exporter.system));
             by = branch_to_bus_numbers,
         )
+        [(branch, branch_to_bus_numbers(branch)) for branch in branches]
     end
-    branch_name_mapping =
+    branch_name_mapping = get!(exporter.components_cache, "branch_name_mapping") do
         create_component_ids(
-            PSY.get_name.(branches),
-            branch_to_bus_numbers.(branches);
+            PSY.get_name.(first.(branches_with_numbers)),
+            last.(branches_with_numbers);
             singles_to_1 = false,
         )
+    end
 
-    for branch in branches
-        from_n, to_n = branch_to_bus_numbers(branch)
+    for (branch, (from_n, to_n)) in branches_with_numbers
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
         CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
@@ -871,7 +812,7 @@ function write_to_buffers!(
         RATEA =
             RATEB =
                 RATEC =
-                    with_units(
+                    with_units_base(
                         () -> PSY.get_rating(branch),
                         exporter.system,
                         PSY.UnitSystem.NATURAL_UNITS,
@@ -965,28 +906,36 @@ function write_to_buffers!(
     check_33(exporter)
     transformer_types =
         Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
-    transformers = get!(exporter.components_cache, "transformers") do
-        sort!(
+    transformers_with_numbers = get!(exporter.components_cache, "transformers") do
+        transformers = sort!(
             collect(PSY.get_components(transformer_types, exporter.system));
             by = branch_to_bus_numbers,
         )
+        [(transformer, branch_to_bus_numbers(transformer)) for transformer in transformers]
     end
-    transformer_ckt_mapping =
+    transformer_ckt_mapping = get!(exporter.components_cache, "transformer_ckt_mapping") do
         create_component_ids(
-            PSY.get_name.(transformers),
-            branch_to_bus_numbers.(transformers);
+            PSY.get_name.(first.(transformers_with_numbers)),
+            last.(transformers_with_numbers);
             singles_to_1 = false,
         )
-    transformer_name_mapping = _psse_transformer_names(
-        PSY.get_name.(transformers),
-        branch_to_bus_numbers.(transformers),
-        md["bus_number_mapping"],
-        transformer_ckt_mapping,
-    )
-    for transformer in transformers
+    end
+    if !exporter.md_valid
+        md["transformer_name_mapping"] = _psse_transformer_names(
+            PSY.get_name.(first.(transformers_with_numbers)),
+            last.(transformers_with_numbers),
+            md["bus_number_mapping"],
+            transformer_ckt_mapping,
+        )
+    end
+
+    bus_number_mapping = md["bus_number_mapping"]
+    transformer_name_mapping = md["transformer_name_mapping"]
+
+    for (transformer, (from_n, to_n)) in transformers_with_numbers
         from_n, to_n = branch_to_bus_numbers(transformer)
-        I = md["bus_number_mapping"][from_n]
-        J = md["bus_number_mapping"][to_n]
+        I = bus_number_mapping[from_n]
+        J = bus_number_mapping[to_n]
         K = 0  # no third winding
         CKT = transformer_ckt_mapping[((from_n, to_n), PSY.get_name(transformer))]
         @assert !(first(CKT) in ['&', '@', '*'])  # Characters with a special meaning in this context
@@ -1016,7 +965,7 @@ function write_to_buffers!(
         RATA1 =
             RATB1 =
                 RATC1 =
-                    with_units(
+                    with_units_base(
                         () -> PSY.get_rating(transformer),
                         exporter.system,
                         PSY.UnitSystem.NATURAL_UNITS,
@@ -1075,7 +1024,6 @@ function write_to_buffers!(
     end_group_33(io, md, exporter, "Transformer Data", true)
     if !exporter.md_valid
         md["transformer_ckt_mapping"] = serialize_component_ids(transformer_ckt_mapping)
-        md["transformer_name_mapping"] = transformer_name_mapping
     end
 end
 
@@ -1185,7 +1133,7 @@ function write_export(
         md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
     end
 
-    with_units(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
+    with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
         # Each of these corresponds to a group of records in the PSS/E spec
         for group_name in PSSE_GROUPS_33
             @debug "Writing export for group $group_name"

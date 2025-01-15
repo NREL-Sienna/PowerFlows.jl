@@ -38,20 +38,33 @@ flows and angles, as well as these ones.
 - `bus_reactivepower_withdrawals::Matrix{Float64}`:
         "(b, t)" matrix containing the bus reactive power withdrawals. b:
         number of buses, t: number of time period.
-- `bus_reactivepower_bounds::Vector{Float64}`: Upper and Lower bounds for the reactive supply
-        at each bus.
-- `bus_type::Vector{PSY.ACBusTypes}`:
-        vector containing type of buses present in the system, ordered
-        according to "bus_lookup".
+- `bus_reactivepower_bounds::Matrix{Float64}`:
+        "(b, t)" matrix containing upper and lower bounds for the reactive supply at each
+        bus at each time period.
+- `bus_type::Matrix{PSY.ACBusTypes}`:
+        "(b, t)" matrix containing type of buses present in the system, ordered
+        according to "bus_lookup," at each time period.
 - `bus_magnitude::Matrix{Float64}`:
         "(b, t)" matrix containing the bus magnitudes, ordered according to
         "bus_lookup". b: number of buses, t: number of time period.
 - `bus_angles::Matrix{Float64}`:
         "(b, t)" matrix containing the bus angles, ordered according to
         "bus_lookup". b: number of buses, t: number of time period.
-- `branch_flow_values::Matrix{Float64}`:
-        "(br, t)" matrix containing the power flows, ordered according to
-        "branch_lookup". br: number of branches, t: number of time period.
+- `branch_activepower_flow_from_to::Matrix{Float64}`:
+        "(br, t)" matrix containing the active power flows measured at the `from` bus,
+        ordered according to "branch_lookup". br: number of branches, t: number of time
+        period.
+- `branch_reactivepower_flow_from_to::Matrix{Float64}`:
+        "(br, t)" matrix containing the reactive power flows measured at the `from` bus,
+        ordered according to "branch_lookup". br: number of branches, t: number of time
+        period.
+- `branch_activepower_flow_to_from::Matrix{Float64}`:
+        "(br, t)" matrix containing the active power flows measured at the `to` bus, ordered
+        according to "branch_lookup". br: number of branches, t: number of time period.
+- `branch_reactivepower_flow_to_from::Matrix{Float64}`:
+        "(br, t)" matrix containing the reactive power flows measured at the `to` bus,
+        ordered according to "branch_lookup". br: number of branches, t: number of time
+        period.
 - `timestep_map::Dict{Int, S}`:
         dictonary mapping the number of the time periods (corresponding to the
         column number of the previosly mentioned matrices) and their names.
@@ -75,12 +88,15 @@ struct PowerFlowData{
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
     bus_reactivepower_withdrawals::Matrix{Float64}
-    bus_reactivepower_bounds::Vector{Vector{Float64}}
-    bus_type::Vector{PSY.ACBusTypes}
+    bus_reactivepower_bounds::Matrix{Vector{Float64}}
+    bus_type::Matrix{PSY.ACBusTypes}
     branch_type::Vector{DataType}
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
-    branch_flow_values::Matrix{Float64}
+    branch_activepower_flow_from_to::Matrix{Float64}
+    branch_reactivepower_flow_from_to::Matrix{Float64}
+    branch_activepower_flow_to_from::Matrix{Float64}
+    branch_reactivepower_flow_to_from::Matrix{Float64}
     timestep_map::Dict{Int, String}
     valid_ix::Vector{Int}
     power_network_matrix::M
@@ -99,7 +115,14 @@ get_bus_type(pfd::PowerFlowData) = pfd.bus_type
 get_branch_type(pfd::PowerFlowData) = pfd.branch_type
 get_bus_magnitude(pfd::PowerFlowData) = pfd.bus_magnitude
 get_bus_angles(pfd::PowerFlowData) = pfd.bus_angles
-get_branch_flow_values(pfd::PowerFlowData) = pfd.branch_flow_values
+get_branch_activepower_flow_from_to(pfd::PowerFlowData) =
+    pfd.branch_activepower_flow_from_to
+get_branch_reactivepower_flow_from_to(pfd::PowerFlowData) =
+    pfd.branch_reactivepower_flow_from_to
+get_branch_activepower_flow_to_from(pfd::PowerFlowData) =
+    pfd.branch_activepower_flow_to_from
+get_branch_reactivepower_flow_to_from(pfd::PowerFlowData) =
+    pfd.branch_reactivepower_flow_to_from
 get_timestep_map(pfd::PowerFlowData) = pfd.timestep_map
 get_valid_ix(pfd::PowerFlowData) = pfd.valid_ix
 get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
@@ -197,11 +220,7 @@ function PowerFlowData(
         branch_types[ix] = typeof(b)
     end
 
-    bus_reactivepower_bounds = Vector{Vector{Float64}}(undef, n_buses)
-    for i in 1:n_buses
-        bus_reactivepower_bounds[i] = [0.0, 0.0]
-    end
-    _get_reactive_power_bound!(bus_reactivepower_bounds, bus_lookup, sys)
+    timestep_map = Dict(1 => "1")
     valid_ix = setdiff(1:n_buses, ref_bus_positions)
     neighbors = _calculate_neighbors(power_network_matrix)
     aux_network_matrix = nothing
@@ -217,7 +236,6 @@ function PowerFlowData(
         branch_lookup,
         temp_bus_map,
         branch_types,
-        bus_reactivepower_bounds,
         timestep_map,
         valid_ix,
         neighbors,
