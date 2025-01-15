@@ -45,25 +45,25 @@
     x1 = PowerFlows._calc_x(data, V1, S1)
     @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6
 
-    # Test that solve_ac_powerflow! succeeds
+    # Test that solve_powerflow! succeeds
     solved1 = deepcopy(sys)
     @test solve_powerflow!(pf, solved1)
 
     # Test that passing check_reactive_power_limits=false is the default and violates limits
     solved2 = deepcopy(sys)
-    @test solve_ac_powerflow!(solved2; check_reactive_power_limits = false)
+    @test solve_powerflow!(pf, solved2; check_reactive_power_limits = false)
     @test IS.compare_values(solved1, solved2)
     @test get_reactive_power(get_component(ThermalStandard, solved2, "Bus8")) >
           get_reactive_power_limits(get_component(ThermalStandard, solved2, "Bus8")).max
 
     # Test that passing check_reactive_power_limits=true fixes that
     solved3 = deepcopy(sys)
-    @test solve_ac_powerflow!(solved3; check_reactive_power_limits = true)
+    @test solve_powerflow!(pf, solved3; check_reactive_power_limits = true)
     @test get_reactive_power(get_component(ThermalStandard, solved3, "Bus8")) <=
           get_reactive_power_limits(get_component(ThermalStandard, solved3, "Bus8")).max
 
     # Test Newton method
-    @test solve_ac_powerflow!(deepcopy(sys); method = :newton)
+    @test solve_powerflow!(pf, deepcopy(sys); method = :newton)
 
     # Test enforcing the reactive power limits in closer detail
     set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
@@ -505,10 +505,12 @@ end
         pf_default,
         sys;
         check_connectivity = true)
+    
+    time_step = 1
 
-    ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type)
-    pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type)
-    pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type)
+    ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type[:, time_step])
+    pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type[:, time_step])
+    pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type[:, time_step])
     pvpq = [pv; pq]
 
     npvpq = length(pvpq)

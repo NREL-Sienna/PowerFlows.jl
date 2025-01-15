@@ -199,7 +199,7 @@ function make_powerflowdata(
     bus_reactivepower_injection_1 = zeros_bus_time()
     bus_activepower_withdrawals_1 = zeros_bus_time()
     bus_reactivepower_withdrawals_1 = zeros_bus_time()
-    bus_reactivepower_bounds_1 = Matrix{Vector{Float64}}(undef, n_buses, time_stepsm)
+    bus_reactivepower_bounds_1 = Matrix{Vector{Float64}}(undef, n_buses, time_steps)
     bus_magnitude_1 = ones_bus_time()
     bus_angles_1 = zeros_bus_time()
 

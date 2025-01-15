@@ -1,4 +1,3 @@
-const _SOLVE_AC_POWERFLOW_KWARGS = Set([:check_reactive_power_limits, :check_connectivity])
 """
 Solves a the power flow into the system and writes the solution into the relevant structs.
 Updates generators active and reactive power setpoints and branches active and reactive
@@ -34,6 +33,7 @@ solve_ac_powerflow!(sys, method=:newton)
 function solve_powerflow!(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
+    time_step::Int64=1,
     kwargs...,
 )
     #Save per-unit flag
@@ -47,8 +47,7 @@ function solve_powerflow!(
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
 
-    solver_kwargs = filter(p -> !(p.first in _SOLVE_AC_POWERFLOW_KWARGS), kwargs)
-    converged, V, Sbus_result = _ac_powereflow(data, pf; solver_kwargs...)
+    converged, V, Sbus_result = _ac_powereflow(data, pf; time_step=time_step, kwargs...)
     x = _calc_x(data, V, Sbus_result)
 
     if converged
@@ -124,8 +123,8 @@ function solve_powerflow(
     sorted_time_steps = sort(collect(keys(data.timestep_map)))
     # preallocate results
     ts_converged = zeros(Bool, 1, length(sorted_time_steps))
-    ts_V = zeros(Complex{Float64}, length(data.bus_type), length(sorted_time_steps))
-    ts_S = zeros(Complex{Float64}, length(data.bus_type), length(sorted_time_steps))
+    ts_V = zeros(Complex{Float64}, length(data.bus_type[:, 1]), length(sorted_time_steps))
+    ts_S = zeros(Complex{Float64}, length(data.bus_type[:, 1]), length(sorted_time_steps))
 
     results = Dict()
 
@@ -176,8 +175,8 @@ function solve_powerflow!(
     sorted_time_steps = sort(collect(keys(data.timestep_map)))
     # preallocate results
     ts_converged = zeros(Bool, 1, length(sorted_time_steps))
-    ts_V = zeros(Complex{Float64}, length(data.bus_type), length(sorted_time_steps))
-    ts_S = zeros(Complex{Float64}, length(data.bus_type), length(sorted_time_steps))
+    ts_V = zeros(Complex{Float64}, length(data.bus_type[:, 1]), length(sorted_time_steps))
+    ts_S = zeros(Complex{Float64}, length(data.bus_type[:, 1]), length(sorted_time_steps))
 
     Yft = data.power_network_matrix.data_ft
     Ytf = data.power_network_matrix.data_tf
@@ -192,9 +191,9 @@ function solve_powerflow!(
         ts_V[:, t] .= V
         ts_S[:, t] .= Sbus_result
 
-        ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type)
-        pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type)
-        pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type)
+        ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type[:, t])
+        pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type[:, t])
+        pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type[:, t])
 
         # temporary implementation that will need to be improved:
         if converged
@@ -222,7 +221,13 @@ function solve_powerflow!(
     end
 
     # write branch flows
-    data.branch_flow_values .= real.(ts_V[fb,:] .* conj.(Yft * ts_V))
+    Sft = ts_V[fb,:] .* conj.(Yft * ts_V)
+    Stf = ts_V[tb,:] .* conj.(Ytf * ts_V)
+
+    data.branch_activepower_flow_from_to .= real.(Sft)
+    data.branch_reactivepower_flow_from_to .= imag.(Sft)
+    data.branch_activepower_flow_to_from .= real.(Stf)
+    data.branch_reactivepower_flow_to_from .= imag.(Stf)
 
     # todo:
     # return df_results
@@ -243,7 +248,7 @@ function _ac_powereflow(
         converged, V, Sbus_result =
             _newton_powerflow(pf, data; time_step = time_step, kwargs...)
         if !converged || !check_reactive_power_limits ||
-           _check_q_limit_bounds!(data, Sbus_result)
+           _check_q_limit_bounds!(data, Sbus_result, time_step)
             return (converged, V, Sbus_result)
         end
     end
@@ -259,8 +264,8 @@ function _check_q_limit_bounds!(
 )
     bus_names = data.power_network_matrix.axes[1]
     within_limits = true
-    for (ix, b) in enumerate(data.bus_type)
-        if b == PSY.ACBusTypes.PV
+    for (ix, bt) in enumerate(data.bus_type[:, time_step])
+        if bt == PSY.ACBusTypes.PV
             Q_gen = imag(Sbus_result[ix])
         else
             continue
@@ -271,10 +276,10 @@ function _check_q_limit_bounds!(
             within_limits = false
             data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
             data.bus_reactivepower_injection[ix, time_step] = data.bus_reactivepower_bounds[ix, time_step][1]
-        elseif Q_gen >= data.bus_reactivepower_bounds[ix][2]
+        elseif Q_gen >= data.bus_reactivepower_bounds[ix, time_step][2]
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
-            data.bus_type[ixm, time_step] = PSY.ACBusTypes.PQ
+            data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
             data.bus_reactivepower_injection[ix, time_step] = data.bus_reactivepower_bounds[ix, time_step][2]
         else
             @debug "Within Limits"
@@ -469,23 +474,24 @@ end
 function _calc_x(
     data::ACPowerFlowData,
     V::Vector{Complex{Float64}},
-    Sbus_result::Vector{Complex{Float64}},
+    Sbus_result::Vector{Complex{Float64}};
+    time_step::Int64 = 1,
 )
     Vm = abs.(V)
     Va = angle.(V)
     n_buses = length(V)
     # mock the expected x format, where the values depend on the type of the bus:
     x = zeros(Float64, 2 * n_buses)
-    for (ix, b) in enumerate(data.bus_type)
-        if b == PSY.ACBusTypes.REF
+    for (ix, bt) in enumerate(data.bus_type[:, time_step])
+        if bt == PSY.ACBusTypes.REF
             # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
             x[2 * ix - 1] = real(Sbus_result[ix]) + data.bus_activepower_withdrawals[ix]
             x[2 * ix] = imag(Sbus_result[ix]) + data.bus_reactivepower_withdrawals[ix]
-        elseif b == PSY.ACBusTypes.PV
+        elseif bt == PSY.ACBusTypes.PV
             # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
             x[2 * ix - 1] = imag(Sbus_result[ix]) + data.bus_reactivepower_withdrawals[ix]
             x[2 * ix] = Va[ix]
-        elseif b == PSY.ACBusTypes.PQ
+        elseif bt == PSY.ACBusTypes.PQ
             # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
             x[2 * ix - 1] = Vm[ix]
             x[2 * ix] = Va[ix]
@@ -519,16 +525,15 @@ function _newton_powerflow(
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type)
-    pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type)
-    pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type)
+    ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type[:, time_step])
+    pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type[:, time_step])
+    pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type[:, time_step])
     pvpq = [pv; pq]
 
     # nref = length(ref)
     npv = length(pv)
     npq = length(pq)
     npvpq = npv + npq
-    n_buses = length(data.bus_type)
 
     Vm = data.bus_magnitude[:, time_step]
     # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:

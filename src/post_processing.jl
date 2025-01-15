@@ -461,6 +461,7 @@ function write_powerflow_solution!(
         system_bustype = PSY.get_bustype(bus)
         data_bustype = data.bus_type[ix]
         (system_bustype == data_bustype) && continue
+        println("sys bustype: $system_bustype, data bustype: $data_bustype")
         @assert system_bustype == PSY.ACBusTypes.PV
         @assert data_bustype == PSY.ACBusTypes.PQ
         @debug "Updating bus $(PSY.get_name(bus)) reactive power and type to PQ due to check_reactive_power_limits"
@@ -620,7 +621,8 @@ function write_results(
     ::ACPowerFlow{<:ACPowerFlowSolverType},
     sys::PSY.System,
     data::ACPowerFlowData,
-    result::Union{Vector{Float64}, Matrix{Float64}}, #todo
+    result::Union{Vector{Float64}, Matrix{Float64}};
+    time_step::Int64 = 1,
 )
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
     buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x))
@@ -634,27 +636,27 @@ function write_results(
     P_load_vect = fill(0.0, N_BUS)
     Q_load_vect = fill(0.0, N_BUS)
 
-    for (ix, bustype) in enumerate(data.bus_type)
-        P_load_vect[ix] = data.bus_activepower_withdrawals[ix] * sys_basepower
-        Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix] * sys_basepower
+    for (ix, bustype) in enumerate(data.bus_type[:, time_step])
+        P_load_vect[ix] = data.bus_activepower_withdrawals[ix, time_step] * sys_basepower
+        Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix, time_step] * sys_basepower
         P_admittance, Q_admittance = _get_fixed_admittance_power(sys, buses[ix], result, ix)
         P_load_vect[ix] += P_admittance * sys_basepower
         Q_load_vect[ix] += Q_admittance * sys_basepower
         if bustype == PSY.ACBusTypes.REF
-            Vm_vect[ix] = data.bus_magnitude[ix]
-            θ_vect[ix] = data.bus_angles[ix]
+            Vm_vect[ix] = data.bus_magnitude[ix, time_step]
+            θ_vect[ix] = data.bus_angles[ix, time_step]
             P_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix] * sys_basepower
         elseif bustype == PSY.ACBusTypes.PV
-            Vm_vect[ix] = data.bus_magnitude[ix]
+            Vm_vect[ix] = data.bus_magnitude[ix, time_step]
             θ_vect[ix] = result[2 * ix]
-            P_gen_vect[ix] = data.bus_activepower_injection[ix] * sys_basepower
+            P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
         elseif bustype == PSY.ACBusTypes.PQ
             Vm_vect[ix] = result[2 * ix - 1]
             θ_vect[ix] = result[2 * ix]
-            P_gen_vect[ix] = data.bus_activepower_injection[ix] * sys_basepower
-            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix] * sys_basepower
+            P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
+            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix, time_step] * sys_basepower
         end
     end
 

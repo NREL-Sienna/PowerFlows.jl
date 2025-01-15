@@ -1,4 +1,4 @@
-
+const _NLSOLVE_AC_POWERFLOW_KWARGS = Set([:check_reactive_power_limits, :check_connectivity])
 function _newton_powerflow(
     pf::ACPowerFlow{NLSolveACPowerFlow},
     data::ACPowerFlowData;
@@ -13,11 +13,13 @@ function _newton_powerflow(
         )
     end
 
+    nlsolve_solver_kwargs = filter(p -> !(p.first in _NLSOLVE_AC_POWERFLOW_KWARGS), nlsolve_kwargs)
+
     pf = PolarPowerFlow(data)
     J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
 
     df = NLsolve.OnceDifferentiable(pf, J, pf.x0, pf.residual, J.Jv)
-    res = NLsolve.nlsolve(df, pf.x0; nlsolve_kwargs...)
+    res = NLsolve.nlsolve(df, pf.x0; nlsolve_solver_kwargs...)
     if !res.f_converged
         @error(
             "The powerflow solver NLSolve did not converge (returned convergence = $(res.f_converged))"
