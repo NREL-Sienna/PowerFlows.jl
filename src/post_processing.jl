@@ -699,25 +699,25 @@ if a new `PowerFlowData` is constructed from the resulting system it is the same
 See also `write_powerflow_solution!`. NOTE that this assumes that `data` was initialized
 from `sys` and then solved with no further modifications.
 """
-function update_system!(sys::PSY.System, data::PowerFlowData)
+function update_system!(sys::PSY.System, data::PowerFlowData; time_step=1)
     for bus in PSY.get_components(PSY.Bus, sys)
         if bus.bustype == PSY.ACBusTypes.REF
             # For REF bus, voltage and angle are fixed; update active and reactive
-            P_gen = data.bus_activepower_injection[data.bus_lookup[PSY.get_number(bus)]]
-            Q_gen = data.bus_reactivepower_injection[data.bus_lookup[PSY.get_number(bus)]]
+            P_gen = data.bus_activepower_injection[data.bus_lookup[PSY.get_number(bus)], time_step]
+            Q_gen = data.bus_reactivepower_injection[data.bus_lookup[PSY.get_number(bus)], time_step]
             _power_redistribution_ref(sys, P_gen, Q_gen, bus,
                 DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
         elseif bus.bustype == PSY.ACBusTypes.PV
             # For PV bus, active and voltage are fixed; update reactive and angle
-            Q_gen = data.bus_reactivepower_injection[data.bus_lookup[PSY.get_number(bus)]]
+            Q_gen = data.bus_reactivepower_injection[data.bus_lookup[PSY.get_number(bus)], time_step]
             _reactive_power_redistribution_pv(sys, Q_gen, bus,
                 DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
-            PSY.set_angle!(bus, data.bus_angles[data.bus_lookup[PSY.get_number(bus)]])
+            PSY.set_angle!(bus, data.bus_angles[data.bus_lookup[PSY.get_number(bus)], time_step])
         elseif bus.bustype == PSY.ACBusTypes.PQ
             # For PQ bus, active and reactive are fixed; update voltage and angle
-            Vm = data.bus_magnitude[data.bus_lookup[PSY.get_number(bus)]]
+            Vm = data.bus_magnitude[data.bus_lookup[PSY.get_number(bus)], time_step]
             PSY.set_magnitude!(bus, Vm)
-            PSY.set_angle!(bus, data.bus_angles[data.bus_lookup[PSY.get_number(bus)]])
+            PSY.set_angle!(bus, data.bus_angles[data.bus_lookup[PSY.get_number(bus)], time_step])
         end
     end
 end
