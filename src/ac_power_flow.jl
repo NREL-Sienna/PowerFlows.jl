@@ -56,7 +56,8 @@ function _calculate_x0(n::Int,
 end
 
 function PolarPowerFlow(data::ACPowerFlowData)
-    n_buses = length(data.bus_type)
+    time_step = 1  # TODO placeholder time_step
+    n_buses = first(size(data.bus_type))
     P_net = zeros(n_buses)
     Q_net = zeros(n_buses)
     for ix in 1:n_buses
@@ -66,7 +67,7 @@ function PolarPowerFlow(data::ACPowerFlowData)
             data.bus_reactivepower_injection[ix] - data.bus_reactivepower_withdrawals[ix]
     end
     x0 = _calculate_x0(1,
-        data.bus_type,
+        data.bus_type[:, time_step],
         data.bus_angles,
         data.bus_magnitude,
         data.bus_activepower_injection,
@@ -112,9 +113,10 @@ function polar_pf!(
     Q_net::Vector{Float64},
     data::ACPowerFlowData,
 )
+    time_step = 1  # TODO placeholder time_step
     Yb = data.power_network_matrix.data
-    n_buses = length(data.bus_type)
-    for (ix, b) in enumerate(data.bus_type)
+    n_buses = first(size(data.bus_type))
+    for (ix, b) in enumerate(data.bus_type[:, time_step])
         if b == PSY.ACBusTypes.REF
             # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
             P_net[ix] = X[2 * ix - 1] - data.bus_activepower_withdrawals[ix]

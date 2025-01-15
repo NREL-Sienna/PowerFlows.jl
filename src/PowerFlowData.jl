@@ -115,7 +115,14 @@ get_bus_type(pfd::PowerFlowData) = pfd.bus_type
 get_branch_type(pfd::PowerFlowData) = pfd.branch_type
 get_bus_magnitude(pfd::PowerFlowData) = pfd.bus_magnitude
 get_bus_angles(pfd::PowerFlowData) = pfd.bus_angles
-get_branch_flow_values(pfd::PowerFlowData) = pfd.branch_flow_values
+get_branch_activepower_flow_from_to(pfd::PowerFlowData) =
+    pfd.branch_activepower_flow_from_to
+get_branch_reactivepower_flow_from_to(pfd::PowerFlowData) =
+    pfd.branch_reactivepower_flow_from_to
+get_branch_activepower_flow_to_from(pfd::PowerFlowData) =
+    pfd.branch_activepower_flow_to_from
+get_branch_reactivepower_flow_to_from(pfd::PowerFlowData) =
+    pfd.branch_reactivepower_flow_to_from
 get_timestep_map(pfd::PowerFlowData) = pfd.timestep_map
 get_valid_ix(pfd::PowerFlowData) = pfd.valid_ix
 get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
@@ -211,11 +218,6 @@ function PowerFlowData(
         branch_types[ix] = typeof(b)
     end
 
-    bus_reactivepower_bounds = Vector{Vector{Float64}}(undef, n_buses)
-    for i in 1:n_buses
-        bus_reactivepower_bounds[i] = [0.0, 0.0]
-    end
-    _get_reactive_power_bound!(bus_reactivepower_bounds, bus_lookup, sys)
     timestep_map = Dict(1 => "1")
     valid_ix = setdiff(1:n_buses, ref_bus_positions)
     neighbors = _calculate_neighbors(power_network_matrix)
@@ -232,7 +234,6 @@ function PowerFlowData(
         branch_lookup,
         temp_bus_map,
         branch_types,
-        bus_reactivepower_bounds,
         timestep_map,
         valid_ix,
         neighbors,

@@ -20,7 +20,7 @@
 
     valid_ix = setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
     ref_bus_angles = deepcopy(data.bus_angles)
-    ref_flow_values = deepcopy(data.branch_flow_values)
+    ref_flow_values = deepcopy(data.branch_activepower_flow_from_to)
 
     ref_bus_angles[valid_ix] = matrix_data \ power_injection[valid_ix]
     ref_flow_values = transpose(aux_network_matrix.data) * ref_bus_angles
