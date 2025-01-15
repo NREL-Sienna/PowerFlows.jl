@@ -98,7 +98,11 @@ function solve_powerflow(
     return res.f_converged
 end
 
-function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
+function _check_q_limit_bounds!(
+    data::ACPowerFlowData,
+    zero::Vector{Float64},
+    time_step::Int,
+)
     bus_names = data.power_network_matrix.axes[1]
     within_limits = true
     for (ix, b) in enumerate(data.bus_type)
@@ -108,16 +112,18 @@ function _check_q_limit_bounds!(data::ACPowerFlowData, zero::Vector{Float64})
             continue
         end
 
-        if Q_gen <= data.bus_reactivepower_bounds[ix][1]
+        if Q_gen <= data.bus_reactivepower_bounds[ix, time_step][1]
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
-            data.bus_type[ix] = PSY.ACBusTypes.PQ
-            data.bus_reactivepower_injection[ix] = data.bus_reactivepower_bounds[ix][1]
-        elseif Q_gen >= data.bus_reactivepower_bounds[ix][2]
+            data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
+            data.bus_reactivepower_injection[ix, time_step] =
+                data.bus_reactivepower_bounds[ix, time_step][1]
+        elseif Q_gen >= data.bus_reactivepower_bounds[ix, time_step][2]
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
-            data.bus_type[ix] = PSY.ACBusTypes.PQ
-            data.bus_reactivepower_injection[ix] = data.bus_reactivepower_bounds[ix][2]
+            data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
+            data.bus_reactivepower_injection[ix, time_step] =
+                data.bus_reactivepower_bounds[ix, time_step][2]
         else
             @debug "Within Limits"
         end
@@ -128,13 +134,14 @@ end
 function _solve_powerflow!(
     data::ACPowerFlowData,
     check_reactive_power_limits;
+    time_step = 1,  # TODO placeholder time_step
     nlsolve_kwargs...,
 )
     if check_reactive_power_limits
         for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
             res = _nlsolve_powerflow(data; nlsolve_kwargs...)
             if res.f_converged
-                if _check_q_limit_bounds!(data, res.zero)
+                if _check_q_limit_bounds!(data, res.zero, time_step)
                     return res
                 end
             else
