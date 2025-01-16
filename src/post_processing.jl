@@ -461,7 +461,6 @@ function write_powerflow_solution!(
         system_bustype = PSY.get_bustype(bus)
         data_bustype = data.bus_type[ix]
         (system_bustype == data_bustype) && continue
-        println("sys bustype: $system_bustype, data bustype: $data_bustype")
         @assert system_bustype == PSY.ACBusTypes.PV
         @assert data_bustype == PSY.ACBusTypes.PQ
         @debug "Updating bus $(PSY.get_name(bus)) reactive power and type to PQ due to check_reactive_power_limits"
