@@ -53,6 +53,7 @@ function solve_powerflow!(
     # evaluate bus angles
     p_inj = power_injection[data.valid_ix, :]
     data.bus_angles[data.valid_ix, :] .= data.aux_network_matrix.K \ p_inj
+    data.converged .= true
     return
 end
 
@@ -77,6 +78,7 @@ function solve_powerflow!(
         p_inj = power_injection[data.valid_ix, i]
         data.bus_angles[data.valid_ix, i] .= data.aux_network_matrix.K \ p_inj
     end
+    data.converged .= true
     return
 end
 
@@ -100,6 +102,7 @@ function solve_powerflow!(
         data.power_network_matrix.K \ @view power_injection[data.valid_ix, :]
     data.branch_activepower_flow_from_to .= data.aux_network_matrix.data' * data.bus_angles
     data.branch_activepower_flow_to_from .= -data.branch_activepower_flow_from_to
+    data.converged .= true
     return
 end
 

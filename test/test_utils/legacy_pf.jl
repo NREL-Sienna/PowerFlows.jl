@@ -111,10 +111,12 @@ function _newton_powerflow(
     end
 
     if !converged
+        V .*= NaN64
+        Sbus_result = fill(NaN64 + NaN64 * im, length(V))
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
+        Sbus_result = V .* conj(Ybus * V)
         @info("The powerflow solver with KLU converged after $i iterations")
     end
-    Sbus_result = V .* conj(Ybus * V)
     return (converged, V, Sbus_result)
 end

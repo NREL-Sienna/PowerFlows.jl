@@ -102,6 +102,7 @@ struct PowerFlowData{
     power_network_matrix::M
     aux_network_matrix::N
     neighbors::Vector{Set{Int}}
+    converged::Vector{Bool}
 end
 
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
@@ -129,6 +130,7 @@ get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
 get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
 get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 supports_multi_period(::PowerFlowData) = true
+get_converged(pfd::PowerFlowData) = pfd.converged
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
@@ -220,10 +222,10 @@ function PowerFlowData(
         branch_types[ix] = typeof(b)
     end
 
-    timestep_map = Dict(1 => "1")
     valid_ix = setdiff(1:n_buses, ref_bus_positions)
     neighbors = _calculate_neighbors(power_network_matrix)
     aux_network_matrix = nothing
+    converged = fill(false, time_steps)
 
     return make_powerflowdata(
         sys,
@@ -239,6 +241,7 @@ function PowerFlowData(
         timestep_map,
         valid_ix,
         neighbors,
+        converged,
     )
 end
 
@@ -295,6 +298,7 @@ function PowerFlowData(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
+    converged = fill(false, time_steps)
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -307,6 +311,7 @@ function PowerFlowData(
         branch_lookup,
         temp_bus_map,
         valid_ix,
+        converged,
     )
 end
 
@@ -364,6 +369,7 @@ function PowerFlowData(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
+    converged = fill(false, time_steps)
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -376,6 +382,7 @@ function PowerFlowData(
         branch_lookup,
         temp_bus_map,
         valid_ix,
+        converged,
     )
 end
 
@@ -432,6 +439,7 @@ function PowerFlowData(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
+    converged = fill(false, time_steps)
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -444,6 +452,7 @@ function PowerFlowData(
         branch_lookup,
         temp_bus_map,
         valid_ix,
+        converged,
     )
 end
 
