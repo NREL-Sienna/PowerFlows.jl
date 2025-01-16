@@ -1,4 +1,4 @@
-const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33]  # TODO add :v34
+const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33]
 const PSSE_DEFAULT = ""  # Used below in cases where we want to insert an empty field to signify the PSSE default
 const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.PQ => 1,
@@ -133,14 +133,14 @@ function reset_caches(exporter::PSSEExporter)
     # We do not clear the md_buffer here, but !md_valid implies that its contents are not valid
 end
 
-# TODO solidify the notion of sameness we care about here
 """
 Update the `PSSEExporter` with new `data`.
 
 # Arguments:
   - `exporter::PSSEExporter`: the exporter to update
   - `data::PSY.System`: system containing the new data. Must be fundamentally the same
-  `System` as the one with which the exporter was constructed, just with different values
+  `System` as the one with which the exporter was constructed, just with different values —
+  this is the user's responsibility, we do not exhaustively verify it.
 """
 function update_exporter!(exporter::PSSEExporter, data::PSY.System)
     _validate_same_system(exporter.system, data) || throw(
@@ -307,7 +307,6 @@ function write_to_buffers!(
     exporter.write_comments && (BASFRQ = "$BASFRQ    / $md_string")
 
     # PERF we use manually unrolled loops because the vector/tuple allocation was a performance issue
-    # TODO this could almost certaintly be done more elegantly using a macro 
     fastprintdelim(io, IC)
     fastprintdelim(io, SBASE)
     fastprintdelim(io, REV)
@@ -711,8 +710,7 @@ function write_to_buffers!(
             PSY.get_active_power(generator) * PSY.get_base_power(exporter.system),
             PSY.get_reactive_power(generator) * PSY.get_base_power(exporter.system)
         end
-        # TODO approximate a QT for generators that don't have it set
-        # (this is needed to run power flows also)
+        # TODO maybe have a better default here
         reactive_power_limits = with_units_base(
             () -> get_reactive_power_limits_for_power_flow(generator),
             exporter.system,
@@ -893,7 +891,6 @@ function _psse_transformer_names(
     return mapping
 end
 
-# TODO support three-winding transformers
 """
 Currently only supports two-winding transformers
 
