@@ -47,8 +47,14 @@ function _newton_powerflow(
 
     # Find indices for each bus type
     #ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type)
-    pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type[:, time_step])
-    pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type[:, time_step])
+    pv = findall(
+        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
+        data.bus_type[:, time_step],
+    )
+    pq = findall(
+        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ,
+        data.bus_type[:, time_step],
+    )
     pvpq = [pv; pq]
 
     #nref = length(ref)

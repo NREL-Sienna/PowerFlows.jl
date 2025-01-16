@@ -61,9 +61,11 @@ function PolarPowerFlow(data::ACPowerFlowData; time_step::Int64 = 1)
     Q_net = zeros(n_buses)
     for ix in 1:n_buses
         P_net[ix] =
-            data.bus_activepower_injection[ix, time_step] - data.bus_activepower_withdrawals[ix, time_step]
+            data.bus_activepower_injection[ix, time_step] -
+            data.bus_activepower_withdrawals[ix, time_step]
         Q_net[ix] =
-            data.bus_reactivepower_injection[ix, time_step] - data.bus_reactivepower_withdrawals[ix, time_step]
+            data.bus_reactivepower_injection[ix, time_step] -
+            data.bus_reactivepower_withdrawals[ix, time_step]
     end
     x0 = _calculate_x0(1,
         data.bus_type[:, time_step],

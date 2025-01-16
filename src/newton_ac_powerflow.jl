@@ -33,7 +33,7 @@ solve_ac_powerflow!(sys, method=:newton)
 function solve_powerflow!(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
-    time_step::Int64=1,
+    time_step::Int64 = 1,
     kwargs...,
 )
     #Save per-unit flag
@@ -47,11 +47,16 @@ function solve_powerflow!(
         check_connectivity = get(kwargs, :check_connectivity, true),
     )
 
-    converged, V, Sbus_result = _ac_powereflow(data, pf; time_step=time_step, kwargs...)
+    converged, V, Sbus_result = _ac_powereflow(data, pf; time_step = time_step, kwargs...)
     x = _calc_x(data, V, Sbus_result)
 
     if converged
-        write_powerflow_solution!(system, x, data, get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER))
+        write_powerflow_solution!(
+            system,
+            x,
+            data,
+            get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER),
+        )
         @info("PowerFlow solve converged, the results have been stored in the system")
     else
         @error("The powerflow solver returned convergence = $(converged)")
@@ -163,15 +168,13 @@ function solve_powerflow(
     return results
 end
 
-
-
 # Multiperiod power flow - work in progress
 function solve_powerflow!(
     data::ACPowerFlowData;
     kwargs...,
 )
     pf = ACPowerFlow()  # todo: somehow store in data which PF to use (see issue #50)
-    
+
     sorted_time_steps = sort(collect(keys(data.timestep_map)))
     # preallocate results
     ts_converged = zeros(Bool, 1, length(sorted_time_steps))
@@ -191,38 +194,48 @@ function solve_powerflow!(
         ts_V[:, t] .= V
         ts_S[:, t] .= Sbus_result
 
-        ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type[:, t])
-        pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type[:, t])
-        pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type[:, t])
+        ref = findall(
+            x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
+            data.bus_type[:, t],
+        )
+        pv = findall(
+            x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
+            data.bus_type[:, t],
+        )
+        pq = findall(
+            x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ,
+            data.bus_type[:, t],
+        )
 
         # temporary implementation that will need to be improved:
         if converged
             # write results for REF
-            data.bus_activepower_injection[ref, t] .= real.(Sbus_result[ref]) .+ data.bus_activepower_withdrawals[ref, t]
-            data.bus_reactivepower_injection[ref, t] .= imag.(Sbus_result[ref]) .+ data.bus_reactivepower_withdrawals[ref, t]
+            data.bus_activepower_injection[ref, t] .=
+                real.(Sbus_result[ref]) .+ data.bus_activepower_withdrawals[ref, t]
+            data.bus_reactivepower_injection[ref, t] .=
+                imag.(Sbus_result[ref]) .+ data.bus_reactivepower_withdrawals[ref, t]
             # write Q results for PV
-            data.bus_reactivepower_injection[pv, t] .= imag.(Sbus_result[pv]) .+ data.bus_reactivepower_withdrawals[pv, t]
+            data.bus_reactivepower_injection[pv, t] .=
+                imag.(Sbus_result[pv]) .+ data.bus_reactivepower_withdrawals[pv, t]
             # results for PQ buses do not need to be updated -> already consistent with inputs
 
             # write bus bus_types
             # todo
-            
+
             # write voltage results
             data.bus_magnitude[pq, t] .= abs.(V[pq])
             data.bus_angles[pq, t] .= angle.(V[pq])
             data.bus_angles[pv, t] .= angle.(V[pv])
 
-
-
         else
             # todo
-            1+2
+            1 + 2
         end
     end
 
     # write branch flows
-    Sft = ts_V[fb,:] .* conj.(Yft * ts_V)
-    Stf = ts_V[tb,:] .* conj.(Ytf * ts_V)
+    Sft = ts_V[fb, :] .* conj.(Yft * ts_V)
+    Stf = ts_V[tb, :] .* conj.(Ytf * ts_V)
 
     data.branch_activepower_flow_from_to .= real.(Sft)
     data.branch_reactivepower_flow_from_to .= imag.(Sft)
@@ -234,7 +247,6 @@ function solve_powerflow!(
 
     return
 end
-
 
 function _ac_powereflow(
     data::ACPowerFlowData,
@@ -275,12 +287,14 @@ function _check_q_limit_bounds!(
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
-            data.bus_reactivepower_injection[ix, time_step] = data.bus_reactivepower_bounds[ix, time_step][1]
+            data.bus_reactivepower_injection[ix, time_step] =
+                data.bus_reactivepower_bounds[ix, time_step][1]
         elseif Q_gen >= data.bus_reactivepower_bounds[ix, time_step][2]
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
-            data.bus_reactivepower_injection[ix, time_step] = data.bus_reactivepower_bounds[ix, time_step][2]
+            data.bus_reactivepower_injection[ix, time_step] =
+                data.bus_reactivepower_bounds[ix, time_step][2]
         else
             @debug "Within Limits"
         end
@@ -296,7 +310,8 @@ function _solve_powerflow!(
     kwargs...,
 )
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
-        converged, V, Sbus_result = _newton_powerflow(pf, data; time_step=time_step, kwargs...)
+        converged, V, Sbus_result =
+            _newton_powerflow(pf, data; time_step = time_step, kwargs...)
         if !converged || !check_reactive_power_limits ||
            _check_q_limit_bounds!(data, Sbus_result, time_step)
             return converged, V, Sbus_result
@@ -525,9 +540,18 @@ function _newton_powerflow(
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type[:, time_step])
-    pv = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV, data.bus_type[:, time_step])
-    pq = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ, data.bus_type[:, time_step])
+    ref = findall(
+        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
+        data.bus_type[:, time_step],
+    )
+    pv = findall(
+        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
+        data.bus_type[:, time_step],
+    )
+    pq = findall(
+        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ,
+        data.bus_type[:, time_step],
+    )
     pvpq = [pv; pq]
 
     # nref = length(ref)

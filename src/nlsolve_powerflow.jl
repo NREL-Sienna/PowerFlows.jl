@@ -1,4 +1,5 @@
-const _NLSOLVE_AC_POWERFLOW_KWARGS = Set([:check_reactive_power_limits, :check_connectivity])
+const _NLSOLVE_AC_POWERFLOW_KWARGS =
+    Set([:check_reactive_power_limits, :check_connectivity])
 function _newton_powerflow(
     pf::ACPowerFlow{NLSolveACPowerFlow},
     data::ACPowerFlowData;
@@ -13,7 +14,8 @@ function _newton_powerflow(
         )
     end
 
-    nlsolve_solver_kwargs = filter(p -> !(p.first in _NLSOLVE_AC_POWERFLOW_KWARGS), nlsolve_kwargs)
+    nlsolve_solver_kwargs =
+        filter(p -> !(p.first in _NLSOLVE_AC_POWERFLOW_KWARGS), nlsolve_kwargs)
 
     pf = PolarPowerFlow(data)
     J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
