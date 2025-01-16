@@ -158,18 +158,6 @@ function _get_fixed_admittance_power(
     return active_power, reactive_power
 end
 
-function _get_limits_for_power_distribution(gen::PSY.StaticInjection)
-    return PSY.get_active_power_limits(gen)
-end
-
-function _get_limits_for_power_distribution(gen::PSY.RenewableDispatch)
-    return (min = 0.0, max = PSY.get_max_active_power(gen))
-end
-
-function _get_limits_for_power_distribution(gen::PSY.Storage)
-    return (min = 0.0, max = PSY.get_output_active_power_limits(gen).max)
-end
-
 function _power_redistribution_ref(
     sys::PSY.System,
     P_gen::Float64,
@@ -204,16 +192,16 @@ function _power_redistribution_ref(
         return
     elseif length(devices_) > 1
         devices =
-            sort(collect(devices_); by = x -> _get_limits_for_power_distribution(x).max)
+            sort(collect(devices_); by = x -> get_active_power_limits_for_power_flow(x).max)
     else
         error("No devices in bus $(PSY.get_name(bus))")
     end
 
-    sum_basepower = sum([g.max for g in _get_limits_for_power_distribution.(devices)])
+    sum_basepower = sum([g.max for g in get_active_power_limits_for_power_flow.(devices)])
     p_residual = P_gen
     units_at_limit = Vector{Int}()
     for (ix, d) in enumerate(devices)
-        p_limits = _get_limits_for_power_distribution(d)
+        p_limits = get_active_power_limits_for_power_flow(d)
         part_factor = p_limits.max / sum_basepower
         p_frac = P_gen * part_factor
         p_set_point = clamp(p_frac, p_limits.min, p_limits.max)
@@ -229,7 +217,7 @@ function _power_redistribution_ref(
     if !isapprox(p_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
         @debug "Ref Bus voltage residual $p_residual"
         removed_power = sum([
-            g.max for g in _get_limits_for_power_distribution.(devices[units_at_limit])
+            g.max for g in get_active_power_limits_for_power_flow.(devices[units_at_limit])
         ])
         reallocated_p = 0.0
         it = 0
@@ -240,7 +228,7 @@ function _power_redistribution_ref(
             end
             for (ix, d) in enumerate(devices)
                 ix ∈ units_at_limit && continue
-                p_limits = PSY.get_active_power_limits(d)
+                p_limits = get_active_power_limits_for_power_flow(d)
                 part_factor = p_limits.max / (sum_basepower - removed_power)
                 p_frac = p_residual * part_factor
                 current_p = PSY.get_active_power(d)
@@ -270,7 +258,7 @@ function _power_redistribution_ref(
             @debug "Remaining residual $q_residual, $(PSY.get_name(bus))"
             p_set_point = PSY.get_active_power(device) + p_residual
             PSY.set_active_power!(device, p_set_point)
-            p_limits = PSY.get_reactive_power_limits(device)
+            p_limits = get_reactive_power_limits_for_power_flow(device)  # TODO should this be active_power_limits? It was reactive in the existing codebase
             if (p_set_point >= p_limits.max + BOUNDS_TOLERANCE) ||
                (p_set_point <= p_limits.min - BOUNDS_TOLERANCE)
                 @error "Unit $(PSY.get_name(device)) P=$(p_set_point) above limits. P_max = $(p_limits.max) P_min = $(p_limits.min)"
@@ -332,7 +320,7 @@ function _reactive_power_redistribution_pv(
     units_at_limit = Vector{Int}()
 
     for (ix, d) in enumerate(devices)
-        q_limits = PSY.get_reactive_power_limits(d)
+        q_limits = get_reactive_power_limits_for_power_flow(d)
         if isapprox(q_limits.max, 0.0; atol = BOUNDS_TOLERANCE) &&
            isapprox(q_limits.min, 0.0; atol = BOUNDS_TOLERANCE)
             push!(units_at_limit, ix)
@@ -377,7 +365,7 @@ function _reactive_power_redistribution_pv(
             reallocated_q = 0.0
             for (ix, d) in enumerate(devices)
                 ix ∈ units_at_limit && continue
-                q_limits = PSY.get_reactive_power_limits(d)
+                q_limits = get_reactive_power_limits_for_power_flow(d)
 
                 if removed_power < total_active_power
                     fraction =
@@ -426,7 +414,7 @@ function _reactive_power_redistribution_pv(
         @debug "Remaining residual $q_residual, $(PSY.get_name(bus))"
         q_set_point = PSY.get_reactive_power(device) + q_residual
         PSY.set_reactive_power!(device, q_set_point)
-        q_limits = PSY.get_reactive_power_limits(device)
+        q_limits = get_reactive_power_limits_for_power_flow(device)
         if (q_set_point >= q_limits.max + BOUNDS_TOLERANCE) ||
            (q_set_point <= q_limits.min - BOUNDS_TOLERANCE)
             @error "Unit $(PSY.get_name(device)) Q=$(q_set_point) above limits. Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
