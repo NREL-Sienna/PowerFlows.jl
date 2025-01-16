@@ -714,7 +714,7 @@ function write_to_buffers!(
         # TODO approximate a QT for generators that don't have it set
         # (this is needed to run power flows also)
         reactive_power_limits = with_units_base(
-            () -> PSY.get_reactive_power_limits(generator),
+            () -> get_reactive_power_limits_for_power_flow(generator),
             exporter.system,
             PSY.UnitSystem.NATURAL_UNITS,
         )
@@ -733,12 +733,14 @@ function write_to_buffers!(
         # TODO maybe have a better default here
         active_power_limits =
             with_units_base(
-                () -> PSY.get_active_power_limits(generator),
+                () -> get_active_power_limits_for_power_flow(generator),
                 exporter.system,
                 PSY.UnitSystem.NATURAL_UNITS,
             )
         PT = active_power_limits.max
+        isfinite(PT) || (PT = PSSE_DEFAULT)
         PB = active_power_limits.min
+        isfinite(PB) || (PB = PSSE_DEFAULT)
         WMOD = get(PSY.get_ext(generator), "WMOD", PSSE_DEFAULT)
         WPF = get(PSY.get_ext(generator), "WPF", PSSE_DEFAULT)
 

@@ -8,12 +8,6 @@ powerflow_match_fn(
     isapprox(a, b; atol = POWERFLOW_COMPARISON_TOLERANCE) || IS.isequivalent(a, b)
 powerflow_match_fn(a, b) = IS.isequivalent(a, b)
 
-# TODO temporary hacks, see https://github.com/NREL-Sienna/PowerFlows.jl/issues/39
-PowerSystems.get_reactive_power_limits(::RenewableNonDispatch) = (min = 0.0, max = 0.0)
-PowerSystems.get_active_power_limits(
-    ::Union{RenewableDispatch, RenewableNonDispatch, Source},
-) = (min = 0.0, max = 0.0)
-
 # TODO another temporary hack
 "Create a version of the RTS_GMLC system that plays nice with the current implementation of AC power flow"
 function create_pf_friendly_rts_gmlc()
