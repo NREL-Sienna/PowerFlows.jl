@@ -243,6 +243,20 @@ function _permissive_parse_int(x)
     return Int64(n)
 end
 
+"""
+If `val` is empty, returns `T()`; if not, asserts that `val isa T` and returns `val`. Has nice type checker semantics.
+
+# Examples
+```julia
+convert_empty(Vector{String}, [])  # -> String[]
+convert_empty(Vector{String}, ["a"])  # -> ["a"]
+convert_empty(Vector{String}, [2])  # -> TypeError: in typeassert, expected Vector{String}, got a value of type Vector{Int64}
+Base.return_types(Base.Fix1(convert_empty, Vector{String}))  # -> [Vector{String}]
+```
+"""
+convert_empty(::Type{T}, val) where {T} = isempty(val) ? T() : val::T
+convert_empty_stringvec = Base.Fix1(convert_empty, Vector{String})
+
 # PERF could be improved by appending to the buffer rather than doing string interpolation, seems unnecessary
 _psse_quote_string(s::String) = "'$s'"
 
@@ -426,7 +440,11 @@ function write_to_buffers!(
     if !exporter.md_valid
         md["bus_number_mapping"] = _psse_bus_numbers(old_bus_numbers)
         md["bus_name_mapping"] =
-            _psse_bus_names(PSY.get_name.(buses), old_bus_numbers, md["bus_number_mapping"])
+            _psse_bus_names(
+                convert_empty_stringvec(PSY.get_name.(buses)),
+                old_bus_numbers,
+                md["bus_number_mapping"],
+            )
     end
     bus_number_mapping = md["bus_number_mapping"]
     bus_name_mapping = md["bus_name_mapping"]
@@ -582,7 +600,7 @@ function write_to_buffers!(
     end
     load_name_mapping = get!(exporter.components_cache, "load_name_mapping") do
         create_component_ids(
-            PSY.get_name.(loads),
+            convert_empty_stringvec(PSY.get_name.(loads)),
             PSY.get_number.(PSY.get_bus.(loads));
             singles_to_1 = true,
         )
@@ -638,7 +656,7 @@ function write_to_buffers!(
     end
     shunt_name_mapping = get!(exporter.components_cache, "shunt_name_mapping") do
         create_component_ids(
-            PSY.get_name.(shunts),
+            convert_empty_stringvec(PSY.get_name.(shunts)),
             PSY.get_number.(PSY.get_bus.(shunts));
             singles_to_1 = true,
         )
@@ -693,7 +711,7 @@ function write_to_buffers!(
     end
     generator_name_mapping = get!(exporter.components_cache, "generator_name_mapping") do
         create_component_ids(
-            PSY.get_name.(generators),
+            convert_empty_stringvec(PSY.get_name.(generators)),
             PSY.get_number.(PSY.get_bus.(generators));
             singles_to_1 = false,
         )
@@ -790,7 +808,7 @@ function write_to_buffers!(
     end
     branch_name_mapping = get!(exporter.components_cache, "branch_name_mapping") do
         create_component_ids(
-            PSY.get_name.(first.(branches_with_numbers)),
+            convert_empty_stringvec(PSY.get_name.(first.(branches_with_numbers))),
             last.(branches_with_numbers);
             singles_to_1 = false,
         )
@@ -914,14 +932,14 @@ function write_to_buffers!(
     end
     transformer_ckt_mapping = get!(exporter.components_cache, "transformer_ckt_mapping") do
         create_component_ids(
-            PSY.get_name.(first.(transformers_with_numbers)),
+            convert_empty_stringvec(PSY.get_name.(first.(transformers_with_numbers))),
             last.(transformers_with_numbers);
             singles_to_1 = false,
         )
     end
     if !exporter.md_valid
         md["transformer_name_mapping"] = _psse_transformer_names(
-            PSY.get_name.(first.(transformers_with_numbers)),
+            convert_empty_stringvec(PSY.get_name.(first.(transformers_with_numbers))),
             last.(transformers_with_numbers),
             md["bus_number_mapping"],
             transformer_ckt_mapping,
@@ -1123,11 +1141,19 @@ function write_export(
         # These mappings are accessed in e.g. _write_bus_data via the metadata
         md["area_mapping"] = _map_psse_container_names(
             sort!(
-                collect(PSY.get_name.(PSY.get_components(PSY.Area, exporter.system)))),
+                collect(
+                    convert_empty_stringvec(
+                        PSY.get_name.(PSY.get_components(PSY.Area, exporter.system)),
+                    ),
+                )),
         )
         md["zone_number_mapping"] = _map_psse_container_names(
             sort!(
-                collect(PSY.get_name.(PSY.get_components(PSY.LoadZone, exporter.system)))),
+                collect(
+                    convert_empty_stringvec(
+                        PSY.get_name.(PSY.get_components(PSY.LoadZone, exporter.system)),
+                    ),
+                )),
         )
         md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
     end
