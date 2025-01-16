@@ -14,6 +14,38 @@ function get_total_q(l::PSY.StandardLoad)
            PSY.get_impedance_reactive_power(l)
 end
 
+"""
+Return the reactive power limits that should be used in power flow calculations and PSS/E
+exports. Redirects to `PSY.get_reactive_power_limits` in all but special cases.
+"""
+get_reactive_power_limits_for_power_flow(gen::PSY.Device) =
+    PSY.get_reactive_power_limits(gen)
+
+function get_reactive_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
+    val = PSY.get_reactive_power(gen)
+    return (min = val, max = val)
+end
+
+"""
+Return the active power limits that should be used in power flow calculations and PSS/E
+exports. Redirects to `PSY.get_active_power_limits` in all but special cases.
+"""
+get_active_power_limits_for_power_flow(gen::PSY.Device) = PSY.get_active_power_limits(gen)
+
+get_active_power_limits_for_power_flow(::PSY.Source) = (min = -Inf, max = Inf)
+
+function get_active_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
+    val = PSY.get_active_power(gen)
+    return (min = val, max = val)
+end
+
+get_active_power_limits_for_power_flow(gen::PSY.RenewableDispatch) =
+    (min = 0.0, max = PSY.get_rating(gen))
+
+# TODO verify whether this is the correct behavior for Storage, (a) for redistribution and (b) for exporting
+get_active_power_limits_for_power_flow(gen::PSY.Storage) =
+    (min = 0.0, max = PSY.get_output_active_power_limits(gen).max)
+
 function _get_injections!(
     bus_activepower_injection::Vector{Float64},
     bus_reactivepower_injection::Vector{Float64},
@@ -58,7 +90,7 @@ function _get_reactive_power_bound!(
         !PSY.get_available(source) && continue
         bus = PSY.get_bus(source)
         bus_ix = bus_lookup[PSY.get_number(bus)]
-        reactive_power_limits = PSY.get_reactive_power_limits(source)
+        reactive_power_limits = get_reactive_power_limits_for_power_flow(source)
         if reactive_power_limits !== nothing
             bus_reactivepower_bounds[bus_ix][1] += min(0, reactive_power_limits.min)
             bus_reactivepower_bounds[bus_ix][2] += max(0, reactive_power_limits.max)
