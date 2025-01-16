@@ -1,7 +1,19 @@
 abstract type PowerFlowEvaluationModel end
+abstract type ACPowerFlowSolverType end
 
-Base.@kwdef struct ACPowerFlow <: PowerFlowEvaluationModel
+struct KLUACPowerFlow <: ACPowerFlowSolverType end
+struct NLSolveACPowerFlow <: ACPowerFlowSolverType end
+
+Base.@kwdef struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <:
+                   PowerFlowEvaluationModel
     check_reactive_power_limits::Bool = false
+end
+
+# Create a constructor for ACPowerFlow that defaults to KLUACPowerFlow
+function ACPowerFlow(ACSolver::Type{<:ACPowerFlowSolverType} = KLUACPowerFlow;
+    check_reactive_power_limits::Bool = false,
+)
+    return ACPowerFlow{ACSolver}(check_reactive_power_limits)
 end
 
 struct DCPowerFlow <: PowerFlowEvaluationModel end

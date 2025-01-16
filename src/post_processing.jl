@@ -605,10 +605,11 @@ dictionary will therefore feature just one key linked to one DataFrame.
         vector containing the reults for one single time-period.
 """
 function write_results(
-    ::ACPowerFlow,
+    ::ACPowerFlow{<:ACPowerFlowSolverType},
     sys::PSY.System,
     data::ACPowerFlowData,
-    result::Vector{Float64},
+    result::Union{Vector{Float64}, Matrix{Float64}};
+    time_step::Int64 = 1,
 )
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
     buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x))
@@ -622,27 +623,27 @@ function write_results(
     P_load_vect = fill(0.0, N_BUS)
     Q_load_vect = fill(0.0, N_BUS)
 
-    for (ix, bustype) in enumerate(data.bus_type)
-        P_load_vect[ix] = data.bus_activepower_withdrawals[ix] * sys_basepower
-        Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix] * sys_basepower
+    for (ix, bustype) in enumerate(data.bus_type[:, time_step])
+        P_load_vect[ix] = data.bus_activepower_withdrawals[ix, time_step] * sys_basepower
+        Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix, time_step] * sys_basepower
         P_admittance, Q_admittance = _get_fixed_admittance_power(sys, buses[ix], result, ix)
         P_load_vect[ix] += P_admittance * sys_basepower
         Q_load_vect[ix] += Q_admittance * sys_basepower
         if bustype == PSY.ACBusTypes.REF
-            Vm_vect[ix] = data.bus_magnitude[ix]
-            θ_vect[ix] = data.bus_angles[ix]
+            Vm_vect[ix] = data.bus_magnitude[ix, time_step]
+            θ_vect[ix] = data.bus_angles[ix, time_step]
             P_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix] * sys_basepower
         elseif bustype == PSY.ACBusTypes.PV
-            Vm_vect[ix] = data.bus_magnitude[ix]
+            Vm_vect[ix] = data.bus_magnitude[ix, time_step]
             θ_vect[ix] = result[2 * ix]
-            P_gen_vect[ix] = data.bus_activepower_injection[ix] * sys_basepower
+            P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
         elseif bustype == PSY.ACBusTypes.PQ
             Vm_vect[ix] = result[2 * ix - 1]
             θ_vect[ix] = result[2 * ix]
-            P_gen_vect[ix] = data.bus_activepower_injection[ix] * sys_basepower
-            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix] * sys_basepower
+            P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
+            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix, time_step] * sys_basepower
         end
     end
 
@@ -696,25 +697,63 @@ if a new `PowerFlowData` is constructed from the resulting system it is the same
 See also `write_powerflow_solution!`. NOTE that this assumes that `data` was initialized
 from `sys` and then solved with no further modifications.
 """
-function update_system!(sys::PSY.System, data::PowerFlowData)
+function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
     for bus in PSY.get_components(PSY.Bus, sys)
-        if bus.bustype == PSY.ACBusTypes.REF
+        bus_number = data.bus_lookup[PSY.get_number(bus)]
+        bus_type = data.bus_type[bus_number, time_step]  # use this instead of bus.bustype to account for PV -> PQ
+        if bus_type == PSY.ACBusTypes.REF
             # For REF bus, voltage and angle are fixed; update active and reactive
-            P_gen = data.bus_activepower_injection[data.bus_lookup[PSY.get_number(bus)]]
-            Q_gen = data.bus_reactivepower_injection[data.bus_lookup[PSY.get_number(bus)]]
+            P_gen = data.bus_activepower_injection[bus_number, time_step]
+            Q_gen = data.bus_reactivepower_injection[bus_number, time_step]
             _power_redistribution_ref(sys, P_gen, Q_gen, bus,
                 DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
-        elseif bus.bustype == PSY.ACBusTypes.PV
+        elseif bus_type == PSY.ACBusTypes.PV
             # For PV bus, active and voltage are fixed; update reactive and angle
-            Q_gen = data.bus_reactivepower_injection[data.bus_lookup[PSY.get_number(bus)]]
+            Q_gen = data.bus_reactivepower_injection[bus_number, time_step]
             _reactive_power_redistribution_pv(sys, Q_gen, bus,
                 DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
-            PSY.set_angle!(bus, data.bus_angles[data.bus_lookup[PSY.get_number(bus)]])
-        elseif bus.bustype == PSY.ACBusTypes.PQ
+            PSY.set_angle!(bus, data.bus_angles[bus_number, time_step])
+        elseif bus_type == PSY.ACBusTypes.PQ
             # For PQ bus, active and reactive are fixed; update voltage and angle
-            Vm = data.bus_magnitude[data.bus_lookup[PSY.get_number(bus)]]
+            Vm = data.bus_magnitude[bus_number, time_step]
             PSY.set_magnitude!(bus, Vm)
-            PSY.set_angle!(bus, data.bus_angles[data.bus_lookup[PSY.get_number(bus)]])
+            PSY.set_angle!(bus, data.bus_angles[bus_number, time_step])
+            # if it used to be a PV bus, also set the Q value:
+            if bus.bustype == PSY.ACBusTypes.PV
+                Q_gen = data.bus_reactivepower_injection[bus_number, time_step]
+                _reactive_power_redistribution_pv(sys, Q_gen, bus,
+                    DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
+                # now both the Q and the Vm, Va are correct for this kind of buses
+            end
+        end
+    end
+end
+
+# This cannot work because we do not know the redistribution keys from the power values of devices 
+# to the power values of buses. Leaving this here anyways to document this issue.
+function set_system_time_step(sys::PSY.System, data::PowerFlowData; time_step = 1)
+    @error("This function cannot work")
+    for bus in PSY.get_components(PSY.Bus, sys)
+        bus_number = data.bus_lookup[PSY.get_number(bus)]
+        bus_type = data.bus_type[bus_number, time_step]
+        sys_bus_type = sys.bustype # here we should be using the system bus type to know which inputs to modify
+
+        # for REF bus, we don't need to set anything
+        if sys_bus_type == PSY.ACBusTypes.PV
+            # we need to modify the P value
+            # TODO if we also modify time-series data for voltage set-points, also set that value. 
+            #  However, we cannot do this easily because it can happen that the PV -> PQ transformation 
+            #  caused a different Vm value as the result, while the set-point Vm is still the same. 
+            #  We need a solution for this.
+            P_gen = data.bus_activepower_injection[bus_number, time_step]
+            Q_gen = 0.0
+            # TODO write time-series value of the bus back to devices (not possible)
+        elseif sys_bus_type == PSY.ACBusTypes.PQ
+            P_gen = data.bus_activepower_injection[bus_number, time_step]
+            Q_gen = data.bus_reactivepower_injection[bus_number, time_step]
+            P_load = data.bus_activepower_withdrawals[bus_number, time_step]
+            Q_load = data.bus_reactivepower_withdrawals[bus_number, time_step]
+            # TODO write time-series value of the bus back to devices (not possible)
         end
     end
 end

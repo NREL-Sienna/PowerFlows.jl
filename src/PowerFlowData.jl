@@ -180,7 +180,7 @@ NOTE: use it for AC power flow computations.
 WARNING: functions for the evaluation of the multi-period AC PF still to be implemented.
 """
 function PowerFlowData(
-    ::ACPowerFlow,
+    ::ACPowerFlow{<:ACPowerFlowSolverType},
     sys::PSY.System;
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
@@ -195,6 +195,8 @@ function PowerFlowData(
             error("timestep_names field must have same length as time_steps")
         end
     end
+
+    timestep_map = Dict(zip([i for i in 1:time_steps], timestep_names))
 
     # get data for calculations
     power_network_matrix = PNM.Ybus(sys; check_connectivity = check_connectivity)
@@ -457,7 +459,11 @@ Create an appropriate `PowerFlowContainer` for the given `PowerFlowEvaluationMod
 """
 function make_power_flow_container end
 
-make_power_flow_container(pfem::ACPowerFlow, sys::PSY.System; kwargs...) =
+make_power_flow_container(
+    pfem::ACPowerFlow{<:ACPowerFlowSolverType},
+    sys::PSY.System;
+    kwargs...,
+) =
     PowerFlowData(pfem, sys; kwargs...)
 
 make_power_flow_container(pfem::DCPowerFlow, sys::PSY.System; kwargs...) =

@@ -1,10 +1,13 @@
 module PowerFlows
 
 export solve_powerflow
-export solve_ac_powerflow!
+export solve_powerflow!
 export PowerFlowData
 export DCPowerFlow
+export NLSolveACPowerFlow
+export KLUACPowerFlow
 export ACPowerFlow
+export ACPowerFlowSolverType
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
 export PSSEExportPowerFlow
@@ -20,10 +23,11 @@ import PowerSystems
 import PowerSystems: System, with_units_base
 import LinearAlgebra
 import NLsolve
+import KLU
 import SparseArrays
 import InfrastructureSystems
 import PowerNetworkMatrices
-import SparseArrays: SparseMatrixCSC
+import SparseArrays: SparseMatrixCSC, sparse
 import JSON3
 import DataStructures: OrderedDict
 import Dates
@@ -40,6 +44,7 @@ include("psse_export.jl")
 include("solve_dc_powerflow.jl")
 include("ac_power_flow.jl")
 include("ac_power_flow_jacobian.jl")
-include("nlsolve_ac_powerflow.jl")
+include("newton_ac_powerflow.jl")
+include("nlsolve_powerflow.jl")
 include("post_processing.jl")
 end

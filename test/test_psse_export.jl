@@ -222,9 +222,14 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
     return result
 end
 
-function test_power_flow(sys1::System, sys2::System; exclude_reactive_flow = false)
-    result1 = solve_powerflow(ACPowerFlow(), sys1)
-    result2 = solve_powerflow(ACPowerFlow(), sys2)
+function test_power_flow(
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
+    sys1::System,
+    sys2::System;
+    exclude_reactive_flow = false,
+)
+    result1 = solve_powerflow(pf, sys1)
+    result2 = solve_powerflow(pf, sys2)
     reactive_power_tol =
         exclude_reactive_flow ? nothing : POWERFLOW_COMPARISON_TOLERANCE
     @test compare_df_within_tolerance("bus_results", result1["bus_results"],
@@ -246,6 +251,7 @@ read_system_and_metadata(export_subdir) = read_system_and_metadata(
     get_psse_export_paths(export_subdir)...)
 
 function test_psse_round_trip(
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
     sys::System,
     exporter::PSSEExporter,
     scenario_name::AbstractString,
@@ -265,7 +271,7 @@ function test_psse_round_trip(
     sys2, sys2_metadata = read_system_and_metadata(raw_path, metadata_path)
     @test compare_systems_loosely(sys, sys2)
     do_power_flow_test &&
-        test_power_flow(sys, sys2; exclude_reactive_flow = exclude_reactive_flow)
+        test_power_flow(pf, sys, sys2; exclude_reactive_flow = exclude_reactive_flow)
 end
 
 "Test that the two raw files are exactly identical and the two metadata files parse to identical JSON"
@@ -318,17 +324,21 @@ end
     @test compare_systems_loosely(sys, deepcopy(sys))
 end
 
-@testset "PSSE Exporter with system_240[32].json, v33" begin
+@testset "PSSE Exporter with system_240[32].json, v33" for (ACSolver, folder_name) in (
+    (NLSolveACPowerFlow, "system_240_NLSolve"),
+    (KLUACPowerFlow, "system_240_KLU"),
+)
     sys = load_test_system()
+    pf = ACPowerFlow{ACSolver}()
     isnothing(sys) && return
 
     # PSS/E version must be one of the supported ones
     @test_throws ArgumentError PSSEExporter(sys, :vNonexistent, test_psse_export_dir)
 
     # Reimported export should be comparable to original system
-    export_location = joinpath(test_psse_export_dir, "v33", "system_240")
+    export_location = joinpath(test_psse_export_dir, "v33", folder_name)
     exporter = PSSEExporter(sys, :v33, export_location)
-    test_psse_round_trip(sys, exporter, "basic", export_location;
+    test_psse_round_trip(pf, sys, exporter, "basic", export_location;
         exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting the exact same thing again should result in the exact same files
@@ -360,20 +370,24 @@ end
     @test_logs((:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_loosely(sys, reread_sys2))
-    test_power_flow(sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
+    test_power_flow(pf, sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 end
 
-@testset "PSSE Exporter with RTS_GMLC_DA_sys, v33" begin
+@testset "PSSE Exporter with RTS_GMLC_DA_sys, v33" for (ACSolver, folder_name) in (
+    (NLSolveACPowerFlow, "rts_gmlc_NLSolve"),
+    (KLUACPowerFlow, "rts_gmlc_KLU"),
+)
     sys = create_pf_friendly_rts_gmlc()
+    pf = ACPowerFlow{ACSolver}()
     set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
 
     # PSS/E version must be one of the supported ones
     @test_throws ArgumentError PSSEExporter(sys, :vNonexistent, test_psse_export_dir)
 
     # Reimported export should be comparable to original system
-    export_location = joinpath(test_psse_export_dir, "v33", "rts_gmlc")
+    export_location = joinpath(test_psse_export_dir, "v33", folder_name)
     exporter = PSSEExporter(sys, :v33, export_location)
-    test_psse_round_trip(sys, exporter, "basic", export_location;
+    test_psse_round_trip(pf, sys, exporter, "basic", export_location;
         exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting the exact same thing again should result in the exact same files
@@ -404,11 +418,11 @@ end
     @test_logs((:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_loosely(sys, reread_sys2))
-    test_power_flow(sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
+    test_power_flow(pf, sys2, reread_sys2; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Updating with changed value should result in a different reimport (PowerFlowData version)
     exporter = PSSEExporter(sys, :v33, export_location)
-    pf2 = PowerFlowData(ACPowerFlow(), sys)
+    pf2 = PowerFlowData(pf, sys)
     # This modifies the PowerFlowData in the same way that modify_rts_system! modifies the
     # system, so the reimport should be comparable to sys2 from above
     modify_rts_powerflow!(pf2)
@@ -421,11 +435,11 @@ end
     @test_logs((:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_loosely(sys, reread_sys3))
-    test_power_flow(sys2, reread_sys3; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
+    test_power_flow(pf, sys2, reread_sys3; exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 
     # Exporting with write_comments should be comparable to original system
     exporter = PSSEExporter(sys, :v33, export_location; write_comments = true)
-    test_psse_round_trip(sys, exporter, "basic6", export_location;
+    test_psse_round_trip(pf, sys, exporter, "basic6", export_location;
         exclude_reactive_flow = true)  # TODO why is reactive flow not matching?
 end
 

@@ -191,7 +191,7 @@ function make_powerflowdata(
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
-    bus_magnitude = zeros(Float64, n_buses)
+    bus_magnitude = ones(Float64, n_buses)
 
     _initialize_bus_data!(
         bus_type,
@@ -222,8 +222,9 @@ function make_powerflowdata(
     )
 
     # Shapes to reuse
-    zeros_bus_time = () -> zeros(n_buses, time_steps)
-    zeros_branch_time = () -> zeros(n_branches, time_steps)
+    zeros_bus_time = () -> zeros(Float64, n_buses, time_steps)
+    ones_bus_time = () -> ones(Float64, n_buses, time_steps)
+    zeros_branch_time = () -> zeros(Float64, n_branches, time_steps)
 
     # Define fields as matrices whose number of columns is equal to the number of time_steps
     bus_activepower_injection_1 = zeros_bus_time()
@@ -231,7 +232,7 @@ function make_powerflowdata(
     bus_activepower_withdrawals_1 = zeros_bus_time()
     bus_reactivepower_withdrawals_1 = zeros_bus_time()
     bus_reactivepower_bounds_1 = Matrix{Vector{Float64}}(undef, n_buses, time_steps)
-    bus_magnitude_1 = zeros_bus_time()
+    bus_magnitude_1 = ones_bus_time()
     bus_angles_1 = zeros_bus_time()
 
     # Initial values related to first timestep allocated in the first column
