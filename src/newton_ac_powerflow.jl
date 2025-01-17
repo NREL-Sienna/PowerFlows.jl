@@ -724,7 +724,7 @@ function _newton_powerflow(
     else
         solver_data.J = J
         solver_data.dSbus_dV_ref =
-            [vec(real.(dSbus_dVa[ref, :][:, pvpq])); vec(real.(dSbus_dVm[ref, :][:, pvpq]))]
+            [vec(real.(dSbus_dVa[ref, :][:, pvpq])); vec(real.(dSbus_dVm[ref, :][:, pq]))]
         @info("The powerflow solver with KLU converged after $i iterations")
     end
 
