@@ -175,7 +175,7 @@ function solve_powerflow!(
 )
     pf = ACPowerFlow()  # todo: somehow store in data which PF to use (see issue #50)
 
-    sorted_time_steps = sort(collect(keys(data.timestep_map)))
+    sorted_time_steps = get(kwargs, :time_steps, sort(collect(keys(data.timestep_map))))
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
     ts_V = zeros(Complex{Float64}, length(data.bus_type[:, 1]), length(sorted_time_steps))
@@ -540,6 +540,8 @@ function _newton_powerflow(
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
 
+    solver_data = data.solver_data[time_step]
+
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
@@ -720,6 +722,9 @@ function _newton_powerflow(
         Sbus_result .*= NaN64
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
+        solver_data.J = J
+        solver_data.dSbus_dV_ref =
+            [vec(real.(dSbus_dVa[ref, :][:, pvpq])); vec(real.(dSbus_dVm[ref, :][:, pvpq]))]
         @info("The powerflow solver with KLU converged after $i iterations")
     end
 
