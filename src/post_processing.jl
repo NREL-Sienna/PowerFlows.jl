@@ -757,3 +757,10 @@ function set_system_time_step(sys::PSY.System, data::PowerFlowData; time_step = 
         end
     end
 end
+
+# work in progress - quick but not optimized function for POC
+function penalty_factors(solver_data::SolverData)
+    J_t = transpose(solver_data.J)
+    f = J_t \ solver_data.dSbus_dV_ref
+    return f
+end

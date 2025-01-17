@@ -291,10 +291,3 @@ function make_powerflowdata(
         solver_data,
     )
 end
-
-# work in progress - quick but not optimized function for POC
-function penalty_factors(solver_data::SolverData)
-    J_t = transpose(solver_data.J)
-    f = J_t \ solver_data.dSbus_dV_ref
-    return f
-end
