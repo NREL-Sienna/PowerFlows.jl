@@ -175,12 +175,15 @@ function solve_powerflow!(
 )
     pf = ACPowerFlow()  # todo: somehow store in data which PF to use (see issue #50)
 
-    sorted_time_steps = sort(collect(keys(data.timestep_map)))
+    sorted_time_steps = get(kwargs, :time_steps, sort(collect(keys(data.timestep_map))))
     # preallocate results
-    ts_converged = zeros(Bool, 1, length(sorted_time_steps))
+    ts_converged = fill(false, length(sorted_time_steps))
     ts_V = zeros(Complex{Float64}, length(data.bus_type[:, 1]), length(sorted_time_steps))
     ts_S = zeros(Complex{Float64}, length(data.bus_type[:, 1]), length(sorted_time_steps))
 
+    # TODO If anything in the grid topology changes, 
+    #  e.g. tap positions of transformers or in service 
+    #  status of branches, Yft and Ytf must be updated!
     Yft = data.power_network_matrix.data_ft
     Ytf = data.power_network_matrix.data_tf
 
@@ -190,25 +193,25 @@ function solve_powerflow!(
     for t in sorted_time_steps
         converged, V, Sbus_result =
             _ac_powereflow(data, pf; time_step = t, kwargs...)
-        ts_converged[1, t] = converged
+        ts_converged[t] = converged
         ts_V[:, t] .= V
         ts_S[:, t] .= Sbus_result
 
-        ref = findall(
-            x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
-            data.bus_type[:, t],
-        )
-        pv = findall(
-            x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
-            data.bus_type[:, t],
-        )
-        pq = findall(
-            x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ,
-            data.bus_type[:, t],
-        )
-
-        # temporary implementation that will need to be improved:
         if converged
+            ref = findall(
+                x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
+                data.bus_type[:, t],
+            )
+            pv = findall(
+                x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
+                data.bus_type[:, t],
+            )
+            pq = findall(
+                x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ,
+                data.bus_type[:, t],
+            )
+
+            # temporary implementation that will need to be improved:
             # write results for REF
             data.bus_activepower_injection[ref, t] .=
                 real.(Sbus_result[ref]) .+ data.bus_activepower_withdrawals[ref, t]
@@ -219,21 +222,22 @@ function solve_powerflow!(
                 imag.(Sbus_result[pv]) .+ data.bus_reactivepower_withdrawals[pv, t]
             # results for PQ buses do not need to be updated -> already consistent with inputs
 
-            # write bus bus_types
-            # todo
-
             # write voltage results
             data.bus_magnitude[pq, t] .= abs.(V[pq])
             data.bus_angles[pq, t] .= angle.(V[pq])
             data.bus_angles[pv, t] .= angle.(V[pv])
-
         else
-            # todo
-            1 + 2
+            data.bus_activepower_injection[:, t] .= NaN64
+            data.bus_activepower_withdrawals[:, t] .= NaN64
+            data.bus_reactivepower_injection[:, t] .= NaN64
+            data.bus_reactivepower_withdrawals[:, t] .= NaN64
+            data.bus_magnitude[:, t] .= NaN64
+            data.bus_angles[:, t] .= NaN64
         end
     end
 
     # write branch flows
+    # TODO if Yft, Ytf change between time steps, this must be moved inside the loop!
     Sft = ts_V[fb, :] .* conj.(Yft * ts_V)
     Stf = ts_V[tb, :] .* conj.(Ytf * ts_V)
 
@@ -242,8 +246,7 @@ function solve_powerflow!(
     data.branch_activepower_flow_to_from .= real.(Stf)
     data.branch_reactivepower_flow_to_from .= imag.(Stf)
 
-    # todo:
-    # return df_results
+    data.converged .= ts_converged
 
     return
 end
@@ -537,6 +540,8 @@ function _newton_powerflow(
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
 
+    solver_data = data.solver_data[time_step]
+
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
@@ -713,8 +718,13 @@ function _newton_powerflow(
     end
 
     if !converged
+        V .*= NaN64
+        Sbus_result .*= NaN64
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
+        solver_data.J = J
+        solver_data.dSbus_dV_ref =
+            [vec(real.(dSbus_dVa[ref, :][:, pvpq])); vec(real.(dSbus_dVm[ref, :][:, pq]))]
         @info("The powerflow solver with KLU converged after $i iterations")
     end
 

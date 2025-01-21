@@ -23,12 +23,15 @@ function _newton_powerflow(
     df = NLsolve.OnceDifferentiable(pf, J, pf.x0, pf.residual, J.Jv)
     res = NLsolve.nlsolve(df, pf.x0; nlsolve_solver_kwargs...)
     if !res.f_converged
+        V = fill(NaN64 + NaN64 * im, length(res.zero) ÷ 2)
+        Sbus_result = fill(NaN64 + NaN64 * im, length(res.zero) ÷ 2)
         @error(
             "The powerflow solver NLSolve did not converge (returned convergence = $(res.f_converged))"
         )
+    else
+        V = _calc_V(data, res.zero; time_step = time_step)
+        Sbus_result = V .* conj(data.power_network_matrix.data * V)
     end
-    V = _calc_V(data, res.zero; time_step = time_step)
-    Sbus_result = V .* conj(data.power_network_matrix.data * V)
     return (res.f_converged, V, Sbus_result)
 end
 
