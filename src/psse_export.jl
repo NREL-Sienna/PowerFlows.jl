@@ -1337,6 +1337,7 @@ make_power_flow_container(pfem::PSSEExportPowerFlow, sys::PSY.System; kwargs...)
         pfem.export_dir;
         write_comments = pfem.write_comments,
         step = (0, 0),
+        overwrite = pfem.overwrite,
     )
 
 solve_powerflow!(exporter::PSSEExporter) = write_export(exporter)

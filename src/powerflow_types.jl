@@ -6,24 +6,53 @@ struct NLSolveACPowerFlow <: ACPowerFlowSolverType end
 
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel
     check_reactive_power_limits::Bool
+    exporter::Union{Nothing, PowerFlowEvaluationModel}
 end
 
 ACPowerFlow{ACSolver}(;
     check_reactive_power_limits::Bool = false,
+    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
 ) where {ACSolver <: ACPowerFlowSolverType} =
-    ACPowerFlow{ACSolver}(check_reactive_power_limits)
+    ACPowerFlow{ACSolver}(check_reactive_power_limits, exporter)
 
 ACPowerFlow(
     ACSolver::Type{<:ACPowerFlowSolverType} = KLUACPowerFlow;
     check_reactive_power_limits::Bool = false,
-) = ACPowerFlow{ACSolver}(check_reactive_power_limits)
+    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
+) = ACPowerFlow{ACSolver}(check_reactive_power_limits, exporter)
 
-struct DCPowerFlow <: PowerFlowEvaluationModel end
-struct PTDFDCPowerFlow <: PowerFlowEvaluationModel end
-struct vPTDFDCPowerFlow <: PowerFlowEvaluationModel end
+@kwdef struct DCPowerFlow <: PowerFlowEvaluationModel
+    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+end
 
-Base.@kwdef struct PSSEExportPowerFlow <: PowerFlowEvaluationModel
+@kwdef struct PTDFDCPowerFlow <: PowerFlowEvaluationModel
+    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+end
+
+@kwdef struct vPTDFDCPowerFlow <: PowerFlowEvaluationModel
+    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+end
+
+@kwdef struct PSSEExportPowerFlow <: PowerFlowEvaluationModel
     psse_version::Symbol
     export_dir::AbstractString
     write_comments::Bool = false
+    overwrite::Bool = false
+end
+
+get_exporter(pfem::PowerFlowEvaluationModel) = pfem.exporter
+get_exporter(::PSSEExportPowerFlow) = nothing
+
+"""
+Expand a single `PowerFlowEvaluationModel` into its possibly multiple parts for separate
+evaluation. Namely, if `pfem` contains a non-nothing `exporter`, return `[pfem, exporter]`,
+else return `[pfem]`.
+"""
+function flatten_power_flow_evaluation_model(pfem::PowerFlowEvaluationModel)
+    exporter = get_exporter(pfem)
+    return if isnothing(exporter)
+        PowerFlowEvaluationModel[pfem]
+    else
+        PowerFlowEvaluationModel[pfem, exporter]
+    end
 end

@@ -1,4 +1,4 @@
-Base.@kwdef mutable struct SolverData
+@kwdef mutable struct SolverData
     J::Union{SparseMatrixCSC{Float64, Int}, Nothing} = nothing
     dSbus_dV_ref::Union{Vector{Float64}, Nothing} = nothing
 end
