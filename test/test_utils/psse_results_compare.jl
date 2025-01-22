@@ -1,4 +1,4 @@
-function psse_bus_results_compare(file_name, pf_results)
+function psse_bus_results_compare(file_name::String, pf_results::Dict)
     pf_result_bus = CSV.read(file_name, DataFrame)
 
     v_diff = Float64[]
@@ -13,6 +13,10 @@ function psse_bus_results_compare(file_name, pf_results)
         push!(number, pf_results["bus_results"][ix, "bus_number"])
     end
     return v_diff, angle_diff, number
+end
+
+function psse_bus_results_compare(file_name::String, pf_results::Missing)
+    throw(ArgumentError("pf_results are missing - calculation failed"))
 end
 
 function psse_gen_results_compare(file_name, system::PSY.System)
