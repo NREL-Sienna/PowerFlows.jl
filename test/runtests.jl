@@ -35,14 +35,13 @@ MAIN_DIR = dirname(@__DIR__)
 
 include("test_utils/common.jl")
 include("test_utils/psse_results_compare.jl")
-#include("test_utils/legacy_pf.jl")
-#Base.eval(PF, Meta.parse("include(\"test/test_utils/legacy_pf.jl\")"))
 Base.eval(PowerFlows, :(include("./test_utils/legacy_pf.jl")))
 
 LOG_FILE = "power-systems.log"
 
 const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl"
 # "test_dc_powerflow.jl",
+# "test_multiperiod_ac_powerflow.jl",
 # "test_multiperiod_dc_powerflow.jl",
 # "test_nlsolve_powerflow.jl",
 # "test_powerflow_data.jl",

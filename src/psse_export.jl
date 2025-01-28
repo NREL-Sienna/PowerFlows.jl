@@ -1,5 +1,6 @@
 const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33]
 const PSSE_DEFAULT = ""  # Used below in cases where we want to insert an empty field to signify the PSSE default
+const PSSE_INFINITE = 9999.0
 const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.PQ => 1,
     PSY.ACBusTypes.PV => 2,
@@ -7,6 +8,7 @@ const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.SLACK => 3,
     PSY.ACBusTypes.ISOLATED => 4,
 )
+const PSSE_BRANCH_SPECIAL_CHARACTERS = ["&", "@", "*"]
 
 # Each of the groups in the PSS/3 v33 standard
 const PSSE_GROUPS_33 = [
@@ -316,7 +318,7 @@ function write_to_buffers!(
     SBASE = PSY.get_base_power(exporter.system)
     REV = 33
     XFRRAT = 0
-    NXFRAT = 1  # TODO why?
+    NXFRAT = 1
     BASFRQ = PSY.get_frequency(exporter.system)
     exporter.write_comments && (BASFRQ = "$BASFRQ    / $md_string")
 
@@ -608,14 +610,14 @@ function write_to_buffers!(
     for load in loads
         sienna_bus_number = PSY.get_number(PSY.get_bus(load))
         I = md["bus_number_mapping"][sienna_bus_number]
-        ID = _psse_quote_string(load_name_mapping[(sienna_bus_number, PSY.get_name(load))])  # TODO should this be quoted?
+        ID = _psse_quote_string(load_name_mapping[(sienna_bus_number, PSY.get_name(load))])
         STATUS = PSY.get_available(load) ? 1 : 0
         AREA = PSSE_DEFAULT  # defaults to bus's area
         ZONE = PSSE_DEFAULT  # defaults to zone's area
         PL, QL, IP, IQ, YP, YQ = _psse_get_load_data(exporter, load)
         OWNER = PSSE_DEFAULT  # defaults to bus's owner
-        SCALE = PSSE_DEFAULT  # TODO reconsider
-        INTRPT = PSSE_DEFAULT  # TODO reconsider
+        SCALE = PSSE_DEFAULT
+        INTRPT = PSSE_DEFAULT
 
         fastprintdelim(io, I)
         fastprintdelim(io, ID)
@@ -665,7 +667,7 @@ function write_to_buffers!(
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
         ID =
-            _psse_quote_string(shunt_name_mapping[(sienna_bus_number, PSY.get_name(shunt))])  # TODO should this be quoted?
+            _psse_quote_string(shunt_name_mapping[(sienna_bus_number, PSY.get_name(shunt))])
         STATUS = PSY.get_available(shunt) ? 1 : 0
         GL = real(PSY.get_Y(shunt)) * PSY.get_base_power(exporter.system)
         BL = imag(PSY.get_Y(shunt)) * PSY.get_base_power(exporter.system)
@@ -679,6 +681,21 @@ function write_to_buffers!(
     end_group_33(io, md, exporter, "Fixed Shunt Data", true)
     exporter.md_valid ||
         (md["shunt_name_mapping"] = serialize_component_ids(shunt_name_mapping))
+end
+
+function _warn_finite_default(val; field_name, component_name)
+    isfinite(val) && return val
+    if val == Inf
+        newval = PSSE_INFINITE
+    elseif val == -Inf
+        newval = -PSSE_INFINITE
+    elseif isnan(val)
+        newval = PSSE_DEFAULT
+    else
+        error("Should be unreachable")
+    end
+    @warn "Detected non-finite value $field_name = $val for $component_name, using '$newval'"
+    return newval
 end
 
 """
@@ -697,6 +714,7 @@ function write_to_buffers!(
 
     generators = get!(exporter.components_cache, "generators") do
         temp_gens::Vector{PSY.StaticInjection} = sort!(
+            # TODO consider storage here
             collect(PSY.get_components(PSY.Generator, exporter.system));
             by = PSY.get_name,
         )
@@ -722,31 +740,37 @@ function write_to_buffers!(
         ID =
             _psse_quote_string(
                 generator_name_mapping[(sienna_bus_number, PSY.get_name(generator))],
-            )  # TODO should this be quoted?
+            )
         PG, QG = with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
             # TODO doing the conversion myself due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1164
             PSY.get_active_power(generator) * PSY.get_base_power(exporter.system),
             PSY.get_reactive_power(generator) * PSY.get_base_power(exporter.system)
         end
-        # TODO maybe have a better default here
         reactive_power_limits = with_units_base(
             () -> get_reactive_power_limits_for_power_flow(generator),
             exporter.system,
             PSY.UnitSystem.NATURAL_UNITS,
         )
         QT = reactive_power_limits.max
-        isfinite(QT) || (QT = PSSE_DEFAULT)  # Catch Inf, etc.
+        QT = _warn_finite_default(
+            QT;
+            field_name = "QT",
+            component_name = PSY.get_name(generator),
+        )
         QB = reactive_power_limits.min
-        isfinite(QB) || (QB = PSSE_DEFAULT)
+        QB = _warn_finite_default(
+            QB;
+            field_name = "QB",
+            component_name = PSY.get_name(generator),
+        )
         VS = PSY.get_magnitude(PSY.get_bus(generator))
         IREG = get(PSY.get_ext(generator), "IREG", PSSE_DEFAULT)
         MBASE = PSY.get_base_power(generator)
         ZR, ZX = PSSE_DEFAULT, PSSE_DEFAULT
-        RT, XT = PSSE_DEFAULT, PSSE_DEFAULT  # TODO?
+        RT, XT = PSSE_DEFAULT, PSSE_DEFAULT
         GTAP = PSSE_DEFAULT
         STAT = PSY.get_available(generator) ? 1 : 0
         RMPCT = PSSE_DEFAULT
-        # TODO maybe have a better default here
         active_power_limits =
             with_units_base(
                 () -> get_active_power_limits_for_power_flow(generator),
@@ -754,9 +778,17 @@ function write_to_buffers!(
                 PSY.UnitSystem.NATURAL_UNITS,
             )
         PT = active_power_limits.max
-        isfinite(PT) || (PT = PSSE_DEFAULT)
+        PT = _warn_finite_default(
+            PT;
+            field_name = "PT",
+            component_name = PSY.get_name(generator),
+        )
         PB = active_power_limits.min
-        isfinite(PB) || (PB = PSSE_DEFAULT)
+        PB = _warn_finite_default(
+            PB;
+            field_name = "PB",
+            component_name = PSY.get_name(generator),
+        )
         WMOD = get(PSY.get_ext(generator), "WMOD", PSSE_DEFAULT)
         WPF = get(PSY.get_ext(generator), "WPF", PSSE_DEFAULT)
 
@@ -798,10 +830,11 @@ function write_to_buffers!(
     md = exporter.md_dict
     check_33(exporter)
 
-    # TODO can/should we be more general than `Line`?
     branches_with_numbers = get!(exporter.components_cache, "branches") do
         branches = sort!(
-            collect(PSY.get_components(PSY.Line, exporter.system));
+            collect(
+                PSY.get_components(Union{PSY.Line, PSY.MonitoredLine}, exporter.system),
+            );
             by = branch_to_bus_numbers,
         )
         [(branch, branch_to_bus_numbers(branch)) for branch in branches]
@@ -818,15 +851,22 @@ function write_to_buffers!(
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
         CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
-        if (first(CKT) in ['&', '@', '*'])  # Characters with a special meaning in this context
-            # TODO solidify desired behavior
-            @warn "Branch export not implemented for $(PSY.get_name(branch)) with CKT='$CKT'; skipping"
-            continue
+        if first(CKT) in PSSE_BRANCH_SPECIAL_CHARACTERS
+            if first(CKT) == '&'
+                @error "Exporting branch $(PSY.get_name(branch)) with disallowed name '$CKT'"
+            elseif first(CKT) == '@'
+                @warn "Exporting branch $(PSY.get_name(branch)) with name '$CKT', it will be treated as a breaker"
+            elseif first(CKT) == '*'
+                @warn "Exporting branch $(PSY.get_name(branch)) with name '$CKT', it will be treated as a switch"
+            else
+                error("Should be unreachable")
+            end
         end
+        # '&', 
         CKT = _psse_quote_string(CKT)
         R = PSY.get_r(branch)
         X = PSY.get_x(branch)
-        B = 0.0  # TODO iron out the details of B vs. BI, BJ
+        B = 0.0  # NOTE PowerSystems only represents BI, BJ
         RATEA =
             RATEB =
                 RATEC =
@@ -957,11 +997,11 @@ function write_to_buffers!(
         CKT = transformer_ckt_mapping[((from_n, to_n), PSY.get_name(transformer))]
         @assert !(first(CKT) in ['&', '@', '*'])  # Characters with a special meaning in this context
         CKT = _psse_quote_string(CKT)
-        CW = 1  # TODO
-        CZ = 1  # TODO
-        CM = 1  # TODO
-        MAG1 = 0.0  # TODO
-        MAG2 = 0.0  # TODO
+        CW = 1  # NOTE on parsing we do the transformation to this unit system
+        CZ = 1  # NOTE on parsing we do the transformation to this unit system
+        CM = 1  # NOTE on parsing we do the transformation to this unit system
+        MAG1 = PSSE_DEFAULT
+        MAG2 = -PSY.get_primary_shunt(transformer)  # TODO check sign on parsing. We want the value stored in the Sienna field to be positive
         NMETR = PSSE_DEFAULT
         NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
         STAT = PSY.get_available(transformer) ? 1 : 0
@@ -971,7 +1011,6 @@ function write_to_buffers!(
         X1_2 = PSY.get_x(transformer)
         SBASE1_2 = PSY.get_base_power(transformer)
 
-        # TODO verify correctness
         WINDV1 = (transformer isa PSY.TapTransformer) ? PSY.get_tap(transformer) : 1.0
         NOMV1 = 0.0  # special case: identical to bus voltage
         ANG1 = if (transformer isa PSY.PhaseShiftingTransformer)
@@ -1200,7 +1239,7 @@ function get_psse_export_paths(
 end
 
 # REIMPORTING
-# TODO probably this all should be moved to PowerSystems
+# TODO move all this to PowerSystems
 reverse_dict(d::Dict) = Dict(map(reverse, collect(d)))
 
 function split_first_rest(s::AbstractString; delim = "_")
