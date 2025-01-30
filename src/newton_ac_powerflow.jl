@@ -170,8 +170,7 @@ end
 
 # Multiperiod power flow - work in progress
 function solve_powerflow!(
-    data::ACPowerFlowData,
-    sys::PSY.System;
+    data::ACPowerFlowData;
     kwargs...,
 )
     pf = ACPowerFlow()  # todo: somehow store in data which PF to use (see issue #50)
@@ -185,12 +184,10 @@ function solve_powerflow!(
     # TODO If anything in the grid topology changes, 
     #  e.g. tap positions of transformers or in service 
     #  status of branches, Yft and Ytf must be updated!
-    branches = PNM.get_ac_branches(sys)
-    buses = PNM.get_buses(sys)
-    fixed_admittances = collect(PSY.get_components(PSY.FixedAdmittance, sys))
-    y11, y22, y12, y21, _, fb, tb, _ = PNM._buildybus(branches, buses, fixed_admittances)
-    Yft = SparseArrays.sparse([1:length(fb); 1:length(fb)], [fb; tb], [y11; y12], length(fb), length(buses))
-    Ytf = SparseArrays.sparse([1:length(tb); 1:length(tb)], [tb; fb], [y22; y21], length(tb), length(buses))
+    Yft = data.power_network_matrix.Yft
+    Ytf = data.power_network_matrix.Ytf
+    fb = data.power_network_matrix.fb
+    tb = data.power_network_matrix.tb
 
     for t in sorted_time_steps
         converged, V, Sbus_result =

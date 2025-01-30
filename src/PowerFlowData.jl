@@ -208,7 +208,7 @@ function PowerFlowData(
     timestep_map = Dict(zip([i for i in 1:time_steps], timestep_names))
 
     # get data for calculations
-    power_network_matrix = PNM.Ybus(sys; check_connectivity = check_connectivity)
+    power_network_matrix = PNM.Ybus(sys; check_connectivity = check_connectivity, make_branch_admittance_matrices = true)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 1))
