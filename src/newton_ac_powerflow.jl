@@ -184,8 +184,8 @@ function solve_powerflow!(
     # TODO If anything in the grid topology changes, 
     #  e.g. tap positions of transformers or in service 
     #  status of branches, Yft and Ytf must be updated!
-    Yft = data.power_network_matrix.Yft
-    Ytf = data.power_network_matrix.Ytf
+    Yft = data.power_network_matrix.yft
+    Ytf = data.power_network_matrix.ytf
     fb = data.power_network_matrix.fb
     tb = data.power_network_matrix.tb
 
