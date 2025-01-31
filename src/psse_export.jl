@@ -742,10 +742,8 @@ function write_to_buffers!(
             _psse_quote_string(
                 generator_name_mapping[(sienna_bus_number, PSY.get_name(generator))],
             )
-        PG, QG = with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
-            # TODO make use of https://github.com/NREL-Sienna/PowerSystems.jl/pull/1270 once merged
-            PSY.get_active_power(generator) * PSY.get_base_power(exporter.system),
-            PSY.get_reactive_power(generator) * PSY.get_base_power(exporter.system)
+        PG, QG = with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+            PSY.get_active_power(generator), PSY.get_reactive_power(generator)
         end
         reactive_power_limits = with_units_base(
             () -> get_reactive_power_limits_for_power_flow(generator),
