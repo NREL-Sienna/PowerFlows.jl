@@ -36,9 +36,13 @@ end
 @kwdef struct PSSEExportPowerFlow <: PowerFlowEvaluationModel
     psse_version::Symbol
     export_dir::AbstractString
+    name::AbstractString = PSSE_DEFAULT_EXPORT_NAME
     write_comments::Bool = false
     overwrite::Bool = false
 end
+
+PSSEExportPowerFlow(psse_version::Symbol, export_dir::AbstractString; kwargs...) =
+    PSSEExportPowerFlow(; psse_version = psse_version, export_dir = export_dir, kwargs...)
 
 get_exporter(pfem::PowerFlowEvaluationModel) = pfem.exporter
 get_exporter(::PSSEExportPowerFlow) = nothing

@@ -1,6 +1,6 @@
 const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33]
 const PSSE_DEFAULT = ""  # Used below in cases where we want to insert an empty field to signify the PSSE default
-const PSSE_INFINITE = 9999.0
+const PSSE_INFINITY = 9999.0
 const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.PQ => 1,
     PSY.ACBusTypes.PV => 2,
@@ -35,8 +35,6 @@ const PSSE_GROUPS_33 = [
     "Q Record",
 ]
 
-const PSSE_DEFAULT_EXPORT_NAME = "export"
-
 const PSSE_RAW_BUFFER_SIZEHINT = 1024
 const PSSE_MD_BUFFER_SIZEHINT = 1024
 
@@ -54,9 +52,10 @@ using `update_exporter` with any new data as relevant, and perform the export wi
   - `write_comments::Bool` = false: whether to add the customary-but-not-in-spec-annotations
     after a slash on the first line and at group boundaries
   - `name::AbstractString = "export"`: the base name of the export
-  - `step::Union{Nothing, Integer, Tuple{Vararg{Integer}}} = nothing`: optional step number
-    or tuple of step numbers (e.g., step and timestamp within step) to append to the base
-    export name. User is responsible for updating the step.
+  - `step::Any = nothing`: optional step data to append to the base export name. User is
+    responsible for updating the step data. If the step data is `nothing`, it is not used;
+    if it is a tuple or vector, it is joined with '_' and concatted; else it is concatted
+    after '_'.
   - `overwrite::Bool = false`: `true` to silently overwrite existing exports, `false` to
     throw an error if existing results are encountered
 """
@@ -64,10 +63,10 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
     system::PSY.System
     psse_version::Symbol
     export_dir::AbstractString
-    write_comments::Bool
     name::AbstractString
-    step::Union{Nothing, Integer, Tuple{Vararg{Integer}}}
+    write_comments::Bool
     overwrite::Bool
+    step::Any
     raw_buffer::IOBuffer  # Persist an IOBuffer to reduce allocations on repeated exports
     md_dict::OrderedDict{String}  # Persist metadata to avoid unnecessary recomputation
     md_valid::Bool  # If this is true, the metadata need not be reserialized
@@ -78,10 +77,10 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
         base_system::PSY.System,
         psse_version::Symbol,
         export_dir::AbstractString;
-        write_comments::Bool = false,
         name::AbstractString = PSSE_DEFAULT_EXPORT_NAME,
-        step::Union{Nothing, Integer, Tuple{Vararg{Integer}}} = nothing,
+        write_comments::Bool = false,
         overwrite::Bool = false,
+        step::Any = nothing,
     )
         (psse_version in PSSE_EXPORT_SUPPORTED_VERSIONS) ||
             throw(
@@ -95,10 +94,10 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
             system,
             psse_version,
             export_dir,
-            write_comments,
             name,
-            step,
+            write_comments,
             overwrite,
+            step,
             IOBuffer(),
             OrderedDict{String, Any}(),
             false,
@@ -686,9 +685,9 @@ end
 function _warn_finite_default(val; field_name, component_name)
     isfinite(val) && return val
     if val == Inf
-        newval = PSSE_INFINITE
+        newval = PSSE_INFINITY
     elseif val == -Inf
-        newval = -PSSE_INFINITE
+        newval = -PSSE_INFINITY
     elseif isnan(val)
         newval = PSSE_DEFAULT
     else
@@ -1150,8 +1149,8 @@ function write_to_buffers!(exporter::PSSEExporter, ::Val{T}) where {T}
 end
 
 _step_to_string(::Nothing) = ""
-_step_to_string(step::Integer) = "_$step"
-_step_to_string(step::Tuple{Vararg{Integer}}) = "_" * join(step, "_")
+_step_to_string(iterable_step::Union{Tuple, AbstractArray}) = "_" * join(iterable_step, "_")
+_step_to_string(scalar_step::Any) = "_$scalar_step"
 
 "Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
 function write_export(
@@ -1374,9 +1373,10 @@ make_power_flow_container(pfem::PSSEExportPowerFlow, sys::PSY.System; kwargs...)
         sys,
         pfem.psse_version,
         pfem.export_dir;
+        name = pfem.name,
         write_comments = pfem.write_comments,
-        step = (0, 0),
         overwrite = pfem.overwrite,
+        step = (0, 0),
     )
 
 solve_powerflow!(exporter::PSSEExporter) = write_export(exporter)
