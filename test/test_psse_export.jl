@@ -241,14 +241,16 @@ function test_power_flow(
         Q_from_to = reactive_power_tol, Q_losses = reactive_power_tol)
 end
 
-function read_system_and_metadata(raw_path, metadata_path)
+# Exercise PowerSystems' ability to parse a PSS/E System from a filename and a metadata dict
+function read_system_with_metadata(raw_path, metadata_path)
     md = JSON3.read(metadata_path, Dict)
     sys = System(raw_path, md)
-    return sys, md
+    return sys
 end
 
-read_system_and_metadata(export_subdir) = read_system_and_metadata(
-    get_psse_export_paths(export_subdir)...)
+# Exercise PowerSystems' ability to automatically find the export metadata file
+read_system_with_metadata(export_subdir) =
+    System(first(get_psse_export_paths(export_subdir)))
 
 function test_psse_round_trip(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
@@ -268,7 +270,7 @@ function test_psse_round_trip(
     @test isfile(raw_path)
     @test isfile(metadata_path)
 
-    sys2, sys2_metadata = read_system_and_metadata(raw_path, metadata_path)
+    sys2 = read_system_with_metadata(raw_path, metadata_path)
     @test compare_systems_loosely(sys, sys2)
     do_power_flow_test &&
         test_power_flow(pf, sys, sys2; exclude_reactive_flow = exclude_reactive_flow)
@@ -369,8 +371,7 @@ end
     set_rating!(line_to_change, get_rating(line_to_change) * 12345.6)
     update_exporter!(exporter, sys2)
     write_export(exporter, "basic4")
-    reread_sys2, sys2_metadata =
-        read_system_and_metadata(joinpath(export_location, "basic4"))
+    reread_sys2 = read_system_with_metadata(joinpath(export_location, "basic4"))
     @test compare_systems_loosely(sys2, reread_sys2)
     @test_logs((:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
@@ -417,8 +418,7 @@ end
     modify_rts_system!(sys2)
     update_exporter!(exporter, sys2)
     write_export(exporter, "basic4")
-    reread_sys2, sys2_metadata =
-        read_system_and_metadata(joinpath(export_location, "basic4"))
+    reread_sys2 = read_system_with_metadata(joinpath(export_location, "basic4"))
     @test compare_systems_loosely(sys2, reread_sys2)
     @test_logs((:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
@@ -433,8 +433,7 @@ end
     modify_rts_powerflow!(pf2)
     update_exporter!(exporter, pf2)
     write_export(exporter, "basic5")
-    reread_sys3, sys3_metadata =
-        read_system_and_metadata(joinpath(export_location, "basic5"))
+    reread_sys3 = read_system_with_metadata(joinpath(export_location, "basic5"))
     @test compare_systems_loosely(sys2, reread_sys3;
         exclude_reactive_power = true)  # TODO why is reactive power not matching?
     @test_logs((:error, r"values do not match"),
