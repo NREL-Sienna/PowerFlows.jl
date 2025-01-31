@@ -1,6 +1,6 @@
 const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33]
 const PSSE_DEFAULT = ""  # Used below in cases where we want to insert an empty field to signify the PSSE default
-const PSSE_INFINITE = 9999.0
+const PSSE_INFINITY = 9999.0
 const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.PQ => 1,
     PSY.ACBusTypes.PV => 2,
@@ -35,8 +35,6 @@ const PSSE_GROUPS_33 = [
     "Q Record",
 ]
 
-const PSSE_DEFAULT_EXPORT_NAME = "export"
-
 const PSSE_RAW_BUFFER_SIZEHINT = 1024
 const PSSE_MD_BUFFER_SIZEHINT = 1024
 
@@ -44,7 +42,9 @@ const PSSE_MD_BUFFER_SIZEHINT = 1024
 Structure to perform an export from a Sienna System, plus optional updates from
 `PowerFlowData`, to the PSS/E format. Construct from a `System` and a PSS/E version, update
 using `update_exporter` with any new data as relevant, and perform the export with
-`write_export`.
+`write_export`. Writes a `<name>.raw` file and a `<name>_export_metadata.json` file with
+transformations that had to be made to conform to PSS/E naming rules, which can be parsed by
+PowerSystems.jl to perform a round trip with the names restored.
 
 # Arguments:
   - `base_system::PSY.System`: the system to be exported. Later updates may change power
@@ -54,9 +54,10 @@ using `update_exporter` with any new data as relevant, and perform the export wi
   - `write_comments::Bool` = false: whether to add the customary-but-not-in-spec-annotations
     after a slash on the first line and at group boundaries
   - `name::AbstractString = "export"`: the base name of the export
-  - `step::Union{Nothing, Integer, Tuple{Vararg{Integer}}} = nothing`: optional step number
-    or tuple of step numbers (e.g., step and timestamp within step) to append to the base
-    export name. User is responsible for updating the step.
+  - `step::Any = nothing`: optional step data to append to the base export name. User is
+    responsible for updating the step data. If the step data is `nothing`, it is not used;
+    if it is a tuple or vector, it is joined with '_' and concatted; else it is concatted
+    after '_'.
   - `overwrite::Bool = false`: `true` to silently overwrite existing exports, `false` to
     throw an error if existing results are encountered
 """
@@ -64,10 +65,10 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
     system::PSY.System
     psse_version::Symbol
     export_dir::AbstractString
-    write_comments::Bool
     name::AbstractString
-    step::Union{Nothing, Integer, Tuple{Vararg{Integer}}}
+    write_comments::Bool
     overwrite::Bool
+    step::Any
     raw_buffer::IOBuffer  # Persist an IOBuffer to reduce allocations on repeated exports
     md_dict::OrderedDict{String}  # Persist metadata to avoid unnecessary recomputation
     md_valid::Bool  # If this is true, the metadata need not be reserialized
@@ -78,10 +79,10 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
         base_system::PSY.System,
         psse_version::Symbol,
         export_dir::AbstractString;
-        write_comments::Bool = false,
         name::AbstractString = PSSE_DEFAULT_EXPORT_NAME,
-        step::Union{Nothing, Integer, Tuple{Vararg{Integer}}} = nothing,
+        write_comments::Bool = false,
         overwrite::Bool = false,
+        step::Any = nothing,
     )
         (psse_version in PSSE_EXPORT_SUPPORTED_VERSIONS) ||
             throw(
@@ -95,10 +96,10 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
             system,
             psse_version,
             export_dir,
-            write_comments,
             name,
-            step,
+            write_comments,
             overwrite,
+            step,
             IOBuffer(),
             OrderedDict{String, Any}(),
             false,
@@ -464,7 +465,7 @@ function write_to_buffers!(
         ZONE = if isnothing(PSY.get_load_zone(bus))
             PSSE_DEFAULT
         else
-            md["zone_number_mapping"][PSY.get_name(PSY.get_load_zone(bus))]
+            md["zone_mapping"][PSY.get_name(PSY.get_load_zone(bus))]
         end
         OWNER = PSSE_DEFAULT
         VM = PSY.get_magnitude(bus)
@@ -686,9 +687,9 @@ end
 function _warn_finite_default(val; field_name, component_name)
     isfinite(val) && return val
     if val == Inf
-        newval = PSSE_INFINITE
+        newval = PSSE_INFINITY
     elseif val == -Inf
-        newval = -PSSE_INFINITE
+        newval = -PSSE_INFINITY
     elseif isnan(val)
         newval = PSSE_DEFAULT
     else
@@ -741,10 +742,8 @@ function write_to_buffers!(
             _psse_quote_string(
                 generator_name_mapping[(sienna_bus_number, PSY.get_name(generator))],
             )
-        PG, QG = with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
-            # TODO doing the conversion myself due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1164
-            PSY.get_active_power(generator) * PSY.get_base_power(exporter.system),
-            PSY.get_reactive_power(generator) * PSY.get_base_power(exporter.system)
+        PG, QG = with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+            PSY.get_active_power(generator), PSY.get_reactive_power(generator)
         end
         reactive_power_limits = with_units_base(
             () -> get_reactive_power_limits_for_power_flow(generator),
@@ -1083,10 +1082,7 @@ function write_to_buffers!(
     end
 end
 
-# TODO this assumption might not be valid
 """
-Assumes that the Sienna zone names are already PSS/E compatible
-
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Zone Data
 """
 function write_to_buffers!(
@@ -1096,16 +1092,16 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_33(exporter)
-    zone_number_mapping = md["zone_number_mapping"]
+    zone_mapping = md["zone_mapping"]
     zones = get!(exporter.components_cache, "zones") do
         sort!(
             collect(PSY.get_components(PSY.LoadZone, exporter.system));
-            by = x -> zone_number_mapping[PSY.get_name(x)],
+            by = x -> zone_mapping[PSY.get_name(x)],
         )
     end
     for zone in zones
         name = PSY.get_name(zone)
-        I = zone_number_mapping[name]
+        I = zone_mapping[name]
         @assert _is_valid_psse_name(name) name
         ZONAME = _psse_quote_string(name)
 
@@ -1150,8 +1146,8 @@ function write_to_buffers!(exporter::PSSEExporter, ::Val{T}) where {T}
 end
 
 _step_to_string(::Nothing) = ""
-_step_to_string(step::Integer) = "_$step"
-_step_to_string(step::Tuple{Vararg{Integer}}) = "_" * join(step, "_")
+_step_to_string(iterable_step::Union{Tuple, AbstractArray}) = "_" * join(iterable_step, "_")
+_step_to_string(scalar_step::Any) = "_$scalar_step"
 
 "Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
 function write_export(
@@ -1159,7 +1155,8 @@ function write_export(
     name::AbstractString;
     overwrite = false,
 )
-    name *= _step_to_string(exporter.step)
+    original_name = name
+    name = name * _step_to_string(exporter.step)
     # Construct paths
     export_subdir = joinpath(exporter.export_dir, name)
     dir_exists = isdir(export_subdir)
@@ -1176,7 +1173,19 @@ function write_export(
     md = exporter.md_dict
     if !exporter.md_valid
         md["case_name"] = name
-        md["export_settings"] = OrderedDict("sources_as_generators" => true)
+
+        md["export_settings"] = OrderedDict{String, Any}()
+        export_settings = md["export_settings"]
+        export_settings["psse_version"] = string(exporter.psse_version)
+        export_settings["export_dir"] = exporter.export_dir
+        export_settings["original_name"] = original_name
+        export_settings["write_comments"] = exporter.write_comments
+        export_settings["overwrite"] = exporter.overwrite
+        export_settings["step"] = _step_to_string(exporter.step)
+        export_settings["sources_as_generators"] = true
+
+        md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
+
         # These mappings are accessed in e.g. _write_bus_data via the metadata
         md["area_mapping"] = _map_psse_container_names(
             sort!(
@@ -1186,7 +1195,7 @@ function write_export(
                     ),
                 )),
         )
-        md["zone_number_mapping"] = _map_psse_container_names(
+        md["zone_mapping"] = _map_psse_container_names(
             sort!(
                 collect(
                     convert_empty_stringvec(
@@ -1194,7 +1203,6 @@ function write_export(
                     ),
                 )),
         )
-        md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
     end
 
     with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
@@ -1234,149 +1242,21 @@ function get_psse_export_paths(
 )
     name = last(splitdir(export_subdir))
     raw_path = joinpath(export_subdir, "$name.raw")
-    metadata_path = joinpath(export_subdir, "$(name)_metadata.json")
+    metadata_path = joinpath(export_subdir, "$(name)$(PSY.PSSE_EXPORT_METADATA_EXTENSION)")
     return (raw_path, metadata_path)
 end
 
-# REIMPORTING
-# TODO move all this to PowerSystems
-reverse_dict(d::Dict) = Dict(map(reverse, collect(d)))
-
-function split_first_rest(s::AbstractString; delim = "_")
-    splitted = split(s, delim)
-    return first(splitted), join(splitted[2:end], delim)
-end
-
-"Convert a s_bus_n_s_name => p_name dictionary to a (p_bus_n, p_name) => s_name dictionary"
-deserialize_reverse_component_ids(
-    mapping,
-    bus_number_mapping,
-    ::T,
-) where {T <: Type{Int64}} =
-    Dict(
-        let
-            (s_bus_n, s_name) = split_first_rest(s_bus_n_s_name)
-            p_bus_n = bus_number_mapping[s_bus_n]
-            (p_bus_n, p_name) => s_name
-        end
-        for (s_bus_n_s_name, p_name) in mapping)
-deserialize_reverse_component_ids(
-    mapping,
-    bus_number_mapping,
-    ::T,
-) where {T <: Type{Tuple{Int64, Int64}}} =
-    Dict(
-        let
-            (s_buses, s_name) = split_first_rest(s_buses_s_name)
-            (s_bus_1, s_bus_2) = split(s_buses, "-")
-            (p_bus_1, p_bus_2) = bus_number_mapping[s_bus_1], bus_number_mapping[s_bus_2]
-            ((p_bus_1, p_bus_2), p_name) => s_name
-        end
-        for (s_buses_s_name, p_name) in mapping)
-
-# TODO figure out where these are coming from and fix at the source
-# I think it has to do with per-unit conversions creating a division by zero, because `set_[re]active_power!(..., 0.0)` doesn't fix it
-"Iterate over all the `Generator`s in the system and, if any `active_power` or `reactive_power` fields are `NaN`, make them `0.0`"
-function fix_nans!(sys::PSY.System)
-    for gen in PSY.get_components(PSY.Generator, sys)
-        isnan(PSY.get_active_power(gen)) && (gen.active_power = 0.0)
-        isnan(PSY.get_reactive_power(gen)) && (gen.reactive_power = 0.0)
-        all(isnan.(values(PSY.get_reactive_power_limits(gen)))) &&
-            (gen.reactive_power_limits = (min = 0.0, max = 0.0))
-        all(isnan.(values(PSY.get_active_power_limits(gen)))) &&
-            (gen.active_power_limits = (min = 0.0, max = 0.0))
-    end
-end
-
-# TODO this should be a System constructor kwarg, like bus_name_formatter
-# See https://github.com/NREL-Sienna/PowerSystems.jl/issues/1160
-"Rename all the `LoadZone`s in the system according to the `Load_Zone_Name_Mapping` in the metadata"
-function fix_load_zone_names!(sys::PSY.System, md::Dict)
-    lz_map = reverse_dict(md["zone_number_mapping"])
-    # `collect` is necessary due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1161
-    for load_zone in collect(PSY.get_components(PSY.LoadZone, sys))
-        old_name = PSY.get_name(load_zone)
-        new_name = get(lz_map, parse(Int64, old_name), old_name)
-        (old_name != new_name) && PSY.set_name!(sys, load_zone, new_name)
-    end
-end
-
-"""
-Use PSS/E exporter metadata to build a function that maps component names back to their
-original Sienna values.
-"""
-function name_formatter_from_component_ids(raw_name_mapping, bus_number_mapping, sig)
-    reversed_name_mapping =
-        deserialize_reverse_component_ids(raw_name_mapping, bus_number_mapping, sig)
-    function component_id_formatter(device_dict)
-        (p_bus_n, p_name) = device_dict["source_id"][2:3]
-        (p_bus_n isa Integer) || (p_bus_n = parse(Int64, p_bus_n))
-        new_name = reversed_name_mapping[(p_bus_n, p_name)]
-        return new_name
-    end
-    return component_id_formatter
-end
-
-function PSY.System(raw_path::AbstractString, md::Dict)
-    bus_name_map = reverse_dict(md["bus_name_mapping"])  # PSS/E bus name -> Sienna bus name
-    bus_number_map = reverse_dict(md["bus_number_mapping"])  # PSS/E bus number -> Sienna bus number
-    all_branch_name_map = deserialize_reverse_component_ids(
-        merge(md["branch_name_mapping"], md["transformer_ckt_mapping"]),
-        md["bus_number_mapping"],
-        Tuple{Int64, Int64},
-    )
-
-    bus_name_formatter = device_dict -> bus_name_map[device_dict["name"]]
-    gen_name_formatter = name_formatter_from_component_ids(
-        md["generator_name_mapping"],
-        md["bus_number_mapping"],
-        Int64,
-    )
-    load_name_formatter = name_formatter_from_component_ids(
-        md["load_name_mapping"],
-        md["bus_number_mapping"],
-        Int64,
-    )
-    function branch_name_formatter(
-        device_dict::Dict,
-        bus_f::PSY.ACBus,
-        bus_t::PSY.ACBus,
-    )::String
-        sid = device_dict["source_id"]
-        (p_bus_1, p_bus_2, p_name) =
-            (length(sid) == 6) ? [sid[2], sid[3], sid[5]] : last(sid, 3)
-        return all_branch_name_map[((p_bus_1, p_bus_2), p_name)]
-    end
-    shunt_name_formatter = name_formatter_from_component_ids(
-        md["shunt_name_mapping"],
-        md["bus_number_mapping"],
-        Int64,
-    )
-
-    sys =
-        System(raw_path;
-            bus_name_formatter = bus_name_formatter,
-            gen_name_formatter = gen_name_formatter,
-            load_name_formatter = load_name_formatter,
-            branch_name_formatter = branch_name_formatter,
-            shunt_name_formatter = shunt_name_formatter)
-    fix_nans!(sys)
-    fix_load_zone_names!(sys, md)
-    # TODO remap bus numbers
-    # TODO remap areas
-    # TODO remap everything else! Should be reading all the keys in `md`
-    return sys
-end
-
+# COMMON INTERFACE
 # TODO handle kwargs
 make_power_flow_container(pfem::PSSEExportPowerFlow, sys::PSY.System; kwargs...) =
     PSSEExporter(
         sys,
         pfem.psse_version,
         pfem.export_dir;
+        name = pfem.name,
         write_comments = pfem.write_comments,
-        step = (0, 0),
         overwrite = pfem.overwrite,
+        step = (0, 0),
     )
 
 solve_powerflow!(exporter::PSSEExporter) = write_export(exporter)
