@@ -281,6 +281,7 @@ function test_psse_export_strict_equality(
     raw2,
     metadata2;
     exclude_metadata_keys = ["case_name"],
+    exclude_export_settings_keys = ["original_name"],
 )
     open(raw1, "r") do handle1
         open(raw2, "r") do handle2
@@ -296,6 +297,10 @@ function test_psse_export_strict_equality(
     for key in exclude_metadata_keys
         parsed1[key] = nothing
         parsed2[key] = nothing
+    end
+    for key in exclude_export_settings_keys
+        parsed1["export_settings"][key] = nothing
+        parsed2["export_settings"][key] = nothing
     end
     @test parsed1 == parsed2
 end

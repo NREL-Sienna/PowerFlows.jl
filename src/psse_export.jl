@@ -42,7 +42,9 @@ const PSSE_MD_BUFFER_SIZEHINT = 1024
 Structure to perform an export from a Sienna System, plus optional updates from
 `PowerFlowData`, to the PSS/E format. Construct from a `System` and a PSS/E version, update
 using `update_exporter` with any new data as relevant, and perform the export with
-`write_export`.
+`write_export`. Writes a `<name>.raw` file and a `<name>_export_metadata.json` file with
+transformations that had to be made to conform to PSS/E naming rules, which can be parsed by
+PowerSystems.jl to perform a round trip with the names restored.
 
 # Arguments:
   - `base_system::PSY.System`: the system to be exported. Later updates may change power
@@ -463,7 +465,7 @@ function write_to_buffers!(
         ZONE = if isnothing(PSY.get_load_zone(bus))
             PSSE_DEFAULT
         else
-            md["zone_number_mapping"][PSY.get_name(PSY.get_load_zone(bus))]
+            md["zone_mapping"][PSY.get_name(PSY.get_load_zone(bus))]
         end
         OWNER = PSSE_DEFAULT
         VM = PSY.get_magnitude(bus)
@@ -741,7 +743,7 @@ function write_to_buffers!(
                 generator_name_mapping[(sienna_bus_number, PSY.get_name(generator))],
             )
         PG, QG = with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
-            # TODO doing the conversion myself due to https://github.com/NREL-Sienna/PowerSystems.jl/issues/1164
+            # TODO make use of https://github.com/NREL-Sienna/PowerSystems.jl/pull/1270 once merged
             PSY.get_active_power(generator) * PSY.get_base_power(exporter.system),
             PSY.get_reactive_power(generator) * PSY.get_base_power(exporter.system)
         end
@@ -1082,10 +1084,7 @@ function write_to_buffers!(
     end
 end
 
-# TODO this assumption might not be valid
 """
-Assumes that the Sienna zone names are already PSS/E compatible
-
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Zone Data
 """
 function write_to_buffers!(
@@ -1095,16 +1094,16 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_33(exporter)
-    zone_number_mapping = md["zone_number_mapping"]
+    zone_mapping = md["zone_mapping"]
     zones = get!(exporter.components_cache, "zones") do
         sort!(
             collect(PSY.get_components(PSY.LoadZone, exporter.system));
-            by = x -> zone_number_mapping[PSY.get_name(x)],
+            by = x -> zone_mapping[PSY.get_name(x)],
         )
     end
     for zone in zones
         name = PSY.get_name(zone)
-        I = zone_number_mapping[name]
+        I = zone_mapping[name]
         @assert _is_valid_psse_name(name) name
         ZONAME = _psse_quote_string(name)
 
@@ -1158,7 +1157,8 @@ function write_export(
     name::AbstractString;
     overwrite = false,
 )
-    name *= _step_to_string(exporter.step)
+    original_name = name
+    name = name * _step_to_string(exporter.step)
     # Construct paths
     export_subdir = joinpath(exporter.export_dir, name)
     dir_exists = isdir(export_subdir)
@@ -1175,7 +1175,19 @@ function write_export(
     md = exporter.md_dict
     if !exporter.md_valid
         md["case_name"] = name
-        md["export_settings"] = OrderedDict("sources_as_generators" => true)
+
+        md["export_settings"] = OrderedDict{String, Any}()
+        export_settings = md["export_settings"]
+        export_settings["psse_version"] = string(exporter.psse_version)
+        export_settings["export_dir"] = exporter.export_dir
+        export_settings["original_name"] = original_name
+        export_settings["write_comments"] = exporter.write_comments
+        export_settings["overwrite"] = exporter.overwrite
+        export_settings["step"] = _step_to_string(exporter.step)
+        export_settings["sources_as_generators"] = true
+
+        md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
+
         # These mappings are accessed in e.g. _write_bus_data via the metadata
         md["area_mapping"] = _map_psse_container_names(
             sort!(
@@ -1185,7 +1197,7 @@ function write_export(
                     ),
                 )),
         )
-        md["zone_number_mapping"] = _map_psse_container_names(
+        md["zone_mapping"] = _map_psse_container_names(
             sort!(
                 collect(
                     convert_empty_stringvec(
@@ -1193,7 +1205,6 @@ function write_export(
                     ),
                 )),
         )
-        md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
     end
 
     with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
@@ -1233,7 +1244,7 @@ function get_psse_export_paths(
 )
     name = last(splitdir(export_subdir))
     raw_path = joinpath(export_subdir, "$name.raw")
-    metadata_path = joinpath(export_subdir, "$(name)_metadata.json")
+    metadata_path = joinpath(export_subdir, "$(name)$(PSY.PSSE_EXPORT_METADATA_EXTENSION)")
     return (raw_path, metadata_path)
 end
 
