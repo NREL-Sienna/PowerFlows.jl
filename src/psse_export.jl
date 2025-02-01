@@ -203,28 +203,28 @@ function fastprintln(io, val, ln = "\n")
     fastprint(io, ln)
 end
 
+# call fastprintdelim multiple times on val, unrolled
+macro fastprintdelim_multi(io, val, newline::Bool, mult::Int)
+    local exprs = [Expr(:call, :fastprintdelim, esc(io), esc(val)) for _ in 1:(mult-1)]
+    local lastCall = newline ? :fastprintln : :fastprintdelim
+    local lastExpr = Expr(:call, lastCall, esc(io), esc(val))
+    return Expr(:block, exprs..., lastExpr)
+end
+# call fastprintdelim on each item in vals, unrolled
+macro fastprintdelim_unroll(io, newline::Bool, vals...)
+    local allButLast = vals[begin:(end-1)]
+    local exprs = [Expr(:call, :fastprintdelim, esc(io), esc(item)) for item in allButLast]
+    local lastCall = newline ? :fastprintln : :fastprintdelim
+    local lastExpr = Expr(:call, lastCall, esc(io), esc(vals[end]))
+    return Expr(:block, exprs..., lastExpr)
+end
+
 function fastprintdelim_psse_default_ownership(io)
-    # See PERF note below regarding this implementation
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
+    @fastprintdelim_multi(io, PSSE_DEFAULT, false, 8)
 end
 
 function fastprintln_psse_default_ownership(io)
-    # See PERF note below regarding this implementation
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintdelim(io, PSSE_DEFAULT)
-    fastprintln(io, PSSE_DEFAULT)
+    @fastprintdelim_multi(io, PSSE_DEFAULT, true, 8)
 end
 
 function end_group_33(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name, written)
@@ -323,13 +323,7 @@ function write_to_buffers!(
     BASFRQ = PSY.get_frequency(exporter.system)
     exporter.write_comments && (BASFRQ = "$BASFRQ    / $md_string")
 
-    # PERF we use manually unrolled loops because the vector/tuple allocation was a performance issue
-    fastprintdelim(io, IC)
-    fastprintdelim(io, SBASE)
-    fastprintdelim(io, REV)
-    fastprintdelim(io, XFRRAT)
-    fastprintdelim(io, NXFRAT)
-    fastprintln(io, BASFRQ)
+    @fastprintdelim_unroll(io, true, IC, SBASE, REV, XFRRAT, NXFRAT, BASFRQ)    
 
     # Record 2
     case_name = md["case_name"]
