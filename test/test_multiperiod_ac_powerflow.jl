@@ -38,7 +38,7 @@
     data.bus_activepower_withdrawals .= deepcopy(withs)
 
     # get power flows with NR KLU method and write results
-    results = solve_powerflow(pf, data, sys)
+    results = solve_powerflow!(data)
 
     # check results
     # for t in 1:length(data.timestep_map)

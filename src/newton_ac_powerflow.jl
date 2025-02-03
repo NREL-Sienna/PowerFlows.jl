@@ -36,34 +36,31 @@ function solve_powerflow!(
     time_step::Int64 = 1,
     kwargs...,
 )
-    #Save per-unit flag
-    settings_unit_cache = deepcopy(system.units_settings.unit_system)
-    #Work in System per unit
-    PSY.set_units_base_system!(system, "SYSTEM_BASE")
-
-    data = PowerFlowData(
-        pf,
-        system;
-        check_connectivity = get(kwargs, :check_connectivity, true),
-    )
-
-    converged, V, Sbus_result = _ac_powereflow(data, pf; time_step = time_step, kwargs...)
-    x = _calc_x(data, V, Sbus_result)
-
-    if converged
-        write_powerflow_solution!(
-            system,
-            x,
-            data,
-            get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER),
+    # converged must be defined in the outer scope to be visible for return
+    converged = false
+    with_units_base(system, PSY.UnitSystem.SYSTEM_BASE) do
+        data = PowerFlowData(
+            pf,
+            system;
+            check_connectivity = get(kwargs, :check_connectivity, true),
         )
-        @info("PowerFlow solve converged, the results have been stored in the system")
-    else
-        @error("The powerflow solver returned convergence = $(converged)")
-    end
 
-    #Restore original per unit base
-    PSY.set_units_base_system!(system, settings_unit_cache)
+        converged, V, Sbus_result =
+            _ac_powerflow(data, pf; time_step = time_step, kwargs...)
+        x = _calc_x(data, V, Sbus_result)
+
+        if converged
+            write_powerflow_solution!(
+                system,
+                x,
+                data,
+                get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER),
+            )
+            @info("PowerFlow solve converged, the results have been stored in the system")
+        else
+            @error("The powerflow solver returned convergence = $(converged)")
+        end
+    end
 
     return converged
 end
@@ -85,90 +82,32 @@ function solve_powerflow(
     system::PSY.System;
     kwargs...,
 )
-    #Save per-unit flag
-    settings_unit_cache = deepcopy(system.units_settings.unit_system)
-    #Work in System per unit
-    PSY.set_units_base_system!(system, "SYSTEM_BASE")
+    # df_results must be defined in the oueter scope first to be visible for return
+    df_results = Dict{String, DataFrames.DataFrame}()
+    converged = false
+    with_units_base(system, PSY.UnitSystem.SYSTEM_BASE) do
+        data = PowerFlowData(
+            pf,
+            system;
+            check_connectivity = get(kwargs, :check_connectivity, true),
+        )
 
-    data = PowerFlowData(
-        pf,
-        system;
-        check_connectivity = get(kwargs, :check_connectivity, true),
-    )
+        converged, V, Sbus_result = _ac_powerflow(data, pf; kwargs...)
+        x = _calc_x(data, V, Sbus_result)
 
-    converged, V, Sbus_result = _ac_powereflow(data, pf; kwargs...)
-    x = _calc_x(data, V, Sbus_result)
-
-    if converged
-        @info("PowerFlow solve converged, the results are exported in DataFrames")
-        df_results = write_results(pf, system, data, x)
-    else
-        df_results = missing
-        @error("The powerflow solver returned convergence = $(converged)")
+        if converged
+            @info("PowerFlow solve converged, the results are exported in DataFrames")
+            df_results = write_results(pf, system, data, x)
+        else
+            df_results = missing
+            @error("The powerflow solver returned convergence = $(converged)")
+        end
     end
-
-    #Restore original per unit base
-    PSY.set_units_base_system!(system, settings_unit_cache)
 
     return df_results
 end
 
-# Multiperiod power flow - work in progress
-function solve_powerflow(
-    pf::ACPowerFlow{<:ACPowerFlowSolverType},
-    data::ACPowerFlowData,
-    system::PSY.System;
-    kwargs...,
-)
-    #Save per-unit flag
-    settings_unit_cache = deepcopy(system.units_settings.unit_system)
-    #Work in System per unit
-    PSY.set_units_base_system!(system, "SYSTEM_BASE")
-
-    sorted_time_steps = sort(collect(keys(data.timestep_map)))
-    # preallocate results
-    ts_converged = zeros(Bool, 1, length(sorted_time_steps))
-    ts_V = zeros(Complex{Float64}, length(data.bus_type[:, 1]), length(sorted_time_steps))
-    ts_S = zeros(Complex{Float64}, length(data.bus_type[:, 1]), length(sorted_time_steps))
-
-    results = Dict()
-
-    for t in sorted_time_steps
-        converged, V, Sbus_result =
-            _ac_powereflow(data, pf; time_step = t, kwargs...)
-        ts_converged[1, t] = converged
-        ts_V[:, t] .= V
-        ts_S[:, t] .= Sbus_result
-
-        # temporary implementation that will need to be improved:
-        if converged
-            x = _calc_x(data, V, Sbus_result)
-            results[data.timestep_map[t]] = write_results(pf, system, data, x)
-        else
-            results[data.timestep_map[t]] = missing
-        end
-
-        #todo: implement write_results for multiperiod power flow
-
-        # if converged
-        #     @info("PowerFlow solve converged, the results are exported in DataFrames")
-        #     df_results = write_results(pf, system, data, x)
-        # else
-        #     df_results = missing
-        #     @error("The powerflow solver returned convergence = $(converged)")
-        # end
-    end
-
-    #Restore original per unit base
-    PSY.set_units_base_system!(system, settings_unit_cache)
-
-    # todo:
-    # return df_results
-
-    return results
-end
-
-# Multiperiod power flow - work in progress
+# Multiperiod power flow
 function solve_powerflow!(
     data::ACPowerFlowData;
     kwargs...,
@@ -191,7 +130,7 @@ function solve_powerflow!(
 
     for t in sorted_time_steps
         converged, V, Sbus_result =
-            _ac_powereflow(data, pf; time_step = t, kwargs...)
+            _ac_powerflow(data, pf; time_step = t, kwargs...)
         ts_converged[t] = converged
         ts_V[:, t] .= V
         ts_S[:, t] .= Sbus_result
@@ -210,7 +149,7 @@ function solve_powerflow!(
                 data.bus_type[:, t],
             )
 
-            # temporary implementation that will need to be improved:
+            # write results to data:
             # write results for REF
             data.bus_activepower_injection[ref, t] .=
                 real.(Sbus_result[ref]) .+ data.bus_activepower_withdrawals[ref, t]
@@ -250,7 +189,7 @@ function solve_powerflow!(
     return
 end
 
-function _ac_powereflow(
+function _ac_powerflow(
     data::ACPowerFlowData,
     pf::ACPowerFlow{<:ACPowerFlowSolverType};
     time_step::Int64 = 1,
@@ -319,7 +258,7 @@ function _solve_powerflow!(
             return converged, V, Sbus_result
         end
     end
-    # todo: throw error? set converged to false?
+    # todo: throw error? set converged to false? -> leave as is for now
     @error("could not enforce reactive power limits after $MAX_REACTIVE_POWER_ITERATIONS")
     return converged, V, Sbus_result
 end
