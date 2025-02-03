@@ -33,7 +33,6 @@ solve_ac_powerflow!(sys, method=:newton)
 function solve_powerflow!(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
-    time_step::Int64 = 1,
     kwargs...,
 )
     # converged must be defined in the outer scope to be visible for return
@@ -46,7 +45,7 @@ function solve_powerflow!(
         )
 
         converged, V, Sbus_result =
-            _ac_powerflow(data, pf; time_step = time_step, kwargs...)
+            _ac_powerflow(data, pf; kwargs...)
         x = _calc_x(data, V, Sbus_result)
 
         if converged
@@ -165,12 +164,12 @@ function solve_powerflow!(
             data.bus_angles[pq, t] .= angle.(V[pq])
             data.bus_angles[pv, t] .= angle.(V[pv])
         else
-            data.bus_activepower_injection[:, t] .= NaN64
-            data.bus_activepower_withdrawals[:, t] .= NaN64
-            data.bus_reactivepower_injection[:, t] .= NaN64
-            data.bus_reactivepower_withdrawals[:, t] .= NaN64
-            data.bus_magnitude[:, t] .= NaN64
-            data.bus_angles[:, t] .= NaN64
+            data.bus_activepower_injection[:, t] .= NaN
+            data.bus_activepower_withdrawals[:, t] .= NaN
+            data.bus_reactivepower_injection[:, t] .= NaN
+            data.bus_reactivepower_withdrawals[:, t] .= NaN
+            data.bus_magnitude[:, t] .= NaN
+            data.bus_angles[:, t] .= NaN
         end
     end
 
@@ -656,8 +655,8 @@ function _newton_powerflow(
     end
 
     if !converged
-        V .*= NaN64
-        Sbus_result .*= NaN64
+        V .*= NaN
+        Sbus_result .*= NaN
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
         solver_data.J = J
