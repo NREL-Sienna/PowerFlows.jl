@@ -28,6 +28,29 @@ function _newton_powerflow(
     return (res.f_converged, V, Sbus_result)
 end
 
+"""
+    _calc_V(data::ACPowerFlowData, x::Vector{Float64}; time_step::Int64 = 1) -> Vector{Complex{Float64}}
+
+Calculate the results for complex bus voltages from the "x" results of NLSolveACVPowerFlow.
+    This is for compatibility with the results of KLUACPowerFlow, ehich returns the vector V instead of the vector x.
+
+# Arguments
+- `data::ACPowerFlowData`: The power flow data struct.
+- `x::Vector{Float64}`: The results vector from NLSolveACPowerFlow containing voltage magnitudes and angles, as well as active and reactive powers.
+- `time_step::Int64`: The time step index for which to calculate the voltages (default is 1).
+
+# Returns
+- `Vector{Complex{Float64}}`: A vector of complex bus voltages.
+
+# Details
+This function calculates the complex bus voltages based on the bus types:
+- REF bus: Voltage magnitude and angle are taken from `data`, because the reference buses maintain the voltage specified by the input data.
+- PV bus: Voltage magnitude is taken from `data`, and the angle is taken from `x`. The voltage magnitude is maintained according to the inputs, and the voltage angle is determined in the PF calculation.
+- PQ bus: Both voltage magnitude and angle are taken from `x`, as the voltage magnitude and angle are results of the PF calculation for PQ buses.
+
+The state vector `x` is assumed to have 2 values per bus (real and imaginary parts, two of P, Q, Vm (V), Va (θ)).
+"""
+
 function _calc_V(
     data::ACPowerFlowData,
     x::Vector{Float64};

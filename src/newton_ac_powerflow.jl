@@ -1,33 +1,44 @@
 """
-Solves a the power flow into the system and writes the solution into the relevant structs.
-Updates generators active and reactive power setpoints and branches active and reactive
-power flows (calculated in the From - To direction) (see
-[`flow_val`](@ref))
+    solve_powerflow!(pf::ACPowerFlow{<:ACPowerFlowSolverType}, system::PSY.System; kwargs...)
 
-Supports passing NLsolve kwargs in the args. By default shows the solver trace.
+Solves the power flow in the system and writes the solution into the relevant structs.
+Updates active and reactive power setpoints for generators and active and reactive
+power flows for branches (calculated in the From - To direction and in the To - From direction).
 
-Arguments available for `nlsolve`:
+Supports passing kwargs to the PF solver.
 
-  - `get_connectivity::Bool`: Checks if the network is connected. Default true
-  - `method` : See NLSolve.jl documentation for available solvers
-  - `xtol`: norm difference in `x` between two successive iterates under which
-    convergence is declared. Default: `0.0`.
-  - `ftol`: infinite norm of residuals under which convergence is declared.
-    Default: `1e-8`.
-  - `iterations`: maximum number of iterations. Default: `1_000`.
-  - `store_trace`: should a trace of the optimization algorithm's state be
-    stored? Default: `false`.
-  - `show_trace`: should a trace of the optimization algorithm's state be shown
-    on `STDOUT`? Default: `false`.
-  - `extended_trace`: should additifonal algorithm internals be added to the state
-    trace? Default: `false`.
+The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
-## Examples
+# Arguments
+- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `KLUACPowerFlow`, `NLSolveACPowerFlow`, or `PowerFlows.LUACPowerFlow` (to be used for testing only).
+- `system::PSY.System`: The power system model.
+- `kwargs...`: Additional keyword arguments.
+
+## Keyword Arguments
+- `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
+- 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
+- `method`: (only for `NLSolve`) See NLSolve.jl documentation for available solvers.
+- `xtol`: (only for `NLSolve`) Norm difference in `x` between two successive iterates under which convergence is declared. Default is `0.0`.
+- `ftol`: (only for `NLSolve`) Infinite norm of residuals under which convergence is declared. Default is `1e-8`.
+- `iterations`: (only for `NLSolve`) Maximum number of iterations. Default is `1_000`.
+- `store_trace`: (only for `NLSolve`) Should a trace of the optimization algorithm's state be stored? Default is `false`.
+- `show_trace`: (only for `NLSolve`) Should a trace of the optimization algorithm's state be shown on `STDOUT`? Default is `false`.
+- `extended_trace`: (only for `NLSolve`) Should additional algorithm internals be added to the state trace? Default is `false`.
+
+# Returns
+- `converged::Bool`: Indicates whether the power flow solution converged.
+- The power flow results are written into the system struct.
+
+# Examples
 
 ```julia
-solve_ac_powerflow!(sys)
+solve_ac_powerflow!(pf, sys)
+
+# Passing kwargs
+solve_ac_powerflow!(pf, sys; check_connectivity=false)
+
 # Passing NLsolve arguments
-solve_ac_powerflow!(sys, method=:newton)
+solve_ac_powerflow!(pf, sys; method=:newton)
 ```
 """
 function solve_powerflow!(
@@ -65,15 +76,16 @@ function solve_powerflow!(
 end
 
 """
-Similar to solve_powerflow!(sys) but does not update the system struct with results.
+Similar to solve_powerflow!(pf, sys) but does not update the system struct with results.
 Returns the results in a dictionary of dataframes.
 
 ## Examples
 
 ```julia
-res = solve_powerflow(sys)
+res = solve_powerflow(pf, sys)
+
 # Passing NLsolve arguments
-res = solve_powerflow(sys, method=:newton)
+res = solve_powerflow(pf, sys; method=:newton)
 ```
 """
 function solve_powerflow(
@@ -106,7 +118,43 @@ function solve_powerflow(
     return df_results
 end
 
-# Multiperiod power flow
+"""
+    solve_powerflow!(data::ACPowerFlowData; pf::ACPowerFlow{<:ACPowerFlowSolverType} = ACPowerFlow(), kwargs...)
+
+Solve the multiperiod AC power flow problem for the given power flow data.
+
+The bus types can be changed from PV to PQ if the reactive power limits are violated.
+
+# Arguments
+- `data::ACPowerFlowData`: The power flow data containing netwthe grid information and initial conditions.
+- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver type. Defaults to `KLUACPowerFlow`.
+- `kwargs...`: Additional keyword arguments.
+
+# Keyword Arguments
+- `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
+- 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
+- `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `data.timestep_map`.
+
+# Returns
+- `Nothing`. The results are written directly to the `data` object.
+
+# Description
+This function solves the AC power flow problem for each time step specified in `data`. 
+It preallocates memory for the results and iterates over the sorted time steps. 
+    For each time step, it calls the `_ac_powerflow` function to solve the power flow equations and updates the `data` object with the results. 
+    If the power flow converges, it updates the active and reactive power injections, as well as the voltage magnitudes and angles for different bus types (REF, PV, PQ). 
+    If the power flow does not converge, it sets the corresponding entries in `data` to `NaN`. 
+    Finally, it calculates the branch power flows and updates the `data` object.
+
+# Notes
+- If the grid topology changes (e.g., tap positions of transformers or in-service status of branches), the admittance matrices `Yft` and `Ytf` must be updated.
+- If `Yft` and `Ytf` change between time steps, the branch flow calculations must be moved inside the loop.
+
+# Examples
+```julia
+solve_powerflow!(data)
+```
+"""
 function solve_powerflow!(
     data::ACPowerFlowData;
     pf::ACPowerFlow{<:ACPowerFlowSolverType} = ACPowerFlow(),
