@@ -98,8 +98,8 @@ function jsp!(
     time_step::Int64 = 1,
 )
     Yb = data.power_network_matrix.data
-    Vm = data.bus_magnitude
-    θ = data.bus_angles
+    Vm = data.bus_magnitude[:, time_step]
+    θ = data.bus_angles[:, time_step]
     for (ix_f, b) in enumerate(data.bus_type[:, time_step])
         F_ix_f_r = 2 * ix_f - 1
         F_ix_f_i = 2 * ix_f

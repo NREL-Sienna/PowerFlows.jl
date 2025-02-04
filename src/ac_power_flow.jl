@@ -15,43 +15,41 @@ struct PolarPowerFlow{F, D}
     x0::Vector{Float64}
 end
 
-function _calculate_x0(n::Int,
-    bus_types::Vector{PSY.ACBusTypes},
+function _calculate_x0(time_step::Int64,
+    bus_types::Matrix{PSY.ACBusTypes},
     bus_angles::Matrix{Float64},
     bus_magnitude::Matrix{Float64},
     bus_activepower_injection::Matrix{Float64},
     bus_reactivepower_injection::Matrix{Float64},
     bus_activepower_withdrawals::Matrix{Float64},
     bus_reactivepower_withdrawals::Matrix{Float64})
-    n_buses = length(bus_types)
+    n_buses = length(bus_types[:, 1])
     x0 = Vector{Float64}(undef, 2 * n_buses)
-    for i_n in 1:n
-        state_variable_count = 1
-        for (ix, b) in enumerate(bus_types)
-            if b == PSY.ACBusTypes.REF
-                x0[state_variable_count, i_n] =
-                    bus_activepower_injection[ix, i_n] -
-                    bus_activepower_withdrawals[ix, i_n]
-                x0[state_variable_count + 1, i_n] =
-                    bus_reactivepower_injection[ix, i_n] -
-                    bus_reactivepower_withdrawals[ix, i_n]
-                state_variable_count += 2
-            elseif b == PSY.ACBusTypes.PV
-                x0[state_variable_count, i_n] =
-                    bus_reactivepower_injection[ix, i_n] -
-                    bus_reactivepower_withdrawals[ix, i_n]
-                x0[state_variable_count + 1, i_n] = bus_angles[ix, i_n]
-                state_variable_count += 2
-            elseif b == PSY.ACBusTypes.PQ
-                x0[state_variable_count, i_n] = bus_magnitude[ix, i_n]
-                x0[state_variable_count + 1, i_n] = bus_angles[ix, i_n]
-                state_variable_count += 2
-            else
-                throw(ArgumentError("$b not recognized as a bustype"))
-            end
+    state_variable_count = 1
+    for (ix, b) in enumerate(bus_types[:, time_step])
+        if b == PSY.ACBusTypes.REF
+            x0[state_variable_count] =
+                bus_activepower_injection[ix, time_step] -
+                bus_activepower_withdrawals[ix, time_step]
+            x0[state_variable_count + 1] =
+                bus_reactivepower_injection[ix, time_step] -
+                bus_reactivepower_withdrawals[ix, time_step]
+            state_variable_count += 2
+        elseif b == PSY.ACBusTypes.PV
+            x0[state_variable_count] =
+                bus_reactivepower_injection[ix, time_step] -
+                bus_reactivepower_withdrawals[ix, time_step]
+            x0[state_variable_count + 1] = bus_angles[ix, time_step]
+            state_variable_count += 2
+        elseif b == PSY.ACBusTypes.PQ
+            x0[state_variable_count] = bus_magnitude[ix, time_step]
+            x0[state_variable_count + 1] = bus_angles[ix, time_step]
+            state_variable_count += 2
+        else
+            throw(ArgumentError("$b not recognized as a bustype"))
         end
-        @assert state_variable_count - 1 == n_buses * 2
     end
+    @assert state_variable_count - 1 == n_buses * 2
     return x0
 end
 
@@ -67,8 +65,8 @@ function PolarPowerFlow(data::ACPowerFlowData; time_step::Int64 = 1)
             data.bus_reactivepower_injection[ix, time_step] -
             data.bus_reactivepower_withdrawals[ix, time_step]
     end
-    x0 = _calculate_x0(1,
-        data.bus_type[:, time_step],
+    x0 = _calculate_x0(time_step,
+        data.bus_type,
         data.bus_angles,
         data.bus_magnitude,
         data.bus_activepower_injection,
@@ -76,7 +74,8 @@ function PolarPowerFlow(data::ACPowerFlowData; time_step::Int64 = 1)
         data.bus_activepower_withdrawals,
         data.bus_reactivepower_withdrawals)
     pf_function =
-        (res::Vector{Float64}, X::Vector{Float64}) -> polar_pf!(res, X, P_net, Q_net, data)
+        (res::Vector{Float64}, X::Vector{Float64}) ->
+            polar_pf!(res, X, P_net, Q_net, data; time_step = time_step)
     res = similar(x0)
     pf_function(res, x0)
 
@@ -112,29 +111,29 @@ function polar_pf!(
     X::Vector{Float64},
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
-    data::ACPowerFlowData,
+    data::ACPowerFlowData;
+    time_step::Int64 = 1,
 )
-    time_step = 1  # TODO placeholder time_step
     Yb = data.power_network_matrix.data
     n_buses = first(size(data.bus_type))
     for (ix, b) in enumerate(data.bus_type[:, time_step])
         if b == PSY.ACBusTypes.REF
             # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
-            P_net[ix] = X[2 * ix - 1] - data.bus_activepower_withdrawals[ix]
-            Q_net[ix] = X[2 * ix] - data.bus_reactivepower_withdrawals[ix]
+            P_net[ix] = X[2 * ix - 1] - data.bus_activepower_withdrawals[ix, time_step]
+            Q_net[ix] = X[2 * ix] - data.bus_reactivepower_withdrawals[ix, time_step]
         elseif b == PSY.ACBusTypes.PV
             # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
-            Q_net[ix] = X[2 * ix - 1] - data.bus_reactivepower_withdrawals[ix]
-            data.bus_angles[ix] = X[2 * ix]
+            Q_net[ix] = X[2 * ix - 1] - data.bus_reactivepower_withdrawals[ix, time_step]
+            data.bus_angles[ix, time_step] = X[2 * ix]
         elseif b == PSY.ACBusTypes.PQ
             # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
-            data.bus_magnitude[ix] = X[2 * ix - 1]
-            data.bus_angles[ix] = X[2 * ix]
+            data.bus_magnitude[ix, time_step] = X[2 * ix - 1]
+            data.bus_angles[ix, time_step] = X[2 * ix]
         end
     end
 
-    Vm = data.bus_magnitude
-    θ = data.bus_angles
+    Vm = data.bus_magnitude[:, time_step]
+    θ = data.bus_angles[:, time_step]
     # F is active and reactive power balance equations at all buses
     for ix_f in 1:n_buses
         S_re = -P_net[ix_f]

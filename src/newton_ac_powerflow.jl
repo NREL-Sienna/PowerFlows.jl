@@ -109,10 +109,9 @@ end
 # Multiperiod power flow
 function solve_powerflow!(
     data::ACPowerFlowData;
+    pf::ACPowerFlow{<:ACPowerFlowSolverType} = ACPowerFlow(),
     kwargs...,
 )
-    pf = ACPowerFlow()  # todo: somehow store in data which PF to use (see issue #50)
-
     sorted_time_steps = get(kwargs, :time_steps, sort(collect(keys(data.timestep_map))))
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))

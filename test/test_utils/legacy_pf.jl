@@ -42,11 +42,15 @@ function _newton_powerflow(
     maxIter = get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER)
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
+    solver_data = data.solver_data[time_step]
 
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    #ref = findall(x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF, data.bus_type)
+    ref = findall(
+        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
+        data.bus_type[:, time_step],
+    )
     pv = findall(
         x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
         data.bus_type[:, time_step],
@@ -61,7 +65,7 @@ function _newton_powerflow(
     npv = length(pv)
     npq = length(pq)
     npvpq = npv + npq
-    n_buses = length(data.bus_type)
+    n_buses = length(data.bus_type[:, time_step])
 
     Vm = data.bus_magnitude[:, time_step]
     # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
@@ -88,10 +92,11 @@ function _newton_powerflow(
 
     converged = npvpq == 0
 
+    dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus)
+    J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
+
     while i < maxIter && !converged
         i += 1
-        dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus)
-        J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
 
         # using a different factorization that KLU for testing
         factor_J = LinearAlgebra.lu(J)
@@ -108,6 +113,12 @@ function _newton_powerflow(
         F .= [real(mis[pvpq]); imag(mis[pq])]
 
         converged = LinearAlgebra.norm(F, Inf) < tol
+        if converged
+            break
+        end
+
+        dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus)
+        J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
     end
 
     if !converged
@@ -116,10 +127,9 @@ function _newton_powerflow(
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
         Sbus_result = V .* conj(Ybus * V)
-        # TODO @rbolgaryn fix broken tests
-        # solver_data.J = J
-        # solver_data.dSbus_dV_ref =
-        #     [vec(real.(dSbus_dVa[ref, :][:, pvpq])); vec(real.(dSbus_dVm[ref, :][:, pq]))]
+        solver_data.J = J
+        solver_data.dSbus_dV_ref =
+            [vec(real.(dSbus_dVa[ref, :][:, pvpq])); vec(real.(dSbus_dVm[ref, :][:, pq]))]
         @info("The powerflow solver with KLU converged after $i iterations")
     end
     return (converged, V, Sbus_result)

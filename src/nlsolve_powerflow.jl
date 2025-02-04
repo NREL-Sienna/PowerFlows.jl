@@ -1,24 +1,18 @@
 const _NLSOLVE_AC_POWERFLOW_KWARGS =
     Set([:check_reactive_power_limits, :check_connectivity])
+
 function _newton_powerflow(
     pf::ACPowerFlow{NLSolveACPowerFlow},
     data::ACPowerFlowData;
     time_step::Int64 = 1,  # not implemented for NLSolve and not used
     nlsolve_kwargs...,
 )
-    if time_step != 1
-        throw(
-            ArgumentError(
-                "Multiperiod power flow not implemented for NLSolve AC power flow",
-            ),
-        )
-    end
 
     nlsolve_solver_kwargs =
         filter(p -> !(p.first in _NLSOLVE_AC_POWERFLOW_KWARGS), nlsolve_kwargs)
 
-    pf = PolarPowerFlow(data)
-    J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0)
+    pf = PolarPowerFlow(data; time_step = time_step)
+    J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0; time_step = time_step)
 
     df = NLsolve.OnceDifferentiable(pf, J, pf.x0, pf.residual, J.Jv)
     res = NLsolve.nlsolve(df, pf.x0; nlsolve_solver_kwargs...)
@@ -46,7 +40,7 @@ function _calc_V(
     Va_data = data.bus_angles[:, time_step]
 
     # Extract values for Vm and Va from x
-    for (ix, b) in enumerate(data.bus_type)
+    for (ix, b) in enumerate(data.bus_type[:, time_step])
         if b == PSY.ACBusTypes.REF
             # For REF bus, we have active and reactive power
             Vm = Vm_data[ix]
