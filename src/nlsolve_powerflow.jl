@@ -7,7 +7,6 @@ function _newton_powerflow(
     time_step::Int64 = 1,  # not implemented for NLSolve and not used
     nlsolve_kwargs...,
 )
-
     nlsolve_solver_kwargs =
         filter(p -> !(p.first in _NLSOLVE_AC_POWERFLOW_KWARGS), nlsolve_kwargs)
 
