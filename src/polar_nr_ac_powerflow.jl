@@ -1,36 +1,3 @@
-struct KLULinSolveCache
-    colptr = KLU.decrement(J.colptr)
-    rowval = KLU.decrement(J.rowval)
-    n = size(J, 1)
-    factor_J = KLU.KLUFactorization(n, colptr, rowval, J.nzval)
-    KLU.klu_analyze!(factor_J)
-    rf = Ref(factor_J.common)
-end
-
-
-function _klu_lin_solve!()
-    # factorize the numeric object of KLU inplace, while reusing the symbolic object
-    KLU.klu_l_refactor(
-        colptr,
-        rowval,
-        J.nzval,
-        factor_J._symbolic,
-        factor_J._numeric,
-        rf,
-    )
-
-    # solve inplace - the results are written to F, so that we must use F instead of dx for updating V
-    KLU.klu_l_solve(
-        factor_J._symbolic,
-        factor_J._numeric,
-        size(F, 1),
-        size(F, 2),
-        F,
-        rf,
-    )
-    return
-end
-
 # Make this struct immutable for performance
 struct SolverCache
     x::Tx
