@@ -8,11 +8,16 @@ using InfrastructureSystems
 using LinearAlgebra
 using CSV
 using DataFrames
+using JSON3
+using DataStructures
+import SparseArrays
+import SparseArrays: SparseMatrixCSC, sparse
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
 const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
+const PF = PowerFlows
 
 import Aqua
 Aqua.test_unbound_args(PowerFlows)
@@ -28,9 +33,21 @@ const DIFF_L2_TOLERANCE = 1e-3
 
 MAIN_DIR = dirname(@__DIR__)
 
+include("test_utils/common.jl")
 include("test_utils/psse_results_compare.jl")
+Base.eval(PowerFlows, :(include("./test_utils/legacy_pf.jl")))
 
 LOG_FILE = "power-systems.log"
+
+const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl"
+# "test_dc_powerflow.jl",
+# "test_multiperiod_ac_powerflow.jl",
+# "test_multiperiod_dc_powerflow.jl",
+# "test_nlsolve_powerflow.jl",
+# "test_powerflow_data.jl",
+# "test_psse_export.jl",
+]
+
 LOG_LEVELS = Dict(
     "Debug" => Logging.Debug,
     "Info" => Logging.Info,
@@ -72,7 +89,11 @@ macro includetests(testarg...)
             tests = map(f -> string(f, ".jl"), tests)
         end
         println()
+        if !isempty(DISABLED_TEST_FILES)
+            @warn("Some tests are disabled $DISABLED_TEST_FILES")
+        end
         for test in tests
+            test in DISABLED_TEST_FILES && continue
             print(splitext(test)[1], ": ")
             include(test)
             println()
@@ -109,7 +130,7 @@ function run_tests()
         end
 
         # Testing Topological components of the schema
-        @time @testset "Begin PowerSystems tests" begin
+        @time @testset "Begin PowerFlows tests" begin
             @includetests ARGS
         end
 

@@ -158,18 +158,6 @@ function _get_fixed_admittance_power(
     return active_power, reactive_power
 end
 
-function _get_limits_for_power_distribution(gen::PSY.StaticInjection)
-    return PSY.get_active_power_limits(gen)
-end
-
-function _get_limits_for_power_distribution(gen::PSY.RenewableDispatch)
-    return (min = 0.0, max = PSY.get_max_active_power(gen))
-end
-
-function _get_limits_for_power_distribution(gen::PSY.Storage)
-    return (min = 0.0, max = PSY.get_output_active_power_limits(gen).max)
-end
-
 function _power_redistribution_ref(
     sys::PSY.System,
     P_gen::Float64,
@@ -204,16 +192,16 @@ function _power_redistribution_ref(
         return
     elseif length(devices_) > 1
         devices =
-            sort(collect(devices_); by = x -> _get_limits_for_power_distribution(x).max)
+            sort(collect(devices_); by = x -> get_active_power_limits_for_power_flow(x).max)
     else
         error("No devices in bus $(PSY.get_name(bus))")
     end
 
-    sum_basepower = sum([g.max for g in _get_limits_for_power_distribution.(devices)])
+    sum_basepower = sum([g.max for g in get_active_power_limits_for_power_flow.(devices)])
     p_residual = P_gen
     units_at_limit = Vector{Int}()
     for (ix, d) in enumerate(devices)
-        p_limits = _get_limits_for_power_distribution(d)
+        p_limits = get_active_power_limits_for_power_flow(d)
         part_factor = p_limits.max / sum_basepower
         p_frac = P_gen * part_factor
         p_set_point = clamp(p_frac, p_limits.min, p_limits.max)
@@ -229,7 +217,7 @@ function _power_redistribution_ref(
     if !isapprox(p_residual, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
         @debug "Ref Bus voltage residual $p_residual"
         removed_power = sum([
-            g.max for g in _get_limits_for_power_distribution.(devices[units_at_limit])
+            g.max for g in get_active_power_limits_for_power_flow.(devices[units_at_limit])
         ])
         reallocated_p = 0.0
         it = 0
@@ -240,7 +228,7 @@ function _power_redistribution_ref(
             end
             for (ix, d) in enumerate(devices)
                 ix ∈ units_at_limit && continue
-                p_limits = PSY.get_active_power_limits(d)
+                p_limits = get_active_power_limits_for_power_flow(d)
                 part_factor = p_limits.max / (sum_basepower - removed_power)
                 p_frac = p_residual * part_factor
                 current_p = PSY.get_active_power(d)
@@ -270,7 +258,7 @@ function _power_redistribution_ref(
             @debug "Remaining residual $q_residual, $(PSY.get_name(bus))"
             p_set_point = PSY.get_active_power(device) + p_residual
             PSY.set_active_power!(device, p_set_point)
-            p_limits = PSY.get_reactive_power_limits(device)
+            p_limits = get_active_power_limits_for_power_flow(device)
             if (p_set_point >= p_limits.max + BOUNDS_TOLERANCE) ||
                (p_set_point <= p_limits.min - BOUNDS_TOLERANCE)
                 @error "Unit $(PSY.get_name(device)) P=$(p_set_point) above limits. P_max = $(p_limits.max) P_min = $(p_limits.min)"
@@ -332,7 +320,7 @@ function _reactive_power_redistribution_pv(
     units_at_limit = Vector{Int}()
 
     for (ix, d) in enumerate(devices)
-        q_limits = PSY.get_reactive_power_limits(d)
+        q_limits = get_reactive_power_limits_for_power_flow(d)
         if isapprox(q_limits.max, 0.0; atol = BOUNDS_TOLERANCE) &&
            isapprox(q_limits.min, 0.0; atol = BOUNDS_TOLERANCE)
             push!(units_at_limit, ix)
@@ -377,7 +365,7 @@ function _reactive_power_redistribution_pv(
             reallocated_q = 0.0
             for (ix, d) in enumerate(devices)
                 ix ∈ units_at_limit && continue
-                q_limits = PSY.get_reactive_power_limits(d)
+                q_limits = get_reactive_power_limits_for_power_flow(d)
 
                 if removed_power < total_active_power
                     fraction =
@@ -426,7 +414,7 @@ function _reactive_power_redistribution_pv(
         @debug "Remaining residual $q_residual, $(PSY.get_name(bus))"
         q_set_point = PSY.get_reactive_power(device) + q_residual
         PSY.set_reactive_power!(device, q_set_point)
-        q_limits = PSY.get_reactive_power_limits(device)
+        q_limits = get_reactive_power_limits_for_power_flow(device)
         if (q_set_point >= q_limits.max + BOUNDS_TOLERANCE) ||
            (q_set_point <= q_limits.min - BOUNDS_TOLERANCE)
             @error "Unit $(PSY.get_name(device)) Q=$(q_set_point) above limits. Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
@@ -514,19 +502,10 @@ function _allocate_results_data(
     Q_gen_vect::Vector{Float64},
     P_load_vect::Vector{Float64},
     Q_load_vect::Vector{Float64},
-    branch_flow_values::Vector{Float64})
-
-    # get flows on each line
-    P_from_to_vect = zeros(length(branches))
-    Q_from_to_vect = zeros(length(branches))
-    P_to_from_vect = zeros(length(branches))
-    Q_to_from_vect = zeros(length(branches))
-    # branch_flow_values is always from_to direction
-    for i in 1:length(branches)
-        P_from_to_vect[i] = branch_flow_values[i]
-        P_to_from_vect[i] = -branch_flow_values[i]
-    end
-
+    branch_activepower_flow_from_to::Vector{Float64},
+    branch_reactivepower_flow_from_to::Vector{Float64},
+    branch_activepower_flow_to_from::Vector{Float64},
+    branch_reactivepower_flow_to_from::Vector{Float64})
     bus_df = DataFrames.DataFrame(;
         bus_number = buses,
         Vm = bus_magnitude,
@@ -544,10 +523,10 @@ function _allocate_results_data(
         line_name = branches,
         bus_from = from_bus,
         bus_to = to_bus,
-        P_from_to = P_from_to_vect,
-        Q_from_to = Q_from_to_vect,
-        P_to_from = P_to_from_vect,
-        Q_to_from = Q_to_from_vect,
+        P_from_to = branch_activepower_flow_from_to,
+        Q_from_to = branch_reactivepower_flow_from_to,
+        P_to_from = branch_activepower_flow_to_from,
+        Q_to_from = branch_reactivepower_flow_to_from,
         P_losses = zeros(length(branches)),
         Q_losses = zeros(length(branches)),
     )
@@ -600,7 +579,10 @@ function write_results(
             data.bus_reactivepower_injection[:, i],
             data.bus_activepower_withdrawals[:, i],
             data.bus_reactivepower_withdrawals[:, i],
-            data.branch_flow_values[:, i],
+            data.branch_activepower_flow_from_to[:, i],
+            data.branch_reactivepower_flow_from_to[:, i],
+            data.branch_activepower_flow_to_from[:, i],
+            data.branch_reactivepower_flow_to_from[:, i],
         )
         result_dict[data.timestep_map[i]] = temp_dict
     end
@@ -623,10 +605,11 @@ dictionary will therefore feature just one key linked to one DataFrame.
         vector containing the reults for one single time-period.
 """
 function write_results(
-    ::ACPowerFlow,
+    ::ACPowerFlow{<:ACPowerFlowSolverType},
     sys::PSY.System,
     data::ACPowerFlowData,
-    result::Vector{Float64},
+    result::Union{Vector{Float64}, Matrix{Float64}},
+    time_step::Int64,
 )
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
     buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x))
@@ -639,28 +622,29 @@ function write_results(
     Q_gen_vect = fill(0.0, N_BUS)
     P_load_vect = fill(0.0, N_BUS)
     Q_load_vect = fill(0.0, N_BUS)
+    bus_types = view(data.bus_type, :, time_step)
 
-    for (ix, bustype) in enumerate(data.bus_type)
-        P_load_vect[ix] = data.bus_activepower_withdrawals[ix] * sys_basepower
-        Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix] * sys_basepower
+    for (ix, bt) in enumerate(bus_types)
+        P_load_vect[ix] = data.bus_activepower_withdrawals[ix, time_step] * sys_basepower
+        Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix, time_step] * sys_basepower
         P_admittance, Q_admittance = _get_fixed_admittance_power(sys, buses[ix], result, ix)
         P_load_vect[ix] += P_admittance * sys_basepower
         Q_load_vect[ix] += Q_admittance * sys_basepower
-        if bustype == PSY.ACBusTypes.REF
-            Vm_vect[ix] = data.bus_magnitude[ix]
-            θ_vect[ix] = data.bus_angles[ix]
+        if bt == PSY.ACBusTypes.REF
+            Vm_vect[ix] = data.bus_magnitude[ix, time_step]
+            θ_vect[ix] = data.bus_angles[ix, time_step]
             P_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix] * sys_basepower
-        elseif bustype == PSY.ACBusTypes.PV
-            Vm_vect[ix] = data.bus_magnitude[ix]
+        elseif bt == PSY.ACBusTypes.PV
+            Vm_vect[ix] = data.bus_magnitude[ix, time_step]
             θ_vect[ix] = result[2 * ix]
-            P_gen_vect[ix] = data.bus_activepower_injection[ix] * sys_basepower
+            P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
-        elseif bustype == PSY.ACBusTypes.PQ
+        elseif bt == PSY.ACBusTypes.PQ
             Vm_vect[ix] = result[2 * ix - 1]
             θ_vect[ix] = result[2 * ix]
-            P_gen_vect[ix] = data.bus_activepower_injection[ix] * sys_basepower
-            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix] * sys_basepower
+            P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
+            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix, time_step] * sys_basepower
         end
     end
 
@@ -706,4 +690,49 @@ function write_results(
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
     return Dict("bus_results" => bus_df, "flow_results" => branch_df)
+end
+
+"""
+Modify the values in the given `System` to correspond to the given `PowerFlowData` such that
+if a new `PowerFlowData` is constructed from the resulting system it is the same as `data`.
+See also `write_powerflow_solution!`. NOTE that this assumes that `data` was initialized
+from `sys` and then solved with no further modifications.
+"""
+function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
+    for bus in PSY.get_components(PSY.Bus, sys)
+        bus_number = data.bus_lookup[PSY.get_number(bus)]
+        bus_type = data.bus_type[bus_number, time_step]  # use this instead of bus.bustype to account for PV -> PQ
+        if bus_type == PSY.ACBusTypes.REF
+            # For REF bus, voltage and angle are fixed; update active and reactive
+            P_gen = data.bus_activepower_injection[bus_number, time_step]
+            Q_gen = data.bus_reactivepower_injection[bus_number, time_step]
+            _power_redistribution_ref(sys, P_gen, Q_gen, bus,
+                DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
+        elseif bus_type == PSY.ACBusTypes.PV
+            # For PV bus, active and voltage are fixed; update reactive and angle
+            Q_gen = data.bus_reactivepower_injection[bus_number, time_step]
+            _reactive_power_redistribution_pv(sys, Q_gen, bus,
+                DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
+            PSY.set_angle!(bus, data.bus_angles[bus_number, time_step])
+        elseif bus_type == PSY.ACBusTypes.PQ
+            # For PQ bus, active and reactive are fixed; update voltage and angle
+            Vm = data.bus_magnitude[bus_number, time_step]
+            PSY.set_magnitude!(bus, Vm)
+            PSY.set_angle!(bus, data.bus_angles[bus_number, time_step])
+            # if it used to be a PV bus, also set the Q value:
+            if bus.bustype == PSY.ACBusTypes.PV
+                Q_gen = data.bus_reactivepower_injection[bus_number, time_step]
+                _reactive_power_redistribution_pv(sys, Q_gen, bus,
+                    DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
+                # now both the Q and the Vm, Va are correct for this kind of buses
+            end
+        end
+    end
+end
+
+# work in progress - quick but not optimized function for POC
+function penalty_factors(aux_variables::AuxiliaryVariables)
+    J_t = transpose(aux_variables.J)
+    f = J_t \ aux_variables.dSbus_dV_ref
+    return f
 end

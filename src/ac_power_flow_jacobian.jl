@@ -14,28 +14,34 @@ function (Jacobianf::PolarPowerFlowJacobian)(
     return
 end
 
-function PolarPowerFlowJacobian(data::ACPowerFlowData, x0::Vector{Float64})
-    j0 = _create_jacobian_matrix_structure(data)
+function PolarPowerFlowJacobian(
+    data::ACPowerFlowData,
+    x0::Vector{Float64},
+    time_step::Int64,
+)
+    j0 = _create_jacobian_matrix_structure(data, time_step)
     F0 =
         (J::SparseArrays.SparseMatrixCSC{Float64, Int32}, x::Vector{Float64}) ->
-            jsp!(J, x, data)
+            jsp!(J, x, data, time_step)
     F0(j0, x0)
     return PolarPowerFlowJacobian(F0, j0)
 end
 
-function _create_jacobian_matrix_structure(data::ACPowerFlowData)
+function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64)
     #Create Jacobian structure
     J0_I = Int32[]
     J0_J = Int32[]
     J0_V = Float64[]
 
-    for ix_f in eachindex(data.bus_type)
+    num_buses = first(size(data.bus_type))
+
+    for ix_f in 1:num_buses
         F_ix_f_r = 2 * ix_f - 1
         F_ix_f_i = 2 * ix_f
         for ix_t in data.neighbors[ix_f]
             X_ix_t_fst = 2 * ix_t - 1
             X_ix_t_snd = 2 * ix_t
-            nb = data.bus_type[ix_t]
+            nb = data.bus_type[ix_t, time_step]
             #Set to 0.0 only on connected buses
             if nb == PSY.ACBusTypes.REF
                 if ix_f == ix_t
@@ -91,18 +97,20 @@ function jsp!(
     J::SparseArrays.SparseMatrixCSC{Float64, Int32},
     ::Vector{Float64},
     data::ACPowerFlowData,
+    time_step::Int64,
 )
     Yb = data.power_network_matrix.data
-    Vm = data.bus_magnitude
-    θ = data.bus_angles
-    for (ix_f, b) in enumerate(data.bus_type)
+    Vm = data.bus_magnitude[:, time_step]
+    θ = data.bus_angles[:, time_step]
+    num_buses = first(size(data.bus_type))
+    for ix_f in 1:num_buses
         F_ix_f_r = 2 * ix_f - 1
         F_ix_f_i = 2 * ix_f
 
         for ix_t in data.neighbors[ix_f]
             X_ix_t_fst = 2 * ix_t - 1
             X_ix_t_snd = 2 * ix_t
-            nb = data.bus_type[ix_t]
+            nb = data.bus_type[ix_t, time_step]
             if nb == PSY.ACBusTypes.REF
                 # State variables are Active and Reactive Power Generated
                 # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - x[2*i-1]
