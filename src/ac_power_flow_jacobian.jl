@@ -16,24 +16,26 @@ end
 
 function PolarPowerFlowJacobian(
     data::ACPowerFlowData,
-    x0::Vector{Float64};
-    time_step::Int64 = 1,
+    x0::Vector{Float64},
+    time_step::Int64,
 )
-    j0 = _create_jacobian_matrix_structure(data; time_step = time_step)
+    j0 = _create_jacobian_matrix_structure(data, time_step)
     F0 =
         (J::SparseArrays.SparseMatrixCSC{Float64, Int32}, x::Vector{Float64}) ->
-            jsp!(J, x, data; time_step = time_step)
+            jsp!(J, x, data, time_step)
     F0(j0, x0)
     return PolarPowerFlowJacobian(F0, j0)
 end
 
-function _create_jacobian_matrix_structure(data::ACPowerFlowData; time_step::Int64 = 1)
+function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64)
     #Create Jacobian structure
     J0_I = Int32[]
     J0_J = Int32[]
     J0_V = Float64[]
 
-    for ix_f in eachindex(data.bus_type[:, time_step])
+    num_buses = first(size(data.bus_type))
+
+    for ix_f in 1:num_buses
         F_ix_f_r = 2 * ix_f - 1
         F_ix_f_i = 2 * ix_f
         for ix_t in data.neighbors[ix_f]
@@ -94,13 +96,14 @@ end
 function jsp!(
     J::SparseArrays.SparseMatrixCSC{Float64, Int32},
     ::Vector{Float64},
-    data::ACPowerFlowData;
-    time_step::Int64 = 1,
+    data::ACPowerFlowData,
+    time_step::Int64,
 )
     Yb = data.power_network_matrix.data
     Vm = data.bus_magnitude[:, time_step]
     θ = data.bus_angles[:, time_step]
-    for (ix_f, b) in enumerate(data.bus_type[:, time_step])
+    num_buses = first(size(data.bus_type))
+    for ix_f in 1:num_buses
         F_ix_f_r = 2 * ix_f - 1
         F_ix_f_i = 2 * ix_f
 

@@ -47,7 +47,7 @@
 
     # check results
     # for t in 1:length(data.timestep_map)
-    #     res_t = solve_powerflow(pf, sys; time_step=t)  # does not work - ts data not set in sys
+    #     res_t = solve_powerflow(pf, sys, t)  # does not work - ts data not set in sys
     #     flow_ft = res_t["flow_results"].P_from_to
     #     flow_tf = res_t["flow_results"].P_to_from
     #     ts_flow_ft = results[data.timestep_map[t]]["flow_results"].P_from_to

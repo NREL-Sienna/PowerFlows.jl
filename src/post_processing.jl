@@ -608,8 +608,8 @@ function write_results(
     ::ACPowerFlow{<:ACPowerFlowSolverType},
     sys::PSY.System,
     data::ACPowerFlowData,
-    result::Union{Vector{Float64}, Matrix{Float64}};
-    time_step::Int64 = 1,
+    result::Union{Vector{Float64}, Matrix{Float64}},
+    time_step::Int64,
 )
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
     buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x))
@@ -622,24 +622,25 @@ function write_results(
     Q_gen_vect = fill(0.0, N_BUS)
     P_load_vect = fill(0.0, N_BUS)
     Q_load_vect = fill(0.0, N_BUS)
+    bus_types = view(data.bus_type, :, time_step)
 
-    for (ix, bustype) in enumerate(data.bus_type[:, time_step])
+    for (ix, bt) in enumerate(bus_types)
         P_load_vect[ix] = data.bus_activepower_withdrawals[ix, time_step] * sys_basepower
         Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix, time_step] * sys_basepower
         P_admittance, Q_admittance = _get_fixed_admittance_power(sys, buses[ix], result, ix)
         P_load_vect[ix] += P_admittance * sys_basepower
         Q_load_vect[ix] += Q_admittance * sys_basepower
-        if bustype == PSY.ACBusTypes.REF
+        if bt == PSY.ACBusTypes.REF
             Vm_vect[ix] = data.bus_magnitude[ix, time_step]
             θ_vect[ix] = data.bus_angles[ix, time_step]
             P_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix] * sys_basepower
-        elseif bustype == PSY.ACBusTypes.PV
+        elseif bt == PSY.ACBusTypes.PV
             Vm_vect[ix] = data.bus_magnitude[ix, time_step]
             θ_vect[ix] = result[2 * ix]
             P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
             Q_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
-        elseif bustype == PSY.ACBusTypes.PQ
+        elseif bt == PSY.ACBusTypes.PQ
             Vm_vect[ix] = result[2 * ix - 1]
             θ_vect[ix] = result[2 * ix]
             P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
@@ -730,8 +731,8 @@ function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
 end
 
 # work in progress - quick but not optimized function for POC
-function penalty_factors(solver_data::SolverData)
-    J_t = transpose(solver_data.J)
-    f = J_t \ solver_data.dSbus_dV_ref
+function penalty_factors(aux_variables::AuxiliaryVariables)
+    J_t = transpose(aux_variables.J)
+    f = J_t \ aux_variables.dSbus_dV_ref
     return f
 end

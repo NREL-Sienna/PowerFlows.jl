@@ -53,7 +53,7 @@ function _calculate_x0(time_step::Int64,
     return x0
 end
 
-function PolarPowerFlow(data::ACPowerFlowData; time_step::Int64 = 1)
+function PolarPowerFlow(data::ACPowerFlowData, time_step::Int64)
     n_buses = first(size(data.bus_type))
     P_net = zeros(n_buses)
     Q_net = zeros(n_buses)
@@ -75,7 +75,7 @@ function PolarPowerFlow(data::ACPowerFlowData; time_step::Int64 = 1)
         data.bus_reactivepower_withdrawals)
     pf_function =
         (res::Vector{Float64}, X::Vector{Float64}) ->
-            polar_pf!(res, X, P_net, Q_net, data; time_step = time_step)
+            polar_pf!(res, X, P_net, Q_net, data, time_step)
     res = similar(x0)
     pf_function(res, x0)
 
@@ -111,21 +111,22 @@ function polar_pf!(
     X::Vector{Float64},
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
-    data::ACPowerFlowData;
-    time_step::Int64 = 1,
+    data::ACPowerFlowData,
+    time_step::Int64,
 )
     Yb = data.power_network_matrix.data
     n_buses = first(size(data.bus_type))
-    for (ix, b) in enumerate(data.bus_type[:, time_step])
-        if b == PSY.ACBusTypes.REF
+    bus_types = view(data.bus_type, :, time_step)
+    for (ix, bt) in enumerate(bus_types)
+        if bt == PSY.ACBusTypes.REF
             # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
             P_net[ix] = X[2 * ix - 1] - data.bus_activepower_withdrawals[ix, time_step]
             Q_net[ix] = X[2 * ix] - data.bus_reactivepower_withdrawals[ix, time_step]
-        elseif b == PSY.ACBusTypes.PV
+        elseif bt == PSY.ACBusTypes.PV
             # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
             Q_net[ix] = X[2 * ix - 1] - data.bus_reactivepower_withdrawals[ix, time_step]
             data.bus_angles[ix, time_step] = X[2 * ix]
-        elseif b == PSY.ACBusTypes.PQ
+        elseif bt == PSY.ACBusTypes.PQ
             # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
             data.bus_magnitude[ix, time_step] = X[2 * ix - 1]
             data.bus_angles[ix, time_step] = X[2 * ix]

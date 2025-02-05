@@ -3,15 +3,15 @@ const _NLSOLVE_AC_POWERFLOW_KWARGS =
 
 function _newton_powerflow(
     pf::ACPowerFlow{NLSolveACPowerFlow},
-    data::ACPowerFlowData;
-    time_step::Int64 = 1,  # not implemented for NLSolve and not used
+    data::ACPowerFlowData,
+    time_step::Int64;  # not implemented for NLSolve and not used
     nlsolve_kwargs...,
 )
     nlsolve_solver_kwargs =
         filter(p -> !(p.first in _NLSOLVE_AC_POWERFLOW_KWARGS), nlsolve_kwargs)
 
-    pf = PolarPowerFlow(data; time_step = time_step)
-    J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0; time_step = time_step)
+    pf = PolarPowerFlow(data, time_step)
+    J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0, time_step)
 
     df = NLsolve.OnceDifferentiable(pf, J, pf.x0, pf.residual, J.Jv)
     res = NLsolve.nlsolve(df, pf.x0; nlsolve_solver_kwargs...)
@@ -22,14 +22,14 @@ function _newton_powerflow(
             "The powerflow solver NLSolve did not converge (returned convergence = $(res.f_converged))"
         )
     else
-        V = _calc_V(data, res.zero; time_step = time_step)
+        V = _calc_V(data, res.zero, time_step)
         Sbus_result = V .* conj(data.power_network_matrix.data * V)
     end
     return (res.f_converged, V, Sbus_result)
 end
 
 """
-    _calc_V(data::ACPowerFlowData, x::Vector{Float64}; time_step::Int64 = 1) -> Vector{Complex{Float64}}
+    _calc_V(data::ACPowerFlowData, x::Vector{Float64}, time_step::Int64) -> Vector{Complex{Float64}}
 
 Calculate the results for complex bus voltages from the "x" results of NLSolveACVPowerFlow.
     This is for compatibility with the results of KLUACPowerFlow, ehich returns the vector V instead of the vector x.
@@ -53,27 +53,28 @@ The state vector `x` is assumed to have 2 values per bus (real and imaginary par
 
 function _calc_V(
     data::ACPowerFlowData,
-    x::Vector{Float64};
-    time_step::Int64 = 1,
+    x::Vector{Float64},
+    time_step::Int64,
 )
     n_buses = length(x) ÷ 2  # Since x has 2 elements per bus (real and imaginary)
     V = zeros(Complex{Float64}, n_buses)
     Vm_data = data.bus_magnitude[:, time_step]
     Va_data = data.bus_angles[:, time_step]
+    bus_types = view(data.bus_type, :, time_step)
 
     # Extract values for Vm and Va from x
-    for (ix, b) in enumerate(data.bus_type[:, time_step])
-        if b == PSY.ACBusTypes.REF
+    for (ix, bt) in enumerate(bus_types)
+        if bt == PSY.ACBusTypes.REF
             # For REF bus, we have active and reactive power
             Vm = Vm_data[ix]
             Va = Va_data[ix]
             V[ix] = Vm * exp(im * Va)
-        elseif b == PSY.ACBusTypes.PV
+        elseif bt == PSY.ACBusTypes.PV
             # For PV bus, we have reactive power and voltage angle
             Vm = Vm_data[ix]
             Va = x[2 * ix]
             V[ix] = Vm * exp(im * Va)  # Rebuild voltage from magnitude and angle
-        elseif b == PSY.ACBusTypes.PQ
+        elseif bt == PSY.ACBusTypes.PQ
             # For PQ bus, we have voltage magnitude and voltage angle
             Vm = x[2 * ix - 1]
             Va = x[2 * ix]

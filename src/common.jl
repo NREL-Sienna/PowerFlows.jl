@@ -150,7 +150,7 @@ function make_dc_powerflowdata(
     temp_bus_map,
     valid_ix,
     converged,
-    solver_data,
+    aux_variables,
 )
     branch_type = Vector{DataType}(undef, length(branch_lookup))
     for (ix, b) in enumerate(PNM.get_ac_branches(sys))
@@ -174,7 +174,7 @@ function make_dc_powerflowdata(
         valid_ix,
         neighbors,
         converged,
-        solver_data,
+        aux_variables,
     )
 end
 
@@ -193,7 +193,7 @@ function make_powerflowdata(
     valid_ix,
     neighbors,
     converged,
-    solver_data,
+    aux_variables,
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
@@ -288,6 +288,6 @@ function make_powerflowdata(
         aux_network_matrix,
         neighbors,
         converged,
-        solver_data,
+        aux_variables,
     )
 end

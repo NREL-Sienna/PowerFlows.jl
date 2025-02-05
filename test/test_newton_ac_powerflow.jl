@@ -41,8 +41,8 @@
     pf = ACPowerFlow{ACSolver}()
     data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
     #Compare results between finite diff methods and Jacobian method
-    converged1, V1, S1 = PowerFlows._solve_powerflow!(pf, data, false)
-    x1 = PowerFlows._calc_x(data, V1, S1)
+    converged1, V1, S1 = PowerFlows._solve_powerflow!(pf, data, false, 1)
+    x1 = PowerFlows._calc_x(data, V1, S1, 1)
     @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6
 
     # Test that solve_powerflow! succeeds
@@ -68,8 +68,8 @@
     # Test enforcing the reactive power limits in closer detail
     set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
     data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
-    converged2, V2, S2 = PowerFlows._solve_powerflow!(pf, data, true)
-    x2 = PowerFlows._calc_x(data, V2, S2)
+    converged2, V2, S2 = PowerFlows._solve_powerflow!(pf, data, true, 1)
+    x2 = PowerFlows._calc_x(data, V2, S2, 1)
     @test LinearAlgebra.norm(result_14 - x2, Inf) >= 1e-6
     @test 1.08 <= x2[15] <= 1.09
 end

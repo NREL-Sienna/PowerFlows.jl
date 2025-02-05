@@ -34,15 +34,15 @@ end
 # legacy NR implementation - here we do not care about allocations, we use this function only for testing purposes
 function _newton_powerflow(
     pf::ACPowerFlow{PowerFlows.LUACPowerFlow},
-    data::PowerFlows.ACPowerFlowData;
-    time_step::Int64 = 1,
+    data::PowerFlows.ACPowerFlowData,
+    time_step::Int64;
     kwargs...,
 )
     # Fetch maxIter and tol from kwargs, or use defaults if not provided
     maxIter = get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER)
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
-    solver_data = data.solver_data[time_step]
+    aux_variables = data.aux_variables[time_step]
 
     Ybus = data.power_network_matrix.data
 
@@ -127,8 +127,8 @@ function _newton_powerflow(
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
         Sbus_result = V .* conj(Ybus * V)
-        solver_data.J = J
-        solver_data.dSbus_dV_ref =
+        aux_variables.J = J
+        aux_variables.dSbus_dV_ref =
             [vec(real.(dSbus_dVa[ref, :][:, pvpq])); vec(real.(dSbus_dVm[ref, :][:, pq]))]
         @info("The powerflow solver with KLU converged after $i iterations")
     end
