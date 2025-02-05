@@ -1,3 +1,5 @@
+abstract type LinearSolverCache end
+
 _SingleComponentLoad = Union{PSY.PowerLoad, PSY.ExponentialLoad, PSY.InterruptiblePowerLoad}
 get_total_p(l::_SingleComponentLoad) = PSY.get_active_power(l)
 get_total_q(l::_SingleComponentLoad) = PSY.get_reactive_power(l)
