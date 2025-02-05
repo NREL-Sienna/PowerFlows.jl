@@ -233,19 +233,14 @@ function make_powerflowdata(
         sys,
     )
 
-    # Shapes to reuse
-    zeros_bus_time = () -> zeros(Float64, n_buses, time_steps)
-    ones_bus_time = () -> ones(Float64, n_buses, time_steps)
-    zeros_branch_time = () -> zeros(Float64, n_branches, time_steps)
-
     # Define fields as matrices whose number of columns is equal to the number of time_steps
-    bus_activepower_injection_1 = zeros_bus_time()
-    bus_reactivepower_injection_1 = zeros_bus_time()
-    bus_activepower_withdrawals_1 = zeros_bus_time()
-    bus_reactivepower_withdrawals_1 = zeros_bus_time()
+    bus_activepower_injection_1 = zeros(Float64, n_buses, time_steps)
+    bus_reactivepower_injection_1 = zeros(Float64, n_buses, time_steps)
+    bus_activepower_withdrawals_1 = zeros(Float64, n_buses, time_steps)
+    bus_reactivepower_withdrawals_1 = zeros(Float64, n_buses, time_steps)
     bus_reactivepower_bounds_1 = Matrix{Vector{Float64}}(undef, n_buses, time_steps)
-    bus_magnitude_1 = ones_bus_time()
-    bus_angles_1 = zeros_bus_time()
+    bus_magnitude_1 = ones(Float64, n_buses, time_steps)
+    bus_angles_1 = zeros(Float64, n_buses, time_steps)
 
     # Initial values related to first timestep allocated in the first column
     bus_activepower_injection_1[:, 1] .= bus_activepower_injection
@@ -267,10 +262,10 @@ function make_powerflowdata(
     @assert size(bus_type_1) == (n_buses, time_steps)
 
     # Initial flows are all zero
-    branch_activepower_flow_from_to = zeros_branch_time()
-    branch_reactivepower_flow_from_to = zeros_branch_time()
-    branch_activepower_flow_to_from = zeros_branch_time()
-    branch_reactivepower_flow_to_from = zeros_branch_time()
+    branch_activepower_flow_from_to = zeros(Float64, n_branches, time_steps)
+    branch_reactivepower_flow_from_to = zeros(Float64, n_branches, time_steps)
+    branch_activepower_flow_to_from = zeros(Float64, n_branches, time_steps)
+    branch_reactivepower_flow_to_from = zeros(Float64, n_branches, time_steps)
 
     return PowerFlowData(
         bus_lookup,
