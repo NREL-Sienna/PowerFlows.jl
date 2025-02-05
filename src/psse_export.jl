@@ -205,14 +205,14 @@ end
 
 # call fastprintdelim multiple times on val, unrolled
 macro fastprintdelim_multi(io, val, newline::Bool, mult::Int)
-    local exprs = [Expr(:call, :fastprintdelim, esc(io), esc(val)) for _ in 1:(mult-1)]
+    local exprs = [Expr(:call, :fastprintdelim, esc(io), esc(val)) for _ in 1:(mult - 1)]
     local lastCall = newline ? :fastprintln : :fastprintdelim
     local lastExpr = Expr(:call, lastCall, esc(io), esc(val))
     return Expr(:block, exprs..., lastExpr)
 end
 # call fastprintdelim on each item in vals, unrolled
 macro fastprintdelim_unroll(io, newline::Bool, vals...)
-    local allButLast = vals[begin:(end-1)]
+    local allButLast = vals[begin:(end - 1)]
     local exprs = [Expr(:call, :fastprintdelim, esc(io), esc(item)) for item in allButLast]
     local lastCall = newline ? :fastprintln : :fastprintdelim
     local lastExpr = Expr(:call, lastCall, esc(io), esc(vals[end]))
@@ -323,7 +323,7 @@ function write_to_buffers!(
     BASFRQ = PSY.get_frequency(exporter.system)
     exporter.write_comments && (BASFRQ = "$BASFRQ    / $md_string")
 
-    @fastprintdelim_unroll(io, true, IC, SBASE, REV, XFRRAT, NXFRAT, BASFRQ)    
+    @fastprintdelim_unroll(io, true, IC, SBASE, REV, XFRRAT, NXFRAT, BASFRQ)
 
     # Record 2
     case_name = md["case_name"]
@@ -470,8 +470,8 @@ function write_to_buffers!(
         EVLO = PSSE_DEFAULT
 
         @fastprintdelim_unroll(io, true, I, NAME, BASKV, IDE, AREA,
-                                            ZONE, OWNER, VM, VA,
-                                            NVHI, NVLO, EVHI, EVLO)
+            ZONE, OWNER, VM, VA,
+            NVHI, NVLO, EVHI, EVLO)
     end
     end_group_33(io, md, exporter, "Bus Data", true)
 end
@@ -605,8 +605,8 @@ function write_to_buffers!(
         INTRPT = PSSE_DEFAULT
 
         @fastprintdelim_unroll(io, true, I, ID, STATUS, AREA, ZONE,
-                                    PL, QL, IP, IQ, YP, YQ, OWNER,
-                                    SCALE, INTRPT)
+            PL, QL, IP, IQ, YP, YQ, OWNER,
+            SCALE, INTRPT)
     end
     end_group_33(io, md, exporter, "Load Data", true)
     exporter.md_valid ||
@@ -769,9 +769,9 @@ function write_to_buffers!(
         WPF = get(PSY.get_ext(generator), "WPF", PSSE_DEFAULT)
 
         @fastprintdelim_unroll(io, false, I, ID, PG, QG, QT, QB,
-                                        VS, IREG, MBASE, ZR, ZX,
-                                        RT, XT, GTAP, STAT, RMPCT,
-                                        PT, PB)
+            VS, IREG, MBASE, ZR, ZX,
+            RT, XT, GTAP, STAT, RMPCT,
+            PT, PB)
         fastprintdelim_psse_default_ownership(io)
         @fastprintdelim_unroll(io, true, WMOD, WPF)
     end
@@ -843,8 +843,8 @@ function write_to_buffers!(
         LEN = PSSE_DEFAULT
 
         @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B,
-                                    RATEA, RATEB, RATEC, GI, BI,
-                                    GJ, BJ, ST, MET, LEN)
+            RATEA, RATEB, RATEC, GI, BI,
+            GJ, BJ, ST, MET, LEN)
         fastprintln_psse_default_ownership(io)
     end
     end_group_33(io, md, exporter, "Non-Transformer Branch Data", true)
@@ -988,15 +988,15 @@ function write_to_buffers!(
         NOMV2 = 0.0  # special case: identical to bus voltage
 
         @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
-                            MAG1, MAG2, NMETR, NAME, STAT)
+            MAG1, MAG2, NMETR, NAME, STAT)
         fastprintdelim_psse_default_ownership(io)
         fastprintln(io, VECGRP)
 
         @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2)
 
         @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1, RATA1,
-                                RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
-                                VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1)
+            RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
+            VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1)
 
         @fastprintdelim_unroll(io, true, WINDV2, NOMV2)
     end
