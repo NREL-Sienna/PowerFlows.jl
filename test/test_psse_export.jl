@@ -189,19 +189,19 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
     end
 
     # Extra checks for other types of generators
-    GenSource = Union{Generator, Source}
-    gen1_names = sort(PSY.get_name.(PSY.get_components(GenSource, sys1)))
-    gen2_names = sort(PSY.get_name.(PSY.get_components(GenSource, sys2)))
+    GenLike = Union{Generator, Source, Storage}
+    gen1_names = sort(PSY.get_name.(PSY.get_components(GenLike, sys1)))
+    gen2_names = sort(PSY.get_name.(PSY.get_components(GenLike, sys2)))
     if gen1_names != gen2_names
-        @error "Predicted Generator/Source names do not match actual generator names"
+        @error "Predicted Generator/Source/Storage names do not match actual generator names"
         @error "Predicted: $gen1_names"
         @error "Actual: $gen2_names"
         result = false
     end
     gen_common_names = intersect(gen1_names, gen2_names)
     for (gen1, gen2) in zip(
-        PSY.get_component.(GenSource, [sys1], gen_common_names),
-        PSY.get_component.(GenSource, [sys2], gen_common_names),
+        PSY.get_component.(GenLike, [sys1], gen_common_names),
+        PSY.get_component.(GenLike, [sys2], gen_common_names),
     )
         # Skip pairs we've already compared
         # e.g., if they're both ThermalStandards, we've already compared them

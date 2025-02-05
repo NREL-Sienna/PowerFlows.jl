@@ -26,6 +26,12 @@ function get_reactive_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
     return (min = val, max = val)
 end
 
+function get_reactive_power_limits_for_power_flow(gen::PSY.Storage)
+    limits = PSY.get_reactive_power_limits(gen)
+    isnothing(limits) && return (min = -Inf, max = Inf)  # TODO decide on proper behavior in this case
+    return limits
+end
+
 """
 Return the active power limits that should be used in power flow calculations and PSS/E
 exports. Redirects to `PSY.get_active_power_limits` in all but special cases.

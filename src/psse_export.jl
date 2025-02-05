@@ -701,7 +701,8 @@ end
 
 """
 If the export_settings flag `sources_as_generators` is set, export `PSY.Source` instances as
-PSS/E generators in addition to `PSY.Generator`s
+PSS/E generators in addition to `PSY.Generator`s. Same for `storages_as_generators` and
+`PSY.Storage`.
 
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Generator Data
 """
@@ -723,6 +724,13 @@ function write_to_buffers!(
             temp_gens,
             sort!(
                 collect(PSY.get_components(PSY.Source, exporter.system));
+                by = PSY.get_name,
+            ),
+        )
+        get(md["export_settings"], "storages_as_generators", false) && append!(
+            temp_gens,
+            sort!(
+                collect(PSY.get_components(PSY.Storage, exporter.system));
                 by = PSY.get_name,
             ),
         )
@@ -1000,7 +1008,9 @@ function write_to_buffers!(
         CZ = 1  # NOTE on parsing we do the transformation to this unit system
         CM = 1  # NOTE on parsing we do the transformation to this unit system
         MAG1 = PSSE_DEFAULT
-        MAG2 = -PSY.get_primary_shunt(transformer)  # TODO check sign on parsing. We want the value stored in the Sienna field to be positive
+        MAG2 = -PSY.get_primary_shunt(transformer)
+        (MAG2 > 0) &&
+            @warn "Detected positive MAG2 for transformer $(PSY.get_name(transformer)) due to negative `get_primary_shunt`; exporting anyway"
         NMETR = PSSE_DEFAULT
         NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
         STAT = PSY.get_available(transformer) ? 1 : 0
@@ -1183,6 +1193,7 @@ function write_export(
         export_settings["overwrite"] = exporter.overwrite
         export_settings["step"] = _step_to_string(exporter.step)
         export_settings["sources_as_generators"] = true
+        export_settings["storages_as_generators"] = true
 
         md["record_groups"] = OrderedDict{String, Bool}()  # Keep track of which record groups we actually write to and which we skip
 
@@ -1247,7 +1258,6 @@ function get_psse_export_paths(
 end
 
 # COMMON INTERFACE
-# TODO handle kwargs
 make_power_flow_container(pfem::PSSEExportPowerFlow, sys::PSY.System; kwargs...) =
     PSSEExporter(
         sys,
