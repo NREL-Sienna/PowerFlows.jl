@@ -258,7 +258,7 @@ function _power_redistribution_ref(
             @debug "Remaining residual $q_residual, $(PSY.get_name(bus))"
             p_set_point = PSY.get_active_power(device) + p_residual
             PSY.set_active_power!(device, p_set_point)
-            p_limits = get_reactive_power_limits_for_power_flow(device)  # TODO should this be active_power_limits? It was reactive in the existing codebase
+            p_limits = get_active_power_limits_for_power_flow(device)
             if (p_set_point >= p_limits.max + BOUNDS_TOLERANCE) ||
                (p_set_point <= p_limits.min - BOUNDS_TOLERANCE)
                 @error "Unit $(PSY.get_name(device)) P=$(p_set_point) above limits. P_max = $(p_limits.max) P_min = $(p_limits.min)"
