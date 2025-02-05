@@ -7,7 +7,7 @@ struct LUACPowerFlow <: ACPowerFlowSolverType end  # Only for testing, a basic i
 function _legacy_dSbus_dV(
     V::Vector{Complex{Float64}},
     Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
-)
+)::Tuple{SparseMatrixCSC{Complex{Float64}, Int64}, SparseMatrixCSC{Complex{Float64}, Int64}}
     diagV = LinearAlgebra.Diagonal(V)
     diagVnorm = LinearAlgebra.Diagonal(V ./ abs.(V))
     diagIbus = LinearAlgebra.Diagonal(Ybus * V)
