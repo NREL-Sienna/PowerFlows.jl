@@ -7,10 +7,10 @@ struct LUACPowerFlow <: ACPowerFlowSolverType end  # Only for testing, a basic i
 function _legacy_dSbus_dV(
     V::Vector{Complex{Float64}},
     Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
-)
-    diagV = LinearAlgebra.Diagonal(V)
-    diagVnorm = LinearAlgebra.Diagonal(V ./ abs.(V))
-    diagIbus = LinearAlgebra.Diagonal(Ybus * V)
+)::Tuple{SparseMatrixCSC{Complex{Float64}, Int64}, SparseMatrixCSC{Complex{Float64}, Int64}}
+    diagV = SparseArrays.spdiagm(0 => V)
+    diagVnorm = SparseArrays.spdiagm(0 => V ./ abs.(V))
+    diagIbus = SparseArrays.spdiagm(0 => Ybus * V)
     dSbus_dVm = diagV * conj.(Ybus * diagVnorm) + conj.(diagIbus) * diagVnorm
     dSbus_dVa = 1im * diagV * conj.(diagIbus - Ybus * diagV)
     return dSbus_dVa, dSbus_dVm
@@ -127,9 +127,6 @@ function _newton_powerflow(
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
         Sbus_result = V .* conj(Ybus * V)
-        aux_variables.J = J
-        aux_variables.dSbus_dV_ref =
-            [vec(real.(dSbus_dVa[ref, :][:, pvpq])); vec(real.(dSbus_dVm[ref, :][:, pq]))]
         @info("The powerflow solver with KLU converged after $i iterations")
     end
     return (converged, V, Sbus_result)
