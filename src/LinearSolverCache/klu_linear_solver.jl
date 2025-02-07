@@ -20,12 +20,6 @@ end
 
 get_reuse_symbolic(cache::KLULinSolveCache) = cache.reuse_symbolic
 
-function full_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, Int64})
-    symbolic_refactor!(cache, A)
-    numeric_refactor!(cache, A.nzval)
-    return
-end
-
 # only does the symbolic, not the numeric.
 function symbolic_factor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, Int64})
     @assert size(A, 1) == cache.K.n && size(A, 2) == cache.K.n
@@ -84,7 +78,7 @@ function symbolic_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64,
     return
 end
 
-function numeric_refactor!(cache::KLULinSolveCache, vals::Vector{Float64})
+function numeric_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, Int64})
 
     if cache.K._symbolic == C_NULL
         @error("Need to call symbolic_refactor! first.")
@@ -92,7 +86,7 @@ function numeric_refactor!(cache::KLULinSolveCache, vals::Vector{Float64})
     if cache.K._numeric == C_NULL
         cache.K._numeric = KLU.klu_l_factor(cache.K.colptr,
             cache.K.rowval,
-            vals,
+            A.nzval,
             cache.K._symbolic,
             cache.rf_common)
         if cache.K._numeric == C_NULL
@@ -103,7 +97,7 @@ function numeric_refactor!(cache::KLULinSolveCache, vals::Vector{Float64})
         # returned value is error code, not new numeric factorization.
         ok = KLU.klu_l_refactor(cache.K.colptr,
             cache.K.rowval,
-            vals,
+            A.nzval,
             cache.K._symbolic,
             cache.K._numeric,
             cache.rf_common,

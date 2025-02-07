@@ -630,16 +630,7 @@ function _newton_powerflow(
     # pq_cols = pq_lookup[cols][pq_lookup[cols] .!= 0]
 
     J = _preallocate_J(rows, cols, pvpq, pq)
-
-    # preallocate the KLU factorization object - symbolic object only
-    colptr = KLU.decrement(J.colptr)
-    rowval = KLU.decrement(J.rowval)
-    n = size(J, 1)
-    factor_J = KLU.KLUFactorization(n, colptr, rowval, J.nzval)
-    KLU.klu_analyze!(factor_J)
-    rf = Ref(factor_J.common)
-    # factorization for the numeric object does not work here:
-    # factor_J._numeric = KLU.klu_l_factor(colptr, rowval, J.nzval, factor_J._symbolic, rf)
+    cache = KLULinSolveCache(J)
 
     while i < maxIter && !converged
         i += 1
@@ -666,32 +657,15 @@ function _newton_powerflow(
         # background: KLU.klu_l_factor does not work properly with the preallocated J matrix with dummy values
         # the workaround is to initialize the numeric object here in the loop once and then refactorize the matrix in the loop inplace
         if i == 1
-            # works when J values are ok:
-            factor_J._numeric =
-                KLU.klu_l_factor(colptr, rowval, J.nzval, factor_J._symbolic, rf)
+            symbolic_factor!(cache, J)
         end
 
         try
             # factorize the numeric object of KLU inplace, while reusing the symbolic object
-            KLU.klu_l_refactor(
-                colptr,
-                rowval,
-                J.nzval,
-                factor_J._symbolic,
-                factor_J._numeric,
-                rf,
-            )
+            numeric_refactor!(cache, J)
 
             # solve inplace - the results are written to F, so that we must use F instead of dx for updating V
-            KLU.klu_l_solve(
-                factor_J._symbolic,
-                factor_J._numeric,
-                size(F, 1),
-                size(F, 2),
-                F,
-                rf,
-            )
-
+            solve!(cache, F)
         catch e
             @error("KLU factorization failed: $e")
             return (converged, V, Sbus_result)
