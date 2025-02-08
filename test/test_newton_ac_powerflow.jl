@@ -566,15 +566,13 @@ end
     J_block = sparse(rows, cols, Float64(0), maximum(rows), maximum(cols), unique)
     J0_KLU = [J_block[pvpq, pvpq] J_block[pvpq, pq]; J_block[pq, pvpq] J_block[pq, pq]]
     PF._update_dSbus_dV!(rows, cols, V0, Ybus, diagV, diagVnorm, diagIbus, diagIbus_diag,
-        dSbus_dVa, dSbus_dVm, r_dSbus_dVa, r_dSbus_dVm, i_dSbus_dVa, i_dSbus_dVm,
+        dSbus_dVa, dSbus_dVm,
         Ybus_diagVnorm, conj_Ybus_diagVnorm, diagV_conj_Ybus_diagVnorm, conj_diagIbus,
         conj_diagIbus_diagVnorm, Ybus_diagV, conj_Ybus_diagV)
     PF._update_J!(
         J0_KLU,
-        r_dSbus_dVa,
-        r_dSbus_dVm,
-        i_dSbus_dVa,
-        i_dSbus_dVm,
+        dSbus_dVa,
+        dSbus_dVm,
         pvpq,
         pq,
         j_pvpq,
@@ -658,15 +656,13 @@ end
 
     J1_KLU = [J_block[pvpq, pvpq] J_block[pvpq, pq]; J_block[pq, pvpq] J_block[pq, pq]]
     PF._update_dSbus_dV!(rows, cols, V1_KLU, Ybus, diagV, diagVnorm, diagIbus,
-        diagIbus_diag, dSbus_dVa, dSbus_dVm, r_dSbus_dVa, r_dSbus_dVm, i_dSbus_dVa,
-        i_dSbus_dVm, Ybus_diagVnorm, conj_Ybus_diagVnorm, diagV_conj_Ybus_diagVnorm,
+        diagIbus_diag, dSbus_dVa, dSbus_dVm,
+        Ybus_diagVnorm, conj_Ybus_diagVnorm, diagV_conj_Ybus_diagVnorm,
         conj_diagIbus, conj_diagIbus_diagVnorm, Ybus_diagV, conj_Ybus_diagV)
     PF._update_J!(
         J1_KLU,
-        r_dSbus_dVa,
-        r_dSbus_dVm,
-        i_dSbus_dVa,
-        i_dSbus_dVm,
+        dSbus_dVa,
+        dSbus_dVm,
         pvpq,
         pq,
         j_pvpq,
