@@ -315,8 +315,9 @@ end
 
 function _update_V!(dx::Vector{Float64}, V::Vector{Complex{Float64}}, Vm::Vector{Float64},
     Va::Vector{Float64},
-    pv::Vector{Int64}, pq::Vector{Int64}, dx_Va_pv::Vector{Int64}, dx_Va_pq::Vector{Int64},
-    dx_Vm_pq::Vector{Int64})
+    pv::Vector{Int64}, pq::Vector{Int64}, dx_Va_pv::UnitRange{Int64}, dx_Va_pq::UnitRange{Int64},
+    dx_Vm_pq::UnitRange{Int64})
+
     for (i, j) in zip(pv, dx_Va_pv)
         Va[i] -= dx[j]
     end
@@ -338,7 +339,7 @@ end
 
 function _update_F!(F::Vector{Float64}, Sbus_result::Vector{Complex{Float64}},
     mis::Vector{Complex{Float64}},
-    dx_Va_pv::Vector{Int64}, dx_Va_pq::Vector{Int64}, dx_Vm_pq::Vector{Int64},
+    dx_Va_pv::UnitRange{Int64}, dx_Va_pq::UnitRange{Int64}, dx_Vm_pq::UnitRange{Int64},
     V::Vector{Complex{Float64}}, Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
     Sbus::Vector{Complex{Float64}},
     pv::Vector{Int64}, pq::Vector{Int64})
@@ -370,10 +371,6 @@ function _update_dSbus_dV!(rows::Vector{Int64}, cols::Vector{Int64},
     diagIbus_diag::Vector{Complex{Float64}},
     dSbus_dVa::SparseMatrixCSC{Complex{Float64}, Int64},
     dSbus_dVm::SparseMatrixCSC{Complex{Float64}, Int64},
-    r_dSbus_dVa::SparseMatrixCSC{Float64, Int64},
-    r_dSbus_dVm::SparseMatrixCSC{Float64, Int64},
-    i_dSbus_dVa::SparseMatrixCSC{Float64, Int64},
-    i_dSbus_dVm::SparseMatrixCSC{Float64, Int64},
     Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int64},
     conj_Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int64},
     diagV_conj_Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int64},
@@ -425,55 +422,44 @@ function _update_dSbus_dV!(rows::Vector{Int64}, cols::Vector{Int64},
     # Now multiply by 1im to get the final result
     #dSbus_dVa .*= 1im
     LinearAlgebra.mul!(dSbus_dVa, dSbus_dVa, 1im)
-
-    # this loop is slower so we should use vectorize assignments below
-    # for c in cols
-    #     for r in rows
-    #         r_dSbus_dVa[r, c] = real(dSbus_dVa[r, c])
-    #         i_dSbus_dVa[r, c] = imag(dSbus_dVa[r, c])
-    #         r_dSbus_dVm[r, c] = real(dSbus_dVm[r, c])
-    #         i_dSbus_dVm[r, c] = imag(dSbus_dVm[r, c])
-    #     end
-    # end
-
-    # sometimes can allocate so we have to use the for loop above
-    r_dSbus_dVa .= real.(dSbus_dVa)
-    r_dSbus_dVm .= real.(dSbus_dVm)
-    i_dSbus_dVa .= imag.(dSbus_dVa)
-    i_dSbus_dVm .= imag.(dSbus_dVm)
     return
 end
 
 function _update_submatrix!(
-    A::SparseMatrixCSC,
-    B::SparseMatrixCSC,
-    rows_A::Vector{Int64},
+    A::SparseMatrixCSC{Float64, Int64},
+    B::SparseMatrixCSC{ComplexF64, Int64},
+    real_rows_A::Vector{Int64},
+    imag_rows_A::Vector{Int64},
     cols_A::Vector{Int64},
-    rows_B::Vector{Int64},
+    real_rows_B::Vector{Int64},
+    imag_rows_B::Vector{Int64},
     cols_B::Vector{Int64},
 )
+    real_B = @view reinterpret(Float64, B)[begin:2:end, :]
     for idj in eachindex(cols_A)
-        for idi in eachindex(rows_A)
-            A[rows_A[idi], cols_A[idj]] = B[rows_B[idi], cols_B[idj]]
+        for idi in eachindex(real_rows_A)
+            A[real_rows_A[idi], cols_A[idj]] = real_B[real_rows_B[idi], cols_B[idj]]
+        end
+    end
+    imag_B = @view reinterpret(Float64, B)[2:2:end, :]
+    for idj in eachindex(cols_A)
+        for idi in eachindex(imag_rows_A)
+            A[imag_rows_A[idi], cols_A[idj]] = imag_B[imag_rows_B[idi], cols_B[idj]]
         end
     end
     return
 end
 
-function _update_J!(J::SparseMatrixCSC,
-    r_dSbus_dVa::SparseMatrixCSC,
-    r_dSbus_dVm::SparseMatrixCSC,
-    i_dSbus_dVa::SparseMatrixCSC,
-    i_dSbus_dVm::SparseMatrixCSC,
+function _update_J!(J::SparseMatrixCSC{Float64, Int64},
+    dSbus_dVa::SparseMatrixCSC{ComplexF64, Int64},
+    dSbus_dVm::SparseMatrixCSC{ComplexF64, Int64},
     pvpq::Vector{Int64},
     pq::Vector{Int64},
     j_pvpq::Vector{Int64},
     j_pq::Vector{Int64},
 )
-    _update_submatrix!(J, r_dSbus_dVa, j_pvpq, j_pvpq, pvpq, pvpq)
-    _update_submatrix!(J, r_dSbus_dVm, j_pvpq, j_pq, pvpq, pq)
-    _update_submatrix!(J, i_dSbus_dVa, j_pq, j_pvpq, pq, pvpq)
-    _update_submatrix!(J, i_dSbus_dVm, j_pq, j_pq, pq, pq)
+    _update_submatrix!(J, dSbus_dVa, j_pvpq, j_pq, j_pvpq, pvpq, pq, pvpq)
+    _update_submatrix!(J, dSbus_dVm, j_pvpq, j_pq, j_pq, pvpq, pq, pq)
     return
 end
 
@@ -579,9 +565,9 @@ function _newton_powerflow(
     j_pq = npvpq .+ pq_lookup[pq]
 
     # indices for updating of V
-    dx_Va_pv = Vector{Int64}([1:npv...])
-    dx_Va_pq = Vector{Int64}([(npv + 1):(npv + npq)...])
-    dx_Vm_pq = Vector{Int64}([(npv + npq + 1):(npv + 2 * npq)...])
+    dx_Va_pv = 1:npv
+    dx_Va_pq = (npv + 1):(npv + npq)
+    dx_Vm_pq = (npv + npq + 1):(npv + 2 * npq)
 
     Sbus =
         data.bus_activepower_injection[:, time_step] -
@@ -596,6 +582,8 @@ function _newton_powerflow(
     Sbus_result = zeros(Complex{Float64}, length(V))
     F = zeros(Float64, npvpq + npq)
     mis .= V .* conj.(Ybus * V) .- Sbus
+    # F is consistently equal to this expression. Might be able to make it a view:
+    # Then, updating mis would update F automatically.
     F .= [real(mis[pvpq]); imag(mis[pq])]
 
     # preallocate Jacobian matrix and arrays for calculating dSbus_dVa, dSbus_dVm
@@ -618,10 +606,6 @@ function _newton_powerflow(
 
     dSbus_dVm = sparse(rows, cols, Complex{Float64}(0))
     dSbus_dVa = sparse(rows, cols, Complex{Float64}(0))
-    r_dSbus_dVa = sparse(rows, cols, Float64(0))
-    r_dSbus_dVm = sparse(rows, cols, Float64(0))
-    i_dSbus_dVa = sparse(rows, cols, Float64(0))
-    i_dSbus_dVm = sparse(rows, cols, Float64(0))
 
     # maybe use this in the future?
     # pvpq_rows = pvpq_lookup[rows][pvpq_lookup[rows] .!= 0]
@@ -645,17 +629,15 @@ function _newton_powerflow(
         i += 1
 
         _update_dSbus_dV!(rows, cols, V, Ybus, diagV, diagVnorm, diagIbus, diagIbus_diag,
-            dSbus_dVa, dSbus_dVm, r_dSbus_dVa, r_dSbus_dVm, i_dSbus_dVa, i_dSbus_dVm,
+            dSbus_dVa, dSbus_dVm,
             Ybus_diagVnorm, conj_Ybus_diagVnorm, diagV_conj_Ybus_diagVnorm,
             conj_diagIbus, conj_diagIbus_diagVnorm, Ybus_diagV, conj_Ybus_diagV)
 
         # todo: improve pvpq, pq, j_pvpq, j_pq (use more specific indices)
         _update_J!(
             J,
-            r_dSbus_dVa,
-            r_dSbus_dVm,
-            i_dSbus_dVa,
-            i_dSbus_dVm,
+            dSbus_dVa,
+            dSbus_dVm,
             pvpq,
             pq,
             j_pvpq,
