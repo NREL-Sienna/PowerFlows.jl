@@ -1,8 +1,9 @@
 const _NLSOLVE_AC_POWERFLOW_KWARGS =
     Set([:check_reactive_power_limits, :check_connectivity])
 
+# keep around for now for performance comparison reasons.
 function _newton_powerflow(
-    pf::ACPowerFlow{NLSolveACPowerFlow},
+    pf::ACPowerFlow{NLSolveACPowerFlowOld},
     data::ACPowerFlowData,
     time_step::Int64;  # not implemented for NLSolve and not used
     nlsolve_kwargs...,
@@ -26,6 +27,67 @@ function _newton_powerflow(
         Sbus_result = V .* conj(data.power_network_matrix.data * V)
     end
     return (res.f_converged, V, Sbus_result)
+end
+
+function _newton_powerflow(
+    ::ACPowerFlow{NLSolveACPowerFlow},
+    data::ACPowerFlowData,
+    time_step::Int64,
+    maxIter::Int = 20,
+    tol::Real = 10^(-9);
+    kwargs...)
+
+    pf = PolarPowerFlow(data, time_step)
+    J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0, time_step)
+    x = deepcopy(pf.x0)
+    dx = similar(x)
+
+    cache = KLULinSolveCache(J.Jv)
+    i, converged = 0, false
+    while i < maxIter && !converged
+        i += 1
+
+        # update jacobian.
+        J(J.Jv, x)
+        # Workaround for the issue with KLU.klu_l_factor
+        # background: KLU.klu_l_factor does not work properly with the preallocated J matrix with dummy values
+        # the workaround is to initialize the numeric object here in the loop once and then refactorize the matrix in the loop inplace
+        if i == 1
+            symbolic_factor!(cache, J.Jv)
+        end
+
+        try
+            # factorize the numeric object of KLU inplace, while reusing the symbolic object
+            numeric_refactor!(cache, J.Jv)
+
+            # solve for dx inplace - the results are written to F, so that we must use F instead of dx for updating V
+            copyto!(dx, pf.residual)
+            solve!(cache, dx)
+        catch e
+            @error("KLU factorization failed: $e")
+            return (converged, V, Sbus_result)
+        end
+
+        # update x
+        x -= dx
+        # update residual.
+        pf(x) 
+
+        converged = LinearAlgebra.norm(pf.residual, Inf) < tol
+    end
+
+    # old stuff.
+    if !converged
+        V = fill(NaN + NaN * im, length(x) ÷ 2)
+        Sbus_result = fill(NaN + NaN * im, length(x) ÷ 2)
+        @error(
+            "Did not converge."
+        )
+    else
+        V = _calc_V(data, x, time_step)
+        Sbus_result = V .* conj(data.power_network_matrix.data * V)
+    end
+    return (converged, V, Sbus_result)
 end
 
 """
