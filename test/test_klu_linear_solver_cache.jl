@@ -1,7 +1,7 @@
 using SparseArrays
 using LinearAlgebra
 
-function testSolve(k::PF.KLULinSolveCache, A::SparseMatrixCSC{Float64, Int64})
+function testSolve(k::PF.KLULinSolveCache, A::SparseMatrixCSC{Float64, Int32})
     xb = randn(size(A,1))
     b = deepcopy(xb)
     PF.solve!(k, xb)
@@ -11,9 +11,9 @@ end
 
 @testset "klu linear solver cache" begin
     N = 50
-    A = sprandn(Float64, N, N, 0.1)
+    A = SparseMatrixCSC{Float64, Int32}(sprandn(Float64, N, N, 0.1))
     while abs(det(A)) < eps(Float64)
-        A = sprandn(Float64, N, N, 0.1)
+        A = SparseMatrixCSC{Float64, Int32}(sprandn(Float64, N, N, 0.1))
     end
     @assert abs(det(A)) > eps(Float64)
 
@@ -55,7 +55,7 @@ end
     @test PF.symbolic_factor!(autoRefactor, B) isa Any # shouldn't throw.
     
     # error handling: singular.
-    sing = sparse([1], [1], [0.1], 2, 2)
+    sing = SparseMatrixCSC{Float64, Int32}(sparse([1], [1], [0.1], 2, 2))
     # If I add KLU.kluerror(cache.K.common) to the constructor and symbolic_factor!
     # in cache, it still doesn't throw until you call numeric_refactor!. Strange.
     singCache = PF.KLULinSolveCache(sing)
@@ -63,7 +63,7 @@ end
     @test_throws SingularException PF.numeric_refactor!(singCache, sing)
 
     # error handling: non-square.
-    nonSquare = sprand(10, 11, 0.5)
+    nonSquare = SparseMatrixCSC{Float64, Int32}(sprand(10, 11, 0.5))
     @test_throws ArgumentError PF.KLULinSolveCache(nonSquare)
 
     # error handling: mismtached dimensions.
