@@ -1,3 +1,5 @@
+using LinearAlgebra
+
 mutable struct KLULinSolveCache <: LinearSolverCache
     K::KLU.KLUFactorization{Float64, Int64}
     reuse_symbolic::Bool
@@ -14,8 +16,10 @@ function KLULinSolveCache(
     check_pattern::Bool = true
 )
     K = KLU.KLUFactorization(A)
+    # KLU.kluerror(K.common) # necessary?
     return KLULinSolveCache(K, reuse_symbolic, check_pattern,
-                        Ref(K.common), Ref(Ptr{KLU.klu_l_symbolic}(K._symbolic)), Ref(Ptr{KLU.klu_l_numeric}(K._numeric)))
+                        Ref(K.common), Ref(Ptr{KLU.klu_l_symbolic}(K._symbolic)),
+                                        Ref(Ptr{KLU.klu_l_numeric}(K._numeric)))
 end
 
 get_reuse_symbolic(cache::KLULinSolveCache) = cache.reuse_symbolic
@@ -67,10 +71,12 @@ function symbolic_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64,
         # KLU does this same increment-compare-decrement pattern.
         KLU.increment!(cache.K.rowval)
         KLU.increment!(cache.K.colptr)
-        @assert cache.K.rowval == A.rowval
-        @assert cache.K.colptr == A.colptr
+        shouldErr::Bool =  A.colptr != cache.K.colptr || A.rowval != cache.K.rowval
         KLU.decrement!(cache.K.rowval)
         KLU.decrement!(cache.K.colptr)
+        shouldErr && throw(ArgumentError("Matrix has different sparse structure. " *
+                                "Either make cache with reuse_symbolic = false, " *
+                        "or call symbolic_factor! [instead of symbolic_refactor!]."))
     elseif !cache.reuse_symbolic
         symbolic_factor!(cache, A) # this also sets rf_symbolic.
         @assert cache.rf_symbolic[] == cache.K._symbolic
@@ -90,11 +96,20 @@ function numeric_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, 
             cache.K._symbolic,
             cache.rf_common)
         if cache.K._numeric == C_NULL
-            @error("factor failed")
+            @warn("factor failed")
             KLU.kluerror(cache.K.common)
         end
     else
-        # returned value is error code, not new numeric factorization.
+        if cache.check_pattern
+            # 0 vs 1-indexing. If mismatch, put things back before throwing error.
+            KLU.increment!(cache.K.rowval)
+            KLU.increment!(cache.K.colptr)
+            shouldErr::Bool =  A.colptr != cache.K.colptr || A.rowval != cache.K.rowval
+            KLU.decrement!(cache.K.rowval)
+            KLU.decrement!(cache.K.colptr)
+            shouldErr && throw(ArgumentError("Cannot numeric_refactor: "*
+                                        "matrix has different sparse structure."))
+        end
         ok = KLU.klu_l_refactor(cache.K.colptr,
             cache.K.rowval,
             A.nzval,
@@ -103,7 +118,7 @@ function numeric_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, 
             cache.rf_common,
         )
         if (ok != 1)
-            @error("refactor failed")
+            @warn("refactor failed")
             KLU.kluerror(cache.K.common)
         end
         cache.rf_numeric[] = Ptr{KLU.klu_l_numeric}(cache.K._numeric)
@@ -114,7 +129,12 @@ function numeric_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, 
 end
 
 function solve!(cache::KLULinSolveCache, B::Vector{Float64})
-    isok = KLU.klu_l_solve(cache.K._symbolic, cache.K._numeric, size(B, 1), size(B, 2), B, cache.rf_common)
+    if length(B) != cache.K.n
+        throw(LinearAlgebra.DimensionMismatch("b must be a"*
+                                    " vector of length $(cache.K.n)."))
+    end
+    isok = KLU.klu_l_solve(cache.K._symbolic, cache.K._numeric,
+                            size(B, 1), size(B, 2), B, cache.rf_common)
     isok == 0 && KLU.kluerror(cache.K.common)
     return B
 end
