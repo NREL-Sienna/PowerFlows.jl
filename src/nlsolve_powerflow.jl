@@ -32,10 +32,14 @@ end
 function _newton_powerflow(
     ::ACPowerFlow{NLSolveACPowerFlow},
     data::ACPowerFlowData,
-    time_step::Int64,
-    maxIter::Int = 20,
-    tol::Real = 10^(-9);
-    kwargs...)
+    time_step::Int64;
+    # copy-pasted from default options of NLsolve.jl
+    xtol::Float64 = 0.0, # NLSolve declares these as real. does the difference matter?
+    ftol::Float64 = 1e-8,
+    maxIter::Integer = 1_000,
+    # unused: added to prevent "no such function" errors from a few tests.
+    check_reactive_power_limits = false,
+    method = :newton) 
 
     pf = PolarPowerFlow(data, time_step)
     J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0, time_step)
@@ -43,37 +47,32 @@ function _newton_powerflow(
     dx = similar(x)
 
     cache = KLULinSolveCache(J.Jv)
+    symbolic_factor!(cache, J.Jv)
     i, converged = 0, false
     while i < maxIter && !converged
-        i += 1
-
-        # update jacobian.
-        J(J.Jv, x)
-        # Workaround for the issue with KLU.klu_l_factor
-        # background: KLU.klu_l_factor does not work properly with the preallocated J matrix with dummy values
-        # the workaround is to initialize the numeric object here in the loop once and then refactorize the matrix in the loop inplace
-        if i == 1
-            symbolic_factor!(cache, J.Jv)
+        # update jacobian. (when i is 0, already updated by constructor for J.)
+        if i > 0
+            J(J.Jv, x)
         end
 
         try
             # factorize the numeric object of KLU inplace, while reusing the symbolic object
             numeric_refactor!(cache, J.Jv)
 
-            # solve for dx inplace - the results are written to F, so that we must use F instead of dx for updating V
+            # solve for dx in-place
             copyto!(dx, pf.residual)
             solve!(cache, dx)
         catch e
             @error("KLU factorization failed: $e")
-            return (converged, V, Sbus_result)
+            return (converged, x)
         end
 
         # update x
         x -= dx
         # update residual.
         pf(x) 
-
-        converged = LinearAlgebra.norm(pf.residual, Inf) < tol
+        converged = (norm(dx) <= xtol) | (LinearAlgebra.norm(pf.residual, Inf) < ftol)
+        i += 1
     end
 
     # old stuff.
