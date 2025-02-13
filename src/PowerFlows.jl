@@ -5,6 +5,7 @@ export solve_powerflow!
 export PowerFlowData
 export DCPowerFlow
 export NLSolveACPowerFlow
+export HyrbidACPowerFlow
 export KLUACPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType

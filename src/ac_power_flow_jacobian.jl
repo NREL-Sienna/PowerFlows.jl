@@ -5,6 +5,16 @@ struct PolarPowerFlowJacobian{F,
     Jv::T
 end
 
+"""Update the Jacobian. Point of confusion: Jf is jsp!(), which
+updates Jv based on data, not based on x. x isn't actually used."""
+function (Jacobianf::PolarPowerFlowJacobian)(
+    x::Vector{Float64},
+)
+    Jacobianf.Jf(Jacobianf.Jv, x)
+    return
+end
+
+"""Update the Jacobian, and write new Jacobian to J. Unused currently."""
 function (Jacobianf::PolarPowerFlowJacobian)(
     J::SparseArrays.SparseMatrixCSC{Float64, Int32},
     x::Vector{Float64},
@@ -20,6 +30,7 @@ function PolarPowerFlowJacobian(
     time_step::Int64,
 )
     j0 = _create_jacobian_matrix_structure(data, time_step)
+    # yay closures: changes to data will affect F0 and vice versa.
     F0 =
         (J::SparseArrays.SparseMatrixCSC{Float64, Int32}, x::Vector{Float64}) ->
             jsp!(J, x, data, time_step)
@@ -93,6 +104,7 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
     return J0
 end
 
+"""Used to update Jv based on the bus voltages, angles, etc. in data."""
 function jsp!(
     J::SparseArrays.SparseMatrixCSC{Float64, Int32},
     ::Vector{Float64},

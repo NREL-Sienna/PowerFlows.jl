@@ -10,7 +10,7 @@ Supports passing kwargs to the PF solver.
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `KLUACPowerFlow`, `NLSolveACPowerFlow`, or `PowerFlows.LUACPowerFlow` (to be used for testing only).
+- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `KLUACPowerFlow`, `NLSolveACPowerFlow`, `HyrbidACPowerFlow`, or `PowerFlows.LUACPowerFlow` (to be used for testing only).
 - `system::PSY.System`: The power system model.
 - `kwargs...`: Additional keyword arguments.
 

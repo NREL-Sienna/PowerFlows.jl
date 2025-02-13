@@ -3,7 +3,7 @@ const _NLSOLVE_AC_POWERFLOW_KWARGS =
 
 # keep around for now for performance comparison reasons.
 function _newton_powerflow(
-    pf::ACPowerFlow{NLSolveACPowerFlowOld},
+    pf::ACPowerFlow{NLSolveACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;  # not implemented for NLSolve and not used
     nlsolve_kwargs...,
@@ -13,7 +13,6 @@ function _newton_powerflow(
 
     pf = PolarPowerFlow(data, time_step)
     J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0, time_step)
-
     df = NLsolve.OnceDifferentiable(pf, J, pf.x0, pf.residual, J.Jv)
     res = NLsolve.nlsolve(df, pf.x0; nlsolve_solver_kwargs...)
     if !res.f_converged
@@ -29,61 +28,77 @@ function _newton_powerflow(
     return (res.f_converged, V, Sbus_result)
 end
 
+struct NLCache{Tx}
+    x::Tx
+    xold::Tx
+    p::Tx
+    # g::Tx # only used for more complex linesearch algorithms.
+end
+
+function NLCache(x0::Vector{Float64})
+    x = copy(x0)
+    xold = copy(x)
+    p = copy(x)
+    # g = copy(x)
+    return NLCache(x, xold, p) #, g)
+end
+
 function _newton_powerflow(
-    ::ACPowerFlow{NLSolveACPowerFlow},
+    ::ACPowerFlow{HyrbidACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     # copy-pasted from default options of NLsolve.jl
     xtol::Float64 = 0.0, # NLSolve declares these as real. does the difference matter?
     ftol::Float64 = 1e-8,
-    maxIter::Integer = 1_000,
+    iterations::Integer = 1_000,
     # unused: added to prevent "no such function" errors from a few tests.
     check_reactive_power_limits = false,
-    method = :newton) 
+    method = :newton)
 
     pf = PolarPowerFlow(data, time_step)
     J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0, time_step)
-    x = deepcopy(pf.x0)
-    dx = similar(x)
+    nlCache = NLCache(pf.x0)
 
-    cache = KLULinSolveCache(J.Jv)
-    symbolic_factor!(cache, J.Jv)
+    linSolveCache = KLULinSolveCache(J.Jv)
+    symbolic_factor!(linSolveCache, J.Jv)
     i, converged = 0, false
-    while i < maxIter && !converged
-        # update jacobian. (when i is 0, already updated by constructor for J.)
-        if i > 0
-            J(J.Jv, x)
-        end
+    while i < iterations && !converged
 
+        copyto!(nlCache.xold, nlCache.x)
         try
             # factorize the numeric object of KLU inplace, while reusing the symbolic object
-            numeric_refactor!(cache, J.Jv)
+            numeric_refactor!(linSolveCache, J.Jv)
 
             # solve for dx in-place
-            copyto!(dx, pf.residual)
-            solve!(cache, dx)
+            copyto!(nlCache.p, pf.residual)
+            solve!(linSolveCache, nlCache.p)
+            rmul!(nlCache.p, -1)
         catch e
+            # TODO handle the case where J is singular.
             @error("KLU factorization failed: $e")
-            return (converged, x)
+            return (converged, nlCache.x)
         end
 
         # update x
-        x -= dx
-        # update residual.
-        pf(x) 
-        converged = (norm(dx) <= xtol) | (LinearAlgebra.norm(pf.residual, Inf) < ftol)
+        nlCache.x .+= nlCache.p
+        # update data's fields (the bus angles/voltages) to match x, and update the residual.
+        # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
+        pf(nlCache.x)
+        # update jacobian.
+        J(nlCache.x)
+
+        converged = (norm(nlCache.x - nlCache.xold) <= xtol) | (LinearAlgebra.norm(pf.residual, Inf) < ftol)
         i += 1
     end
 
-    # old stuff.
     if !converged
-        V = fill(NaN + NaN * im, length(x) ÷ 2)
-        Sbus_result = fill(NaN + NaN * im, length(x) ÷ 2)
+        V = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
+        Sbus_result = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
         @error(
-            "Did not converge."
+            "Solver (NLSolve-KLU hybrid) did not converge in $iterations iterations."
         )
     else
-        V = _calc_V(data, x, time_step)
+        V = _calc_V(data, nlCache.x, time_step)
         Sbus_result = V .* conj(data.power_network_matrix.data * V)
     end
     return (converged, V, Sbus_result)

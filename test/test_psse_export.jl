@@ -334,6 +334,7 @@ end
 @testset "PSSE Exporter with system_240[32].json, v33" for (ACSolver, folder_name) in (
     (NLSolveACPowerFlow, "system_240_NLSolve"),
     (KLUACPowerFlow, "system_240_KLU"),
+    (HyrbidACPowerFlow, "system_240_hybrid"),
 )
     sys = load_test_system()
     pf = ACPowerFlow{ACSolver}()
@@ -381,6 +382,8 @@ end
 
 @testset "PSSE Exporter with RTS_GMLC_DA_sys, v33" for (ACSolver, folder_name) in (
     (NLSolveACPowerFlow, "rts_gmlc_NLSolve"),
+    # (HyrbidACPowerFlow, "rts_gmlc_hyrbid") # fails to converge.
+    # NLSolve.jl's Newton method also fails to converge, so not too concerning.
     (KLUACPowerFlow, "rts_gmlc_KLU"),
 )
     sys = create_pf_friendly_rts_gmlc()
