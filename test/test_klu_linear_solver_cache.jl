@@ -2,7 +2,7 @@ using SparseArrays
 using LinearAlgebra
 
 function testSolve(k::PF.KLULinSolveCache, A::SparseMatrixCSC{Float64, Int32})
-    xb = randn(size(A,1))
+    xb = randn(size(A, 1))
     b = deepcopy(xb)
     PF.solve!(k, xb)
     @test A*xb ≈ b

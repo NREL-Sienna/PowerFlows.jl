@@ -8,7 +8,7 @@ function symbolic_refactor!(cache::LinearSolverCache, A::SparseMatrixCSC{Float64
     throw(AbstractMethodError(:symbolic_refactor!))
 end
 
-function numeric_refactor!(cache::LinearSolverCache,  A::SparseMatrixCSC{Float64, Int32})
+function numeric_refactor!(cache::LinearSolverCache, A::SparseMatrixCSC{Float64, Int32})
     throw(AbstractMethodError(:numeric_refactor!))
 end
 

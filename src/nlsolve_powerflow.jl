@@ -54,7 +54,6 @@ function _newton_powerflow(
     # unused: added to prevent "no such function" errors from a few tests.
     check_reactive_power_limits = false,
     method = :newton)
-
     pf = PolarPowerFlow(data, time_step)
     J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0, time_step)
     nlCache = NLCache(pf.x0)
@@ -63,7 +62,6 @@ function _newton_powerflow(
     symbolic_factor!(linSolveCache, J.Jv)
     i, converged = 0, false
     while i < iterations && !converged
-
         copyto!(nlCache.xold, nlCache.x)
         try
             # factorize the numeric object of KLU inplace, while reusing the symbolic object
@@ -87,7 +85,9 @@ function _newton_powerflow(
         # update jacobian.
         J(nlCache.x)
 
-        converged = (norm(nlCache.x - nlCache.xold) <= xtol) | (LinearAlgebra.norm(pf.residual, Inf) < ftol)
+        converged =
+            (norm(nlCache.x - nlCache.xold) <= xtol) |
+            (LinearAlgebra.norm(pf.residual, Inf) < ftol)
         i += 1
     end
 
