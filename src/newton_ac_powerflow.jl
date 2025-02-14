@@ -529,8 +529,6 @@ function _newton_powerflow(
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
 
-    aux_variables = data.aux_variables[time_step]
-
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
@@ -711,9 +709,13 @@ function _newton_powerflow(
         Sbus_result .*= NaN
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
-        aux_variables.J = J
-        aux_variables.dSbus_dV_ref =
-            [vec(real.(dSbus_dVa[ref, :][:, pvpq])); vec(real.(dSbus_dVm[ref, :][:, pq]))]
+        if pf.calc_loss_factors
+            data.loss_factors[ref, :] .= 0.0  # this will not be necessary once we have a full J for all buses
+            penalty_factors!(
+                J,
+                collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:]),
+                view(data.loss_factors, pvpq, time_step))
+        end
         @info("The powerflow solver with KLU converged after $i iterations")
     end
 

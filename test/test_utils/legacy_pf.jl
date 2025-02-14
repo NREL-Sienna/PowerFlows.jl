@@ -42,15 +42,14 @@ function _newton_powerflow(
     maxIter = get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER)
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
-    aux_variables = data.aux_variables[time_step]
 
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    ref = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
-        data.bus_type[:, time_step],
-    )
+    # ref = findall(
+    #     x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
+    #     data.bus_type[:, time_step],
+    # )
     pv = findall(
         x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
         data.bus_type[:, time_step],
@@ -65,7 +64,7 @@ function _newton_powerflow(
     npv = length(pv)
     npq = length(pq)
     npvpq = npv + npq
-    n_buses = length(data.bus_type[:, time_step])
+    # n_buses = length(data.bus_type[:, time_step])
 
     Vm = data.bus_magnitude[:, time_step]
     # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
@@ -124,10 +123,10 @@ function _newton_powerflow(
     if !converged
         V .*= NaN
         Sbus_result = fill(NaN + NaN * im, length(V))
-        @error("The powerflow solver with KLU did not converge after $i iterations")
+        @error("The legacy powerflow solver with LU did not converge after $i iterations")
     else
         Sbus_result = V .* conj(Ybus * V)
-        @info("The powerflow solver with KLU converged after $i iterations")
+        @info("The legacy powerflow solver with LU converged after $i iterations")
     end
     return (converged, V, Sbus_result)
 end
