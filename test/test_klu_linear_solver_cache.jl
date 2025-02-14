@@ -5,9 +5,8 @@ function testSolve(k::PF.KLULinSolveCache, A::SparseMatrixCSC{Float64, Int32})
     xb = randn(size(A, 1))
     b = deepcopy(xb)
     PF.solve!(k, xb)
-    @test A*xb ≈ b
+    @test A * xb ≈ b
 end
-
 
 @testset "klu linear solver cache" begin
     N = 50
@@ -21,7 +20,7 @@ end
     PF.full_factor!(k, A)
 
     testSolve(k, A) # solve is solution.
-    
+
     # solve! is non-allocating.
     b = randn(N)
     temp = @allocated PF.solve!(k, b)
@@ -38,10 +37,10 @@ end
     # refactor with a different structure throws.
     B = deepcopy(A)
     n, m = rand(1:N), rand(1:N)
-    while (B[n,m] != 0.0)
+    while (B[n, m] != 0.0)
         n, m = rand(1:N), rand(1:N)
     end
-    B[n,m] = 0.1
+    B[n, m] = 0.1
     @test_throws ArgumentError PF.numeric_refactor!(k, B)
     @test_throws ArgumentError PF.symbolic_refactor!(k, B)
 
@@ -53,13 +52,13 @@ end
     # automatically refactor if reuse_symbolic is false.
     autoRefactor = PF.KLULinSolveCache(A, false, false)
     @test PF.symbolic_factor!(autoRefactor, B) isa Any # shouldn't throw.
-    
+
     # error handling: singular.
     sing = SparseMatrixCSC{Float64, Int32}(sparse([1], [1], [0.1], 2, 2))
     # If I add KLU.kluerror(cache.K.common) to the constructor and symbolic_factor!
     # in cache, it still doesn't throw until you call numeric_refactor!. Strange.
     singCache = PF.KLULinSolveCache(sing)
-    PF.symbolic_factor!(singCache, sing) 
+    PF.symbolic_factor!(singCache, sing)
     @test_throws SingularException PF.numeric_refactor!(singCache, sing)
 
     # error handling: non-square.
@@ -67,6 +66,6 @@ end
     @test_throws ArgumentError PF.KLULinSolveCache(nonSquare)
 
     # error handling: mismtached dimensions.
-    b = rand(N-1)
+    b = rand(N - 1)
     @test_throws DimensionMismatch PF.solve!(k, b)
 end

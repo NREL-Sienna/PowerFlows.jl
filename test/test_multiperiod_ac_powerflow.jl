@@ -4,7 +4,7 @@
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HyrbidACPowerFlow
+    HyrbidACPowerFlow,
 )
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
@@ -62,7 +62,7 @@ end
                                                                                           (
     NLSolveACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HyrbidACPowerFlow
+    HyrbidACPowerFlow,
 )
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)

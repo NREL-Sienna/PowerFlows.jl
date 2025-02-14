@@ -20,7 +20,11 @@ end
 end
 
 @testset "System <-> PowerFlowData round trip" for ACSolver in
-                                    (NLSolveACPowerFlow, KLUACPowerFlow, HyrbidACPowerFlow)
+                                                   (
+    NLSolveACPowerFlow,
+    KLUACPowerFlow,
+    HyrbidACPowerFlow,
+)
     # TODO currently only tested with ACPowerFlow
     # TODO test that update_system! errors if the PowerFlowData doesn't correspond to the system
 
