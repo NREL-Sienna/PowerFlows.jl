@@ -233,7 +233,11 @@ function PowerFlowData(
     aux_network_matrix = nothing
     converged = fill(false, time_steps)
     # loss factors order matchn the order of buses in the grid model, and is calculated for sall buses including ref buses (0 for ref buses)
-    loss_factors = pf.calc_loss_factors ? Matrix{Float64}(undef, (n_buses, length(timestep_names))) : nothing
+    loss_factors = if pf.calc_loss_factors
+        Matrix{Float64}(undef, (n_buses, length(timestep_names)))
+    else
+        nothing
+    end
 
     return make_powerflowdata(
         sys,

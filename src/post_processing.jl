@@ -748,7 +748,11 @@ The loss factors are a linear approximation of the change in slack active power 
 This function computes the penalty factors for active power losses using the provided Jacobian matrix `J` and the reference vector `dSbus_dV_ref`. The result is stored in the `destination` subarray, which is the view in the `loss_factors`` matrix of the `PowerFlowData``. The function uses the KLU library for sparse matrix factorization and solves the linear system to obtain the penalty factors.
 """
 # work in progress - quick but not optimized function for POC
-function penalty_factors!(J::SparseMatrixCSC{Float64, Int64}, dSbus_dV_ref::Vector{Float64}, destination::SubArray{Float64})
+function penalty_factors!(
+    J::SparseMatrixCSC{Float64, Int64},
+    dSbus_dV_ref::Vector{Float64},
+    destination::SubArray{Float64},
+)
     J_t = SparseMatrixCSC(transpose(J))
     # fact = LinearAlgebra.factorize(J_t)
     # note: KLU only operates on square matrices
@@ -780,7 +784,7 @@ This function calculates the penalty factors for each bus in the power flow data
 """
 
 function penalty_factors_brute_force(data::PowerFlowData; kwargs...)
-    
+
     # we assume that the bus type for ref bus does not change between time steps
     ref = findall(
         x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
@@ -797,14 +801,16 @@ function penalty_factors_brute_force(data::PowerFlowData; kwargs...)
     # initial PF to establish the ref power value
     solve_powerflow!(data; kwargs...)
 
-    ref_power = sum(data.bus_activepower_injection[ref, :], dims=1)
+    ref_power = sum(data.bus_activepower_injection[ref, :]; dims = 1)
 
     for bx in 1:n_buses
         data.bus_activepower_injection[bx, :] .+= step_size
         solve_powerflow!(data; kwargs...)
-        loss_factors[bx, :] = (sum(data.bus_activepower_injection[ref, :], dims=1) .- ref_power) ./ step_size
+        loss_factors[bx, :] =
+            (sum(data.bus_activepower_injection[ref, :]; dims = 1) .- ref_power) ./
+            step_size
         data.bus_activepower_injection[bx, :] .-= step_size
     end
-    
-return loss_factors
+
+    return loss_factors
 end

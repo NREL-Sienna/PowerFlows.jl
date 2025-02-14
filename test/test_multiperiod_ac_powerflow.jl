@@ -27,7 +27,7 @@ end
 )
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    
+
     # create structure for multi-period case
     pf = ACPowerFlow(ACSolver)
     time_steps = 24
@@ -100,10 +100,9 @@ end
     )
 end
 
-
 @testset "test_loss_factors_case_14" begin
     sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
-    
+
     pf_klu = ACPowerFlow(KLUACPowerFlow; calc_loss_factors = true)
 
     time_steps = 24
@@ -113,11 +112,11 @@ end
     prepare_ts_data!(data_klu, time_steps)
 
     # get power flows with NR KLU method and write results
-    solve_powerflow!(data_klu; pf=pf_klu)
+    solve_powerflow!(data_klu; pf = pf_klu)
 
     # get loss factors using brute force approach (sequential power flow evaluations for each bus)
     bf_loss_factors = PowerFlows.penalty_factors_brute_force(data_klu)
 
     # confirm that loss factors match for the Jacobian-based and brute force approaches
-    @test isapprox(bf_loss_factors, data_klu.loss_factors, atol=1e-5, rtol=0)
+    @test isapprox(bf_loss_factors, data_klu.loss_factors, atol = 1e-5, rtol = 0)
 end
