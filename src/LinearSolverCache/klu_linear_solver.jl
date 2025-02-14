@@ -1,42 +1,54 @@
 using LinearAlgebra
-
-mutable struct KLULinSolveCache <: LinearSolverCache
-    K::KLU.KLUFactorization{Float64, Int32}
+mutable struct KLULinSolveCache{T} <: LinearSolverCache{T}
+    K::KLU.KLUFactorization{Float64, T}
     reuse_symbolic::Bool
     check_pattern::Bool
-    rf_common::Base.RefValue{KLU.klu_common}
+    rf_common::Union{Base.RefValue{KLU.klu_common}, Base.RefValue{KLU.klu_l_common}}
     # klu_free_{numeric/symbolic} requires these. store them to avoid allocating.
-    rf_symbolic::Base.RefValue{Ptr{KLU.klu_symbolic}}
-    rf_numeric::Base.RefValue{Ptr{KLU.klu_numeric}}
+    rf_symbolic::Union{
+        Base.RefValue{Ptr{KLU.klu_symbolic}},
+        Base.RefValue{Ptr{KLU.klu_l_symbolic}},
+    }
+    rf_numeric::Union{
+        Base.RefValue{Ptr{KLU.klu_numeric}},
+        Base.RefValue{Ptr{KLU.klu_l_numeric}},
+    }
 end
 
 function KLULinSolveCache(
-    A::SparseMatrixCSC{Float64, Int32},
+    A::SparseMatrixCSC{Float64, T},
     reuse_symbolic::Bool = true,
     check_pattern::Bool = true,
-)
+) where {T <: TIs}
+    symType = T == Int32 ? KLU.klu_symbolic : KLU.klu_l_symbolic
+    numType = T == Int32 ? KLU.klu_numeric : KLU.klu_l_numeric
     K = KLU.KLUFactorization(A)
     # KLU.kluerror(K.common) # necessary?
     return KLULinSolveCache(K, reuse_symbolic, check_pattern,
-        Ref(K.common), Ref(Ptr{KLU.klu_symbolic}(K._symbolic)),
-        Ref(Ptr{KLU.klu_numeric}(K._numeric)))
+        Ref(K.common), Ref(Ptr{symType}(K._symbolic)),
+        Ref(Ptr{numType}(K._numeric)))
 end
 
-get_reuse_symbolic(cache::KLULinSolveCache) = cache.reuse_symbolic
+get_reuse_symbolic(cache::KLULinSolveCache{T}) where {T <: TIs} = cache.reuse_symbolic
 
 # only does the symbolic, not the numeric.
-function symbolic_factor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, Int32})
+function symbolic_factor!(
+    cache::KLULinSolveCache{T},
+    A::SparseMatrixCSC{Float64, T},
+) where {T <: TIs}
     @assert size(A, 1) == cache.K.n && size(A, 2) == cache.K.n
 
     if cache.K._symbolic != C_NULL
+        freeFcn = T == Int32 ? KLU.klu_free_symbolic : KLU.klu_l_free_symbolic
         @assert cache.rf_symbolic != Ref(C_NULL)
-        KLU.klu_free_symbolic(cache.rf_symbolic, cache.rf_common)
+        freeFcn(cache.rf_symbolic, cache.rf_common)
         cache.K._symbolic = C_NULL
         @assert cache.rf_symbolic[] == C_NULL
     end
     if cache.K._numeric != C_NULL
+        freeFcn = T == Int32 ? KLU.klu_free_numeric : KLU.klu_l_free_numeric
         @assert cache.rf_numeric != Ref(C_NULL)
-        KLU.klu_free_numeric(cache.rf_numeric, cache.rf_common)
+        freeFcn(cache.rf_numeric, cache.rf_common)
         cache.K._numeric = C_NULL
         @assert cache.rf_numeric[] == C_NULL
     end
@@ -52,17 +64,23 @@ function symbolic_factor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, I
 
     resize!(cache.K.nzval, length(A.nzval))
     @assert cache.K._symbolic == C_NULL
-    sym = KLU.klu_analyze(cache.K.n, cache.K.colptr, cache.K.rowval, cache.rf_common)
+
+    analyzeFcn = T == Int32 ? KLU.klu_analyze : KLU.klu_l_analyze
+    sym = analyzeFcn(cache.K.n, cache.K.colptr, cache.K.rowval, cache.rf_common)
     if sym != C_NULL
+        symType = T == Int32 ? KLU.klu_symbolic : KLU.klu_l_symbolic
         cache.K._symbolic = sym
-        cache.rf_symbolic[] = Ptr{KLU.klu_symbolic}(cache.K._symbolic)
+        cache.rf_symbolic[] = Ptr{symType}(cache.K._symbolic)
         # we do need the above line: without it, this assert triggers
         @assert cache.rf_symbolic[] == cache.K._symbolic
     end
     return
 end
 
-function symbolic_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, Int32})
+function symbolic_refactor!(
+    cache::KLULinSolveCache{T},
+    A::SparseMatrixCSC{Float64, T},
+) where {T <: TIs}
     # case 1: reuse_symbol && !check_pattern => assume pattern hasn't changed.
     # case 2: reuse_symbol && check_pattern => check pattern
     # case 3: !reuse_symbol => refactor.
@@ -88,12 +106,16 @@ function symbolic_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64,
     return
 end
 
-function numeric_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, Int32})
+function numeric_refactor!(
+    cache::KLULinSolveCache{T},
+    A::SparseMatrixCSC{Float64, T},
+) where {T <: TIs}
     if cache.K._symbolic == C_NULL
         @error("Need to call symbolic_refactor! first.")
     end
     if cache.K._numeric == C_NULL
-        cache.K._numeric = KLU.klu_factor(cache.K.colptr,
+        factorFcn = T == Int32 ? KLU.klu_factor : KLU.klu_l_factor
+        cache.K._numeric = factorFcn(cache.K.colptr,
             cache.K.rowval,
             A.nzval,
             cache.K._symbolic,
@@ -117,7 +139,8 @@ function numeric_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, 
                 ),
             )
         end
-        ok = KLU.klu_refactor(cache.K.colptr,
+        refactorFcn = T == Int32 ? KLU.klu_refactor : KLU.klu_l_refactor
+        ok = refactorFcn(cache.K.colptr,
             cache.K.rowval,
             A.nzval,
             cache.K._symbolic,
@@ -128,14 +151,15 @@ function numeric_refactor!(cache::KLULinSolveCache, A::SparseMatrixCSC{Float64, 
             @warn("refactor failed")
             KLU.kluerror(cache.K.common)
         end
-        cache.rf_numeric[] = Ptr{KLU.klu_numeric}(cache.K._numeric)
+        numType = T == Int32 ? KLU.klu_numeric : KLU.klu_l_numeric
+        cache.rf_numeric[] = Ptr{numType}(cache.K._numeric)
         # we do need the above line: without it, the below assert triggers.
-        @assert cache.rf_numeric[] == Ptr{KLU.klu_numeric}(cache.K._numeric)
+        @assert cache.rf_numeric[] == Ptr{numType}(cache.K._numeric)
     end
     return
 end
 
-function solve!(cache::KLULinSolveCache, B::Vector{Float64})
+function solve!(cache::KLULinSolveCache{T}, B::Vector{Float64}) where {T <: TIs}
     if length(B) != cache.K.n
         throw(
             LinearAlgebra.DimensionMismatch(
@@ -144,7 +168,8 @@ function solve!(cache::KLULinSolveCache, B::Vector{Float64})
             ),
         )
     end
-    isok = KLU.klu_solve(cache.K._symbolic, cache.K._numeric,
+    solveFcn = T == Int32 ? KLU.klu_solve : KLU.klu_l_solve
+    isok = solveFcn(cache.K._symbolic, cache.K._numeric,
         size(B, 1), size(B, 2), B, cache.rf_common)
     isok == 0 && KLU.kluerror(cache.K.common)
     return B
