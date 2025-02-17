@@ -55,12 +55,14 @@ function _newton_powerflow(
     check_reactive_power_limits = false,
     method = :newton)
     pf = PolarPowerFlow(data, time_step)
+    n = length(pf.x0)
     J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0, time_step)
     nlCache = NLCache(pf.x0)
 
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
     i, converged = 0, false
+
     while i < iterations && !converged
         copyto!(nlCache.xold, nlCache.x)
         try
@@ -72,9 +74,22 @@ function _newton_powerflow(
             solve!(linSolveCache, nlCache.p)
             rmul!(nlCache.p, -1)
         catch e
-            # TODO handle the case where J is singular.
-            @error("KLU factorization failed: $e")
-            return (converged, nlCache.x)
+            # TODO cook up a test case where Jacobian is singular.
+            if e isa SingularException
+                fjac2 = J.Jv' * J.Jv
+                lambda = 1e6 * sqrt(n * eps()) * norm(fjac2, 1)
+                M = -(fjac2 + lambda * I)
+                tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
+                # KLU factorization. TODO check if this is faster than Julia's default ldiv.
+                full_factor!(tempCache, M)
+                copyto!(nlCache.p, pf.residual)
+                solve!(tempCache, nlCache.p)
+            else
+                @error("KLU factorization failed: $e")
+                V = _calc_V(data, nlCache.x, time_step)
+                Sbus_result = V .* conj(data.power_network_matrix.data * V)
+                return (false, V, Sbus_result)
+            end
         end
 
         # update x
@@ -98,6 +113,7 @@ function _newton_powerflow(
             "Solver (NLSolve-KLU hybrid) did not converge in $iterations iterations."
         )
     else
+        @info("The hybrid powerflow solver converged after $i iterations")
         V = _calc_V(data, nlCache.x, time_step)
         Sbus_result = V .* conj(data.power_network_matrix.data * V)
     end
