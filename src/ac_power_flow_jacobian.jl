@@ -104,6 +104,144 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
     return J0
 end
 
+function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
+    Vm::Vector{Float64},
+    θ::Vector{Float64},
+    ix_f::Int, ix_t::Int,
+    F_ix_f_r::Int, F_ix_f_i::Int,
+    X_ix_t_fst::Int, X_ix_t_snd::Int,
+    ix_f_neighbors::Set{Int},
+    ::Val{PSY.ACBusTypes.REF})
+    # State variables are Active and Reactive Power Generated
+    # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - x[2*i-1]
+    # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
+    # x does not appears in p_flow and q_flow
+    if ix_f == ix_t
+        J[F_ix_f_r, X_ix_t_fst] = -1.0
+        J[F_ix_f_i, X_ix_t_snd] = -1.0
+    end
+end
+
+function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
+    Vm::Vector{Float64},
+    θ::Vector{Float64},
+    ix_f::Int, ix_t::Int,
+    F_ix_f_r::Int, F_ix_f_i::Int,
+    X_ix_t_fst::Int, X_ix_t_snd::Int,
+    ix_f_neighbors::Set{Int},
+    ::Val{PSY.ACBusTypes.PV})
+    # State variables are Reactive Power Generated and Voltage Angle
+    # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - p_gen[i]
+    # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
+    # x[2*i] (associated with q_gen) does not appear in q_flow
+    # x[2*i] (associated with q_gen) does not appear in the active power balance
+    if ix_f == ix_t
+        #Jac: Reactive PF against local active power
+        J[F_ix_f_i, X_ix_t_fst] = -1.0
+        #Jac: Active PF against same Angle: θ[ix_f] =  θ[ix_t]
+        J[F_ix_f_r, X_ix_t_snd] =
+            Vm[ix_f] * sum(
+                Vm[k] * (
+                    real(Yb[ix_f, k]) * -sin(θ[ix_f] - θ[k]) +
+                    imag(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k])
+                ) for k in ix_f_neighbors if k != ix_f
+            )
+        #Jac: Reactive PF against same Angle: θ[ix_f] = θ[ix_t]
+        J[F_ix_f_i, X_ix_t_snd] =
+            Vm[ix_f] * sum(
+                Vm[k] * (
+                    real(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k]) -
+                    imag(Yb[ix_f, k]) * -sin(θ[ix_f] - θ[k])
+                ) for k in ix_f_neighbors if k != ix_f
+            )
+    else
+        g_ij = real(Yb[ix_f, ix_t])
+        b_ij = imag(Yb[ix_f, ix_t])
+        #Jac: Active PF against other angles θ[ix_t]
+        J[F_ix_f_r, X_ix_t_snd] =
+            Vm[ix_f] *
+            Vm[ix_t] *
+            (g_ij * sin(θ[ix_f] - θ[ix_t]) + b_ij * -cos(θ[ix_f] - θ[ix_t]))
+        #Jac: Reactive PF against other angles θ[ix_t]
+        J[F_ix_f_i, X_ix_t_snd] =
+            Vm[ix_f] *
+            Vm[ix_t] *
+            (g_ij * -cos(θ[ix_f] - θ[ix_t]) - b_ij * sin(θ[ix_f] - θ[ix_t]))
+    end
+end
+
+function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
+    Vm::Vector{Float64},
+    θ::Vector{Float64},
+    ix_f::Int, ix_t::Int,
+    F_ix_f_r::Int, F_ix_f_i::Int,
+    X_ix_t_fst::Int, X_ix_t_snd::Int,
+    ix_f_neighbors::Set{Int},
+    ::Val{PSY.ACBusTypes.PQ})
+    # State variables are Voltage Magnitude and Voltage Angle
+    # Everything appears in everything
+    if ix_f == ix_t
+        #Jac: Active PF against same voltage magnitude Vm[ix_f]
+        J[F_ix_f_r, X_ix_t_fst] =
+            2 * real(Yb[ix_f, ix_t]) * Vm[ix_f] + sum(
+                Vm[k] * (
+                    real(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k]) +
+                    imag(Yb[ix_f, k]) * sin(θ[ix_f] - θ[k])
+                ) for k in ix_f_neighbors if k != ix_f
+            )
+        #Jac: Active PF against same angle θ[ix_f]
+        J[F_ix_f_r, X_ix_t_snd] =
+            Vm[ix_f] * sum(
+                Vm[k] * (
+                    real(Yb[ix_f, k]) * -sin(θ[ix_f] - θ[k]) +
+                    imag(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k])
+                ) for k in ix_f_neighbors if k != ix_f
+            )
+
+        #Jac: Reactive PF against same voltage magnitude Vm[ix_f]
+        J[F_ix_f_i, X_ix_t_fst] =
+            -2 * imag(Yb[ix_f, ix_t]) * Vm[ix_f] + sum(
+                Vm[k] * (
+                    real(Yb[ix_f, k]) * sin(θ[ix_f] - θ[k]) -
+                    imag(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k])
+                ) for k in ix_f_neighbors if k != ix_f
+            )
+        #Jac: Reactive PF against same angle θ[ix_f]
+        J[F_ix_f_i, X_ix_t_snd] =
+            Vm[ix_f] * sum(
+                Vm[k] * (
+                    real(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k]) -
+                    imag(Yb[ix_f, k]) * -sin(θ[ix_f] - θ[k])
+                ) for k in ix_f_neighbors if k != ix_f
+            )
+    else
+        g_ij = real(Yb[ix_f, ix_t])
+        b_ij = imag(Yb[ix_f, ix_t])
+        #Jac: Active PF w/r to different voltage magnitude Vm[ix_t]
+        J[F_ix_f_r, X_ix_t_fst] =
+            Vm[ix_f] *
+            (g_ij * cos(θ[ix_f] - θ[ix_t]) + b_ij * sin(θ[ix_f] - θ[ix_t]))
+        #Jac: Active PF w/r to different angle θ[ix_t]
+        J[F_ix_f_r, X_ix_t_snd] =
+            Vm[ix_f] *
+            Vm[ix_t] *
+            (g_ij * sin(θ[ix_f] - θ[ix_t]) + b_ij * -cos(θ[ix_f] - θ[ix_t]))
+
+        #Jac: Reactive PF w/r to different voltage magnitude Vm[ix_t]
+        J[F_ix_f_i, X_ix_t_fst] =
+            Vm[ix_f] *
+            (g_ij * sin(θ[ix_f] - θ[ix_t]) - b_ij * cos(θ[ix_f] - θ[ix_t]))
+        #Jac: Reactive PF w/r to different angle θ[ix_t]
+        J[F_ix_f_i, X_ix_t_snd] =
+            Vm[ix_f] *
+            Vm[ix_t] *
+            (g_ij * -cos(θ[ix_f] - θ[ix_t]) - b_ij * sin(θ[ix_f] - θ[ix_t]))
+    end
+end
+
 """Used to update Jv based on the bus voltages, angles, etc. in data."""
 function jsp!(
     J::SparseArrays.SparseMatrixCSC{Float64, Int32},
@@ -123,117 +261,13 @@ function jsp!(
             X_ix_t_fst = 2 * ix_t - 1
             X_ix_t_snd = 2 * ix_t
             nb = data.bus_type[ix_t, time_step]
-            if nb == PSY.ACBusTypes.REF
-                # State variables are Active and Reactive Power Generated
-                # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - x[2*i-1]
-                # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
-                # x does not appears in p_flow and q_flow
-                if ix_f == ix_t
-                    J[F_ix_f_r, X_ix_t_fst] = -1.0
-                    J[F_ix_f_i, X_ix_t_snd] = -1.0
-                end
-            elseif nb == PSY.ACBusTypes.PV
-                # State variables are Reactive Power Generated and Voltage Angle
-                # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - p_gen[i]
-                # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
-                # x[2*i] (associated with q_gen) does not appear in q_flow
-                # x[2*i] (associated with q_gen) does not appear in the active power balance
-                if ix_f == ix_t
-                    #Jac: Reactive PF against local active power
-                    J[F_ix_f_i, X_ix_t_fst] = -1.0
-                    #Jac: Active PF against same Angle: θ[ix_f] =  θ[ix_t]
-                    J[F_ix_f_r, X_ix_t_snd] =
-                        Vm[ix_f] * sum(
-                            Vm[k] * (
-                                real(Yb[ix_f, k]) * -sin(θ[ix_f] - θ[k]) +
-                                imag(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k])
-                            ) for k in data.neighbors[ix_f] if k != ix_f
-                        )
-                    #Jac: Reactive PF against same Angle: θ[ix_f] = θ[ix_t]
-                    J[F_ix_f_i, X_ix_t_snd] =
-                        Vm[ix_f] * sum(
-                            Vm[k] * (
-                                real(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k]) -
-                                imag(Yb[ix_f, k]) * -sin(θ[ix_f] - θ[k])
-                            ) for k in data.neighbors[ix_f] if k != ix_f
-                        )
-                else
-                    g_ij = real(Yb[ix_f, ix_t])
-                    b_ij = imag(Yb[ix_f, ix_t])
-                    #Jac: Active PF against other angles θ[ix_t]
-                    J[F_ix_f_r, X_ix_t_snd] =
-                        Vm[ix_f] *
-                        Vm[ix_t] *
-                        (g_ij * sin(θ[ix_f] - θ[ix_t]) + b_ij * -cos(θ[ix_f] - θ[ix_t]))
-                    #Jac: Reactive PF against other angles θ[ix_t]
-                    J[F_ix_f_i, X_ix_t_snd] =
-                        Vm[ix_f] *
-                        Vm[ix_t] *
-                        (g_ij * -cos(θ[ix_f] - θ[ix_t]) - b_ij * sin(θ[ix_f] - θ[ix_t]))
-                end
-            elseif nb == PSY.ACBusTypes.PQ
-                # State variables are Voltage Magnitude and Voltage Angle
-                # Everything appears in everything
-                if ix_f == ix_t
-                    #Jac: Active PF against same voltage magnitude Vm[ix_f]
-                    J[F_ix_f_r, X_ix_t_fst] =
-                        2 * real(Yb[ix_f, ix_t]) * Vm[ix_f] + sum(
-                            Vm[k] * (
-                                real(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k]) +
-                                imag(Yb[ix_f, k]) * sin(θ[ix_f] - θ[k])
-                            ) for k in data.neighbors[ix_f] if k != ix_f
-                        )
-                    #Jac: Active PF against same angle θ[ix_f]
-                    J[F_ix_f_r, X_ix_t_snd] =
-                        Vm[ix_f] * sum(
-                            Vm[k] * (
-                                real(Yb[ix_f, k]) * -sin(θ[ix_f] - θ[k]) +
-                                imag(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k])
-                            ) for k in data.neighbors[ix_f] if k != ix_f
-                        )
-
-                    #Jac: Reactive PF against same voltage magnitude Vm[ix_f]
-                    J[F_ix_f_i, X_ix_t_fst] =
-                        -2 * imag(Yb[ix_f, ix_t]) * Vm[ix_f] + sum(
-                            Vm[k] * (
-                                real(Yb[ix_f, k]) * sin(θ[ix_f] - θ[k]) -
-                                imag(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k])
-                            ) for k in data.neighbors[ix_f] if k != ix_f
-                        )
-                    #Jac: Reactive PF against same angle θ[ix_f]
-                    J[F_ix_f_i, X_ix_t_snd] =
-                        Vm[ix_f] * sum(
-                            Vm[k] * (
-                                real(Yb[ix_f, k]) * cos(θ[ix_f] - θ[k]) -
-                                imag(Yb[ix_f, k]) * -sin(θ[ix_f] - θ[k])
-                            ) for k in data.neighbors[ix_f] if k != ix_f
-                        )
-                else
-                    g_ij = real(Yb[ix_f, ix_t])
-                    b_ij = imag(Yb[ix_f, ix_t])
-                    #Jac: Active PF w/r to different voltage magnitude Vm[ix_t]
-                    J[F_ix_f_r, X_ix_t_fst] =
-                        Vm[ix_f] *
-                        (g_ij * cos(θ[ix_f] - θ[ix_t]) + b_ij * sin(θ[ix_f] - θ[ix_t]))
-                    #Jac: Active PF w/r to different angle θ[ix_t]
-                    J[F_ix_f_r, X_ix_t_snd] =
-                        Vm[ix_f] *
-                        Vm[ix_t] *
-                        (g_ij * sin(θ[ix_f] - θ[ix_t]) + b_ij * -cos(θ[ix_f] - θ[ix_t]))
-
-                    #Jac: Reactive PF w/r to different voltage magnitude Vm[ix_t]
-                    J[F_ix_f_i, X_ix_t_fst] =
-                        Vm[ix_f] *
-                        (g_ij * sin(θ[ix_f] - θ[ix_t]) - b_ij * cos(θ[ix_f] - θ[ix_t]))
-                    #Jac: Reactive PF w/r to different angle θ[ix_t]
-                    J[F_ix_f_i, X_ix_t_snd] =
-                        Vm[ix_f] *
-                        Vm[ix_t] *
-                        (g_ij * -cos(θ[ix_f] - θ[ix_t]) - b_ij * sin(θ[ix_f] - θ[ix_t]))
-                end
-            else
-                error("Undefined Conditional")
-            end
+            # could move the definitions of 
+            # F_ix_f_{i/r}, X_ix_t_{fst/snd} inside _set_entries.
+            _set_entries_for_neighbor(J, Yb, Vm, θ, 
+                ix_f, ix_t,
+                F_ix_f_r, F_ix_f_i,
+                X_ix_t_fst, X_ix_t_snd,
+                data.neighbors[ix_f], Val(nb))
         end
     end
     return

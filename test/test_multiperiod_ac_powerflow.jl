@@ -4,7 +4,7 @@
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HybirdACPowerFlow,
+    HybridACPowerFlow,
 )
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
