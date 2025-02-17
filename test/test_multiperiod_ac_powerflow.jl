@@ -104,12 +104,15 @@ end
     sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
 
     pf_klu = ACPowerFlow(KLUACPowerFlow; calc_loss_factors = true)
+    pf_no_factors = ACPowerFlow(KLUACPowerFlow)  # calc_loss_factors = false by default
 
     time_steps = 24
     data_klu = PowerFlowData(pf_klu, sys; time_steps = time_steps)
+    data_no_factors = PowerFlowData(pf_no_factors, sys; time_steps = time_steps)
 
     # allocate timeseries data from csv
     prepare_ts_data!(data_klu, time_steps)
+    prepare_ts_data!(data_no_factors, time_steps)
 
     # get power flows with NR KLU method and write results
     solve_powerflow!(data_klu; pf = pf_klu)
@@ -119,4 +122,8 @@ end
 
     # confirm that loss factors match for the Jacobian-based and brute force approaches
     @test isapprox(bf_loss_factors, data_klu.loss_factors, atol = 1e-5, rtol = 0)
+
+    # get power flow results without loss factors
+    solve_powerflow!(data_no_factors; pf = pf_no_factors)
+    @test data_no_factors.loss_factors === nothing
 end

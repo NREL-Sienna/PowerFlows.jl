@@ -232,7 +232,7 @@ function PowerFlowData(
     neighbors = _calculate_neighbors(power_network_matrix)
     aux_network_matrix = nothing
     converged = fill(false, time_steps)
-    # loss factors order matchn the order of buses in the grid model, and is calculated for sall buses including ref buses (0 for ref buses)
+    # loss factors order matches the order of buses in the grid model, and is calculated for all buses including ref buses (equals 0 for ref buses)
     loss_factors = if pf.calc_loss_factors
         Matrix{Float64}(undef, (n_buses, length(timestep_names)))
     else

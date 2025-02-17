@@ -46,10 +46,6 @@ function _newton_powerflow(
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    # ref = findall(
-    #     x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
-    #     data.bus_type[:, time_step],
-    # )
     pv = findall(
         x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
         data.bus_type[:, time_step],
@@ -60,11 +56,9 @@ function _newton_powerflow(
     )
     pvpq = [pv; pq]
 
-    #nref = length(ref)
     npv = length(pv)
     npq = length(pq)
     npvpq = npv + npq
-    # n_buses = length(data.bus_type[:, time_step])
 
     Vm = data.bus_magnitude[:, time_step]
     # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:

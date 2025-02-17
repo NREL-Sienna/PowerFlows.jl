@@ -733,10 +733,11 @@ end
 """
     penalty_factors!(J::SparseMatrixCSC{Float64, Int64}, dSbus_dV_ref::Vector{Float64}, destination::SubArray{Float64})
 
-Compute the penalty factors (active power loss factors) and store the result in `destination`.
+Compute the penalty factors (active power loss factors) and store the result in `destination`, which is the view in the `loss_factors`` matrix of the `PowerFlowData``.
 The loss factors are computed using the Jacobian matrix `J` and the vector of partial derivatives of 
 slack power with respect to bus voltages (angle and magnitude) `dSbus_dV_ref`.
 The approach is interpreting the change in slack active power injection as the change of the grid active power losses.
+The function uses the KLU library for sparse matrix factorization to calculate the loss factors.
 The loss factors are a linear approximation of the change in slack active power injection respect to the change in active power injections at each bus.
 
 # Arguments
@@ -744,10 +745,7 @@ The loss factors are a linear approximation of the change in slack active power 
 - `dSbus_dV_ref::Vector{Float64}`: The reference vector for the change in slack bus power with respect to bus voltages (PV, PQ buses for voltage angle, PQ buses for voltage magnitude).
 - `destination::SubArray{Float64}`: The view in the penalty factors matrix where the computed penalty factors will be stored.
 
-# Description
-This function computes the penalty factors for active power losses using the provided Jacobian matrix `J` and the reference vector `dSbus_dV_ref`. The result is stored in the `destination` subarray, which is the view in the `loss_factors`` matrix of the `PowerFlowData``. The function uses the KLU library for sparse matrix factorization and solves the linear system to obtain the penalty factors.
 """
-# work in progress - quick but not optimized function for POC
 function penalty_factors!(
     J::SparseMatrixCSC{Float64, Int64},
     dSbus_dV_ref::Vector{Float64},
@@ -765,6 +763,9 @@ end
     penalty_factors_brute_force(data::PowerFlowData; kwargs...)
 
 Calculate the penalty factors for each bus in the power flow data using a brute force method.
+This function calculates the penalty factors for each bus in the power flow data by perturbing the active power injection 
+at each bus by a small step size and solving the power flow equations. 
+The loss factor value is computed as the change in the reference bus power injection divided by the step size.
 
 # Arguments
 - `data::PowerFlowData`: The power flow data containing bus types, active power injections, and other relevant information.
@@ -773,25 +774,22 @@ Calculate the penalty factors for each bus in the power flow data using a brute 
 # Returns
 - `loss_factors::Array{Float64, 2}`: A 2D array of penalty factors for each bus and time step.
 
-# Description
-This function calculates the penalty factors for each bus in the power flow data by perturbing the active power injection 
-    at each bus by a small step size and solving the power flow equations. 
-    The loss factor value is computed as the change in the reference bus power injection divided by the step size.
-
 # Notes
 - The reference bus type is assumed to remain constant between time steps.
 - The initial power flow solution is computed to establish the starting power injection at the slack bus.
 """
 
-function penalty_factors_brute_force(data::PowerFlowData; kwargs...)
+function penalty_factors_brute_force(
+    data::PowerFlowData;
+    step_size::Float64 = 1e-6,
+    kwargs...,
+)
 
     # we assume that the bus type for ref bus does not change between time steps
     ref = findall(
         x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
         data.bus_type[:, 1],
     )
-
-    step_size = 1e-6
 
     n_buses = size(data.bus_type, 1)
     time_steps = collect(values(data.timestep_map))
