@@ -44,7 +44,7 @@ function NLCache(x0::Vector{Float64})
 end
 
 function _newton_powerflow(
-    ::ACPowerFlow{HyrbidACPowerFlow},
+    ::ACPowerFlow{HybridACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     # copy-pasted from default options of NLsolve.jl

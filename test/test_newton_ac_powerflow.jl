@@ -4,7 +4,7 @@
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HyrbidACPowerFlow,
+    HybridACPowerFlow,
 )
     result_14 = [
         2.3255081760423684
@@ -80,7 +80,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HyrbidACPowerFlow,
+    HybridACPowerFlow,
 )
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     pf = ACPowerFlow{ACSolver}()
@@ -112,7 +112,7 @@ end
 @testset "AC Power Flow 3-Bus Fixed FixedAdmittance testing" for ACSolver in (
     NLSolveACPowerFlow,
     KLUACPowerFlow, PowerFlows.LUACPowerFlow,
-    HyrbidACPowerFlow,
+    HybridACPowerFlow,
 )
     p_gen_matpower_3bus = [20.3512373930753, 100.0, 100.0]
     q_gen_matpower_3bus = [45.516916781567232, 10.453799727283879, -31.992561631394636]
@@ -131,7 +131,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HyrbidACPowerFlow,
+    HybridACPowerFlow,
 )
     pf_sys5_re = PSB.build_system(PSB.PSITestSystems, "c_sys5_re"; add_forecasts = false)
     remove_component!(Line, pf_sys5_re, "1")
@@ -155,7 +155,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HyrbidACPowerFlow,
+    HybridACPowerFlow,
 )
     file = joinpath(
         TEST_FILES_DIR,
@@ -196,7 +196,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HyrbidACPowerFlow,
+    HybridACPowerFlow,
 )
     sys = System(100.0)
     b = ACBus(;
@@ -246,7 +246,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HyrbidACPowerFlow,
+    HybridACPowerFlow,
 )
     sys = System(100.0)
     b1 = ACBus(;
@@ -334,7 +334,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HyrbidACPowerFlow,
+    HybridACPowerFlow,
 )
     sys = System(100.0)
     b = ACBus(;
@@ -401,7 +401,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HyrbidACPowerFlow,
+    HybridACPowerFlow,
 )
     sys = System(100.0)
     b1 = ACBus(;
@@ -508,7 +508,7 @@ end
     pf_default = ACPowerFlow()
     pf_klu = ACPowerFlow(KLUACPowerFlow)
     pf_nlsolve = ACPowerFlow(NLSolveACPowerFlow)
-    pf_hybrid = ACPowerFlow(HyrbidACPowerFlow)
+    pf_hybrid = ACPowerFlow(HybridACPowerFlow)
 
     PSY.set_units_base_system!(sys, "SYSTEM_BASE")
     data = PowerFlowData(

@@ -2,7 +2,7 @@
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     @test PowerFlowData(ACPowerFlow{NLSolveACPowerFlow}(), sys) isa PF.ACPowerFlowData
     @test PowerFlowData(ACPowerFlow{KLUACPowerFlow}(), sys) isa PF.ACPowerFlowData
-    @test PowerFlowData(ACPowerFlow{HyrbidACPowerFlow}(), sys) isa PF.ACPowerFlowData
+    @test PowerFlowData(ACPowerFlow{HybridACPowerFlow}(), sys) isa PF.ACPowerFlowData
     @test PowerFlowData(DCPowerFlow(), sys) isa PF.ABAPowerFlowData
     @test PowerFlowData(PTDFDCPowerFlow(), sys) isa PF.PTDFPowerFlowData
     @test PowerFlowData(vPTDFDCPowerFlow(), sys) isa PF.vPTDFPowerFlowData
@@ -23,7 +23,7 @@ end
                                                    (
     NLSolveACPowerFlow,
     KLUACPowerFlow,
-    HyrbidACPowerFlow,
+    HybridACPowerFlow,
 )
     # TODO currently only tested with ACPowerFlow
     # TODO test that update_system! errors if the PowerFlowData doesn't correspond to the system

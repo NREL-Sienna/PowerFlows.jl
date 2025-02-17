@@ -3,7 +3,7 @@ abstract type ACPowerFlowSolverType end
 
 struct KLUACPowerFlow <: ACPowerFlowSolverType end
 struct NLSolveACPowerFlow <: ACPowerFlowSolverType end
-struct HyrbidACPowerFlow <: ACPowerFlowSolverType end
+struct HybridACPowerFlow <: ACPowerFlowSolverType end
 
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel
     check_reactive_power_limits::Bool
