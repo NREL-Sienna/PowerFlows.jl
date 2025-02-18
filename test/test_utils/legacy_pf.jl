@@ -7,7 +7,7 @@ struct LUACPowerFlow <: ACPowerFlowSolverType end  # Only for testing, a basic i
 function _legacy_dSbus_dV(
     V::Vector{Complex{Float64}},
     Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
-)::Tuple{SparseMatrixCSC{Complex{Float64}, Int64}, SparseMatrixCSC{Complex{Float64}, Int64}}
+)::Tuple{SparseMatrixCSC{Complex{Float64}, Int32}, SparseMatrixCSC{Complex{Float64}, Int32}}
     diagV = SparseArrays.spdiagm(0 => V)
     diagVnorm = SparseArrays.spdiagm(0 => V ./ abs.(V))
     diagIbus = SparseArrays.spdiagm(0 => Ybus * V)
@@ -18,8 +18,8 @@ end
 
 # this function is for testing purposes only
 function _legacy_J(
-    dSbus_dVa::SparseMatrixCSC{Complex{Float64}, Int64},
-    dSbus_dVm::SparseMatrixCSC{Complex{Float64}, Int64},
+    dSbus_dVa::SparseMatrixCSC{Complex{Float64}, Int32},
+    dSbus_dVm::SparseMatrixCSC{Complex{Float64}, Int32},
     pvpq::Vector{Int64},
     pq::Vector{Int64},
 )

@@ -366,28 +366,28 @@ function _update_F!(F::Vector{Float64}, Sbus_result::Vector{Complex{Float64}},
     return
 end
 
-function _update_dSbus_dV!(rows::Vector{Int64}, cols::Vector{Int64},
+function _update_dSbus_dV!(rows::Vector{Int32}, cols::Vector{Int32},
     V::Vector{Complex{Float64}}, Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
     diagV::LinearAlgebra.Diagonal{Complex{Float64}, Vector{Complex{Float64}}},
     diagVnorm::LinearAlgebra.Diagonal{Complex{Float64}, Vector{Complex{Float64}}},
     diagIbus::LinearAlgebra.Diagonal{Complex{Float64}, Vector{Complex{Float64}}},
     diagIbus_diag::Vector{Complex{Float64}},
-    dSbus_dVa::SparseMatrixCSC{Complex{Float64}, Int64},
-    dSbus_dVm::SparseMatrixCSC{Complex{Float64}, Int64},
-    r_dSbus_dVa::SparseMatrixCSC{Float64, Int64},
-    r_dSbus_dVm::SparseMatrixCSC{Float64, Int64},
-    i_dSbus_dVa::SparseMatrixCSC{Float64, Int64},
-    i_dSbus_dVm::SparseMatrixCSC{Float64, Int64},
-    Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int64},
-    conj_Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int64},
-    diagV_conj_Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int64},
+    dSbus_dVa::SparseMatrixCSC{Complex{Float64}, Int32},
+    dSbus_dVm::SparseMatrixCSC{Complex{Float64}, Int32},
+    r_dSbus_dVa::SparseMatrixCSC{Float64, Int32},
+    r_dSbus_dVm::SparseMatrixCSC{Float64, Int32},
+    i_dSbus_dVa::SparseMatrixCSC{Float64, Int32},
+    i_dSbus_dVm::SparseMatrixCSC{Float64, Int32},
+    Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int32},
+    conj_Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int32},
+    diagV_conj_Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int32},
     conj_diagIbus::LinearAlgebra.Diagonal{Complex{Float64}, Vector{Complex{Float64}}},
     conj_diagIbus_diagVnorm::LinearAlgebra.Diagonal{
         Complex{Float64},
         Vector{Complex{Float64}},
     },
-    Ybus_diagV::SparseMatrixCSC{Complex{Float64}, Int64},
-    conj_Ybus_diagV::SparseMatrixCSC{Complex{Float64}, Int64})
+    Ybus_diagV::SparseMatrixCSC{Complex{Float64}, Int32},
+    conj_Ybus_diagV::SparseMatrixCSC{Complex{Float64}, Int32})
     for i in eachindex(V)
         diagV[i, i] = V[i]
         diagVnorm[i, i] = V[i] / abs(V[i])
@@ -512,8 +512,8 @@ function _calc_x(
 end
 
 function _preallocate_J(
-    rows::Vector{Int64},
-    cols::Vector{Int64},
+    rows::Vector{Int32},
+    cols::Vector{Int32},
     pvpq::Vector{Int64},
     pq::Vector{Int64},
 )
@@ -593,6 +593,10 @@ function _newton_powerflow(
 
     # preallocate Jacobian matrix and arrays for calculating dSbus_dVa, dSbus_dVm
     rows, cols = SparseArrays.findnz(Ybus)
+
+    # Convert rows and cols to Int32
+    rows = Int32.(rows)
+    cols = Int32.(cols)
 
     #diagV = sparse(1:n_buses, 1:n_buses, V)
     diagV = LinearAlgebra.Diagonal(V)

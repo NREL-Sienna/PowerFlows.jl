@@ -540,6 +540,8 @@ end
 
     Ybus = data.power_network_matrix.data
     rows, cols = SparseArrays.findnz(Ybus)
+    rows = Int32.(rows)
+    cols = Int32.(cols)
 
     diagV = LinearAlgebra.Diagonal(V0)
     diagIbus_diag = zeros(Complex{Float64}, size(V0, 1))
