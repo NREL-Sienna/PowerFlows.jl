@@ -184,18 +184,7 @@ function solve_powerflow!(
         ts_S[:, time_step] .= Sbus_result
 
         if converged
-            ref = findall(
-                x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
-                data.bus_type[:, time_step],
-            )
-            pv = findall(
-                x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
-                data.bus_type[:, time_step],
-            )
-            pq = findall(
-                x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ,
-                data.bus_type[:, time_step],
-            )
+            ref, pv, pq = bus_type_idx(data, time_step)
 
             # write results to data:
             # write results for REF
@@ -311,6 +300,14 @@ function _solve_powerflow!(
     # todo: throw error? set converged to false? -> leave as is for now
     @error("could not enforce reactive power limits after $MAX_REACTIVE_POWER_ITERATIONS")
     return converged, V, Sbus_result
+end
+
+function bus_type_idx(data::ACPowerFlowData, time_step::Int64 = 1)
+    # Find indices for each bus type
+    bus_types = PSY.ACBusTypes.REF, PSY.ACBusTypes.PV, PSY.ACBusTypes.PQ
+    return [
+        findall(x -> x == bus_type, data.bus_type[:, time_step]) for bus_type in bus_types
+    ]
 end
 
 function _update_V!(dx::Vector{Float64}, V::Vector{Complex{Float64}}, Vm::Vector{Float64},
@@ -532,18 +529,7 @@ function _newton_powerflow(
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    ref = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
-        data.bus_type[:, time_step],
-    )
-    pv = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
-        data.bus_type[:, time_step],
-    )
-    pq = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ,
-        data.bus_type[:, time_step],
-    )
+    ref, pv, pq = bus_type_idx(data, time_step)
     pvpq = [pv; pq]
 
     # nref = length(ref)
