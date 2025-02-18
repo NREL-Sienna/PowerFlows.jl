@@ -1,17 +1,3 @@
-"""
-    AuxiliaryVariables
-
-A mutable struct to hold auxiliary variables that are produced by power flow calculations, particularly Jacobian matrix.
-
-# Fields
-- `J::Union{SparseMatrixCSC{Float64, Int}, Nothing}`: A sparse matrix representing the Jacobian matrix after a successfully converged power flow calculation. This is the J matrix from the last step of the Newton-Raphson method. If the power flow calculation does not converge, it is set to `nothing`. Defaults to `nothing`.
-- `dSbus_dV_ref::Union{Vector{Float64}, Nothing}`: A vector representing the partial derivatives of the reference bus apparent power injections with respect to the non-reference bus voltages. Defaults to `nothing`.
-"""
-@kwdef mutable struct AuxiliaryVariables
-    J::Union{SparseMatrixCSC{Float64, Int}, Nothing} = nothing
-    dSbus_dV_ref::Union{Vector{Float64}, Nothing} = nothing
-end
-
 abstract type PowerFlowContainer end
 
 """
@@ -117,7 +103,7 @@ struct PowerFlowData{
     aux_network_matrix::N
     neighbors::Vector{Set{Int}}
     converged::Vector{Bool}
-    aux_variables::Vector{AuxiliaryVariables}
+    loss_factors::Union{Matrix{Float64}, Nothing}
 end
 
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
@@ -146,7 +132,7 @@ get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
 get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 supports_multi_period(::PowerFlowData) = true
 get_converged(pfd::PowerFlowData) = pfd.converged
-get_aux_variables(pfd::PowerFlowData) = pfd.aux_variables
+get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
@@ -198,7 +184,7 @@ NOTE: use it for AC power flow computations.
 WARNING: functions for the evaluation of the multi-period AC PF still to be implemented.
 """
 function PowerFlowData(
-    ::ACPowerFlow{<:ACPowerFlowSolverType},
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
     sys::PSY.System;
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
@@ -246,7 +232,12 @@ function PowerFlowData(
     neighbors = _calculate_neighbors(power_network_matrix)
     aux_network_matrix = nothing
     converged = fill(false, time_steps)
-    aux_variables = [AuxiliaryVariables() for _ in 1:time_steps]
+    # loss factors order matches the order of buses in the grid model, and is calculated for all buses including ref buses (equals 0 for ref buses)
+    loss_factors = if pf.calc_loss_factors
+        Matrix{Float64}(undef, (n_buses, length(timestep_names)))
+    else
+        nothing
+    end
 
     return make_powerflowdata(
         sys,
@@ -263,7 +254,7 @@ function PowerFlowData(
         valid_ix,
         neighbors,
         converged,
-        aux_variables,
+        loss_factors,
     )
 end
 
@@ -321,7 +312,7 @@ function PowerFlowData(
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
-    aux_variables = [AuxiliaryVariables() for _ in 1:time_steps]
+    loss_factors = nothing
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -335,7 +326,7 @@ function PowerFlowData(
         temp_bus_map,
         valid_ix,
         converged,
-        aux_variables,
+        loss_factors,
     )
 end
 
@@ -394,7 +385,7 @@ function PowerFlowData(
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
-    aux_variables = [AuxiliaryVariables() for _ in 1:time_steps]
+    loss_factors = nothing
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -408,7 +399,7 @@ function PowerFlowData(
         temp_bus_map,
         valid_ix,
         converged,
-        aux_variables,
+        loss_factors,
     )
 end
 
@@ -466,7 +457,7 @@ function PowerFlowData(
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
-    aux_variables = [AuxiliaryVariables() for _ in 1:time_steps]
+    loss_factors = nothing
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -480,7 +471,7 @@ function PowerFlowData(
         temp_bus_map,
         valid_ix,
         converged,
-        aux_variables,
+        loss_factors,
     )
 end
 

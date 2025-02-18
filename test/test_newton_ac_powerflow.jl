@@ -508,18 +508,7 @@ end
 
     time_step = 1
 
-    ref = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
-        data.bus_type[:, time_step],
-    )
-    pv = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
-        data.bus_type[:, time_step],
-    )
-    pq = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ,
-        data.bus_type[:, time_step],
-    )
+    ref, pv, pq = PF.bus_type_idx(data, time_step)
     pvpq = [pv; pq]
 
     npvpq = length(pvpq)
