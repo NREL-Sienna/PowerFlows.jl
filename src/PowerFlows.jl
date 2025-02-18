@@ -5,6 +5,7 @@ export solve_powerflow!
 export PowerFlowData
 export DCPowerFlow
 export NLSolveACPowerFlow
+export HybridACPowerFlow
 export KLUACPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
@@ -42,6 +43,9 @@ include("definitions.jl")
 include("powerflow_types.jl")
 include("PowerFlowData.jl")
 include("psse_export.jl")
+include("LinearSolverCache/linear_solver_cache.jl")
+include("LinearSolverCache/klu_linear_solver.jl")
+include("LinearSolverCache/lu_linear_solver.jl")
 include("solve_dc_powerflow.jl")
 include("ac_power_flow.jl")
 include("ac_power_flow_jacobian.jl")

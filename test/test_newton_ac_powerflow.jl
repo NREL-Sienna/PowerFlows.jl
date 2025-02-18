@@ -4,6 +4,7 @@
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
+    HybridACPowerFlow,
 )
     result_14 = [
         2.3255081760423684
@@ -79,6 +80,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
+    HybridACPowerFlow,
 )
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     pf = ACPowerFlow{ACSolver}()
@@ -110,6 +112,7 @@ end
 @testset "AC Power Flow 3-Bus Fixed FixedAdmittance testing" for ACSolver in (
     NLSolveACPowerFlow,
     KLUACPowerFlow, PowerFlows.LUACPowerFlow,
+    HybridACPowerFlow,
 )
     p_gen_matpower_3bus = [20.3512373930753, 100.0, 100.0]
     q_gen_matpower_3bus = [45.516916781567232, 10.453799727283879, -31.992561631394636]
@@ -128,6 +131,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
+    HybridACPowerFlow,
 )
     pf_sys5_re = PSB.build_system(PSB.PSITestSystems, "c_sys5_re"; add_forecasts = false)
     remove_component!(Line, pf_sys5_re, "1")
@@ -151,6 +155,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
+    HybridACPowerFlow,
 )
     file = joinpath(
         TEST_FILES_DIR,
@@ -191,6 +196,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
+    HybridACPowerFlow,
 )
     sys = System(100.0)
     b = ACBus(;
@@ -240,6 +246,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
+    HybridACPowerFlow,
 )
     sys = System(100.0)
     b1 = ACBus(;
@@ -327,6 +334,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
+    HybridACPowerFlow,
 )
     sys = System(100.0)
     b = ACBus(;
@@ -393,6 +401,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
+    HybridACPowerFlow,
 )
     sys = System(100.0)
     b1 = ACBus(;
@@ -499,6 +508,7 @@ end
     pf_default = ACPowerFlow()
     pf_klu = ACPowerFlow(KLUACPowerFlow)
     pf_nlsolve = ACPowerFlow(NLSolveACPowerFlow)
+    pf_hybrid = ACPowerFlow(HybridACPowerFlow)
 
     PSY.set_units_base_system!(sys, "SYSTEM_BASE")
     data = PowerFlowData(
@@ -530,6 +540,8 @@ end
 
     Ybus = data.power_network_matrix.data
     rows, cols = SparseArrays.findnz(Ybus)
+    rows = Int32.(rows)
+    cols = Int32.(cols)
 
     diagV = LinearAlgebra.Diagonal(V0)
     diagIbus_diag = zeros(Complex{Float64}, size(V0, 1))
@@ -581,6 +593,7 @@ end
     res_default = solve_powerflow(pf_default, sys)  # must be the same as KLU
     res_klu = solve_powerflow(pf_klu, sys)
     res_nlsolve = solve_powerflow(pf_nlsolve, sys)
+    res_hybrid = solve_powerflow(pf_hybrid, sys)
 
     @test all(
         isapprox.(
@@ -610,6 +623,23 @@ end
     @test all(
         isapprox.(
             res_klu["bus_results"][!, :θ],
+            res_nlsolve["bus_results"][!, :θ],
+            rtol = 0,
+            atol = 1e-8,
+        ),
+    )
+
+    @test all(
+        isapprox.(
+            res_hybrid["bus_results"][!, :Vm],
+            res_nlsolve["bus_results"][!, :Vm],
+            rtol = 0,
+            atol = 1e-8,
+        ),
+    )
+    @test all(
+        isapprox.(
+            res_hybrid["bus_results"][!, :θ],
             res_nlsolve["bus_results"][!, :θ],
             rtol = 0,
             atol = 1e-8,

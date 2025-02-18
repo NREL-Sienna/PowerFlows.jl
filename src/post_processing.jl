@@ -731,7 +731,7 @@ function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
 end
 
 """
-    penalty_factors!(J::SparseMatrixCSC{Float64, Int64}, dSbus_dV_ref::Vector{Float64}, destination::SubArray{Float64})
+    penalty_factors!(J::SparseMatrixCSC{Float64, Int32}, dSbus_dV_ref::Vector{Float64}, destination::SubArray{Float64})
 
 Compute the penalty factors (active power loss factors) and store the result in `destination`, which is the view in the `loss_factors`` matrix of the `PowerFlowData``.
 The loss factors are computed using the Jacobian matrix `J` and the vector of partial derivatives of 
@@ -741,13 +741,13 @@ The function uses the KLU library for sparse matrix factorization to calculate t
 The loss factors are a linear approximation of the change in slack active power injection respect to the change in active power injections at each bus.
 
 # Arguments
-- `J::SparseMatrixCSC{Float64, Int64}`: The Jacobian matrix in sparse format.
+- `J::SparseMatrixCSC{Float64, Int32}`: The Jacobian matrix in sparse format.
 - `dSbus_dV_ref::Vector{Float64}`: The reference vector for the change in slack bus power with respect to bus voltages (PV, PQ buses for voltage angle, PQ buses for voltage magnitude).
 - `destination::SubArray{Float64}`: The view in the penalty factors matrix where the computed penalty factors will be stored.
 
 """
 function penalty_factors!(
-    J::SparseMatrixCSC{Float64, Int64},
+    J::SparseMatrixCSC{Float64, Int32},
     dSbus_dV_ref::Vector{Float64},
     destination::SubArray{Float64},
 )

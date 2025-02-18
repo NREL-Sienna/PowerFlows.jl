@@ -24,6 +24,7 @@ end
     NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
+    HybridACPowerFlow,
 )
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
@@ -54,7 +55,9 @@ end
 @testset "MULTI-PERIOD power flows evaluation: compare results for different solvers" for ACSolver in
                                                                                           (
     NLSolveACPowerFlow,
+    KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
+    HybridACPowerFlow,
 )
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)

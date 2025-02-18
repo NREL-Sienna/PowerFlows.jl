@@ -10,7 +10,7 @@ Supports passing kwargs to the PF solver.
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `KLUACPowerFlow`, `NLSolveACPowerFlow`, or `PowerFlows.LUACPowerFlow` (to be used for testing only).
+- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `KLUACPowerFlow`, `NLSolveACPowerFlow`, `HybridACPowerFlow`, or `PowerFlows.LUACPowerFlow` (to be used for testing only).
 - `system::PSY.System`: The power system model.
 - `kwargs...`: Additional keyword arguments.
 
@@ -366,28 +366,28 @@ function _update_F!(F::Vector{Float64}, Sbus_result::Vector{Complex{Float64}},
     return
 end
 
-function _update_dSbus_dV!(rows::Vector{Int64}, cols::Vector{Int64},
+function _update_dSbus_dV!(rows::Vector{Int32}, cols::Vector{Int32},
     V::Vector{Complex{Float64}}, Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
     diagV::LinearAlgebra.Diagonal{Complex{Float64}, Vector{Complex{Float64}}},
     diagVnorm::LinearAlgebra.Diagonal{Complex{Float64}, Vector{Complex{Float64}}},
     diagIbus::LinearAlgebra.Diagonal{Complex{Float64}, Vector{Complex{Float64}}},
     diagIbus_diag::Vector{Complex{Float64}},
-    dSbus_dVa::SparseMatrixCSC{Complex{Float64}, Int64},
-    dSbus_dVm::SparseMatrixCSC{Complex{Float64}, Int64},
-    r_dSbus_dVa::SparseMatrixCSC{Float64, Int64},
-    r_dSbus_dVm::SparseMatrixCSC{Float64, Int64},
-    i_dSbus_dVa::SparseMatrixCSC{Float64, Int64},
-    i_dSbus_dVm::SparseMatrixCSC{Float64, Int64},
-    Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int64},
-    conj_Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int64},
-    diagV_conj_Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int64},
+    dSbus_dVa::SparseMatrixCSC{Complex{Float64}, Int32},
+    dSbus_dVm::SparseMatrixCSC{Complex{Float64}, Int32},
+    r_dSbus_dVa::SparseMatrixCSC{Float64, Int32},
+    r_dSbus_dVm::SparseMatrixCSC{Float64, Int32},
+    i_dSbus_dVa::SparseMatrixCSC{Float64, Int32},
+    i_dSbus_dVm::SparseMatrixCSC{Float64, Int32},
+    Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int32},
+    conj_Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int32},
+    diagV_conj_Ybus_diagVnorm::SparseMatrixCSC{Complex{Float64}, Int32},
     conj_diagIbus::LinearAlgebra.Diagonal{Complex{Float64}, Vector{Complex{Float64}}},
     conj_diagIbus_diagVnorm::LinearAlgebra.Diagonal{
         Complex{Float64},
         Vector{Complex{Float64}},
     },
-    Ybus_diagV::SparseMatrixCSC{Complex{Float64}, Int64},
-    conj_Ybus_diagV::SparseMatrixCSC{Complex{Float64}, Int64})
+    Ybus_diagV::SparseMatrixCSC{Complex{Float64}, Int32},
+    conj_Ybus_diagV::SparseMatrixCSC{Complex{Float64}, Int32})
     for i in eachindex(V)
         diagV[i, i] = V[i]
         diagVnorm[i, i] = V[i] / abs(V[i])
@@ -512,12 +512,14 @@ function _calc_x(
 end
 
 function _preallocate_J(
-    rows::Vector{Int64},
-    cols::Vector{Int64},
+    rows::Vector{Int32},
+    cols::Vector{Int32},
     pvpq::Vector{Int64},
     pq::Vector{Int64},
 )
-    J_block = sparse(rows, cols, Float64(0), maximum(rows), maximum(cols))
+    J_block = SparseMatrixCSC{Float64, Int32}(
+        sparse(rows, cols, Float64(0), maximum(rows), maximum(cols)),
+    )
     J = [J_block[pvpq, pvpq] J_block[pvpq, pq]; J_block[pq, pvpq] J_block[pq, pq]]
     return J
 end
@@ -592,6 +594,10 @@ function _newton_powerflow(
     # preallocate Jacobian matrix and arrays for calculating dSbus_dVa, dSbus_dVm
     rows, cols = SparseArrays.findnz(Ybus)
 
+    # Convert rows and cols to Int32
+    rows = Int32.(rows)
+    cols = Int32.(cols)
+
     #diagV = sparse(1:n_buses, 1:n_buses, V)
     diagV = LinearAlgebra.Diagonal(V)
     diagIbus_diag = zeros(Complex{Float64}, size(V, 1))
@@ -621,16 +627,7 @@ function _newton_powerflow(
     # pq_cols = pq_lookup[cols][pq_lookup[cols] .!= 0]
 
     J = _preallocate_J(rows, cols, pvpq, pq)
-
-    # preallocate the KLU factorization object - symbolic object only
-    colptr = KLU.decrement(J.colptr)
-    rowval = KLU.decrement(J.rowval)
-    n = size(J, 1)
-    factor_J = KLU.KLUFactorization(n, colptr, rowval, J.nzval)
-    KLU.klu_analyze!(factor_J)
-    rf = Ref(factor_J.common)
-    # factorization for the numeric object does not work here:
-    # factor_J._numeric = KLU.klu_l_factor(colptr, rowval, J.nzval, factor_J._symbolic, rf)
+    cache = KLULinSolveCache(J)
 
     while i < maxIter && !converged
         i += 1
@@ -657,32 +654,15 @@ function _newton_powerflow(
         # background: KLU.klu_l_factor does not work properly with the preallocated J matrix with dummy values
         # the workaround is to initialize the numeric object here in the loop once and then refactorize the matrix in the loop inplace
         if i == 1
-            # works when J values are ok:
-            factor_J._numeric =
-                KLU.klu_l_factor(colptr, rowval, J.nzval, factor_J._symbolic, rf)
+            symbolic_factor!(cache, J)
         end
 
         try
             # factorize the numeric object of KLU inplace, while reusing the symbolic object
-            KLU.klu_l_refactor(
-                colptr,
-                rowval,
-                J.nzval,
-                factor_J._symbolic,
-                factor_J._numeric,
-                rf,
-            )
+            numeric_refactor!(cache, J)
 
             # solve inplace - the results are written to F, so that we must use F instead of dx for updating V
-            KLU.klu_l_solve(
-                factor_J._symbolic,
-                factor_J._numeric,
-                size(F, 1),
-                size(F, 2),
-                F,
-                rf,
-            )
-
+            solve!(cache, F)
         catch e
             @error("KLU factorization failed: $e")
             return (converged, V, Sbus_result)
