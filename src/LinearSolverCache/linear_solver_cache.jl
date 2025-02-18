@@ -21,7 +21,7 @@ function numeric_refactor!(
     throw(AbstractMethodError(:numeric_refactor!))
 end
 
-function solve!(cache::LinearSolverCache{T}, B::Vector{Float64}) where {T <: TIs}
+function solve!(cache::LinearSolverCache{T}, B::StridedVecOrMat{Float64}) where {T <: TIs}
     throw(AbstractMethodError(:solve!))
 end
 

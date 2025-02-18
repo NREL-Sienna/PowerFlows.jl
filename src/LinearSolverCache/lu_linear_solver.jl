@@ -32,6 +32,6 @@ function symbolic_factor!(
     symbolic_refactor!(cache, A)
 end
 
-function solve!(cache::LULinSolveCache{T}, B::Vector{Float64}) where {T <: TIs}
+function solve!(cache::LULinSolveCache{T}, B::StridedVecOrMat{Float64}) where {T <: TIs}
     LinearAlgebra.ldiv!(cache.lu_fact, B)
 end
