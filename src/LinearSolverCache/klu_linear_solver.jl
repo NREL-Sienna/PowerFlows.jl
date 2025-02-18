@@ -160,8 +160,10 @@ function numeric_refactor!(
 end
 
 function solve!(cache::KLULinSolveCache{T}, B::StridedVecOrMat{Float64}) where {T <: TIs}
-    size(B, 1) == cache.K.n || throw(LinearAlgebra.DimensionMismatch(
-        "Need size(B, 1) to equal $(cache.K.n), but got $(size(B, 1))."))
+    size(B, 1) == cache.K.n || throw(
+        LinearAlgebra.DimensionMismatch(
+            "Need size(B, 1) to equal $(cache.K.n), but got $(size(B, 1))."),
+    )
     stride(B, 1) == 1 || throw(ArgumentError("B must have unit strides"))
     solveFcn = T == Int32 ? KLU.klu_solve : KLU.klu_l_solve
     isok = solveFcn(cache.K._symbolic, cache.K._numeric,

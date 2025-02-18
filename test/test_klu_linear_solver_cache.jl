@@ -9,7 +9,7 @@ function testSolve(
     b = deepcopy(xb)
     PF.solve!(k, xb)
     @test A * xb ≈ b
-    XB = randn(size(A,1), 10)
+    XB = randn(size(A, 1), 10)
     B = deepcopy(XB)
     PF.solve!(k, XB)
     @test A * XB ≈ B

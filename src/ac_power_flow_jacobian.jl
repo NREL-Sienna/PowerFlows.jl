@@ -263,7 +263,7 @@ function jsp!(
             nb = data.bus_type[ix_t, time_step]
             # could move the definitions of 
             # F_ix_f_{i/r}, X_ix_t_{fst/snd} inside _set_entries.
-            _set_entries_for_neighbor(J, Yb, Vm, θ, 
+            _set_entries_for_neighbor(J, Yb, Vm, θ,
                 ix_f, ix_t,
                 F_ix_f_r, F_ix_f_i,
                 X_ix_t_fst, X_ix_t_snd,
