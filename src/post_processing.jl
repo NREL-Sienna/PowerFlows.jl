@@ -787,7 +787,7 @@ function penalty_factors_brute_force(
 )
 
     # we assume that the bus type for ref bus does not change between time steps
-    ref, _, _ = bus_type_idx(data, 1)
+    ref, = bus_type_idx(data, 1, (PSY.ACBusTypes.REF,))
 
     n_buses = size(data.bus_type, 1)
     time_steps = collect(values(data.timestep_map))

@@ -302,9 +302,16 @@ function _solve_powerflow!(
     return converged, V, Sbus_result
 end
 
-function bus_type_idx(data::ACPowerFlowData, time_step::Int64 = 1)
+function bus_type_idx(
+    data::ACPowerFlowData,
+    time_step::Int64 = 1,
+    bus_types::Tuple{Vararg{PSY.ACBusTypes}} = (
+        PSY.ACBusTypes.REF,
+        PSY.ACBusTypes.PV,
+        PSY.ACBusTypes.PQ,
+    ),
+)
     # Find indices for each bus type
-    bus_types = PSY.ACBusTypes.REF, PSY.ACBusTypes.PV, PSY.ACBusTypes.PQ
     return [
         findall(x -> x == bus_type, data.bus_type[:, time_step]) for bus_type in bus_types
     ]
