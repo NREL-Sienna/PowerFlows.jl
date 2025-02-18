@@ -769,6 +769,7 @@ The loss factor value is computed as the change in the reference bus power injec
 
 # Arguments
 - `data::PowerFlowData`: The power flow data containing bus types, active power injections, and other relevant information.
+- `step_size::Float64 = 1e-6`: The step size used to perturb the active power injection at each bus.
 - `kwargs...`: Additional keyword arguments to be passed to the `solve_powerflow!` function.
 
 # Returns
