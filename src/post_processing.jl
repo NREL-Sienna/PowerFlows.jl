@@ -788,7 +788,7 @@ function penalty_factors_brute_force(
 
     # we assume that the bus type for ref bus does not change between time steps
     ref = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
+        ==(PSY.ACBusTypes.REF),
         data.bus_type[:, 1],
     )
 
