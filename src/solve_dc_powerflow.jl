@@ -73,16 +73,12 @@ function solve_powerflow!(
     solver_cache = KLULinSolveCache(data.aux_network_matrix.data)
     full_factor!(solver_cache, data.aux_network_matrix.data)
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
-    for i in axes(power_injection, 2)
-        # evaluate flows (next line evaluates both both PTDF rows and line flows)
-        data.branch_activepower_flow_from_to[:, i] .=
-            my_mul_mt(data.power_network_matrix, power_injection[:, i])
-        data.branch_activepower_flow_to_from .= -data.branch_activepower_flow_from_to
-        # evaluate bus angles
-        p_inj = power_injection[data.valid_ix, i]
-        PF.solve!(solver_cache, p_inj)
-        data.bus_angles[data.valid_ix, i] .= p_inj
-    end
+    data.branch_activepower_flow_from_to .=
+        my_mul_mt(data.power_network_matrix, power_injection)
+    data.branch_activepower_flow_to_from .= -data.branch_activepower_flow_from_to
+    p_inj = power_injection[data.valid_ix, :]
+    solve!(solver_cache, p_inj)
+    data.bus_angles[data.valid_ix, :] .= p_inj
     data.converged .= true
     return
 end

@@ -143,6 +143,11 @@ function my_mul_mt(
     return y
 end
 
+my_mul_mt(
+    A::PNM.VirtualPTDF,
+    X::Matrix{Float64},
+) = vcat((A[name_, :]' * X for name_ in A.axes[1])...)
+
 function make_dc_powerflowdata(
     sys,
     time_steps,
