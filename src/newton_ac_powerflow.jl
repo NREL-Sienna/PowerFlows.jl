@@ -184,18 +184,7 @@ function solve_powerflow!(
         ts_S[:, time_step] .= Sbus_result
 
         if converged
-            ref = findall(
-                x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
-                data.bus_type[:, time_step],
-            )
-            pv = findall(
-                x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
-                data.bus_type[:, time_step],
-            )
-            pq = findall(
-                x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ,
-                data.bus_type[:, time_step],
-            )
+            ref, pv, pq = bus_type_idx(data, time_step)
 
             # write results to data:
             # write results for REF
@@ -311,6 +300,21 @@ function _solve_powerflow!(
     # todo: throw error? set converged to false? -> leave as is for now
     @error("could not enforce reactive power limits after $MAX_REACTIVE_POWER_ITERATIONS")
     return converged, V, Sbus_result
+end
+
+function bus_type_idx(
+    data::ACPowerFlowData,
+    time_step::Int64 = 1,
+    bus_types::Tuple{Vararg{PSY.ACBusTypes}} = (
+        PSY.ACBusTypes.REF,
+        PSY.ACBusTypes.PV,
+        PSY.ACBusTypes.PQ,
+    ),
+)
+    # Find indices for each bus type
+    return [
+        findall(x -> x == bus_type, data.bus_type[:, time_step]) for bus_type in bus_types
+    ]
 end
 
 function _update_V!(dx::Vector{Float64}, V::Vector{Complex{Float64}}, Vm::Vector{Float64},
@@ -531,23 +535,10 @@ function _newton_powerflow(
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
 
-    aux_variables = data.aux_variables[time_step]
-
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    ref = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
-        data.bus_type[:, time_step],
-    )
-    pv = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
-        data.bus_type[:, time_step],
-    )
-    pq = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ,
-        data.bus_type[:, time_step],
-    )
+    ref, pv, pq = bus_type_idx(data, time_step)
     pvpq = [pv; pq]
 
     # nref = length(ref)
@@ -687,9 +678,13 @@ function _newton_powerflow(
         Sbus_result .*= NaN
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
-        aux_variables.J = J
-        aux_variables.dSbus_dV_ref =
-            [vec(real.(dSbus_dVa[ref, :][:, pvpq])); vec(real.(dSbus_dVm[ref, :][:, pq]))]
+        if pf.calc_loss_factors
+            data.loss_factors[ref, :] .= 0.0  # this will not be necessary once we have a full J for all buses
+            penalty_factors!(
+                J,
+                collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:]),
+                view(data.loss_factors, pvpq, time_step))
+        end
         @info("The powerflow solver with KLU converged after $i iterations")
     end
 

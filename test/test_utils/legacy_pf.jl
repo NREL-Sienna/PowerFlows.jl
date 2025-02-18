@@ -7,10 +7,10 @@ struct LUACPowerFlow <: ACPowerFlowSolverType end  # Only for testing, a basic i
 function _legacy_dSbus_dV(
     V::Vector{Complex{Float64}},
     Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
-)
-    diagV = LinearAlgebra.Diagonal(V)
-    diagVnorm = LinearAlgebra.Diagonal(V ./ abs.(V))
-    diagIbus = LinearAlgebra.Diagonal(Ybus * V)
+)::Tuple{SparseMatrixCSC{Complex{Float64}, Int64}, SparseMatrixCSC{Complex{Float64}, Int64}}
+    diagV = SparseArrays.spdiagm(0 => V)
+    diagVnorm = SparseArrays.spdiagm(0 => V ./ abs.(V))
+    diagIbus = SparseArrays.spdiagm(0 => Ybus * V)
     dSbus_dVm = diagV * conj.(Ybus * diagVnorm) + conj.(diagIbus) * diagVnorm
     dSbus_dVa = 1im * diagV * conj.(diagIbus - Ybus * diagV)
     return dSbus_dVa, dSbus_dVm
@@ -42,30 +42,17 @@ function _newton_powerflow(
     maxIter = get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER)
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
-    aux_variables = data.aux_variables[time_step]
 
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    ref = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.REF,
-        data.bus_type[:, time_step],
-    )
-    pv = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PV,
-        data.bus_type[:, time_step],
-    )
-    pq = findall(
-        x -> x == PowerSystems.ACBusTypesModule.ACBusTypes.PQ,
-        data.bus_type[:, time_step],
-    )
+    pv, pq =
+        PowerFlows.bus_type_idx(data, time_step, (PSY.ACBusTypes.PV, PSY.ACBusTypes.PQ))
     pvpq = [pv; pq]
 
-    #nref = length(ref)
     npv = length(pv)
     npq = length(pq)
     npvpq = npv + npq
-    n_buses = length(data.bus_type[:, time_step])
 
     Vm = data.bus_magnitude[:, time_step]
     # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
@@ -124,13 +111,10 @@ function _newton_powerflow(
     if !converged
         V .*= NaN
         Sbus_result = fill(NaN + NaN * im, length(V))
-        @error("The powerflow solver with KLU did not converge after $i iterations")
+        @error("The legacy powerflow solver with LU did not converge after $i iterations")
     else
         Sbus_result = V .* conj(Ybus * V)
-        aux_variables.J = J
-        aux_variables.dSbus_dV_ref =
-            [vec(real.(dSbus_dVa[ref, :][:, pvpq])); vec(real.(dSbus_dVm[ref, :][:, pq]))]
-        @info("The powerflow solver with KLU converged after $i iterations")
+        @info("The legacy powerflow solver with LU converged after $i iterations")
     end
     return (converged, V, Sbus_result)
 end

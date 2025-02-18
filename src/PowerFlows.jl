@@ -17,7 +17,6 @@ export PSSEExporter
 export update_exporter!
 export write_export
 export get_psse_export_paths
-export penalty_factors
 
 import Base: @kwdef
 import Logging
