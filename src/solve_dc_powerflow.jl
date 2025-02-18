@@ -44,6 +44,8 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
 function solve_powerflow!(
     data::PTDFPowerFlowData,
 )
+    solver_cache = KLULinSolveCache(data.aux_network_matrix.data)
+    full_factor!(solver_cache, data.aux_network_matrix.data)
     # get net power injections
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
     # evaluate flows
@@ -52,7 +54,8 @@ function solve_powerflow!(
     data.branch_activepower_flow_to_from .= -data.branch_activepower_flow_from_to
     # evaluate bus angles
     p_inj = power_injection[data.valid_ix, :]
-    data.bus_angles[data.valid_ix, :] .= data.aux_network_matrix.K \ p_inj
+    solve!(solver_cache, p_inj)
+    data.bus_angles[data.valid_ix, :] .= p_inj
     data.converged .= true
     return
 end
@@ -67,7 +70,8 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
 function solve_powerflow!(
     data::vPTDFPowerFlowData,
 )
-    # get net power injections
+    solver_cache = KLULinSolveCache(data.aux_network_matrix.data)
+    full_factor!(solver_cache, data.aux_network_matrix.data)
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
     for i in axes(power_injection, 2)
         # evaluate flows (next line evaluates both both PTDF rows and line flows)
@@ -76,7 +80,8 @@ function solve_powerflow!(
         data.branch_activepower_flow_to_from .= -data.branch_activepower_flow_from_to
         # evaluate bus angles
         p_inj = power_injection[data.valid_ix, i]
-        data.bus_angles[data.valid_ix, i] .= data.aux_network_matrix.K \ p_inj
+        PF.solve!(solver_cache, p_inj)
+        data.bus_angles[data.valid_ix, i] .= p_inj
     end
     data.converged .= true
     return
@@ -95,11 +100,14 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
 function solve_powerflow!(
     data::ABAPowerFlowData,
 )
+    solver_cache = KLULinSolveCache(data.power_network_matrix.data)
+    full_factor!(solver_cache, data.power_network_matrix.data)
     # get net injections
     power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
     # save angles and power flows
-    data.bus_angles[data.valid_ix, :] .=
-        data.power_network_matrix.K \ @view power_injection[data.valid_ix, :]
+    p_inj = power_injection[data.valid_ix, :]
+    solve!(solver_cache, p_inj)
+    data.bus_angles[data.valid_ix, :] .= p_inj
     data.branch_activepower_flow_from_to .= data.aux_network_matrix.data' * data.bus_angles
     data.branch_activepower_flow_to_from .= -data.branch_activepower_flow_from_to
     data.converged .= true
