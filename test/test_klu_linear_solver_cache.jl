@@ -65,7 +65,7 @@ end
         # work in progress: hard to find the sweet spot between "iterative refinement
         # isn't needed" and "so badly conditioned that iterative refinement goes awry."
         N, d = 1000, 0.01
-        epsilon = 0.001
+        epsilon = 0.004
         v1, v2 = sprandn(N, d), sprandn(N, d)
         bigA =
             sparse(v2 * transpose(v1)) + sparse(diagm(randn(N)) * epsilon) +
