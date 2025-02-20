@@ -518,7 +518,7 @@ function _preallocate_J(
     pq::Vector{Int64},
 )
     J_block = SparseMatrixCSC{Float64, Int32}(
-        sparse(rows, cols, Float64(0), maximum(rows), maximum(cols)),
+        sparse(rows, cols, 0.0, maximum(rows), maximum(cols)),
     )
     J = [J_block[pvpq, pvpq] J_block[pvpq, pq]; J_block[pq, pvpq] J_block[pq, pq]]
     return J

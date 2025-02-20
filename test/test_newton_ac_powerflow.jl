@@ -1,11 +1,8 @@
-
-@testset "AC Power Flow 14-Bus testing" for ACSolver in
-                                            (
-    NLSolveACPowerFlow,
+const AC_SOLVERS_TO_TEST = (NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
-)
+    HybridACPowerFlow)
+@testset "AC Power Flow 14-Bus testing" for ACSolver in AC_SOLVERS_TO_TEST
     result_14 = [
         2.3255081760423684
         -0.15529254415401786
@@ -75,13 +72,7 @@
     @test 1.08 <= x2[15] <= 1.09
 end
 
-@testset "AC Power Flow 14-Bus Line Configurations" for ACSolver in
-                                                        (
-    NLSolveACPowerFlow,
-    KLUACPowerFlow,
-    PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
-)
+@testset "AC Power Flow 14-Bus Line Configurations" for ACSolver in AC_SOLVERS_TO_TEST
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     pf = ACPowerFlow{ACSolver}()
     base_res = solve_powerflow(pf, sys)
@@ -126,13 +117,7 @@ end
     @test isapprox(df["bus_results"].Q_gen, q_gen_matpower_3bus, atol = 1e-4)
 end
 
-@testset "AC Power Flow convergence fail testing" for ACSolver in
-                                                      (
-    NLSolveACPowerFlow,
-    KLUACPowerFlow,
-    PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
-)
+@testset "AC Power Flow convergence fail testing" for ACSolver in AC_SOLVERS_TO_TEST
     pf_sys5_re = PSB.build_system(PSB.PSITestSystems, "c_sys5_re"; add_forecasts = false)
     remove_component!(Line, pf_sys5_re, "1")
     remove_component!(Line, pf_sys5_re, "2")
@@ -150,13 +135,7 @@ end
     )
 end
 
-@testset "AC Test 240 Case PSS/e results" for ACSolver in
-                                              (
-    NLSolveACPowerFlow,
-    KLUACPowerFlow,
-    PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
-)
+@testset "AC Test 240 Case PSS/e results" for ACSolver in AC_SOLVERS_TO_TEST
     file = joinpath(
         TEST_FILES_DIR,
         "test_data",
@@ -191,13 +170,7 @@ end
     @test norm(q_diff, 2) / length(q_diff) < DIFF_L2_TOLERANCE
 end
 
-@testset "AC Multiple sources at ref" for ACSolver in
-                                          (
-    NLSolveACPowerFlow,
-    KLUACPowerFlow,
-    PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
-)
+@testset "AC Multiple sources at ref" for ACSolver in AC_SOLVERS_TO_TEST
     sys = System(100.0)
     b = ACBus(;
         number = 1,
@@ -241,13 +214,7 @@ end
     ) solve_powerflow!(pf, sys)
 end
 
-@testset "AC PowerFlow with Multiple sources at PV" for ACSolver in
-                                                        (
-    NLSolveACPowerFlow,
-    KLUACPowerFlow,
-    PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
-)
+@testset "AC PowerFlow with Multiple sources at PV" for ACSolver in AC_SOLVERS_TO_TEST
     sys = System(100.0)
     b1 = ACBus(;
         number = 1,
@@ -329,13 +296,7 @@ end
     )
 end
 
-@testset "AC PowerFlow Source + non-source at Ref" for ACSolver in
-                                                       (
-    NLSolveACPowerFlow,
-    KLUACPowerFlow,
-    PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
-)
+@testset "AC PowerFlow Source + non-source at Ref" for ACSolver in AC_SOLVERS_TO_TEST
     sys = System(100.0)
     b = ACBus(;
         number = 1,
@@ -396,13 +357,7 @@ end
     )
 end
 
-@testset "AC PowerFlow Source + non-source at PV" for ACSolver in
-                                                      (
-    NLSolveACPowerFlow,
-    KLUACPowerFlow,
-    PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
-)
+@testset "AC PowerFlow Source + non-source at PV" for ACSolver in AC_SOLVERS_TO_TEST
     sys = System(100.0)
     b1 = ACBus(;
         number = 1,
