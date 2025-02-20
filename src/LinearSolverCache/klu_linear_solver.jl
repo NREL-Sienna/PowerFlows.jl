@@ -3,6 +3,7 @@ mutable struct KLULinSolveCache{T} <: LinearSolverCache{T}
     K::KLU.KLUFactorization{Float64, T}
     reuse_symbolic::Bool
     check_pattern::Bool
+    # condest::Float64
     rf_common::Union{Base.RefValue{KLU.klu_common}, Base.RefValue{KLU.klu_l_common}}
     # klu_free_{numeric/symbolic} requires these. store them to avoid allocating.
     rf_symbolic::Union{
@@ -25,6 +26,7 @@ function KLULinSolveCache(
     K = KLU.KLUFactorization(A)
     # KLU.kluerror(K.common) # necessary?
     return KLULinSolveCache(K, reuse_symbolic, check_pattern,
+        # NaN,
         Ref(K.common), Ref(Ptr{symType}(K._symbolic)),
         Ref(Ptr{numType}(K._numeric)))
 end
@@ -36,6 +38,7 @@ function symbolic_factor!(
     cache::KLULinSolveCache{T},
     A::SparseMatrixCSC{Float64, T},
 ) where {T <: TIs}
+    # cache.condest = NaN # will need to re-calculate condition number.
     @assert size(A, 1) == cache.K.n && size(A, 2) == cache.K.n
 
     if cache.K._symbolic != C_NULL
@@ -111,8 +114,9 @@ function numeric_refactor!(
     A::SparseMatrixCSC{Float64, T},
 ) where {T <: TIs}
     if cache.K._symbolic == C_NULL
-        @error("Need to call symbolic_refactor! first.")
+        @error("Need to call symbolic_factor! first.")
     end
+    # cache.condest = NaN # will need to re-calculate condition number.
     if cache.K._numeric == C_NULL
         factorFcn = T == Int32 ? KLU.klu_factor : KLU.klu_l_factor
         cache.K._numeric = factorFcn(cache.K.colptr,
@@ -170,4 +174,36 @@ function solve!(cache::KLULinSolveCache{T}, B::StridedVecOrMat{Float64}) where {
         size(B, 1), size(B, 2), B, cache.rf_common)
     isok == 0 && KLU.kluerror(cache.K.common)
     return B
+end
+
+function solve_w_refinement(cache::KLULinSolveCache{T}, A::SparseMatrixCSC{Float64, T},
+    B::StridedVecOrMat{Float64}, tol::Float64 = 1e-6) where {T <: TIs}
+    cache.K._numeric == C_NULL && @error("not factored yet")
+    # update condition number, if needed
+    #=if isnan(cache.condest)
+        condestFcn = T == Int32 ? KLU.klu_condest : KLU.klu_l_condest
+        ok = condestFcn(cache.K.colptr, cache.K.nzval, cache.K._symbolic, cache.K._numeric, cache.rf_common)
+        if ok == 0
+            KLU.kluerror(cache.K.common)
+        end
+        cache.condest = K.common.condest
+    end=#
+    bNorm = norm(B, 1)
+    XB = zeros(size(B))
+    r = B - A * XB
+    MAX_ITERS = 10
+    iters = 0
+    while iters < MAX_ITERS && norm(r, 1) >= bNorm * tol #*cache.condest
+        lastError = norm(r, 1)
+        solve!(cache, r)
+        XB .+= r
+        r .= B - A * XB
+        iters += 1
+        if norm(r, 1) > lastError
+            @error("Iterative refinement failed: error is getting worse.")
+            return XB
+        end
+    end
+    @debug("Iterative refined converged in $iters iterations.")
+    return XB
 end
