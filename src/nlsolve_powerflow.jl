@@ -44,8 +44,8 @@ function NLCache(x0::Vector{Float64})
 end
 
 function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
-            pf::PolarPowerFlow, J::PolarPowerFlowJacobian, strategy::Symbol = :inplace;
-            refinement_eps::Float64 = 1e-6,)
+    pf::PolarPowerFlow, J::PolarPowerFlowJacobian, strategy::Symbol = :inplace;
+    refinement_eps::Float64 = 1e-6)
     copyto!(nlCache.xold, nlCache.x)
     try
         # factorize the numeric object of KLU inplace, while reusing the symbolic object
@@ -109,8 +109,9 @@ function _newton_powerflow(
         i, converged = 0, false
         while i < iterations && !converged
             _nr_step(nlCache, linSolveCache, pf, J, strategy)
-            converged = (norm(nlCache.x - nlCache.xold) <= xtol) |
-                        (LinearAlgebra.norm(pf.residual, Inf) < ftol)
+            converged =
+                (norm(nlCache.x - nlCache.xold) <= xtol) |
+                (LinearAlgebra.norm(pf.residual, Inf) < ftol)
             i += 1
         end
         if converged
