@@ -43,6 +43,51 @@ function NLCache(x0::Vector{Float64})
     return NLCache(x, xold, p) #, g)
 end
 
+function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
+    pf::PolarPowerFlow, J::PolarPowerFlowJacobian, strategy::Symbol = :inplace;
+    refinement_eps::Float64 = 1e-6)
+    copyto!(nlCache.xold, nlCache.x)
+    try
+        # factorize the numeric object of KLU inplace, while reusing the symbolic object
+        numeric_refactor!(linSolveCache, J.Jv)
+        # solve for dx in-place
+        copyto!(nlCache.p, pf.residual)
+        if strategy == :inplace
+            solve!(linSolveCache, nlCache.p)
+        elseif strategy == :iterative_refinement
+            nlCache.p .=
+                solve_w_refinement(linSolveCache, J.Jv, nlCache.p, refinement_eps)
+        end
+        rmul!(nlCache.p, -1)
+    catch e
+        # TODO cook up a test case where Jacobian is singular.
+        if e isa SingularException
+            @warn("Newton-Raphson hit a point where the Jacobian is singular.")
+            fjac2 = J.Jv' * J.Jv
+            lambda = 1e6 * sqrt(length(pf.x0) * eps()) * norm(fjac2, 1)
+            M = -(fjac2 + lambda * I)
+            tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
+            # KLU factorization. TODO check if this is faster than Julia's default ldiv.
+            full_factor!(tempCache, M)
+            copyto!(nlCache.p, pf.residual)
+            solve!(tempCache, nlCache.p)
+        else
+            @error("KLU factorization failed: $e")
+            # V = _calc_V(data, nlCache.x, time_step)
+            # Sbus_result = V .* conj(data.power_network_matrix.data * V)
+            return
+        end
+    end
+    # update x
+    nlCache.x .+= nlCache.p
+    # update data's fields (the bus angles/voltages) to match x, and update the residual.
+    # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
+    pf(nlCache.x)
+    # update jacobian.
+    J(nlCache.x)
+    return
+end
+
 function _newton_powerflow(
     pf::ACPowerFlow{HybridACPowerFlow},
     data::ACPowerFlowData,
@@ -55,90 +100,61 @@ function _newton_powerflow(
     xtol = get(kwargs, :xtol, DEFAULT_NR_XTOL)  # default should be 0.0
 
     ppf = PolarPowerFlow(data, time_step)
-    n = length(ppf.x0)
-    num_buses = first(size(data.bus_type))
     J = PowerFlows.PolarPowerFlowJacobian(data, ppf.x0, time_step)
     nlCache = NLCache(ppf.x0)
-
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
-    i, converged = 0, false
 
-    while i < maxIterations && !converged
-        copyto!(nlCache.xold, nlCache.x)
-        try
-            # factorize the numeric object of KLU inplace, while reusing the symbolic object
-            numeric_refactor!(linSolveCache, J.Jv)
-
-            # solve for dx in-place
-            copyto!(nlCache.p, ppf.residual)
-            solve!(linSolveCache, nlCache.p)
-            rmul!(nlCache.p, -1)
-        catch e
-            # TODO cook up a test case where Jacobian is singular.
-            if e isa SingularException
-                @error("SingularException: $e")
-                fjac2 = J.Jv' * J.Jv
-                lambda = 1e6 * sqrt(n * eps()) * norm(fjac2, 1)
-                M = -(fjac2 + lambda * I)
-                tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
-                # KLU factorization. TODO check if this is faster than Julia's default ldiv.
-                full_factor!(tempCache, M)
-                copyto!(nlCache.p, ppf.residual)
-                solve!(tempCache, nlCache.p)
-            else
-                @error("KLU factorization failed: $e")
-                V = _calc_V(data, nlCache.x, time_step)
-                Sbus_result = V .* conj(data.power_network_matrix.data * V)
-                return (false, V, Sbus_result)
-            end
+    for strategy in [:inplace, :iterative_refinement]
+        i, converged = 0, false
+        while i < maxIterations && !converged
+            _nr_step(nlCache, linSolveCache, ppf, J, strategy)
+            converged =
+                (norm(nlCache.x - nlCache.xold) <= xtol) |
+                (LinearAlgebra.norm(pf.residual, Inf) < tol)
+            i += 1
         end
-
-        # update x
-        nlCache.x .+= nlCache.p
-        # update data's fields (the bus angles/voltages) to match x, and update the residual.
-        # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
-        ppf(nlCache.x)
-        # update jacobian.
-        J(nlCache.x)
-
-        converged =
-            (norm(nlCache.x - nlCache.xold, Inf) <= xtol) |
-            (norm(ppf.residual, Inf) < tol)
-        i += 1
-    end
-
-    if !converged
-        V = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
-        Sbus_result = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
-        @error(
-            "Solver (NLSolve-KLU hybrid) did not converge in $i iterations."
-        )
-    else
-        if pf.calc_loss_factors
-            ref, pv, pq = bus_type_idx(data, time_step)
-            pvpq = vcat(pv, pq)
-            pvpq_coords = [
-                x for pair in zip(
-                    [2 * x - 1 for x in 1:num_buses if x in pvpq],
-                    [2 * x for x in 1:num_buses if x in pvpq],
-                ) for x in pair
-            ]
-            data.loss_factors[ref, time_step] .= 0.0
-            penalty_factors!(
-                J.Jv[pvpq_coords, pvpq_coords],
-                vec(collect(J.Jv[2 .* ref .- 1, pvpq_coords])),
-                view(data.loss_factors, [x for x in 1:num_buses if x in pvpq], time_step),
-                [2 * x - 1 for x in 1:length(pvpq)],
+        if converged
+            @info(
+                "The HybridACPowerFlow solver converged after $i iterations with strategy $strategy"
             )
+            V = _calc_V(data, nlCache.x, time_step)
+            Sbus_result = V .* conj(data.power_network_matrix.data * V)
+
+            if pf.calc_loss_factors
+                num_buses = first(size(data.bus_type))
+                ref, pv, pq = bus_type_idx(data, time_step)
+                pvpq = vcat(pv, pq)
+                pvpq_coords = [
+                    x for pair in zip(
+                        [2 * x - 1 for x in 1:num_buses if x in pvpq],
+                        [2 * x for x in 1:num_buses if x in pvpq],
+                    ) for x in pair
+                ]
+                data.loss_factors[ref, time_step] .= 0.0
+                penalty_factors!(
+                    J.Jv[pvpq_coords, pvpq_coords],
+                    vec(collect(J.Jv[2 .* ref .- 1, pvpq_coords])),
+                    view(
+                        data.loss_factors,
+                        [x for x in 1:num_buses if x in pvpq],
+                        time_step,
+                    ),
+                    [2 * x - 1 for x in 1:length(pvpq)],
+                )
+            end
+
+            return (true, V, Sbus_result)
+        elseif strategy == :inplace
+            @warn("Failed with in-place solving. Trying iterative refinement...")
         end
-        V = _calc_V(data, nlCache.x, time_step)
-        Sbus_result = V .* conj(data.power_network_matrix.data * V)
-        @info(
-            "Solver (NLSolve-KLU hybrid) converged in $i iterations."
-        )
     end
-    return (converged, V, Sbus_result)
+    V = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
+    Sbus_result = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
+    @error(
+        "Solver HybridACPowerFlow did not converge in $maxIterations iterations with any strategy."
+    )
+    return (false, V, Sbus_result)
 end
 
 """

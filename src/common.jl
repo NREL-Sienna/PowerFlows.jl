@@ -145,6 +145,9 @@ end
 ##############################################################################
 # Matrix Methods #############################################################
 
+"""Matrix multiplication A*x. Written this way because a VirtualPTDF 
+matrix does not store all of its entries: instead, it calculates
+them (or retrieves them from cache), one element or one row at a time."""
 function my_mul_mt(
     A::PNM.VirtualPTDF,
     x::Vector{Float64},
@@ -157,6 +160,7 @@ function my_mul_mt(
     return y
 end
 
+"""Similar to above: A*X where X is a matrix."""
 my_mul_mt(
     A::PNM.VirtualPTDF,
     X::Matrix{Float64},

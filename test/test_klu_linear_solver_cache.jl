@@ -61,6 +61,21 @@ end
         autoRefactor = PF.KLULinSolveCache(A, false, false)
         @test PF.symbolic_factor!(autoRefactor, B) isa Any # shouldn't throw.
 
+        # test iterative refinement. bigA here is purposefully almost singular.
+        # work in progress: hard to find the sweet spot between "iterative refinement
+        # isn't needed" and "so badly conditioned that iterative refinement goes awry."
+        N, d = 1000, 0.01
+        epsilon = 0.004
+        v1, v2 = sprandn(N, d), sprandn(N, d)
+        bigA =
+            sparse(v2 * transpose(v1)) + sparse(diagm(randn(N)) * epsilon) +
+            epsilon * sprand(N, N, 10 * d^2)
+        bigK = PF.KLULinSolveCache(bigA)
+        PF.full_factor!(bigK, bigA)
+        b = rand(N)
+        x = PF.solve_w_refinement(bigK, bigA, b)
+        @test bigA * x ≈ b
+
         # error handling: singular.
         sing = SparseMatrixCSC{Float64, dType}(sparse([1], [1], [0.1], 2, 2))
         # If I add KLU.kluerror(cache.K.common) to the constructor and symbolic_factor!

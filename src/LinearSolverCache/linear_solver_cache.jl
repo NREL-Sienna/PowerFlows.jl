@@ -1,29 +1,8 @@
 const TIs = Union{Int32, Int64}
+"""Abstract supertype for all cached linear solvers.
+Subtypes must implement: `symbolic_factor!`, `symbolic_refactor!`,
+`numeric_refactor!` (which doubles as `numeric_factor!`), and `solve!`."""
 abstract type LinearSolverCache{T <: TIs} end
-function symbolic_factor!(
-    cache::LinearSolverCache{T},
-    A::SparseMatrixCSC{Float64, T},
-) where {T <: TIs}
-    throw(AbstractMethodError(:symbolic_factor!))
-end
-
-function symbolic_refactor!(
-    cache::LinearSolverCache{T},
-    A::SparseMatrixCSC{Float64, T},
-) where {T <: TIs}
-    throw(AbstractMethodError(:symbolic_refactor!))
-end
-
-function numeric_refactor!(
-    cache::LinearSolverCache{T},
-    A::SparseMatrixCSC{Float64, T},
-) where {T <: TIs}
-    throw(AbstractMethodError(:numeric_refactor!))
-end
-
-function solve!(cache::LinearSolverCache{T}, B::StridedVecOrMat{Float64}) where {T <: TIs}
-    throw(AbstractMethodError(:solve!))
-end
 
 function full_refactor!(
     cache::LinearSolverCache{T},
