@@ -4,7 +4,6 @@ export solve_powerflow
 export solve_powerflow!
 export PowerFlowData
 export DCPowerFlow
-export NLSolveACPowerFlow
 export HybridACPowerFlow
 export KLUACPowerFlow
 export ACPowerFlow
@@ -24,7 +23,6 @@ import DataFrames
 import PowerSystems
 import PowerSystems: System, with_units_base
 import LinearAlgebra
-import NLsolve
 import KLU
 import SparseArrays
 import InfrastructureSystems

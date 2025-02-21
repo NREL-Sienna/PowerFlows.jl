@@ -10,15 +10,14 @@ Supports passing kwargs to the PF solver.
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `KLUACPowerFlow`, `NLSolveACPowerFlow`, `HybridACPowerFlow`, or `PowerFlows.LUACPowerFlow` (to be used for testing only).
+- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `KLUACPowerFlow`, `HybridACPowerFlow`, or `PowerFlows.LUACPowerFlow` (to be used for testing only).
 - `system::PSY.System`: The power system model.
 - `kwargs...`: Additional keyword arguments.
 
 ## Keyword Arguments
 - `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
 - 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
-- `method`: (only for `NLSolve`) See NLSolve.jl documentation for available solvers.
-- `xtol`: (only for `NLSolve`) Infinite norm difference in `x` between two successive iterates under which convergence is declared. Default is `0.0`.
+- `xtol`: (only for `NLSolve`) Norm difference in `x` between two successive iterates under which convergence is declared. Default is `0.0`.
 - `ftol`: (only for `NLSolve`) Infinite norm of residuals under which convergence is declared. Default is `1e-8`.
 - `iterations`: (only for `NLSolve`) Maximum number of iterations. Default is `1_000`.
 - `store_trace`: (only for `NLSolve`) Should a trace of the optimization algorithm's state be stored? Default is `false`.

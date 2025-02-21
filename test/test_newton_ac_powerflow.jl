@@ -1,4 +1,4 @@
-const AC_SOLVERS_TO_TEST = (NLSolveACPowerFlow,
+const AC_SOLVERS_TO_TEST = (
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
     HybridACPowerFlow)
@@ -100,11 +100,8 @@ end
     @test res["flow_results"].P_to_from[4] == 0.0
 end
 
-@testset "AC Power Flow 3-Bus Fixed FixedAdmittance testing" for ACSolver in (
-    NLSolveACPowerFlow,
-    KLUACPowerFlow, PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
-)
+@testset "AC Power Flow 3-Bus Fixed FixedAdmittance testing" for ACSolver in
+                                                                 AC_SOLVERS_TO_TEST
     p_gen_matpower_3bus = [20.3512373930753, 100.0, 100.0]
     q_gen_matpower_3bus = [45.516916781567232, 10.453799727283879, -31.992561631394636]
     sys_3bus = PSB.build_system(PSB.PSYTestSystems, "psse_3bus_gen_cls_sys")
@@ -454,15 +451,14 @@ end
 end
 
 # in this test, the following aspects are checked:
-# 1. The results of the power flow are consistent for the KLU and NLSolve solvers
+# 1. The results of the power flow are consistent for the KLU and Hybrid solvers
 # 2. The results of the power flow are consistent for the KLU solver and the legacy implementation
 # 3. The Jacobian matrix is the same for the KLU solver and the legacy implementation
-@testset "Compare larger grid results KLU vs NLSolve" begin
+@testset "Compare larger grid results KLU vs Hybrid" begin
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
     pf_default = ACPowerFlow()
     pf_klu = ACPowerFlow(KLUACPowerFlow)
-    pf_nlsolve = ACPowerFlow(NLSolveACPowerFlow)
     pf_hybrid = ACPowerFlow(HybridACPowerFlow)
 
     PSY.set_units_base_system!(sys, "SYSTEM_BASE")
@@ -547,7 +543,6 @@ end
 
     res_default = solve_powerflow(pf_default, sys)  # must be the same as KLU
     res_klu = solve_powerflow(pf_klu, sys)
-    res_nlsolve = solve_powerflow(pf_nlsolve, sys)
     res_hybrid = solve_powerflow(pf_hybrid, sys)
 
     @test all(
@@ -564,40 +559,6 @@ end
             res_default["bus_results"][!, :θ],
             rtol = 0,
             atol = 1e-12,
-        ),
-    )
-
-    @test all(
-        isapprox.(
-            res_klu["bus_results"][!, :Vm],
-            res_nlsolve["bus_results"][!, :Vm],
-            rtol = 0,
-            atol = 1e-8,
-        ),
-    )
-    @test all(
-        isapprox.(
-            res_klu["bus_results"][!, :θ],
-            res_nlsolve["bus_results"][!, :θ],
-            rtol = 0,
-            atol = 1e-8,
-        ),
-    )
-
-    @test all(
-        isapprox.(
-            res_hybrid["bus_results"][!, :Vm],
-            res_nlsolve["bus_results"][!, :Vm],
-            rtol = 0,
-            atol = 1e-8,
-        ),
-    )
-    @test all(
-        isapprox.(
-            res_hybrid["bus_results"][!, :θ],
-            res_nlsolve["bus_results"][!, :θ],
-            rtol = 0,
-            atol = 1e-8,
         ),
     )
 

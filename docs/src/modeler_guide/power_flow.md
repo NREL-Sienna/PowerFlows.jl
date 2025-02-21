@@ -4,15 +4,11 @@
 CurrentModule = PowerFlows
 ```
 
-`PowerFlows.jl` provides the capability to run a power flow using NLSolve, in the current
-stage of development it can't force reactive power constraints. This power flow routine
-does not check for reactive power limits or other limiting mechanisms in the grid, and can
-therefore be used to check for solver convergence - making no guarantees
-of the solution feasibility.
+`PowerFlows.jl` provides the capability to run a power flow using the Newton-Raphson method, optionally enforcing reactive power constraints of generators. This power flow routine can be used to check for AC feasibility of results of DC optimal power flow.
 
-The power flow solver uses [NLsolve.jl](https://github.com/JuliaNLSolvers/NLsolve.jl) under
-the hood and takes any keyword argument accepted by NLsolve. The solver uses the current
-operating point in the buses to provide the initial guess.
+The power flow solver uses [KLU.jl](https://github.com/JuliaSparse/KLU.jl) for Jacobian matrix factorization. The solver uses the current
+operating point in the buses to provide the initial guess. The initial guess is then
+adjusted to contain voltage magnitudes within a feasible range of 0.8 p.u. - 1.2 p.u.
 
 **Limitations**: The PowerFlow solver doesn't support systems with HVDC lines or
 Phase Shifting transformers yet. The power flow solver can't handle systems with islands.
@@ -62,9 +58,6 @@ end
 
 [`run_powerflow!`](@ref) return true or false to signal the successful result of the power
 flow. This enables the integration of a power flow into functions and use the return as check.
-For instance, initializing dynamic simulations. Also, because [`run_powerflow!`](@ref) uses
-[NLsolve.jl](https://github.com/JuliaNLSolvers/NLsolve.jl) all the parameters used for NLsolve
-are also available for [`run_powerflow!`](@ref)
 
 ````@example generated_power_flow
 run_powerflow!(system_data; method = :newton)

@@ -1,6 +1,5 @@
 @testset "PowerFlowData" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    @test PowerFlowData(ACPowerFlow{NLSolveACPowerFlow}(), sys) isa PF.ACPowerFlowData
     @test PowerFlowData(ACPowerFlow{KLUACPowerFlow}(), sys) isa PF.ACPowerFlowData
     @test PowerFlowData(ACPowerFlow{HybridACPowerFlow}(), sys) isa PF.ACPowerFlowData
     @test PowerFlowData(DCPowerFlow(), sys) isa PF.ABAPowerFlowData
@@ -21,7 +20,6 @@ end
 
 @testset "System <-> PowerFlowData round trip" for ACSolver in
                                                    (
-    NLSolveACPowerFlow,
     KLUACPowerFlow,
     HybridACPowerFlow,
 )

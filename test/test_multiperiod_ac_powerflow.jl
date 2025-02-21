@@ -21,7 +21,6 @@ end
 # work in progress
 @testset "MULTI-PERIOD power flows evaluation: NR" for ACSolver in
                                                        (
-    NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
     HybridACPowerFlow,
@@ -54,7 +53,6 @@ end
 
 @testset "MULTI-PERIOD power flows evaluation: compare results for different solvers" for ACSolver in
                                                                                           (
-    NLSolveACPowerFlow,
     KLUACPowerFlow,
     PowerFlows.LUACPowerFlow,
     HybridACPowerFlow,

@@ -2,7 +2,6 @@ abstract type PowerFlowEvaluationModel end
 abstract type ACPowerFlowSolverType end
 
 struct KLUACPowerFlow <: ACPowerFlowSolverType end
-struct NLSolveACPowerFlow <: ACPowerFlowSolverType end
 struct HybridACPowerFlow <: ACPowerFlowSolverType end
 
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel
