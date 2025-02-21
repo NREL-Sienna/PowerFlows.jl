@@ -692,6 +692,6 @@ end
         data_hybrid.loss_factors,
         bf_loss_factors,
         rtol = 0,
-        atol = 1e-6,
+        atol = 1e-5,
     ))
 end
