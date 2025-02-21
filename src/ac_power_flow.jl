@@ -137,8 +137,8 @@ function polar_pf!(
     θ = data.bus_angles[:, time_step]
     # F is active and reactive power balance equations at all buses
     for ix_f in 1:n_buses
-        S_re = -P_net[ix_f]
-        S_im = -Q_net[ix_f]
+        S_re = 0.0
+        S_im = 0.0
         for ix_t in data.neighbors[ix_f]
             gb = real(Yb[ix_f, ix_t])
             bb = imag(Yb[ix_f, ix_t])
@@ -156,8 +156,8 @@ function polar_pf!(
                     (gb * sin(θ[ix_f] - θ[ix_t]) - bb * cos(θ[ix_f] - θ[ix_t]))
             end
         end
-        F[2 * ix_f - 1] = S_re
-        F[2 * ix_f] = S_im
+        F[2 * ix_f - 1] = S_re - P_net[ix_f]
+        F[2 * ix_f] = S_im - Q_net[ix_f]
     end
     return
 end

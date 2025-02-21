@@ -382,7 +382,7 @@ end
 
 @testset "PSSE Exporter with RTS_GMLC_DA_sys, v33" for (ACSolver, folder_name) in (
     (NLSolveACPowerFlow, "rts_gmlc_NLSolve"),
-    # (HybridACPowerFlow, "rts_gmlc_hybrid") # fails to converge.
+    (HybridACPowerFlow, "rts_gmlc_hybrid"), # fails to converge if starting guess for V not plausible.
     # NLSolve.jl's Newton method also fails to converge, so not too concerning.
     (KLUACPowerFlow, "rts_gmlc_KLU"),
 )

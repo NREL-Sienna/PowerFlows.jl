@@ -44,45 +44,47 @@ function NLCache(x0::Vector{Float64})
 end
 
 function _newton_powerflow(
-    ::ACPowerFlow{HybridACPowerFlow},
+    pf::ACPowerFlow{HybridACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
-    # copy-pasted from default options of NLsolve.jl
-    xtol::Float64 = 0.0, # NLSolve declares these as real. does the difference matter?
-    ftol::Float64 = 1e-8,
-    iterations::Integer = 1_000,
-    # unused: added to prevent "no such function" errors from a few tests.
-    check_reactive_power_limits = false,
-    method = :newton)
-    pf = PolarPowerFlow(data, time_step)
-    n = length(pf.x0)
-    J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0, time_step)
-    nlCache = NLCache(pf.x0)
+    kwargs...)
+
+    # Fetch maxIterations, tol, and xtol from kwargs, or use defaults if not provided
+    maxIterations = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
+    tol = get(kwargs, :tol, DEFAULT_NR_TOL)
+    xtol = get(kwargs, :xtol, DEFAULT_NR_XTOL)  # default should be 0.0
+
+    ppf = PolarPowerFlow(data, time_step)
+    n = length(ppf.x0)
+    num_buses = first(size(data.bus_type))
+    J = PowerFlows.PolarPowerFlowJacobian(data, ppf.x0, time_step)
+    nlCache = NLCache(ppf.x0)
 
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
     i, converged = 0, false
 
-    while i < iterations && !converged
+    while i < maxIterations && !converged
         copyto!(nlCache.xold, nlCache.x)
         try
             # factorize the numeric object of KLU inplace, while reusing the symbolic object
             numeric_refactor!(linSolveCache, J.Jv)
 
             # solve for dx in-place
-            copyto!(nlCache.p, pf.residual)
+            copyto!(nlCache.p, ppf.residual)
             solve!(linSolveCache, nlCache.p)
             rmul!(nlCache.p, -1)
         catch e
             # TODO cook up a test case where Jacobian is singular.
             if e isa SingularException
+                @error("SingularException: $e")
                 fjac2 = J.Jv' * J.Jv
                 lambda = 1e6 * sqrt(n * eps()) * norm(fjac2, 1)
                 M = -(fjac2 + lambda * I)
                 tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
                 # KLU factorization. TODO check if this is faster than Julia's default ldiv.
                 full_factor!(tempCache, M)
-                copyto!(nlCache.p, pf.residual)
+                copyto!(nlCache.p, ppf.residual)
                 solve!(tempCache, nlCache.p)
             else
                 @error("KLU factorization failed: $e")
@@ -96,13 +98,13 @@ function _newton_powerflow(
         nlCache.x .+= nlCache.p
         # update data's fields (the bus angles/voltages) to match x, and update the residual.
         # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
-        pf(nlCache.x)
+        ppf(nlCache.x)
         # update jacobian.
         J(nlCache.x)
 
         converged =
-            (norm(nlCache.x - nlCache.xold) <= xtol) |
-            (LinearAlgebra.norm(pf.residual, Inf) < ftol)
+            (norm(nlCache.x - nlCache.xold, Inf) <= xtol) |
+            (norm(ppf.residual, Inf) < tol)
         i += 1
     end
 
@@ -110,12 +112,31 @@ function _newton_powerflow(
         V = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
         Sbus_result = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
         @error(
-            "Solver (NLSolve-KLU hybrid) did not converge in $iterations iterations."
+            "Solver (NLSolve-KLU hybrid) did not converge in $i iterations."
         )
     else
-        @info("The hybrid powerflow solver converged after $i iterations")
+        if pf.calc_loss_factors
+            ref, pv, pq = bus_type_idx(data, time_step)
+            pvpq = vcat(pv, pq)
+            pvpq_coords = [
+                x for pair in zip(
+                    [2 * x - 1 for x in 1:num_buses if x in pvpq],
+                    [2 * x for x in 1:num_buses if x in pvpq],
+                ) for x in pair
+            ]
+            data.loss_factors[ref, time_step] .= 0.0
+            penalty_factors!(
+                J.Jv[pvpq_coords, pvpq_coords],
+                vec(collect(J.Jv[2 .* ref .- 1, pvpq_coords])),
+                view(data.loss_factors, [x for x in 1:num_buses if x in pvpq], time_step),
+                [2 * x - 1 for x in 1:length(pvpq)],
+            )
+        end
         V = _calc_V(data, nlCache.x, time_step)
         Sbus_result = V .* conj(data.power_network_matrix.data * V)
+        @info(
+            "Solver (NLSolve-KLU hybrid) converged in $i iterations."
+        )
     end
     return (converged, V, Sbus_result)
 end

@@ -119,13 +119,27 @@ function _initialize_bus_data!(
     for (bus_no, ix) in bus_lookup
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
-        bus_type[ix] = PSY.get_bustype(bus)
+        bt = PSY.get_bustype(bus)
+        bus_type[ix] = bt
         if bus_type[ix] == PSY.ACBusTypes.REF
             bus_angles[ix] = 0.0
         else
             bus_angles[ix] = PSY.get_angle(bus)
         end
-        bus_magnitude[ix] = PSY.get_magnitude(bus)
+        bus_vm = PSY.get_magnitude(bus)
+        # prevent unfeasible starting values for voltage magnitude at PQ buses (for PV and REF buses we cannot do this):
+        if bt == PSY.ACBusTypes.PQ && bus_vm < BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
+            @warn(
+                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is below the plausible minimum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u."
+            )
+            bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
+        elseif bt == PSY.ACBusTypes.PQ && bus_vm > BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
+            @warn(
+                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is above the plausible maximum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u."
+            )
+            bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
+        end
+        bus_magnitude[ix] = bus_vm
     end
 end
 ##############################################################################

@@ -22,10 +22,10 @@ function assess_convergence(x::Vector{Float64},
     xtol::Float64,
     ftol::Float64)
     x_converged, f_converged = false, false
-    if norm(x - x_previous) <= xtol
+    if norm(x - x_previous, Inf) <= xtol
         x_converged = true
     end
-    if maximum(abs, f) <= ftol
+    if norm(f, Inf) <= ftol
         f_converged = true
     end
 
