@@ -111,7 +111,7 @@ function _newton_powerflow(
             _nr_step(nlCache, linSolveCache, ppf, J, strategy)
             converged =
                 (norm(nlCache.x - nlCache.xold) <= xtol) |
-                (LinearAlgebra.norm(pf.residual, Inf) < tol)
+                (LinearAlgebra.norm(ppf.residual, Inf) < tol)
             i += 1
         end
         if converged
