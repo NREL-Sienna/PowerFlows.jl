@@ -1,8 +1,6 @@
-struct PolarPowerFlowJacobian{F,
-    T <: SparseArrays.SparseMatrixCSC{Float64, Int32},
-}
-    Jf::F
-    Jv::T
+struct PolarPowerFlowJacobian
+    Jf::Function   # This is the function that calculates the Jacobian matrix
+    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32}  # This is the Jacobian matrix, that is updated by the function Jf
 end
 
 """Update the Jacobian. Point of confusion: Jf is jsp!(), which
