@@ -18,7 +18,7 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 - `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
 - 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
 - `method`: (only for `NLSolve`) See NLSolve.jl documentation for available solvers.
-- `xtol`: (only for `NLSolve`) Norm difference in `x` between two successive iterates under which convergence is declared. Default is `0.0`.
+- `xtol`: (only for `NLSolve`) Infinite norm difference in `x` between two successive iterates under which convergence is declared. Default is `0.0`.
 - `ftol`: (only for `NLSolve`) Infinite norm of residuals under which convergence is declared. Default is `1e-8`.
 - `iterations`: (only for `NLSolve`) Maximum number of iterations. Default is `1_000`.
 - `store_trace`: (only for `NLSolve`) Should a trace of the optimization algorithm's state be stored? Default is `false`.
@@ -65,7 +65,7 @@ function solve_powerflow!(
                 system,
                 x,
                 data,
-                get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER),
+                get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER),
             )
             @info("PowerFlow solve converged, the results have been stored in the system")
         else
@@ -160,6 +160,7 @@ solve_powerflow!(data)
 function solve_powerflow!(
     data::ACPowerFlowData;
     pf::ACPowerFlow{<:ACPowerFlowSolverType} = ACPowerFlow(),
+    enable_progress_bar::Bool = true,
     kwargs...,
 )
     sorted_time_steps = get(kwargs, :time_steps, sort(collect(keys(data.timestep_map))))
@@ -176,7 +177,21 @@ function solve_powerflow!(
     fb = data.power_network_matrix.fb
     tb = data.power_network_matrix.tb
 
+    progress_bar = ProgressMeter.Progress(
+        length(sorted_time_steps);
+        enabled = enable_progress_bar,
+        desc = "Multi-period power flow",
+        showspeed = true,
+    )
+
     for time_step in sorted_time_steps
+        ProgressMeter.update!(
+            progress_bar,
+            time_step;
+            showvalues = [
+                (:Step, time_step),
+            ],
+        )
         converged, V, Sbus_result =
             _ac_powerflow(data, pf, time_step; kwargs...)
         ts_converged[time_step] = converged
@@ -530,8 +545,8 @@ function _newton_powerflow(
     time_step::Int64;
     kwargs...,
 )
-    # Fetch maxIter and tol from kwargs, or use defaults if not provided
-    maxIter = get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER)
+    # Fetch maxIterations and tol from kwargs, or use defaults if not provided
+    maxIterations = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
 
@@ -547,8 +562,6 @@ function _newton_powerflow(
     npvpq = npv + npq
 
     Vm = data.bus_magnitude[:, time_step]
-    # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
-    Vm[pq] .= clamp.(Vm[pq], 0.9, 1.1)
     Va = data.bus_angles[:, time_step]
     V = zeros(Complex{Float64}, length(Vm))
     V .= Vm .* exp.(1im .* Va)
@@ -629,7 +642,7 @@ function _newton_powerflow(
     J = _preallocate_J(rows, cols, pvpq, pq)
     cache = KLULinSolveCache(J)
 
-    while i < maxIter && !converged
+    while i < maxIterations && !converged
         i += 1
 
         _update_dSbus_dV!(rows, cols, V, Ybus, diagV, diagVnorm, diagIbus, diagIbus_diag,
@@ -674,7 +687,7 @@ function _newton_powerflow(
         # here F is mismatch again
         _update_F!(F, Sbus_result, mis, dx_Va_pv, dx_Va_pq, dx_Vm_pq, V, Ybus, Sbus, pv, pq)
 
-        converged = LinearAlgebra.norm(F, Inf) < tol
+        converged = norm(F, Inf) < tol
     end
 
     if !converged
@@ -683,11 +696,11 @@ function _newton_powerflow(
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
         if pf.calc_loss_factors
-            data.loss_factors[ref, :] .= 0.0  # this will not be necessary once we have a full J for all buses
+            data.loss_factors[ref, :] .= 0.0
             penalty_factors!(
                 J,
                 collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:]),
-                view(data.loss_factors, pvpq, time_step))
+                view(data.loss_factors, pvpq, time_step), collect(1:npvpq))
         end
         @info("The powerflow solver with KLU converged after $i iterations")
     end

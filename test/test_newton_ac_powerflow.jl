@@ -655,3 +655,43 @@ end
     @test J1_KLU.rowval == J1_LU.rowval
     @test J1_KLU.colptr == J1_LU.colptr
 end
+
+@testset "Test loss factors for larger grid" begin
+    sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
+
+    pf_klu = ACPowerFlow(KLUACPowerFlow; calc_loss_factors = true)
+    pf_hybrid = ACPowerFlow(HybridACPowerFlow; calc_loss_factors = true)
+
+    data_klu = PowerFlowData(
+        pf_klu,
+        sys;
+        check_connectivity = true)
+
+    data_hybrid = PowerFlowData(
+        pf_hybrid,
+        sys;
+        check_connectivity = true)
+
+    time_step = 1
+
+    solve_powerflow!(data_klu; pf = pf_klu)
+    solve_powerflow!(data_hybrid; pf = pf_hybrid)
+
+    @test all(
+        isapprox.(
+            data_klu.loss_factors,
+            data_hybrid.loss_factors,
+            rtol = 0,
+            atol = 1e-9,
+        ),
+    )
+
+    bf_loss_factors =
+        PowerFlows.penalty_factors_brute_force(data_hybrid; enable_progress_bar = false)
+    @test all(isapprox.(
+        data_hybrid.loss_factors,
+        bf_loss_factors,
+        rtol = 0,
+        atol = 1e-5,
+    ))
+end

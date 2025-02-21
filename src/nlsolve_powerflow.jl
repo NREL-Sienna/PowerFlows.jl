@@ -89,35 +89,61 @@ function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
 end
 
 function _newton_powerflow(
-    ::ACPowerFlow{HybridACPowerFlow},
+    pf::ACPowerFlow{HybridACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
-    # copy-pasted from default options of NLsolve.jl
-    xtol::Float64 = 0.0, # NLSolve declares these as real. does the difference matter?
-    ftol::Float64 = 1e-8,
-    iterations::Integer = 1_000,
-    # unused: added to prevent "no such function" errors from a few tests.
-    check_reactive_power_limits = false,
-    method = :newton)
-    pf = PolarPowerFlow(data, time_step)
-    J = PowerFlows.PolarPowerFlowJacobian(data, pf.x0, time_step)
-    nlCache = NLCache(pf.x0)
+    kwargs...)
 
+    # Fetch maxIterations, tol, and xtol from kwargs, or use defaults if not provided
+    maxIterations = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
+    tol = get(kwargs, :tol, DEFAULT_NR_TOL)
+    xtol = get(kwargs, :xtol, DEFAULT_NR_XTOL)  # default should be 0.0
+
+    ppf = PolarPowerFlow(data, time_step)
+    J = PowerFlows.PolarPowerFlowJacobian(data, ppf.x0, time_step)
+    nlCache = NLCache(ppf.x0)
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
+
     for strategy in [:inplace, :iterative_refinement]
         i, converged = 0, false
-        while i < iterations && !converged
-            _nr_step(nlCache, linSolveCache, pf, J, strategy)
+        while i < maxIterations && !converged
+            _nr_step(nlCache, linSolveCache, ppf, J, strategy)
             converged =
                 (norm(nlCache.x - nlCache.xold) <= xtol) |
-                (LinearAlgebra.norm(pf.residual, Inf) < ftol)
+                (LinearAlgebra.norm(ppf.residual, Inf) < tol)
             i += 1
         end
         if converged
-            @info("The solver converged after $i iterations with strategy $strategy")
+            @info(
+                "The HybridACPowerFlow solver converged after $i iterations with strategy $strategy"
+            )
             V = _calc_V(data, nlCache.x, time_step)
             Sbus_result = V .* conj(data.power_network_matrix.data * V)
+
+            if pf.calc_loss_factors
+                num_buses = first(size(data.bus_type))
+                ref, pv, pq = bus_type_idx(data, time_step)
+                pvpq = vcat(pv, pq)
+                pvpq_coords = [
+                    x for pair in zip(
+                        [2 * x - 1 for x in 1:num_buses if x in pvpq],
+                        [2 * x for x in 1:num_buses if x in pvpq],
+                    ) for x in pair
+                ]
+                data.loss_factors[ref, time_step] .= 0.0
+                penalty_factors!(
+                    J.Jv[pvpq_coords, pvpq_coords],
+                    vec(collect(J.Jv[2 .* ref .- 1, pvpq_coords])),
+                    view(
+                        data.loss_factors,
+                        [x for x in 1:num_buses if x in pvpq],
+                        time_step,
+                    ),
+                    [2 * x - 1 for x in 1:length(pvpq)],
+                )
+            end
+
             return (true, V, Sbus_result)
         elseif strategy == :inplace
             @warn("Failed with in-place solving. Trying iterative refinement...")
@@ -125,7 +151,9 @@ function _newton_powerflow(
     end
     V = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
     Sbus_result = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
-    @error("Solver did not converge in $iterations iterations with any strategy.")
+    @error(
+        "Solver HybridACPowerFlow did not converge in $maxIterations iterations with any strategy."
+    )
     return (false, V, Sbus_result)
 end
 

@@ -750,13 +750,14 @@ function penalty_factors!(
     J::SparseMatrixCSC{Float64, Int32},
     dSbus_dV_ref::Vector{Float64},
     destination::SubArray{Float64},
+    source_index::Vector{Int},
 )
     J_t = SparseMatrixCSC(transpose(J))
     # fact = LinearAlgebra.factorize(J_t)
     # note: KLU only operates on square matrices
     fact = KLU.klu(J_t)
     f = fact \ dSbus_dV_ref
-    destination .= f[1:length(destination)]  # we are only interested in the active power loss factors
+    destination .= f[source_index]  # we are only interested in the active power loss factors
 end
 
 """
@@ -783,9 +784,9 @@ The loss factor value is computed as the change in the reference bus power injec
 function penalty_factors_brute_force(
     data::PowerFlowData;
     step_size::Float64 = 1e-6,
+    enable_progress_bar::Bool = true,
     kwargs...,
 )
-
     # we assume that the bus type for ref bus does not change between time steps
     ref, = bus_type_idx(data, 1, (PSY.ACBusTypes.REF,))
 
@@ -799,13 +800,31 @@ function penalty_factors_brute_force(
 
     ref_power = sum(data.bus_activepower_injection[ref, :]; dims = 1)
 
-    for bx in 1:n_buses
-        data.bus_activepower_injection[bx, :] .+= step_size
-        solve_powerflow!(data; kwargs...)
-        loss_factors[bx, :] =
-            (sum(data.bus_activepower_injection[ref, :]; dims = 1) .- ref_power) ./
-            step_size
-        data.bus_activepower_injection[bx, :] .-= step_size
+    progress_bar = ProgressMeter.Progress(
+        n_buses;
+        enabled = enable_progress_bar,
+        desc = "Brute-force calculation of loss factors",
+        showspeed = true,
+    )
+
+    pf = ACPowerFlow(HybridACPowerFlow)
+
+    Logging.with_logger(Logging.NullLogger()) do
+        for bx in 1:n_buses
+            ProgressMeter.update!(
+                progress_bar,
+                bx;
+                showvalues = [
+                    (:Bus, bx),
+                ],
+            )
+            data.bus_activepower_injection[bx, :] .+= step_size
+            solve_powerflow!(data; pf = pf, kwargs...)
+            loss_factors[bx, :] =
+                (sum(data.bus_activepower_injection[ref, :]; dims = 1) .- ref_power) ./
+                step_size
+            data.bus_activepower_injection[bx, :] .-= step_size
+        end
     end
 
     return loss_factors

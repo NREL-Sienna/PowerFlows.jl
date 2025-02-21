@@ -37,13 +37,14 @@ include("test_utils/common.jl")
 include("test_utils/psse_results_compare.jl")
 Base.eval(PowerFlows, :(include("./test_utils/legacy_pf.jl")))
 
-LOG_FILE = "power-systems.log"
+LOG_FILE = "power-flows.log"
 
 const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl"
 # "test_dc_powerflow.jl",
+# "test_klu_linear_solver_cache.jl",
 # "test_multiperiod_ac_powerflow.jl",
 # "test_multiperiod_dc_powerflow.jl",
-# "test_nlsolve_powerflow.jl",
+# "test_newton_ac_powerflow.jl",
 # "test_powerflow_data.jl",
 # "test_psse_export.jl",
 ]

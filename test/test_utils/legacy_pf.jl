@@ -55,8 +55,6 @@ function _newton_powerflow(
     npvpq = npv + npq
 
     Vm = data.bus_magnitude[:, time_step]
-    # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
-    Vm[pq] .= clamp.(Vm[pq], 0.9, 1.1)
     Va = data.bus_angles[:, time_step]
     V = zeros(Complex{Float64}, length(Vm))
     V .= Vm .* exp.(1im .* Va)
