@@ -71,6 +71,7 @@ function _newton_powerflow(
 
     # when we have multiperiod power flow calculation and want to preserve the ACPowerFlowJacobian instance between time steps:
     J = get(kwargs, :J, PowerFlows.ACPowerFlowJacobian(data, time_step))
+    J(time_step)  # we need to fill J with values because at this point it was just initialized
 
     ppf = PolarPowerFlow(data, time_step)
     nlCache = NLCache(ppf.x0)

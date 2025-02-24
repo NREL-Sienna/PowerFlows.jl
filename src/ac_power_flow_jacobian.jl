@@ -94,7 +94,7 @@ function ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64)
     # Create the initial Jacobian matrix structure - a sparse matrix with structural zeros that will be updated by the function Jf!
     # It has the same structure as the expected Jacobian matrix.
     Jv0 = _create_jacobian_matrix_structure(data, time_step)
-    _update_jacobian_matrix_values!(Jv0, data, time_step)
+    # _update_jacobian_matrix_values!(Jv0, data, time_step)  # We just initialize the structure here, evaluation must happen later
     return ACPowerFlowJacobian(data, _update_jacobian_matrix_values!, Jv0)
 end
 
