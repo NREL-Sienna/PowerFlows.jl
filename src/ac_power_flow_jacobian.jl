@@ -8,23 +8,24 @@ and can be called as a function at the same time. Calling the instance as a func
 
 
 # Fields
+- `data::ACPowerFlowData`: The grid model data used for power flow calculations.
 - `Jf!::Function`: A function that calculates the Jacobian matrix inplace.
 - `Jv::SparseArrays.SparseMatrixCSC{Float64, Int32}`: The Jacobian matrix, which is updated by the function `Jf!`.
 """
 struct ACPowerFlowJacobian
+    data::ACPowerFlowData
     Jf!::Function   # This is the function that calculates the Jacobian matrix and updates Jv inplace
     Jv::SparseArrays.SparseMatrixCSC{Float64, Int32}  # This is the Jacobian matrix, that is updated by the function Jf
 end
 
 """
-    (JF::ACPowerFlowJacobian)(data::ACPowerFlowData, time_step::Int64)
+    (J::ACPowerFlowJacobian)(data::ACPowerFlowData, time_step::Int64)
 
 Update the Jacobian matrix `Jv` using the function `Jf!` and the provided data and time step.
 
 Defining this method allows an instance of `ACPowerFlowJacobian` to be called as a function, following the functor pattern.
 
 # Arguments
-- `data::ACPowerFlowData`: The data used for power flow calculations.
 - `time_step::Int64`: The time step for the calculations.
 
 # Example
@@ -33,13 +34,13 @@ jacobian = ACPowerFlowJacobian(data, time_step)
 jacobian(data, time_step)  # Updates the Jacobian matrix Jv
 ```
 """
-function (JF::ACPowerFlowJacobian)(data::ACPowerFlowData, time_step::Int64)
-    JF.Jf!(JF.Jv, data, time_step)
+function (J::ACPowerFlowJacobian)(time_step::Int64)
+    J.Jf!(J.Jv, J.data, time_step)
     return
 end
 
 """
-    (JF::ACPowerFlowJacobian)(J::SparseArrays.SparseMatrixCSC{Float64, Int32}, data::ACPowerFlowData, time_step::Int64)
+    (J::ACPowerFlowJacobian)(J::SparseArrays.SparseMatrixCSC{Float64, Int32}, data::ACPowerFlowData, time_step::Int64)
 
 Use the `ACPowerFlowJacobian` to update the provided Jacobian matrix `J` inplace.
 
@@ -49,23 +50,21 @@ This method allows an instance of ACPowerFlowJacobian to be called as a function
 
 # Arguments
 - `J::SparseArrays.SparseMatrixCSC{Float64, Int32}``: A sparse matrix to be updated with new values of the Jacobian matrix.
-- `data::ACPowerFlowData`: The data representing the grid model.
 - `time_step::Int64`: The time step for the calculations.
 
 # Example
 ```julia
-JF = ACPowerFlowJacobian(data, time_step)
+J = ACPowerFlowJacobian(data, time_step)
 J = SparseArrays.sparse(Float64[], Int32[], Int32[])
-JF(J, data, time_step)  # Updates the Jacobian matrix Jv and writes it to J
+J(J, data, time_step)  # Updates the Jacobian matrix Jv and writes it to J
 ```
 """
-function (JF::ACPowerFlowJacobian)(
-    J::SparseArrays.SparseMatrixCSC{Float64, Int32},
-    data::ACPowerFlowData,
+function (J::ACPowerFlowJacobian)(
+    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     time_step::Int64,
 )
-    JF.Jf!(JF.Jv, data, time_step)
-    copyto!(J, JF.Jv)
+    J.Jf!(J.Jv, J.data, time_step)
+    copyto!(Jv, J.Jv)
     return
 end
 
@@ -74,6 +73,8 @@ end
 
 This is the constructor for ACPowerFlowJacobian.
 Create an `ACPowerFlowJacobian` instance. As soon as the instance is created, it already has the Jacobian matrix structure initialized and its values updated, stored internally as Jv.
+The data instance is stored internally and used to update the Jacobian matrix because the structure of the Jacobian matrix is tied to the data.
+Changing the data requires creating a new instance of `ACPowerFlowJacobian`.
 
 # Arguments
 - `data::ACPowerFlowData`: The data used for power flow calculations.
@@ -84,18 +85,17 @@ Create an `ACPowerFlowJacobian` instance. As soon as the instance is created, it
 
 #Example
 ```julia
-JF = ACPowerFlowJacobian(data, time_step)  # Creates an instance JF of ACPowerFlowJacobian, with the Jacobian matrix stored internally as JF.Jv initialized and updated.
-JF(data, time_step)  # Updates the Jacobian matrix stored internally in JF (JF.Jv) with the latest state of the `data` (`ACPowerFlowData` instance) and the provided time step.
-JF.Jv  # Access the Jacobian matrix stored internally in JF.
+J = ACPowerFlowJacobian(data, time_step)  # Creates an instance J of ACPowerFlowJacobian, with the Jacobian matrix stored internally as J.Jv initialized and updated.
+J(time_step)  # Updates the Jacobian matrix stored internally in J (J.Jv) with the latest state of the `data` (`ACPowerFlowData` instance) and the provided time step.
+J.Jv  # Access the Jacobian matrix stored internally in J.
 ```
 """
 function ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64)
     # Create the initial Jacobian matrix structure - a sparse matrix with structural zeros that will be updated by the function Jf!
     # It has the same structure as the expected Jacobian matrix.
-    J0 = _create_jacobian_matrix_structure(data, time_step)
-    # yay closures: changes to data will affect F0 and vice versa.
-    _update_jacobian_matrix_values!(J0, data, time_step)
-    return ACPowerFlowJacobian(_update_jacobian_matrix_values!, J0)
+    Jv0 = _create_jacobian_matrix_structure(data, time_step)
+    _update_jacobian_matrix_values!(Jv0, data, time_step)
+    return ACPowerFlowJacobian(data, _update_jacobian_matrix_values!, Jv0)
 end
 
 """
@@ -203,11 +203,11 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
             end
         end
     end
-    J0 = SparseArrays.sparse(rows, columns, values)
-    return J0
+    Jv0 = SparseArrays.sparse(rows, columns, values)
+    return Jv0
 end
 
-function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int32},
+function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
     Vm::Vector{Float64},
     θ::Vector{Float64},
@@ -221,12 +221,12 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
     # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
     # x does not appear in p_flow and q_flow
     if bus_from == bus_to
-        J[row_from_p, col_to_vm] = -1.0
-        J[row_from_q, col_to_va] = -1.0
+        Jv[row_from_p, col_to_vm] = -1.0
+        Jv[row_from_q, col_to_va] = -1.0
     end
 end
 
-function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int32},
+function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
     Vm::Vector{Float64},
     θ::Vector{Float64},
@@ -242,9 +242,9 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
     # x[2*i] (associated with q_gen) does not appear in the active power balance
     if bus_from == bus_to
         # Jac: Reactive PF against local active power
-        J[row_from_q, col_to_vm] = -1.0
+        Jv[row_from_q, col_to_vm] = -1.0
         # Jac: Active PF against same Angle: θ[bus_from] =  θ[bus_to]
-        J[row_from_p, col_to_va] =
+        Jv[row_from_p, col_to_va] =
             Vm[bus_from] * sum(
                 Vm[k] * (
                     real(Yb[bus_from, k]) * -sin(θ[bus_from] - θ[k]) +
@@ -252,7 +252,7 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
                 ) for k in bus_from_neighbors if k != bus_from
             )
         # Jac: Reactive PF against same Angle: θ[bus_from] = θ[bus_to]
-        J[row_from_q, col_to_va] =
+        Jv[row_from_q, col_to_va] =
             Vm[bus_from] * sum(
                 Vm[k] * (
                     real(Yb[bus_from, k]) * cos(θ[bus_from] - θ[k]) -
@@ -263,19 +263,19 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
         g_ij = real(Yb[bus_from, bus_to])
         b_ij = imag(Yb[bus_from, bus_to])
         # Jac: Active PF against other angles θ[bus_to]
-        J[row_from_p, col_to_va] =
+        Jv[row_from_p, col_to_va] =
             Vm[bus_from] *
             Vm[bus_to] *
             (g_ij * sin(θ[bus_from] - θ[bus_to]) + b_ij * -cos(θ[bus_from] - θ[bus_to]))
         # Jac: Reactive PF against other angles θ[bus_to]
-        J[row_from_q, col_to_va] =
+        Jv[row_from_q, col_to_va] =
             Vm[bus_from] *
             Vm[bus_to] *
             (g_ij * -cos(θ[bus_from] - θ[bus_to]) - b_ij * sin(θ[bus_from] - θ[bus_to]))
     end
 end
 
-function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int32},
+function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
     Vm::Vector{Float64},
     θ::Vector{Float64},
@@ -288,7 +288,7 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
     # Everything appears in everything
     if bus_from == bus_to
         # Jac: Active PF against same voltage magnitude Vm[bus_from]
-        J[row_from_p, col_to_vm] =
+        Jv[row_from_p, col_to_vm] =
             2 * real(Yb[bus_from, bus_to]) * Vm[bus_from] + sum(
                 Vm[k] * (
                     real(Yb[bus_from, k]) * cos(θ[bus_from] - θ[k]) +
@@ -296,7 +296,7 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
                 ) for k in bus_neighbors if k != bus_from
             )
         # Jac: Active PF against same angle θ[bus_from]
-        J[row_from_p, col_to_va] =
+        Jv[row_from_p, col_to_va] =
             Vm[bus_from] * sum(
                 Vm[k] * (
                     real(Yb[bus_from, k]) * -sin(θ[bus_from] - θ[k]) +
@@ -305,7 +305,7 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
             )
 
         # Jac: Reactive PF against same voltage magnitude Vm[bus_from]
-        J[row_from_q, col_to_vm] =
+        Jv[row_from_q, col_to_vm] =
             -2 * imag(Yb[bus_from, bus_to]) * Vm[bus_from] + sum(
                 Vm[k] * (
                     real(Yb[bus_from, k]) * sin(θ[bus_from] - θ[k]) -
@@ -313,7 +313,7 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
                 ) for k in bus_neighbors if k != bus_from
             )
         # Jac: Reactive PF against same angle θ[bus_from]
-        J[row_from_q, col_to_va] =
+        Jv[row_from_q, col_to_va] =
             Vm[bus_from] * sum(
                 Vm[k] * (
                     real(Yb[bus_from, k]) * cos(θ[bus_from] - θ[k]) -
@@ -324,21 +324,21 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
         g_ij = real(Yb[bus_from, bus_to])
         b_ij = imag(Yb[bus_from, bus_to])
         # Jac: Active PF w/r to different voltage magnitude Vm[bus_to]
-        J[row_from_p, col_to_vm] =
+        Jv[row_from_p, col_to_vm] =
             Vm[bus_from] *
             (g_ij * cos(θ[bus_from] - θ[bus_to]) + b_ij * sin(θ[bus_from] - θ[bus_to]))
         # Jac: Active PF w/r to different angle θ[bus_to]
-        J[row_from_p, col_to_va] =
+        Jv[row_from_p, col_to_va] =
             Vm[bus_from] *
             Vm[bus_to] *
             (g_ij * sin(θ[bus_from] - θ[bus_to]) + b_ij * -cos(θ[bus_from] - θ[bus_to]))
 
         # Jac: Reactive PF w/r to different voltage magnitude Vm[bus_to]
-        J[row_from_q, col_to_vm] =
+        Jv[row_from_q, col_to_vm] =
             Vm[bus_from] *
             (g_ij * sin(θ[bus_from] - θ[bus_to]) - b_ij * cos(θ[bus_from] - θ[bus_to]))
         # Jac: Reactive PF w/r to different angle θ[bus_to]
-        J[row_from_q, col_to_va] =
+        Jv[row_from_q, col_to_va] =
             Vm[bus_from] *
             Vm[bus_to] *
             (g_ij * -cos(θ[bus_from] - θ[bus_to]) - b_ij * sin(θ[bus_from] - θ[bus_to]))
@@ -347,7 +347,7 @@ end
 
 """Used to update Jv based on the bus voltages, angles, etc. in data."""
 function _update_jacobian_matrix_values!(
-    J::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     data::ACPowerFlowData,
     time_step::Int64,
 )
@@ -363,7 +363,7 @@ function _update_jacobian_matrix_values!(
             col_to_vm = 2 * bus_to - 1
             col_to_va = 2 * bus_to
             bus_type = data.bus_type[bus_to, time_step]
-            _set_entries_for_neighbor(J, Yb, Vm, θ,
+            _set_entries_for_neighbor(Jv, Yb, Vm, θ,
                 bus_from, bus_to,
                 row_from_p, row_from_q,
                 col_to_vm, col_to_va,

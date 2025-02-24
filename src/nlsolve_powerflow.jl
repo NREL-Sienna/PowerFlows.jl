@@ -13,28 +13,28 @@ function NLCache(x0::Vector{Float64})
     return NLCache(x, xold, p) #, g)
 end
 
-function _nr_step(data::ACPowerFlowData, time_step::Int64, nlCache::NLCache,
+function _nr_step(time_step::Int64, nlCache::NLCache,
     linSolveCache::KLULinSolveCache{Int32},
-    pf::PolarPowerFlow, JF::ACPowerFlowJacobian, strategy::Symbol = :inplace;
+    pf::PolarPowerFlow, J::ACPowerFlowJacobian, strategy::Symbol = :inplace;
     refinement_eps::Float64 = 1e-6)
     copyto!(nlCache.xold, nlCache.x)
     try
         # factorize the numeric object of KLU inplace, while reusing the symbolic object
-        numeric_refactor!(linSolveCache, JF.Jv)
+        numeric_refactor!(linSolveCache, J.Jv)
         # solve for dx in-place
         copyto!(nlCache.p, pf.residual)
         if strategy == :inplace
             solve!(linSolveCache, nlCache.p)
         elseif strategy == :iterative_refinement
             nlCache.p .=
-                solve_w_refinement(linSolveCache, JF.Jv, nlCache.p, refinement_eps)
+                solve_w_refinement(linSolveCache, J.Jv, nlCache.p, refinement_eps)
         end
         rmul!(nlCache.p, -1)
     catch e
         # TODO cook up a test case where Jacobian is singular.
         if e isa SingularException
             @warn("Newton-Raphson hit a point where the Jacobian is singular.")
-            fjac2 = JF.Jv' * JF.Jv
+            fjac2 = J.Jv' * J.Jv
             lambda = 1e6 * sqrt(length(pf.x0) * eps()) * norm(fjac2, 1)
             M = -(fjac2 + lambda * I)
             tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
@@ -55,7 +55,7 @@ function _nr_step(data::ACPowerFlowData, time_step::Int64, nlCache::NLCache,
     # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
     pf(nlCache.x)
     # update jacobian.
-    JF(data, time_step)
+    J(time_step)
     return
 end
 
@@ -71,15 +71,15 @@ function _newton_powerflow(
     xtol = get(kwargs, :xtol, DEFAULT_NR_XTOL)  # default should be 0.0
 
     ppf = PolarPowerFlow(data, time_step)
-    JF = PowerFlows.ACPowerFlowJacobian(data, time_step)
+    J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     nlCache = NLCache(ppf.x0)
-    linSolveCache = KLULinSolveCache(JF.Jv)
-    symbolic_factor!(linSolveCache, JF.Jv)
+    linSolveCache = KLULinSolveCache(J.Jv)
+    symbolic_factor!(linSolveCache, J.Jv)
 
     for strategy in [:inplace, :iterative_refinement]
         i, converged = 0, false
         while i < maxIterations && !converged
-            _nr_step(data, time_step, nlCache, linSolveCache, ppf, JF, strategy)
+            _nr_step(time_step, nlCache, linSolveCache, ppf, J, strategy)
             converged =
                 (norm(nlCache.x - nlCache.xold) <= xtol) |
                 (LinearAlgebra.norm(ppf.residual, Inf) < tol)
@@ -104,8 +104,8 @@ function _newton_powerflow(
                 ]
                 data.loss_factors[ref, time_step] .= 0.0
                 penalty_factors!(
-                    JF.Jv[pvpq_coords, pvpq_coords],
-                    vec(collect(JF.Jv[2 .* ref .- 1, pvpq_coords])),
+                    J.Jv[pvpq_coords, pvpq_coords],
+                    vec(collect(J.Jv[2 .* ref .- 1, pvpq_coords])),
                     view(
                         data.loss_factors,
                         [x for x in 1:num_buses if x in pvpq],
