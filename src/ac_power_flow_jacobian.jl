@@ -19,7 +19,7 @@ struct ACPowerFlowJacobian
 end
 
 """
-    (J::ACPowerFlowJacobian)(data::ACPowerFlowData, time_step::Int64)
+    (J::ACPowerFlowJacobian)(time_step::Int64)
 
 Update the Jacobian matrix `Jv` using the function `Jf!` and the provided data and time step.
 
@@ -30,8 +30,8 @@ Defining this method allows an instance of `ACPowerFlowJacobian` to be called as
 
 # Example
 ```julia
-jacobian = ACPowerFlowJacobian(data, time_step)
-jacobian(data, time_step)  # Updates the Jacobian matrix Jv
+J = ACPowerFlowJacobian(data, time_step)
+J(time_step)  # Updates the Jacobian matrix Jv
 ```
 """
 function (J::ACPowerFlowJacobian)(time_step::Int64)
@@ -40,7 +40,7 @@ function (J::ACPowerFlowJacobian)(time_step::Int64)
 end
 
 """
-    (J::ACPowerFlowJacobian)(J::SparseArrays.SparseMatrixCSC{Float64, Int32}, data::ACPowerFlowData, time_step::Int64)
+    (J::ACPowerFlowJacobian)(J::SparseArrays.SparseMatrixCSC{Float64, Int32}, time_step::Int64)
 
 Use the `ACPowerFlowJacobian` to update the provided Jacobian matrix `J` inplace.
 
@@ -55,8 +55,8 @@ This method allows an instance of ACPowerFlowJacobian to be called as a function
 # Example
 ```julia
 J = ACPowerFlowJacobian(data, time_step)
-J = SparseArrays.sparse(Float64[], Int32[], Int32[])
-J(J, data, time_step)  # Updates the Jacobian matrix Jv and writes it to J
+Jv = SparseArrays.sparse(Float64[], Int32[], Int32[])
+J(Jv, time_step)  # Updates the Jacobian matrix Jv and writes it to J
 ```
 """
 function (J::ACPowerFlowJacobian)(

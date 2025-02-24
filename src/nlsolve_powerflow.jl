@@ -65,13 +65,14 @@ function _newton_powerflow(
     time_step::Int64;
     kwargs...)
 
-    # Fetch maxIterations, tol, and xtol from kwargs, or use defaults if not provided
+    # Fetch maxIterations, tol from kwargs, or use defaults if not provided
     maxIterations = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
-    xtol = get(kwargs, :xtol, DEFAULT_NR_XTOL)  # default should be 0.0
+
+    # when we have multiperiod power flow calculation and want to preserve the ACPowerFlowJacobian instance between time steps:
+    J = get(kwargs, :J, PowerFlows.ACPowerFlowJacobian(data, time_step))
 
     ppf = PolarPowerFlow(data, time_step)
-    J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     nlCache = NLCache(ppf.x0)
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
@@ -80,9 +81,7 @@ function _newton_powerflow(
         i, converged = 0, false
         while i < maxIterations && !converged
             _nr_step(time_step, nlCache, linSolveCache, ppf, J, strategy)
-            converged =
-                (norm(nlCache.x - nlCache.xold) <= xtol) |
-                (LinearAlgebra.norm(ppf.residual, Inf) < tol)
+            converged = LinearAlgebra.norm(ppf.residual, Inf) < tol
             i += 1
         end
         if converged
@@ -102,7 +101,7 @@ function _newton_powerflow(
                         [2 * x for x in 1:num_buses if x in pvpq],
                     ) for x in pair
                 ]
-                data.loss_factors[ref, time_step] .= 0.0
+                data.loss_factors[ref, time_step] .= 1.0
                 penalty_factors!(
                     J.Jv[pvpq_coords, pvpq_coords],
                     vec(collect(J.Jv[2 .* ref .- 1, pvpq_coords])),

@@ -795,8 +795,10 @@ function penalty_factors_brute_force(
 
     loss_factors = zeros(Float64, n_buses, length(time_steps))
 
+    pf = ACPowerFlow()  # make a new pf instance without loss factors
+
     # initial PF to establish the ref power value
-    solve_powerflow!(data; kwargs...)
+    solve_powerflow!(data; pf = pf, kwargs...)
 
     ref_power = sum(data.bus_activepower_injection[ref, :]; dims = 1)
 
@@ -807,8 +809,6 @@ function penalty_factors_brute_force(
         showspeed = true,
     )
 
-    pf = ACPowerFlow(HybridACPowerFlow)
-
     Logging.with_logger(Logging.NullLogger()) do
         for bx in 1:n_buses
             ProgressMeter.update!(
@@ -818,6 +818,10 @@ function penalty_factors_brute_force(
                     (:Bus, bx),
                 ],
             )
+            if bx in ref
+                loss_factors[bx, :] .= 1.0
+                continue
+            end
             data.bus_activepower_injection[bx, :] .+= step_size
             solve_powerflow!(data; pf = pf, kwargs...)
             loss_factors[bx, :] =
