@@ -18,7 +18,7 @@ ACPowerFlow{ACSolver}(;
     ACPowerFlow{ACSolver}(check_reactive_power_limits, exporter, calc_loss_factors)
 
 ACPowerFlow(
-    ACSolver::Type{<:ACPowerFlowSolverType} = KLUACPowerFlow;
+    ACSolver::Type{<:ACPowerFlowSolverType} = HybridACPowerFlow;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calc_loss_factors::Bool = false,
