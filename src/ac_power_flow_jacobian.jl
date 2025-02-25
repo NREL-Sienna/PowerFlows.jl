@@ -99,6 +99,99 @@ function ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64)
 end
 
 """
+Create the Jacobian matrix structure for a reference bus (REF). Ignoring this because we fill all four values even for PV buses with 
+    structiural zeros using the same function as for PQ buses.
+"""
+function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
+    columns::Vector{Int32},
+    values::Vector{Float64},
+    bus_from::Int,
+    bus_to::Int,
+    row_from_p::Int,
+    row_from_q::Int,
+    col_to_vm::Int,
+    col_to_va::Int,
+    ::Val{PSY.ACBusTypes.REF})
+    if bus_from == bus_to
+        # Active PF w/r Local Active Power
+        push!(rows, row_from_p)
+        push!(columns, col_to_vm)
+        push!(values, 0.0)
+        # Rective PF w/r Local Reactive Power
+        push!(rows, row_from_q)
+        push!(columns, col_to_va)
+        push!(values, 0.0)
+    end
+    return nothing
+end
+
+"""
+Create the Jacobian matrix structure for a PV bus. Ignoring this because we fill all four values even for PV buses with 
+    structiural zeros using the same function as for PQ buses.
+"""
+function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
+    columns::Vector{Int32},
+    values::Vector{Float64},
+    bus_from::Int,
+    bus_to::Int,
+    row_from_p::Int,
+    row_from_q::Int,
+    col_to_vm::Int,
+    col_to_va::Int,
+    ::Val{PSY.ACBusTypes.PV})
+    # Active PF w/r Voltage Angle
+    push!(rows, row_from_p)
+    push!(columns, col_to_va)
+    push!(values, 0.0)
+    # Reactive PF w/r Voltage Angle
+    push!(rows, row_from_q)
+    push!(columns, col_to_va)
+    push!(values, 0.0)
+    if bus_from == bus_to
+        # Reactive PF w/r Local Reactive Power
+        push!(rows, row_from_q)
+        push!(columns, col_to_vm)
+        push!(values, 0.0)
+    end
+    return nothing
+end
+
+"""
+Create the Jacobian matrix structure for a PQ bus. Using this for all buses because 
+    a) for REF buses it doesn't matter if there are 2 values or 4 values - there are not many of them in the grid
+    b) for PV buses we fill all four values because we can have a PV -> PQ transition and then we need to fill all four values
+"""
+function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
+    columns::Vector{Int32},
+    values::Vector{Float64},
+    bus_from::Int,
+    bus_to::Int,
+    row_from_p::Int,
+    row_from_q::Int,
+    col_to_vm::Int,
+    col_to_va::Int,
+    # ::Val{PSY.ACBusTypes.PQ}
+    )
+    # Active PF w/r Voltage Magnitude
+    push!(rows, row_from_p)
+    push!(columns, col_to_vm)
+    push!(values, 0.0)
+    # Reactive PF w/r Voltage Magnitude
+    push!(rows, row_from_q)
+    push!(columns, col_to_vm)
+    push!(values, 0.0)
+    # Active PF w/r Voltage Angle
+    push!(rows, row_from_p)
+    push!(columns, col_to_va)
+    push!(values, 0.0)
+    # Reactive PF w/r Voltage Angle
+    push!(rows, row_from_q)
+    push!(columns, col_to_va)
+    push!(values, 0.0)
+    return nothing
+end
+
+"""
     _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64) -> SparseMatrixCSC{Float64, Int32}
 
 Create the structure of the Jacobian matrix for an AC power flow problem. Inputs are the grid model as an instance of `ACPowerFlowData` at a given time step.
@@ -155,52 +248,21 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
         for bus_to in data.neighbors[bus_from]
             col_to_vm = 2 * bus_to - 1  # Column index for the value related to voltage magnitude
             col_to_va = 2 * bus_to      # Column index for the value related to voltage angle
-            bus_type = data.bus_type[bus_to, time_step]
-            # Set to 0.0 only on connected buses
-            if bus_type == PSY.ACBusTypes.REF
-                if bus_from == bus_to
-                    # Active PF w/r Local Active Power
-                    push!(rows, row_from_p)
-                    push!(columns, col_to_vm)
-                    push!(values, 0.0)
-                    # Rective PF w/r Local Reactive Power
-                    push!(rows, row_from_q)
-                    push!(columns, col_to_va)
-                    push!(values, 0.0)
-                end
-            elseif bus_type == PSY.ACBusTypes.PV
-                # Active PF w/r Voltage Angle
-                push!(rows, row_from_p)
-                push!(columns, col_to_va)
-                push!(values, 0.0)
-                # Reactive PF w/r Voltage Angle
-                push!(rows, row_from_q)
-                push!(columns, col_to_va)
-                push!(values, 0.0)
-                if bus_from == bus_to
-                    # Reactive PF w/r Local Reactive Power
-                    push!(rows, row_from_q)
-                    push!(columns, col_to_vm)
-                    push!(values, 0.0)
-                end
-            elseif bus_type == PSY.ACBusTypes.PQ
-                # Active PF w/r Voltage Magnitude
-                push!(rows, row_from_p)
-                push!(columns, col_to_vm)
-                push!(values, 0.0)
-                # Reactive PF w/r Voltage Magnitude
-                push!(rows, row_from_q)
-                push!(columns, col_to_vm)
-                push!(values, 0.0)
-                # Active PF w/r Voltage Angle
-                push!(rows, row_from_p)
-                push!(columns, col_to_va)
-                push!(values, 0.0)
-                # Reactive PF w/r Voltage Angle
-                push!(rows, row_from_q)
-                push!(columns, col_to_va)
-                push!(values, 0.0)
-            end
+            # We ignore the bus type and initialize the structure as if all buses were PQ - 
+            # mainly because we can have a PV -> PQ transition, and the number of REF buses is small
+            # bus_type = data.bus_type[bus_to, time_step]
+            _create_jacobian_matrix_structure_bus!(
+                rows,
+                columns,
+                values,
+                bus_from,
+                bus_to,
+                row_from_p,
+                row_from_q,
+                col_to_vm,
+                col_to_va,
+                # Val(bus_type),
+            )
         end
     end
     Jv0 = SparseArrays.sparse(rows, columns, values)
@@ -367,7 +429,8 @@ function _update_jacobian_matrix_values!(
                 bus_from, bus_to,
                 row_from_p, row_from_q,
                 col_to_vm, col_to_va,
-                data.neighbors[bus_from], Val(bus_type))
+                data.neighbors[bus_from], 
+                Val(bus_type))
         end
     end
     return
