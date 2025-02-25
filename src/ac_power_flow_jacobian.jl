@@ -171,7 +171,7 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
     col_to_vm::Int,
     col_to_va::Int,
     # ::Val{PSY.ACBusTypes.PQ}
-    )
+)
     # Active PF w/r Voltage Magnitude
     push!(rows, row_from_p)
     push!(columns, col_to_vm)
