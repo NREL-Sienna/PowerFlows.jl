@@ -68,9 +68,9 @@ function TrustRegionCache(x0::Vector{Float64}, f0::Vector{Float64})
 end
 
 function dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
-    r::Vector{Float64}, linSolveCache::KLULinSolveCache{Int32}, 
+    r::Vector{Float64}, linSolveCache::KLULinSolveCache{Int32},
     Jv::SparseMatrixCSC{Float64, Int32}, delta::Float64)
-    
+
     # p_i is newton-raphon step.
     copyto!(p_i, r)
     solve!(linSolveCache, p_i)
@@ -83,11 +83,11 @@ function dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
         # using p as a temporary buffer: alias to g for readability
         g = p
         mul!(g, Jv', r)
-        p_c .= -norm(g)^2/norm(Jv*g)^2 .* g # Cauchy point
+        p_c .= -norm(g)^2 / norm(Jv * g)^2 .* g # Cauchy point
 
         if norm(p_c) >= delta
             # p_c outside region => take step of length delta in direction of -g.
-            rmul!(g, -delta/norm(g))
+            rmul!(g, -delta / norm(g))
             @debug "Cauchy step"
             # not needed because g is already an alias for p.
             # copyto!(p, g) # update p: cauchy point case
@@ -102,7 +102,7 @@ function dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
 
             b = dot(p_c, p_diff)
             a = norm(p_diff)^2
-            tau = (-b + sqrt(b^2-4a*(norm(p_c)^2 - delta^2)))/(2a)
+            tau = (-b + sqrt(b^2 - 4a * (norm(p_c)^2 - delta^2))) / (2a)
             p_c .+= tau .* p_diff
             copyto!(p, p_c) # update p: dogleg case.
         end
@@ -110,7 +110,7 @@ function dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
 end
 
 function _trust_region_step(cache::TrustRegionCache, linSolveCache::KLULinSolveCache{Int32},
-                pf::PolarPowerFlow, J::PolarPowerFlowJacobian, delta::Float64, eta::Float64 = 1e-4)
+    pf::PolarPowerFlow, J::PolarPowerFlowJacobian, delta::Float64, eta::Float64 = 1e-4)
     copyto!(cache.xold, cache.x)
     numeric_refactor!(linSolveCache, J.Jv)
 
@@ -124,7 +124,9 @@ function _trust_region_step(cache::TrustRegionCache, linSolveCache::KLULinSolveC
     # Ratio of actual to predicted reduction
     mul!(cache.r_predict, J.Jv, cache.p)
     cache.r_predict .+= cache.r
-    rho = (sum(abs2, cache.r) - sum(abs2, pf.residual)) / (sum(abs2, cache.r) - sum(abs2, cache.r_predict))
+    rho =
+        (sum(abs2, cache.r) - sum(abs2, pf.residual)) /
+        (sum(abs2, cache.r) - sum(abs2, cache.r_predict))
     if rho > eta
         # Successful iteration
         @debug "success"
@@ -139,13 +141,12 @@ function _trust_region_step(cache::TrustRegionCache, linSolveCache::KLULinSolveC
 
     # Update size of trust region
     if rho < 0.1 # insufficient improvement
-        delta = delta/2
+        delta = delta / 2
     elseif rho >= 0.9 # good improvement
         delta = 2 * norm(cache.p)
     elseif rho >= 0.5 # so-so improvement ??
         delta = max(delta, 2 * norm(cache.p))
     end
-
 end
 
 function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
@@ -193,7 +194,11 @@ function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
     return
 end
 
-function calculate_loss_factors(data::ACPowerFlowData, Jv::SparseMatrixCSC{Float64, Int32}, time_step::Int)
+function calculate_loss_factors(
+    data::ACPowerFlowData,
+    Jv::SparseMatrixCSC{Float64, Int32},
+    time_step::Int,
+)
     num_buses = first(size(data.bus_type))
     ref, pv, pq = bus_type_idx(data, time_step)
     pvpq = vcat(pv, pq)
@@ -239,7 +244,7 @@ function _newton_powerflow(
         while i < maxIterations && !converged
             _nr_step(nlCache, linSolveCache, ppf, J, strategy)
             converged =
-                # (norm(nlCache.x - nlCache.xold) <= xtol) |
+            # (norm(nlCache.x - nlCache.xold) <= xtol) |
                 (LinearAlgebra.norm(ppf.residual, Inf) < tol)
             i += 1
         end
@@ -263,7 +268,7 @@ function _newton_powerflow(
         J(x0)
         nlCache = NLCache(x0)
     end
-    
+
     i2, converged2 = 0, false
     trCache = TrustRegionCache(x0, ppf.residual)
     delta::Float64 = norm(x0) > 0 ? norm(x0) : 1.0
@@ -273,8 +278,8 @@ function _newton_powerflow(
         @debug "norm(r_$i2): $(norm(ppf.residual))"
         _trust_region_step(trCache, linSolveCache, ppf, J, delta)
         converged2 =
-                # (norm(nlCache.x - nlCache.xold) <= xtol) |
-                (LinearAlgebra.norm(ppf.residual, Inf) < tol)
+        # (norm(nlCache.x - nlCache.xold) <= xtol) |
+            (LinearAlgebra.norm(ppf.residual, Inf) < tol)
     end
 
     if converged2
