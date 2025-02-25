@@ -429,8 +429,7 @@ function _update_jacobian_matrix_values!(
                 bus_from, bus_to,
                 row_from_p, row_from_q,
                 col_to_vm, col_to_va,
-                data.neighbors[bus_from], 
-                Val(bus_type))
+                data.neighbors[bus_from], Val(bus_type))
         end
     end
     return
