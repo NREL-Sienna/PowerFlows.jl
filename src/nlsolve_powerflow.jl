@@ -31,17 +31,15 @@ end
 
 struct NLCache
     x::Vector{Float64}
-    xold::Vector{Float64}
     p::Vector{Float64}
     # g::Tx # only used for more complex linesearch algorithms.
 end
 
 function NLCache(x0::Vector{Float64})
     x = copy(x0)
-    xold = copy(x)
     p = copy(x)
     # g = copy(x)
-    return NLCache(x, xold, p) #, g)
+    return NLCache(x, p) #, g)
 end
 
 struct TrustRegionCache
@@ -152,7 +150,6 @@ end
 function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
     pf::PolarPowerFlow, J::PolarPowerFlowJacobian, strategy::Symbol = :inplace;
     refinement_eps::Float64 = 1e-6)
-    copyto!(nlCache.xold, nlCache.x)
     try
         # factorize the numeric object of KLU inplace, while reusing the symbolic object
         numeric_refactor!(linSolveCache, J.Jv)
@@ -243,9 +240,7 @@ function _newton_powerflow(
         i, converged = 0, false
         while i < maxIterations && !converged
             _nr_step(nlCache, linSolveCache, ppf, J, strategy)
-            converged =
-            # (norm(nlCache.x - nlCache.xold) <= xtol) |
-                (LinearAlgebra.norm(ppf.residual, Inf) < tol)
+            converged = LinearAlgebra.norm(ppf.residual, Inf) < tol
             i += 1
         end
         if converged
@@ -277,9 +272,7 @@ function _newton_powerflow(
         @debug "x_$i2: $(trCache.x)"
         @debug "norm(r_$i2): $(norm(ppf.residual))"
         _trust_region_step(trCache, linSolveCache, ppf, J, delta)
-        converged2 =
-        # (norm(nlCache.x - nlCache.xold) <= xtol) |
-            (LinearAlgebra.norm(ppf.residual, Inf) < tol)
+        converged2 = LinearAlgebra.norm(ppf.residual, Inf) < tol
     end
 
     if converged2
