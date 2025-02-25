@@ -1,3 +1,4 @@
+using LinearAlgebra
 const _NLSOLVE_AC_POWERFLOW_KWARGS =
     Set([:check_reactive_power_limits, :check_connectivity])
 
@@ -28,10 +29,10 @@ function _newton_powerflow(
     return (res.f_converged, V, Sbus_result)
 end
 
-struct NLCache{Tx}
-    x::Tx
-    xold::Tx
-    p::Tx
+struct NLCache
+    x::Vector{Float64}
+    xold::Vector{Float64}
+    p::Vector{Float64}
     # g::Tx # only used for more complex linesearch algorithms.
 end
 
@@ -41,6 +42,110 @@ function NLCache(x0::Vector{Float64})
     p = copy(x)
     # g = copy(x)
     return NLCache(x, xold, p) #, g)
+end
+
+struct TrustRegionCache
+    # Probably could cut down on the number of fields here:
+    # I suspect NLSolve only includes some of these for the SolverTrace.
+    x::Vector{Float64}
+    xold::Vector{Float64}
+    r::Vector{Float64} # residual
+    r_predict::Vector{Float64} # predicted residual
+    p::Vector{Float64} # proposed Δx: Cauchy, NR, or dogleg step.
+    p_c::Vector{Float64} # Cauchy step
+    pi::Vector{Float64} # Newton-Raphson step
+end
+
+function TrustRegionCache(x0::Vector{Float64}, f0::Vector{Float64})
+    x = copy(x0)
+    xold = copy(x0)
+    r = copy(f0)
+    r_predict = copy(x0)
+    p = copy(x0)
+    p_c = copy(x0)
+    pi = copy(x0)
+    return TrustRegionCache(x, xold, r, r_predict, p, p_c, pi)
+end
+
+function dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
+    r::Vector{Float64}, linSolveCache::KLULinSolveCache{Int32}, 
+    Jv::SparseMatrixCSC{Float64, Int32}, delta::Float64)
+    
+    # p_i is newton-raphon step.
+    copyto!(p_i, r)
+    solve!(linSolveCache, p_i)
+    rmul!(p_i, -1.0)
+
+    if norm(p_i) <= delta
+        @debug "NR step"
+        copyto!(p, p_i) # update p: newton-raphson case.
+    else
+        # using p as a temporary buffer: alias to g for readability
+        g = p
+        mul!(g, Jv', r)
+        p_c .= -norm(g)^2/norm(Jv*g)^2 .* g # Cauchy point
+
+        if norm(p_c) >= delta
+            # p_c outside region => take step of length delta in direction of -g.
+            rmul!(g, -delta/norm(g))
+            @debug "Cauchy step"
+            # not needed because g is already an alias for p.
+            # copyto!(p, g) # update p: cauchy point case
+        else
+            # p_c inside region => next point is the spot where the line from p_c to p_i
+            # crosses the boundary of the trust region. this is the "dogleg" part.
+
+            # using p_i as temporary buffer: alias to p_diff for readability.
+            @debug "Dogleg step"
+            p_i .-= p_c
+            p_diff = p_i
+
+            b = dot(p_c, p_diff)
+            a = norm(p_diff)^2
+            tau = (-b + sqrt(b^2-4a*(norm(p_c)^2 - delta^2)))/(2a)
+            p_c .+= tau .* p_diff
+            copyto!(p, p_c) # update p: dogleg case.
+        end
+    end
+end
+
+function _trust_region_step(cache::TrustRegionCache, linSolveCache::KLULinSolveCache{Int32},
+                pf::PolarPowerFlow, J::PolarPowerFlowJacobian, delta::Float64, eta::Float64 = 1e-4)
+    copyto!(cache.xold, cache.x)
+    numeric_refactor!(linSolveCache, J.Jv)
+
+    # find proposed next point.
+    dogleg!(cache.p, cache.p_c, cache.pi, cache.r, linSolveCache, J.Jv, delta)
+    cache.x .+= cache.p
+
+    # TODO this should really be compute-F-but-don't-update-data.
+    pf(cache.x)
+
+    # Ratio of actual to predicted reduction
+    mul!(cache.r_predict, J.Jv, cache.p)
+    cache.r_predict .+= cache.r
+    rho = (sum(abs2, cache.r) - sum(abs2, pf.residual)) / (sum(abs2, cache.r) - sum(abs2, cache.r_predict))
+    if rho > eta
+        # Successful iteration
+        @debug "success"
+        cache.r .= pf.residual
+        J(cache.x) # we update J here: that way, if we don't change x (unsuccessful case), we don't re-compute J.
+    else
+        # Unsuccessful: reset x and residual.
+        @debug "failure"
+        cache.x .-= cache.p
+        pf(cache.x)
+    end
+
+    # Update size of trust region
+    if rho < 0.1 # insufficient improvement
+        delta = delta/2
+    elseif rho >= 0.9 # good improvement
+        delta = 2 * norm(cache.p)
+    elseif rho >= 0.5 # so-so improvement ??
+        delta = max(delta, 2 * norm(cache.p))
+    end
+
 end
 
 function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
@@ -88,6 +193,29 @@ function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
     return
 end
 
+function calculate_loss_factors(data::ACPowerFlowData, Jv::SparseMatrixCSC{Float64, Int32}, time_step::Int)
+    num_buses = first(size(data.bus_type))
+    ref, pv, pq = bus_type_idx(data, time_step)
+    pvpq = vcat(pv, pq)
+    pvpq_coords = [
+        x for pair in zip(
+            [2 * x - 1 for x in 1:num_buses if x in pvpq],
+            [2 * x for x in 1:num_buses if x in pvpq],
+        ) for x in pair
+    ]
+    data.loss_factors[ref, time_step] .= 0.0
+    penalty_factors!(
+        Jv[pvpq_coords, pvpq_coords],
+        vec(collect(Jv[2 .* ref .- 1, pvpq_coords])),
+        view(
+            data.loss_factors,
+            [x for x in 1:num_buses if x in pvpq],
+            time_step,
+        ),
+        [2 * x - 1 for x in 1:length(pvpq)],
+    )
+end
+
 function _newton_powerflow(
     pf::ACPowerFlow{HybridACPowerFlow},
     data::ACPowerFlowData,
@@ -100,12 +228,13 @@ function _newton_powerflow(
     xtol = get(kwargs, :xtol, DEFAULT_NR_XTOL)  # default should be 0.0
 
     ppf = PolarPowerFlow(data, time_step)
+    x0 = copy(ppf.x0)
     J = PowerFlows.PolarPowerFlowJacobian(data, ppf.x0, time_step)
-    nlCache = NLCache(ppf.x0)
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
 
     for strategy in [:inplace, :iterative_refinement]
+        nlCache = NLCache(ppf.x0)
         i, converged = 0, false
         while i < maxIterations && !converged
             _nr_step(nlCache, linSolveCache, ppf, J, strategy)
@@ -122,35 +251,48 @@ function _newton_powerflow(
             Sbus_result = V .* conj(data.power_network_matrix.data * V)
 
             if pf.calc_loss_factors
-                num_buses = first(size(data.bus_type))
-                ref, pv, pq = bus_type_idx(data, time_step)
-                pvpq = vcat(pv, pq)
-                pvpq_coords = [
-                    x for pair in zip(
-                        [2 * x - 1 for x in 1:num_buses if x in pvpq],
-                        [2 * x for x in 1:num_buses if x in pvpq],
-                    ) for x in pair
-                ]
-                data.loss_factors[ref, time_step] .= 0.0
-                penalty_factors!(
-                    J.Jv[pvpq_coords, pvpq_coords],
-                    vec(collect(J.Jv[2 .* ref .- 1, pvpq_coords])),
-                    view(
-                        data.loss_factors,
-                        [x for x in 1:num_buses if x in pvpq],
-                        time_step,
-                    ),
-                    [2 * x - 1 for x in 1:length(pvpq)],
-                )
+                calculate_loss_factors(data, J.Jv, time_step)
             end
 
             return (true, V, Sbus_result)
         elseif strategy == :inplace
             @warn("Failed with in-place solving. Trying iterative refinement...")
         end
+        # reset back to starting point before trying next strategy.
+        ppf(x0)
+        J(x0)
+        nlCache = NLCache(x0)
     end
-    V = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
-    Sbus_result = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
+    
+    i2, converged2 = 0, false
+    trCache = TrustRegionCache(x0, ppf.residual)
+    delta::Float64 = norm(x0) > 0 ? norm(x0) : 1.0
+    while i2 < maxIterations && !converged2
+        i2 += 1
+        @debug "x_$i2: $(trCache.x)"
+        @debug "norm(r_$i2): $(norm(ppf.residual))"
+        _trust_region_step(trCache, linSolveCache, ppf, J, delta)
+        converged2 =
+                # (norm(nlCache.x - nlCache.xold) <= xtol) |
+                (LinearAlgebra.norm(ppf.residual, Inf) < tol)
+    end
+
+    if converged2
+        @info(
+            "The HybridACPowerFlow solver converged after $i2 iterations with strategy trust region"
+        )
+        V = _calc_V(data, trCache.x, time_step)
+        Sbus_result = V .* conj(data.power_network_matrix.data * V)
+
+        if pf.calc_loss_factors
+            calculate_loss_factors(data, J.Jv, time_step)
+        end
+
+        return (true, V, Sbus_result)
+    end
+
+    V = fill(NaN + NaN * im, length(trCache.x) ÷ 2)
+    Sbus_result = fill(NaN + NaN * im, length(trCache.x) ÷ 2)
     @error(
         "Solver HybridACPowerFlow did not converge in $maxIterations iterations with any strategy."
     )
