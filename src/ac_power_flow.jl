@@ -79,10 +79,8 @@ function PolarPowerFlow(data::ACPowerFlowData, time_step::Int64)
     res = similar(x0)
     pf_function(res, x0)
 
-    if sum(res) > 10 * (n_buses * 2)
-        _, ix = findmax(res)
-        bus_no = data.bus_lookup[ix]
-        @warn "Initial guess provided results in a large initial residual. Largest residual at bus $bus_no"
+    if sum(res) > MAX_INIT_RESIDUAL * (n_buses * 2)
+        @warn "Initial guess provided results in a large initial residual."
     end
 
     return PolarPowerFlow(
