@@ -193,7 +193,7 @@ function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
 end
 
 function _newton_powerflow(
-    pf::ACPowerFlow{HybridACPowerFlow},
+    pf::ACPowerFlow{NewtonRaphsonACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
@@ -219,7 +219,7 @@ function _newton_powerflow(
         end
         if converged
             @info(
-                "The HybridACPowerFlow solver converged after $i iterations with strategy $strategy"
+                "The NewtonRaphsonACPowerFlow solver converged after $i iterations with strategy $strategy"
             )
             V = _calc_V(data, nlCache.x, time_step)
             Sbus_result = V .* conj(data.power_network_matrix.data * V)
@@ -253,7 +253,7 @@ function _newton_powerflow(
 
     if converged2
         @info(
-            "The HybridACPowerFlow solver converged after $i2 iterations with strategy trust region"
+            "The NewtonRaphsonACPowerFlow solver converged after $i2 iterations with strategy trust region"
         )
         V = _calc_V(data, trCache.x, time_step)
         Sbus_result = V .* conj(data.power_network_matrix.data * V)
@@ -268,7 +268,7 @@ function _newton_powerflow(
     V = fill(NaN + NaN * im, length(trCache.x) ÷ 2)
     Sbus_result = fill(NaN + NaN * im, length(trCache.x) ÷ 2)
     @error(
-        "Solver HybridACPowerFlow did not converge in $maxIterations iterations with any strategy."
+        "Solver NewtonRaphsonACPowerFlow did not converge in $maxIterations iterations with any strategy."
     )
     return (false, V, Sbus_result)
 end
@@ -277,7 +277,7 @@ end
     _calc_V(data::ACPowerFlowData, x::Vector{Float64}, time_step::Int64) -> Vector{Complex{Float64}}
 
 Calculate the results for complex bus voltages from the "x" results of NLSolveACVPowerFlow.
-    This is for compatibility with the results of KLUACPowerFlow, ehich returns the vector V instead of the vector x.
+    This is for compatibility with the results of MatrixOpACPowerFlow, ehich returns the vector V instead of the vector x.
 
 # Arguments
 - `data::ACPowerFlowData`: The power flow data struct.

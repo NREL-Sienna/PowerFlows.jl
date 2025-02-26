@@ -7,7 +7,7 @@ function run_pf(loads::Vector{Float64}; maxIterations::Int = 30)
         set_active_power!(comp, loads[i])
     end
     return PF.solve_powerflow(
-        ACPowerFlow{PF.HybridACPowerFlow}(),
+        ACPowerFlow{PF.NewtonRaphsonACPowerFlow}(),
         sys2;
         maxIterations = maxIterations,
     )

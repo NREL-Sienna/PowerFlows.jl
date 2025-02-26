@@ -1,7 +1,7 @@
 const AC_SOLVERS_TO_TEST = (NLSolveACPowerFlow,
-    KLUACPowerFlow,
+    MatrixOpACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow)
+    NewtonRaphsonACPowerFlow)
 @testset "AC Power Flow 14-Bus testing" for ACSolver in AC_SOLVERS_TO_TEST
     result_14 = [
         2.3255081760423684
@@ -102,8 +102,8 @@ end
 
 @testset "AC Power Flow 3-Bus Fixed FixedAdmittance testing" for ACSolver in (
     NLSolveACPowerFlow,
-    KLUACPowerFlow, PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
+    MatrixOpACPowerFlow, PowerFlows.LUACPowerFlow,
+    NewtonRaphsonACPowerFlow,
 )
     p_gen_matpower_3bus = [20.3512373930753, 100.0, 100.0]
     q_gen_matpower_3bus = [45.516916781567232, 10.453799727283879, -31.992561631394636]
@@ -461,9 +461,9 @@ end
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
     pf_default = ACPowerFlow()
-    pf_klu = ACPowerFlow(KLUACPowerFlow)
+    pf_klu = ACPowerFlow(MatrixOpACPowerFlow)
     pf_nlsolve = ACPowerFlow(NLSolveACPowerFlow)
-    pf_hybrid = ACPowerFlow(HybridACPowerFlow)
+    pf_hybrid = ACPowerFlow(NewtonRaphsonACPowerFlow)
 
     PSY.set_units_base_system!(sys, "SYSTEM_BASE")
     data = PowerFlowData(
@@ -659,8 +659,8 @@ end
 @testset "Test loss factors for larger grid" begin
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
-    pf_klu = ACPowerFlow(KLUACPowerFlow; calc_loss_factors = true)
-    pf_hybrid = ACPowerFlow(HybridACPowerFlow; calc_loss_factors = true)
+    pf_klu = ACPowerFlow(MatrixOpACPowerFlow; calc_loss_factors = true)
+    pf_hybrid = ACPowerFlow(NewtonRaphsonACPowerFlow; calc_loss_factors = true)
 
     data_klu = PowerFlowData(
         pf_klu,

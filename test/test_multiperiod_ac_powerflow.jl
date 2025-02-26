@@ -22,9 +22,9 @@ end
 @testset "MULTI-PERIOD power flows evaluation: NR" for ACSolver in
                                                        (
     NLSolveACPowerFlow,
-    KLUACPowerFlow,
+    MatrixOpACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
+    NewtonRaphsonACPowerFlow,
 )
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
@@ -55,15 +55,15 @@ end
 @testset "MULTI-PERIOD power flows evaluation: compare results for different solvers" for ACSolver in
                                                                                           (
     NLSolveACPowerFlow,
-    KLUACPowerFlow,
+    MatrixOpACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
+    NewtonRaphsonACPowerFlow,
 )
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
     # create structure for multi-period case
-    pf_klu = ACPowerFlow(KLUACPowerFlow)
+    pf_klu = ACPowerFlow(MatrixOpACPowerFlow)
     pf_test = ACPowerFlow(ACSolver)
 
     time_steps = 24
@@ -103,7 +103,8 @@ end
     )
 end
 
-@testset "test_loss_factors_case_14" for ACSolver in (KLUACPowerFlow, HybridACPowerFlow)
+@testset "test_loss_factors_case_14" for ACSolver in
+                                         (MatrixOpACPowerFlow, NewtonRaphsonACPowerFlow)
     sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
 
     pf_klu = ACPowerFlow(ACSolver; calc_loss_factors = true)

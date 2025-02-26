@@ -1,9 +1,9 @@
 abstract type PowerFlowEvaluationModel end
 abstract type ACPowerFlowSolverType end
 
-struct KLUACPowerFlow <: ACPowerFlowSolverType end
+struct MatrixOpACPowerFlow <: ACPowerFlowSolverType end
 struct NLSolveACPowerFlow <: ACPowerFlowSolverType end
-struct HybridACPowerFlow <: ACPowerFlowSolverType end
+struct NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType end
 
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel
     check_reactive_power_limits::Bool
@@ -19,7 +19,7 @@ ACPowerFlow{ACSolver}(;
     ACPowerFlow{ACSolver}(check_reactive_power_limits, exporter, calc_loss_factors)
 
 ACPowerFlow(
-    ACSolver::Type{<:ACPowerFlowSolverType} = KLUACPowerFlow;
+    ACSolver::Type{<:ACPowerFlowSolverType} = MatrixOpACPowerFlow;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calc_loss_factors::Bool = false,

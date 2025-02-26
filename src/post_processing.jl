@@ -799,7 +799,7 @@ function penalty_factors_brute_force(
 
     ref_power = sum(data.bus_activepower_injection[ref, :]; dims = 1)
 
-    pf = ACPowerFlow(HybridACPowerFlow)
+    pf = ACPowerFlow(NewtonRaphsonACPowerFlow)
 
     Logging.with_logger(Logging.NullLogger()) do
         for bx in 1:n_buses

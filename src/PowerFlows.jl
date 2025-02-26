@@ -5,8 +5,8 @@ export solve_powerflow!
 export PowerFlowData
 export DCPowerFlow
 export NLSolveACPowerFlow
-export HybridACPowerFlow
-export KLUACPowerFlow
+export NewtonRaphsonACPowerFlow
+export MatrixOpACPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow

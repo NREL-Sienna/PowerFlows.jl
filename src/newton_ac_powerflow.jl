@@ -10,7 +10,7 @@ Supports passing kwargs to the PF solver.
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `KLUACPowerFlow`, `NLSolveACPowerFlow`, `HybridACPowerFlow`, or `PowerFlows.LUACPowerFlow` (to be used for testing only).
+- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `MatrixOpACPowerFlow `, `NLSolveACPowerFlow`, `NewtonRaphsonACPowerFlow`, or `PowerFlows.LUACPowerFlow` (to be used for testing only).
 - `system::PSY.System`: The power system model.
 - `kwargs...`: Additional keyword arguments.
 
@@ -129,7 +129,7 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 
 # Arguments
 - `data::ACPowerFlowData`: The power flow data containing netwthe grid information and initial conditions.
-- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver type. Defaults to `KLUACPowerFlow`.
+- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver type. Defaults to `MatrixOpACPowerFlow `.
 - `kwargs...`: Additional keyword arguments.
 
 # Keyword Arguments
@@ -525,7 +525,7 @@ function _preallocate_J(
 end
 
 function _newton_powerflow(
-    pf::ACPowerFlow{KLUACPowerFlow},
+    pf::ACPowerFlow{MatrixOpACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...,
