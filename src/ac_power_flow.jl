@@ -114,6 +114,7 @@ function polar_pf!(
     data::ACPowerFlowData,
     time_step::Int64,
 )
+    # update P_net, Q_net, data.bus_angles, data.bus_magnitude based on X
     Yb = data.power_network_matrix.data
     n_buses = first(size(data.bus_type))
     bus_types = view(data.bus_type, :, time_step)
@@ -133,6 +134,7 @@ function polar_pf!(
         end
     end
 
+    # compute active, reactive power balances using the just updated values.
     Vm = data.bus_magnitude[:, time_step]
     θ = data.bus_angles[:, time_step]
     # F is active and reactive power balance equations at all buses
