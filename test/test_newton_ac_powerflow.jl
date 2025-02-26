@@ -687,7 +687,7 @@ end
     )
 
     bf_loss_factors =
-        PowerFlows.penalty_factors_brute_force(data_hybrid; enable_progress_bar = false)
+        PowerFlows.penalty_factors_brute_force(data_hybrid)
     @test all(isapprox.(
         data_hybrid.loss_factors,
         bf_loss_factors,
