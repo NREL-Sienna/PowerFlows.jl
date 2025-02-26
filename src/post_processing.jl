@@ -784,7 +784,6 @@ The loss factor value is computed as the change in the reference bus power injec
 function penalty_factors_brute_force(
     data::PowerFlowData;
     step_size::Float64 = 1e-6,
-    enable_progress_bar::Bool = true,
     kwargs...,
 )
     # we assume that the bus type for ref bus does not change between time steps
@@ -800,24 +799,10 @@ function penalty_factors_brute_force(
 
     ref_power = sum(data.bus_activepower_injection[ref, :]; dims = 1)
 
-    progress_bar = ProgressMeter.Progress(
-        n_buses;
-        enabled = enable_progress_bar,
-        desc = "Brute-force calculation of loss factors",
-        showspeed = true,
-    )
-
     pf = ACPowerFlow(HybridACPowerFlow)
 
     Logging.with_logger(Logging.NullLogger()) do
         for bx in 1:n_buses
-            ProgressMeter.update!(
-                progress_bar,
-                bx;
-                showvalues = [
-                    (:Bus, bx),
-                ],
-            )
             data.bus_activepower_injection[bx, :] .+= step_size
             solve_powerflow!(data; pf = pf, kwargs...)
             loss_factors[bx, :] =
