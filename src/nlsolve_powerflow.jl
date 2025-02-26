@@ -192,33 +192,6 @@ function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
     return
 end
 
-function calculate_loss_factors(
-    data::ACPowerFlowData,
-    Jv::SparseMatrixCSC{Float64, Int32},
-    time_step::Int,
-)
-    num_buses = first(size(data.bus_type))
-    ref, pv, pq = bus_type_idx(data, time_step)
-    pvpq = vcat(pv, pq)
-    pvpq_coords = [
-        x for pair in zip(
-            [2 * x - 1 for x in 1:num_buses if x in pvpq],
-            [2 * x for x in 1:num_buses if x in pvpq],
-        ) for x in pair
-    ]
-    data.loss_factors[ref, time_step] .= 0.0
-    penalty_factors!(
-        Jv[pvpq_coords, pvpq_coords],
-        vec(collect(Jv[2 .* ref .- 1, pvpq_coords])),
-        view(
-            data.loss_factors,
-            [x for x in 1:num_buses if x in pvpq],
-            time_step,
-        ),
-        [2 * x - 1 for x in 1:length(pvpq)],
-    )
-end
-
 function _newton_powerflow(
     pf::ACPowerFlow{HybridACPowerFlow},
     data::ACPowerFlowData,
