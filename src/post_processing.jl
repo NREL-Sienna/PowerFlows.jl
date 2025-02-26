@@ -800,6 +800,10 @@ function penalty_factors_brute_force(
     ref_power = sum(data.bus_activepower_injection[ref, :]; dims = 1)
 
     for bx in 1:n_buses
+        if bx in ref
+            loss_factors[bx, :] .= 1.0
+            continue
+        end
         data.bus_activepower_injection[bx, :] .+= step_size
         solve_powerflow!(data; kwargs...)
         loss_factors[bx, :] =
