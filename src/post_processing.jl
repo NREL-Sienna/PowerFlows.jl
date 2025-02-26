@@ -794,15 +794,19 @@ function penalty_factors_brute_force(
 
     loss_factors = zeros(Float64, n_buses, length(time_steps))
 
+    pf = ACPowerFlow(NewtonRaphsonACPowerFlow)
+
     # initial PF to establish the ref power value
     solve_powerflow!(data; kwargs...)
 
     ref_power = sum(data.bus_activepower_injection[ref, :]; dims = 1)
 
-    pf = ACPowerFlow(NewtonRaphsonACPowerFlow)
-
     Logging.with_logger(Logging.NullLogger()) do
         for bx in 1:n_buses
+            if bx in ref
+                loss_factors[bx, :] .= 1.0
+                continue
+            end
             data.bus_activepower_injection[bx, :] .+= step_size
             solve_powerflow!(data; pf = pf, kwargs...)
             loss_factors[bx, :] =
@@ -811,6 +815,5 @@ function penalty_factors_brute_force(
             data.bus_activepower_injection[bx, :] .-= step_size
         end
     end
-
     return loss_factors
 end
