@@ -4,7 +4,7 @@
 CurrentModule = PowerFlows
 ```
 
-`PowerFlows.jl` provides the capability to run a power flow using the Newton-Raphson method, optionally enforcing reactive power constraints of generators. This power flow routine can be used to check for AC feasibility of results of DC optimal power flow.
+`PowerFlows.jl` provides the capability to run a power flow using the [Newton-Raphson method](https://en.wikipedia.org/wiki/Newton%27s_method), optionally enforcing reactive power constraints of generators. This power flow routine can be used to check for AC feasibility of results of DC optimal power flow.
 
 The power flow solver uses [KLU.jl](https://github.com/JuliaSparse/KLU.jl) for Jacobian matrix factorization. The solver uses the current
 operating point in the buses to provide the initial guess. The initial guess is then
