@@ -703,7 +703,7 @@ function _newton_powerflow(
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
         if pf.calc_loss_factors
-            data.loss_factors[ref, :] .= 0.0  # this will not be necessary once we have a full J for all buses
+            data.loss_factors[ref, :] .= 1.0  # this will not be necessary once we have a full J for all buses
             penalty_factors!(
                 J,
                 collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:]),
