@@ -124,6 +124,7 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
         J[F_ix_f_r, X_ix_t_fst] = -1.0
         J[F_ix_f_i, X_ix_t_snd] = -1.0
     end
+    return
 end
 
 function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int32},
@@ -176,6 +177,7 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
             Vm[ix_t] *
             (g_ij * -cos(θ[ix_f] - θ[ix_t]) - b_ij * sin(θ[ix_f] - θ[ix_t]))
     end
+    return
 end
 
 function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int32},
