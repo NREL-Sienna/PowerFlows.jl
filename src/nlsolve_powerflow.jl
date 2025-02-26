@@ -65,7 +65,7 @@ function TrustRegionCache(x0::Vector{Float64}, f0::Vector{Float64})
     return TrustRegionCache(x, xold, r, r_predict, p, p_c, pi)
 end
 
-function dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
+function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
     r::Vector{Float64}, linSolveCache::KLULinSolveCache{Int32},
     Jv::SparseMatrixCSC{Float64, Int32}, delta::Float64)
 
@@ -113,7 +113,7 @@ function _trust_region_step(cache::TrustRegionCache, linSolveCache::KLULinSolveC
     numeric_refactor!(linSolveCache, J.Jv)
 
     # find proposed next point.
-    dogleg!(cache.p, cache.p_c, cache.pi, cache.r, linSolveCache, J.Jv, delta)
+    _dogleg!(cache.p, cache.p_c, cache.pi, cache.r, linSolveCache, J.Jv, delta)
     cache.x .+= cache.p
 
     # TODO this should really be compute-F-but-don't-update-data.
