@@ -108,9 +108,12 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
     Vm::Vector{Float64},
     θ::Vector{Float64},
-    ix_f::Int, ix_t::Int,
-    F_ix_f_r::Int, F_ix_f_i::Int,
-    X_ix_t_fst::Int, X_ix_t_snd::Int,
+    ix_f::Int,
+    ix_t::Int,
+    F_ix_f_r::Int,
+    F_ix_f_i::Int,
+    X_ix_t_fst::Int,
+    X_ix_t_snd::Int,
     ix_f_neighbors::Set{Int},
     ::Val{PSY.ACBusTypes.REF})
     # State variables are Active and Reactive Power Generated
@@ -127,9 +130,12 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
     Vm::Vector{Float64},
     θ::Vector{Float64},
-    ix_f::Int, ix_t::Int,
-    F_ix_f_r::Int, F_ix_f_i::Int,
-    X_ix_t_fst::Int, X_ix_t_snd::Int,
+    ix_f::Int,
+    ix_t::Int,
+    F_ix_f_r::Int,
+    F_ix_f_i::Int,
+    X_ix_t_fst::Int,
+    X_ix_t_snd::Int,
     ix_f_neighbors::Set{Int},
     ::Val{PSY.ACBusTypes.PV})
     # State variables are Reactive Power Generated and Voltage Angle
@@ -176,9 +182,12 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
     Vm::Vector{Float64},
     θ::Vector{Float64},
-    ix_f::Int, ix_t::Int,
-    F_ix_f_r::Int, F_ix_f_i::Int,
-    X_ix_t_fst::Int, X_ix_t_snd::Int,
+    ix_f::Int,
+    ix_t::Int,
+    F_ix_f_r::Int,
+    F_ix_f_i::Int,
+    X_ix_t_fst::Int,
+    X_ix_t_snd::Int,
     ix_f_neighbors::Set{Int},
     ::Val{PSY.ACBusTypes.PQ})
     # State variables are Voltage Magnitude and Voltage Angle
@@ -240,6 +249,7 @@ function _set_entries_for_neighbor(J::SparseArrays.SparseMatrixCSC{Float64, Int3
             Vm[ix_t] *
             (g_ij * -cos(θ[ix_f] - θ[ix_t]) - b_ij * sin(θ[ix_f] - θ[ix_t]))
     end
+    return
 end
 
 """Used to update Jv based on the bus voltages, angles, etc. in data."""
