@@ -145,6 +145,7 @@ function _trust_region_step(cache::TrustRegionCache, linSolveCache::KLULinSolveC
     elseif rho >= 0.5 # so-so improvement ??
         delta = max(delta, 2 * norm(cache.p))
     end
+    return delta
 end
 
 function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
@@ -263,6 +264,7 @@ function _newton_powerflow(
         J(x0)
         nlCache = NLCache(x0)
     end
+    @warn("Failed with iterative refinement. Trying trust region...")
 
     i2, converged2 = 0, false
     trCache = TrustRegionCache(x0, ppf.residual)
@@ -271,7 +273,8 @@ function _newton_powerflow(
         i2 += 1
         @debug "x_$i2: $(trCache.x)"
         @debug "norm(r_$i2): $(norm(ppf.residual))"
-        _trust_region_step(trCache, linSolveCache, ppf, J, delta)
+        @debug "delta: $delta"
+        delta = _trust_region_step(trCache, linSolveCache, ppf, J, delta)
         converged2 = LinearAlgebra.norm(ppf.residual, Inf) < tol
     end
 
