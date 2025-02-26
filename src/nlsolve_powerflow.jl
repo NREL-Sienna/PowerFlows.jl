@@ -1,4 +1,3 @@
-using LinearAlgebra
 const _NLSOLVE_AC_POWERFLOW_KWARGS =
     Set([:check_reactive_power_limits, :check_connectivity])
 
@@ -72,7 +71,7 @@ function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64}
     # p_i is newton-raphon step.
     copyto!(p_i, r)
     solve!(linSolveCache, p_i)
-    rmul!(p_i, -1.0)
+    LinearAlgebra.rmul!(p_i, -1.0)
 
     if norm(p_i) <= delta
         @debug "NR step"
@@ -80,12 +79,12 @@ function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64}
     else
         # using p as a temporary buffer: alias to g for readability
         g = p
-        mul!(g, Jv', r)
+        LinearAlgebra.mul!(g, Jv', r)
         p_c .= -norm(g)^2 / norm(Jv * g)^2 .* g # Cauchy point
 
         if norm(p_c) >= delta
             # p_c outside region => take step of length delta in direction of -g.
-            rmul!(g, -delta / norm(g))
+            LinearAlgebra.rmul!(g, -delta / norm(g))
             @debug "Cauchy step"
             # not needed because g is already an alias for p.
             # copyto!(p, g) # update p: cauchy point case
@@ -98,7 +97,7 @@ function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64}
             p_i .-= p_c
             p_diff = p_i
 
-            b = dot(p_c, p_diff)
+            b = LinearAlgebra.dot(p_c, p_diff)
             a = norm(p_diff)^2
             tau = (-b + sqrt(b^2 - 4a * (norm(p_c)^2 - delta^2))) / (2a)
             p_c .+= tau .* p_diff
@@ -120,7 +119,7 @@ function _trust_region_step(cache::TrustRegionCache, linSolveCache::KLULinSolveC
     pf(cache.x)
 
     # Ratio of actual to predicted reduction
-    mul!(cache.r_predict, J.Jv, cache.p)
+    LinearAlgebra.mul!(cache.r_predict, J.Jv, cache.p)
     cache.r_predict .+= cache.r
     rho =
         (sum(abs2, cache.r) - sum(abs2, pf.residual)) /
@@ -162,10 +161,10 @@ function _nr_step(nlCache::NLCache, linSolveCache::KLULinSolveCache{Int32},
             nlCache.p .=
                 solve_w_refinement(linSolveCache, J.Jv, nlCache.p, refinement_eps)
         end
-        rmul!(nlCache.p, -1)
+        LinearAlgebra.rmul!(nlCache.p, -1)
     catch e
         # TODO cook up a test case where Jacobian is singular.
-        if e isa SingularException
+        if e isa LinearAlgebra.SingularException
             @warn("Newton-Raphson hit a point where the Jacobian is singular.")
             fjac2 = J.Jv' * J.Jv
             lambda = 1e6 * sqrt(length(pf.x0) * eps()) * norm(fjac2, 1)
@@ -214,7 +213,7 @@ function _newton_powerflow(
         i, converged = 0, false
         while i < maxIterations && !converged
             _nr_step(nlCache, linSolveCache, ppf, J, strategy)
-            converged = LinearAlgebra.norm(ppf.residual, Inf) < tol
+            converged = norm(ppf.residual, Inf) < tol
             i += 1
         end
         if converged
@@ -248,7 +247,7 @@ function _newton_powerflow(
         @debug "norm(r_$i2): $(norm(ppf.residual))"
         @debug "delta: $delta"
         delta = _trust_region_step(trCache, linSolveCache, ppf, J, delta)
-        converged2 = LinearAlgebra.norm(ppf.residual, Inf) < tol
+        converged2 = norm(ppf.residual, Inf) < tol
     end
 
     if converged2
