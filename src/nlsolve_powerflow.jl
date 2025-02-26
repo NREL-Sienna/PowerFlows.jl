@@ -31,21 +31,18 @@ end
 struct NLCache
     x::Vector{Float64}
     p::Vector{Float64}
-    # g::Tx # only used for more complex linesearch algorithms.
 end
 
 function NLCache(x0::Vector{Float64})
     x = copy(x0)
     p = copy(x)
-    # g = copy(x)
-    return NLCache(x, p) #, g)
+    return NLCache(x, p)
 end
 
 struct TrustRegionCache
     # Probably could cut down on the number of fields here:
     # I suspect NLSolve only includes some of these for the SolverTrace.
     x::Vector{Float64}
-    xold::Vector{Float64}
     r::Vector{Float64} # residual
     r_predict::Vector{Float64} # predicted residual
     p::Vector{Float64} # proposed Δx: Cauchy, NR, or dogleg step.
@@ -55,13 +52,12 @@ end
 
 function TrustRegionCache(x0::Vector{Float64}, f0::Vector{Float64})
     x = copy(x0)
-    xold = copy(x0)
     r = copy(f0)
     r_predict = copy(x0)
     p = copy(x0)
     p_c = copy(x0)
     pi = copy(x0)
-    return TrustRegionCache(x, xold, r, r_predict, p, p_c, pi)
+    return TrustRegionCache(x, r, r_predict, p, p_c, pi)
 end
 
 function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
@@ -108,7 +104,6 @@ end
 
 function _trust_region_step(cache::TrustRegionCache, linSolveCache::KLULinSolveCache{Int32},
     pf::PolarPowerFlow, J::PolarPowerFlowJacobian, delta::Float64, eta::Float64 = 1e-4)
-    copyto!(cache.xold, cache.x)
     numeric_refactor!(linSolveCache, J.Jv)
 
     # find proposed next point.
