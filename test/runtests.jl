@@ -31,16 +31,16 @@ const TEST_FILES_DIR = test_file_dir
 const DIFF_INF_TOLERANCE = 1e-4
 const DIFF_L2_TOLERANCE = 1e-3
 
-const AC_SOLVERS_TO_TEST = (
-    MatrixOpACPowerFlow,
-    PowerFlows.LUACPowerFlow,
-    NewtonRaphsonACPowerFlow)
-
 MAIN_DIR = dirname(@__DIR__)
 
 include("test_utils/common.jl")
 include("test_utils/psse_results_compare.jl")
 Base.eval(PowerFlows, :(include("./test_utils/legacy_pf.jl")))
+
+const AC_SOLVERS_TO_TEST = (
+    MatrixOpACPowerFlow,
+    PowerFlows.LUACPowerFlow,
+    NewtonRaphsonACPowerFlow)
 
 LOG_FILE = "power-flows.log"
 
