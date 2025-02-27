@@ -32,6 +32,7 @@ import SparseArrays: SparseMatrixCSC, sparse
 import JSON3
 import DataStructures: OrderedDict
 import Dates
+import ProgressMeter
 
 const IS = InfrastructureSystems
 const PSY = PowerSystems

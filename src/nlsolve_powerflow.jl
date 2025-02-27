@@ -74,14 +74,13 @@ function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64}
     end
 end
 
-function _trust_region_step(time_step::Int, 
+function _trust_region_step(time_step::Int,
     cache::TrustRegionCache,
     linSolveCache::KLULinSolveCache{Int32},
-    pf::PolarPowerFlow, 
-    J::ACPowerFlowJacobian, 
-    delta::Float64, 
+    pf::PolarPowerFlow,
+    J::ACPowerFlowJacobian,
+    delta::Float64,
     eta::Float64 = 1e-4)
-    
     copyto!(cache.xold, cache.x)
     numeric_refactor!(linSolveCache, J.Jv)
 
