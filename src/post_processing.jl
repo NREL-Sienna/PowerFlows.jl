@@ -801,22 +801,8 @@ function penalty_factors_brute_force(
 
     ref_power = sum(data.bus_activepower_injection[ref, :]; dims = 1)
 
-    progress_bar = ProgressMeter.Progress(
-        n_buses;
-        enabled = enable_progress_bar,
-        desc = "Brute-force calculation of loss factors",
-        showspeed = true,
-    )
-
     Logging.with_logger(Logging.NullLogger()) do
         for bx in 1:n_buses
-            ProgressMeter.update!(
-                progress_bar,
-                bx;
-                showvalues = [
-                    (:Bus, bx),
-                ],
-            )
             if bx in ref
                 loss_factors[bx, :] .= 1.0
                 continue
