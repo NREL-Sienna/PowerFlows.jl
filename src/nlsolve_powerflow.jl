@@ -1,5 +1,3 @@
-using LinearAlgebra
-
 struct NLCache
     x::Vector{Float64}
     p::Vector{Float64}

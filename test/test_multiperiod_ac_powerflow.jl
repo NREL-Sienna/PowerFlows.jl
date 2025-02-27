@@ -19,12 +19,7 @@ function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
 end
 
 # work in progress
-@testset "MULTI-PERIOD power flows evaluation: NR" for ACSolver in
-                                                       (
-    MatrixOpACPowerFlow,
-    PowerFlows.LUACPowerFlow,
-    NewtonRaphsonACPowerFlow,
-)
+@testset "MULTI-PERIOD power flows evaluation: NR" for ACSolver in AC_SOLVERS_TO_TEST
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
@@ -52,11 +47,7 @@ end
 end
 
 @testset "MULTI-PERIOD power flows evaluation: compare results for different solvers" for ACSolver in
-                                                                                          (
-    MatrixOpACPowerFlow,
-    PowerFlows.LUACPowerFlow,
-    NewtonRaphsonACPowerFlow,
-)
+                                                                                          AC_SOLVERS_TO_TEST
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
