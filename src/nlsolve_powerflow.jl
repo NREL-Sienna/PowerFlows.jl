@@ -60,6 +60,7 @@ function _dogleg!(p::Vector{Float64},
             copyto!(p, p_c) # update p: dogleg case.
         end
     end
+    return
 end
 
 function _trust_region_step(time_step::Int,
