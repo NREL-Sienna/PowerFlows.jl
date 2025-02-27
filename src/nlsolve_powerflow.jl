@@ -81,7 +81,6 @@ function _trust_region_step(time_step::Int,
     J::ACPowerFlowJacobian,
     delta::Float64,
     eta::Float64 = 1e-4)
-    copyto!(cache.xold, cache.x)
     numeric_refactor!(linSolveCache, J.Jv)
 
     # find proposed next point.
