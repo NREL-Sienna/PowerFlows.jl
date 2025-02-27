@@ -133,7 +133,8 @@ function _nr_step(time_step::Int64,
         # TODO cook up a test case where Jacobian is singular.
         if e isa LinearAlgebra.SingularException
             @warn("Newton-Raphson hit a point where the Jacobian is singular.")
-            fjac2 = J.Jv' * J.Jv
+            fjac2 = similar(J.Jv)
+            LinearAlgebra.mul!(fjac2, J.Jv', J.Jv)
             lambda = 1e6 * sqrt(length(ppf.x0) * eps()) * norm(fjac2, 1)
             M = -(fjac2 + lambda * I)
             tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
