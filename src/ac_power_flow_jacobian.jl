@@ -461,7 +461,7 @@ function calculate_loss_factors(
             [2 * x for x in 1:num_buses if x in pvpq],
         ) for x in pair
     ]
-    data.loss_factors[ref, time_step] .= 0.0
+    data.loss_factors[ref, time_step] .= 1.0
     penalty_factors!(
         Jv[pvpq_coords, pvpq_coords],
         vec(collect(Jv[2 .* ref .- 1, pvpq_coords])),
