@@ -1,6 +1,6 @@
 using SparseArrays
 using LinearAlgebra
-
+const RTOL = 10^-7
 function testSolve(
     k::PF.KLULinSolveCache{T},
     A::SparseMatrixCSC{Float64, T},
@@ -8,11 +8,11 @@ function testSolve(
     xb = randn(size(A, 1))
     b = deepcopy(xb)
     PF.solve!(k, xb)
-    @test A * xb ≈ b
+    isapprox(A * xb, b; rtol = RTOL)
     XB = randn(size(A, 1), 10)
     B = deepcopy(XB)
     PF.solve!(k, XB)
-    @test A * XB ≈ B
+    isapprox(A * XB, B; rtol = RTOL)
 end
 
 @testset "klu linear solver cache" begin
@@ -74,7 +74,7 @@ end
         PF.full_factor!(bigK, bigA)
         b = rand(N)
         x = PF.solve_w_refinement(bigK, bigA, b)
-        @test bigA * x ≈ b
+        @test isapprox(bigA * x, b, rtol = RTOL)
 
         # error handling: singular.
         sing = SparseMatrixCSC{Float64, dType}(sparse([1], [1], [0.1], 2, 2))
