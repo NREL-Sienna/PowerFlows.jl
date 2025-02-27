@@ -1,6 +1,15 @@
-"""Cache for non-linear methods. Only the first 2 fields are used
-for Newton-Raphson."""
-struct NLCache
+"""Abstract supertype for all variations of Newton-Raphson."""
+abstract type AbstractNewtonRaphsonMethod end
+"""Basic, no-frills Newton-Raphson."""
+struct SimpleMethod <: AbstractNewtonRaphsonMethod end
+"""Use iterative refinement to get better accuracy when solving J(x)*Δx = -f(x)."""
+struct RefinementMethod <: AbstractNewtonRaphsonMethod end
+"""Trust region method with a dog leg step."""
+struct TrustRegionMethod <: AbstractNewtonRaphsonMethod end
+
+"""Cache for non-linear methods. The last 4 fields are only
+used for the trust region method."""
+struct StateVectorCache
     x::Vector{Float64}
     r::Vector{Float64} # residual
     r_predict::Vector{Float64} # predicted residual
@@ -9,14 +18,23 @@ struct NLCache
     pi::Vector{Float64} # Newton-Raphson step
 end
 
-function NLCache(x0::Vector{Float64}, f0::Vector{Float64})
+function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     x = copy(x0)
     r = copy(f0)
     r_predict = copy(x0)
     p = copy(x0)
     p_c = copy(x0)
     pi = copy(x0)
-    return NLCache(x, r, r_predict, p, p_c, pi)
+    return StateVectorCache(x, r, r_predict, p, p_c, pi)
+end
+
+function resetCache!(cache::StateVectorCache, x0::Vector{Float64}, f0::Vector{Float64})
+    copyto!(cache.x, x0)
+    copyto!(cache.r, f0)
+    copyto!(cache.r_predict, x0)
+    copyto!(cache.p, x0)
+    copyto!(cache.p_c, x0)
+    copyto!(cache.pi, x0)
 end
 
 function _dogleg!(p::Vector{Float64},
@@ -64,9 +82,9 @@ function _dogleg!(p::Vector{Float64},
 end
 
 function _trust_region_step(time_step::Int,
-    cache::NLCache,
+    cache::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    pf::PolarPowerFlow,
+    pf::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     delta::Float64,
     eta::Float64 = DEFAULT_TRUST_REGION_ETA)
@@ -110,21 +128,22 @@ function _trust_region_step(time_step::Int,
     return delta
 end
 
-function _nr_step(time_step::Int64,
-    nlCache::NLCache,
+"""Handles both SimpleMethod and RefinementMethod."""
+function _simple_step(time_step::Int,
+    nlCache::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    ppf::PolarPowerFlow,
+    ppf::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
-    strategy::Symbol = :inplace;
+    refinement::Bool = false,
     refinement_eps::Float64 = 1e-6)
     try
         # factorize the numeric object of KLU inplace, while reusing the symbolic object
         numeric_refactor!(linSolveCache, J.Jv)
         # solve for dx in-place
         copyto!(nlCache.r, ppf.residual)
-        if strategy == :inplace
+        if !refinement
             solve!(linSolveCache, nlCache.r)
-        elseif strategy == :iterative_refinement
+        else
             nlCache.r .=
                 solve_w_refinement(linSolveCache, J.Jv, nlCache.r, refinement_eps)
         end
@@ -159,39 +178,109 @@ function _nr_step(time_step::Int64,
     return
 end
 
+function _nr_method(time_step::Int,
+    nlCache::StateVectorCache,
+    linSolveCache::KLULinSolveCache{Int32},
+    ppf::ACPowerFlowResidual,
+    J::ACPowerFlowJacobian,
+    ::SimpleMethod;
+    kwargs...)
+    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
+    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
+    i, converged = 0, false
+    while i < maxIterations && !converged
+        _simple_step(
+            time_step,
+            nlCache,
+            linSolveCache,
+            ppf,
+            J,
+        )
+        converged = norm(ppf.residual, Inf) < tol
+        i += 1
+    end
+    return converged, i
+end
+
+function _nr_method(time_step::Int,
+    nlCache::StateVectorCache,
+    linSolveCache::KLULinSolveCache{Int32},
+    ppf::ACPowerFlowResidual,
+    J::ACPowerFlowJacobian,
+    ::RefinementMethod;
+    kwargs...)
+    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
+    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
+    refinement_eps::Float64 = get(kwargs, :refinement_eps, DEFAULT_REFINEMENT_EPS)
+    i, converged = 0, false
+    while i < maxIterations && !converged
+        _simple_step(
+            time_step,
+            nlCache,
+            linSolveCache,
+            ppf,
+            J,
+            true,
+            refinement_eps,
+        )
+        converged = norm(ppf.residual, Inf) < tol
+        i += 1
+    end
+    return converged, i
+end
+
+function _nr_method(time_step::Int,
+    nlCache::StateVectorCache,
+    linSolveCache::KLULinSolveCache{Int32},
+    ppf::ACPowerFlowResidual,
+    J::ACPowerFlowJacobian,
+    ::TrustRegionMethod;
+    kwargs...)
+    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
+    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
+    factor::Float64 = get(kwargs, :factor, DEFAULT_TRUST_REGION_FACTOR)
+    eta::Float64 = get(kwargs, :eta, DEFAULT_TRUST_REGION_ETA)
+
+    delta::Float64 = norm(nlCache.x) > 0 ? factor * norm(nlCache.x) : factor
+    i, converged = 0, false
+    while i < maxIterations && !converged
+        delta = _trust_region_step(time_step, nlCache, linSolveCache, ppf, J, delta, eta)
+        converged = norm(ppf.residual, Inf) < tol
+        i += 1
+    end
+    return converged, i
+end
+
 function _newton_powerflow(
     pf::ACPowerFlow{NewtonRaphsonACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
 
-    # Fetch maxIterations, tol from kwargs, or use defaults if not provided
-    maxIterations = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
-    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
-    # only used for trust region.
-    factor::Float64 = get(kwargs, :factor, DEFAULT_TRUST_REGION_FACTOR)
-    eta::Float64 = get(kwargs, :eta, DEFAULT_TRUST_REGION_ETA)
-
-    # when we have multiperiod power flow calculation and want to preserve the ACPowerFlowJacobian instance between time steps:
+    ppf = ACPowerFlowResidual(data, time_step)
+    x0 = calculate_x0(data, time_step)
+    ppf(x0)
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     J(time_step)  # we need to fill J with values because at this point it was just initialized
 
-    ppf = PolarPowerFlow(data, time_step)
-    x0 = copy(ppf.x0)
+    n_buses = length(data.bus_type)
+    if sum(ppf.residual) > 10 * (n_buses * 2)
+        _, ix = findmax(ppf.residual)
+        bx = ix <= n_buses ? ix : ix - n_buses
+        bus_no = data.bus_lookup[bx]
+        @warn "Initial guess provided results in a large initial residual. Largest residual at bus $bus_no"
+    end
+
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
-    nlCache = NLCache(ppf.x0, ppf.residual)
+    nlCache = StateVectorCache(x0, ppf.residual)
 
-    for strategy in [:inplace, :iterative_refinement]
-        i, converged = 0, false
-        while i < maxIterations && !converged
-            _nr_step(time_step, nlCache, linSolveCache, ppf, J, strategy)
-            converged = LinearAlgebra.norm(ppf.residual, Inf) < tol
-            i += 1
-        end
+    for method in [SimpleMethod(), RefinementMethod(), TrustRegionMethod()]
+        converged, i =
+            _nr_method(time_step, nlCache, linSolveCache, ppf, J, method; kwargs...)
         if converged
             @info(
-                "The NewtonRaphsonACPowerFlow solver converged after $i iterations with strategy $strategy"
+                "The NewtonRaphsonACPowerFlow solver converged after $i iterations with method $method"
             )
             V = _calc_V(data, nlCache.x, time_step)
             Sbus_result = V .* conj(data.power_network_matrix.data * V)
@@ -201,42 +290,19 @@ function _newton_powerflow(
             end
 
             return (true, V, Sbus_result)
-        elseif strategy == :inplace
-            @warn("Failed with in-place solving. Trying iterative refinement...")
+            @warn("Failed with method $method")
+            # reset back to starting point before trying next method.
+            # Order here (ppf then J) is important.
+            ppf(x0)
+            J(time_step)
+            resetCache!(nlCache, x0, ppf.residual)
         end
-        # reset back to starting point before trying next strategy.
-        ppf(x0)
-        J(time_step)
-        nlCache = NLCache(x0, ppf.residual)
-    end
-    @warn("Failed with iterative refinement. Trying trust region...")
-
-    i2, converged2 = 0, false
-    delta::Float64 = norm(x0) > 0 ? factor * norm(x0) : factor
-    while i2 < maxIterations && !converged2
-        i2 += 1
-        delta = _trust_region_step(time_step, nlCache, linSolveCache, ppf, J, delta, eta)
-        converged2 = norm(ppf.residual, Inf) < tol
-    end
-
-    if converged2
-        @info(
-            "The NewtonRaphsonACPowerFlow solver converged after $i2 iterations with strategy trust region"
-        )
-        V = _calc_V(data, nlCache.x, time_step)
-        Sbus_result = V .* conj(data.power_network_matrix.data * V)
-
-        if pf.calc_loss_factors
-            calculate_loss_factors(data, J.Jv, time_step)
-        end
-
-        return (true, V, Sbus_result)
     end
 
     V = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
     Sbus_result = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
     @error(
-        "Solver NewtonRaphsonACPowerFlow did not converge in $maxIterations iterations with any strategy."
+        "Solver NewtonRaphsonACPowerFlow did not converge with any method."
     )
     return (false, V, Sbus_result)
 end
@@ -296,4 +362,36 @@ function _calc_V(
     end
 
     return V
+end
+
+function calculate_x0(data::ACPowerFlowData,
+    time_step::Int64)
+    n_buses = length(data.bus_type[:, 1])
+    x0 = Vector{Float64}(undef, 2 * n_buses)
+    state_variable_count = 1
+    for (ix, b) in enumerate(data.bus_type[:, time_step])
+        if b == PSY.ACBusTypes.REF
+            x0[state_variable_count] =
+                data.bus_activepower_injection[ix, time_step] -
+                data.bus_activepower_withdrawals[ix, time_step]
+            x0[state_variable_count + 1] =
+                data.bus_reactivepower_injection[ix, time_step] -
+                data.bus_reactivepower_withdrawals[ix, time_step]
+            state_variable_count += 2
+        elseif b == PSY.ACBusTypes.PV
+            x0[state_variable_count] =
+                data.bus_reactivepower_injection[ix, time_step] -
+                data.bus_reactivepower_withdrawals[ix, time_step]
+            x0[state_variable_count + 1] = data.bus_angles[ix, time_step]
+            state_variable_count += 2
+        elseif b == PSY.ACBusTypes.PQ
+            x0[state_variable_count] = data.bus_magnitude[ix, time_step]
+            x0[state_variable_count + 1] = data.bus_angles[ix, time_step]
+            state_variable_count += 2
+        else
+            throw(ArgumentError("$b not recognized as a bustype"))
+        end
+    end
+    @assert state_variable_count - 1 == n_buses * 2
+    return x0
 end

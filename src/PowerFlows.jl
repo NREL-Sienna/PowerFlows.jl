@@ -47,7 +47,7 @@ include("LinearSolverCache/klu_linear_solver.jl")
 include("solve_dc_powerflow.jl")
 include("ac_power_flow.jl")
 include("ac_power_flow_jacobian.jl")
-include("newton_ac_powerflow.jl")
+include("solve_powerflow.jl")
 include("nlsolve_powerflow.jl")
 include("post_processing.jl")
 end
