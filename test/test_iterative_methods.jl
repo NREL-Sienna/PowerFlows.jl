@@ -22,12 +22,6 @@ end
         23.5000028166,
         50.0,
     ])
-    # make sure we hit each branch of the trust region method. (code coverage reasons.)
-    # TODO hit the "Cauchy step" branch, perhaps by setting a super small starting value of delta.
-    @test_logs (:debug, "NR step") (:debug, "Dogleg step") match_mode = :any min_level =
-        Logging.Debug run_pf([35.407000101, 23.5000028166, 50.0])
-    @test_logs (:debug, "failure") (:debug, "success") match_mode = :any min_level =
-        Logging.Debug run_pf([35.407000101, 23.5000028166, 50.0])
     # TODO better tests? i.e. more granularly compare behavior to expected, not just check end result.
     # could check behavior of delta, ie that delta is increased/decreased properly.
 end

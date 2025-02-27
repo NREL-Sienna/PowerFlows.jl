@@ -1,17 +1,6 @@
-struct NLCache
-    x::Vector{Float64}
-    p::Vector{Float64}
-end
-
-function NLCache(x0::Vector{Float64})
-    x = copy(x0)
-    p = copy(x)
-    return NLCache(x, p)
-end
-
-struct TrustRegionCache
-    # Probably could cut down on the number of fields here:
-    # I suspect NLSolve only includes some of these for the SolverTrace.
+"""Cache for non-linear methods. Only the first 2 fields are used
+for Newton-Raphson."""
+struct NLCache # only first 2 fields
     x::Vector{Float64}
     r::Vector{Float64} # residual
     r_predict::Vector{Float64} # predicted residual
@@ -20,19 +9,23 @@ struct TrustRegionCache
     pi::Vector{Float64} # Newton-Raphson step
 end
 
-function TrustRegionCache(x0::Vector{Float64}, f0::Vector{Float64})
+function NLCache(x0::Vector{Float64}, f0::Vector{Float64})
     x = copy(x0)
     r = copy(f0)
     r_predict = copy(x0)
     p = copy(x0)
     p_c = copy(x0)
     pi = copy(x0)
-    return TrustRegionCache(x, r, r_predict, p, p_c, pi)
+    return NLCache(x, r, r_predict, p, p_c, pi)
 end
 
-function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
-    r::Vector{Float64}, linSolveCache::KLULinSolveCache{Int32},
-    Jv::SparseMatrixCSC{Float64, Int32}, delta::Float64)
+function _dogleg!(p::Vector{Float64},
+    p_c::Vector{Float64},
+    p_i::Vector{Float64},
+    r::Vector{Float64},
+    linSolveCache::KLULinSolveCache{Int32},
+    Jv::SparseMatrixCSC{Float64, Int32},
+    delta::Float64)
 
     # p_i is newton-raphon step.
     copyto!(p_i, r)
@@ -40,7 +33,6 @@ function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64}
     LinearAlgebra.rmul!(p_i, -1.0)
 
     if norm(p_i) <= delta
-        @debug "NR step"
         copyto!(p, p_i) # update p: newton-raphson case.
     else
         # using p as a temporary buffer: alias to g for readability
@@ -51,7 +43,6 @@ function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64}
         if norm(p_c) >= delta
             # p_c outside region => take step of length delta in direction of -g.
             LinearAlgebra.rmul!(g, -delta / norm(g))
-            @debug "Cauchy step"
             # not needed because g is already an alias for p.
             # copyto!(p, g) # update p: cauchy point case
         else
@@ -59,7 +50,6 @@ function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64}
             # crosses the boundary of the trust region. this is the "dogleg" part.
 
             # using p_i as temporary buffer: alias to p_diff for readability.
-            @debug "Dogleg step"
             p_i .-= p_c
             p_diff = p_i
 
@@ -73,7 +63,7 @@ function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64}
 end
 
 function _trust_region_step(time_step::Int,
-    cache::TrustRegionCache,
+    cache::NLCache,
     linSolveCache::KLULinSolveCache{Int32},
     pf::PolarPowerFlow,
     J::ACPowerFlowJacobian,
@@ -85,7 +75,10 @@ function _trust_region_step(time_step::Int,
     _dogleg!(cache.p, cache.p_c, cache.pi, cache.r, linSolveCache, J.Jv, delta)
     cache.x .+= cache.p
 
-    # TODO this should really be compute-F-but-don't-update-data.
+    # use cache.pi as temporary buffer to store old residual
+    # to avoid recomputing if we don't change x.
+    oldResidual = cache.pi
+    copyto!(oldResidual, pf.residual)
     pf(cache.x)
 
     # Ratio of actual to predicted reduction
@@ -96,14 +89,13 @@ function _trust_region_step(time_step::Int,
         (sum(abs2, cache.r) - sum(abs2, cache.r_predict))
     if rho > eta
         # Successful iteration
-        @debug "success"
         cache.r .= pf.residual
-        J(time_step) # we update J here: that way, if we don't change x (unsuccessful case), we don't re-compute J.
+        # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
+        J(time_step)
     else
         # Unsuccessful: reset x and residual.
-        @debug "failure"
         cache.x .-= cache.p
-        pf(cache.x)
+        copyto!(pf.residual, oldResidual)
     end
 
     # Update size of trust region
@@ -111,28 +103,31 @@ function _trust_region_step(time_step::Int,
         delta = delta / 2
     elseif rho >= 0.9 # good improvement
         delta = 2 * norm(cache.p)
-    elseif rho >= 0.5 # so-so improvement ??
+    elseif rho >= 0.5 # so-so improvement
         delta = max(delta, 2 * norm(cache.p))
     end
     return delta
 end
 
-function _nr_step(time_step::Int64, nlCache::NLCache,
+function _nr_step(time_step::Int64,
+    nlCache::NLCache,
     linSolveCache::KLULinSolveCache{Int32},
-    ppf::PolarPowerFlow, J::ACPowerFlowJacobian, strategy::Symbol = :inplace;
+    ppf::PolarPowerFlow,
+    J::ACPowerFlowJacobian,
+    strategy::Symbol = :inplace;
     refinement_eps::Float64 = 1e-6)
     try
         # factorize the numeric object of KLU inplace, while reusing the symbolic object
         numeric_refactor!(linSolveCache, J.Jv)
         # solve for dx in-place
-        copyto!(nlCache.p, ppf.residual)
+        copyto!(nlCache.r, ppf.residual)
         if strategy == :inplace
-            solve!(linSolveCache, nlCache.p)
+            solve!(linSolveCache, nlCache.r)
         elseif strategy == :iterative_refinement
-            nlCache.p .=
-                solve_w_refinement(linSolveCache, J.Jv, nlCache.p, refinement_eps)
+            nlCache.r .=
+                solve_w_refinement(linSolveCache, J.Jv, nlCache.r, refinement_eps)
         end
-        LinearAlgebra.rmul!(nlCache.p, -1)
+        LinearAlgebra.rmul!(nlCache.r, -1)
     catch e
         # TODO cook up a test case where Jacobian is singular.
         if e isa LinearAlgebra.SingularException
@@ -143,8 +138,8 @@ function _nr_step(time_step::Int64, nlCache::NLCache,
             tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
             # KLU factorization. TODO check if this is faster than Julia's default ldiv.
             full_factor!(tempCache, M)
-            copyto!(nlCache.p, ppf.residual)
-            solve!(tempCache, nlCache.p)
+            copyto!(nlCache.r, ppf.residual)
+            solve!(tempCache, nlCache.r)
         else
             @error("KLU factorization failed: $e")
             # V = _calc_V(data, nlCache.x, time_step)
@@ -153,7 +148,7 @@ function _nr_step(time_step::Int64, nlCache::NLCache,
         end
     end
     # update x
-    nlCache.x .+= nlCache.p
+    nlCache.x .+= nlCache.r
     # update data's fields (the bus angles/voltages) to match x, and update the residual.
     # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
     ppf(nlCache.x)
@@ -180,9 +175,9 @@ function _newton_powerflow(
     x0 = copy(ppf.x0)
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
+    nlCache = NLCache(ppf.x0, ppf.residual)
 
     for strategy in [:inplace, :iterative_refinement]
-        nlCache = NLCache(ppf.x0)
         i, converged = 0, false
         while i < maxIterations && !converged
             _nr_step(time_step, nlCache, linSolveCache, ppf, J, strategy)
@@ -207,19 +202,15 @@ function _newton_powerflow(
         # reset back to starting point before trying next strategy.
         ppf(x0)
         J(time_step)
-        nlCache = NLCache(x0)
+        nlCache = NLCache(x0, ppf.residual)
     end
     @warn("Failed with iterative refinement. Trying trust region...")
 
     i2, converged2 = 0, false
-    trCache = TrustRegionCache(x0, ppf.residual)
     delta::Float64 = norm(x0) > 0 ? norm(x0) : 1.0
     while i2 < maxIterations && !converged2
         i2 += 1
-        @debug "x_$i2: $(trCache.x)"
-        @debug "norm(r_$i2): $(norm(ppf.residual))"
-        @debug "delta: $delta"
-        delta = _trust_region_step(time_step, trCache, linSolveCache, ppf, J, delta)
+        delta = _trust_region_step(time_step, nlCache, linSolveCache, ppf, J, delta)
         converged2 = norm(ppf.residual, Inf) < tol
     end
 
@@ -227,7 +218,7 @@ function _newton_powerflow(
         @info(
             "The NewtonRaphsonACPowerFlow solver converged after $i2 iterations with strategy trust region"
         )
-        V = _calc_V(data, trCache.x, time_step)
+        V = _calc_V(data, nlCache.x, time_step)
         Sbus_result = V .* conj(data.power_network_matrix.data * V)
 
         if pf.calc_loss_factors
@@ -237,8 +228,8 @@ function _newton_powerflow(
         return (true, V, Sbus_result)
     end
 
-    V = fill(NaN + NaN * im, length(trCache.x) ÷ 2)
-    Sbus_result = fill(NaN + NaN * im, length(trCache.x) ÷ 2)
+    V = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
+    Sbus_result = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
     @error(
         "Solver NewtonRaphsonACPowerFlow did not converge in $maxIterations iterations with any strategy."
     )
