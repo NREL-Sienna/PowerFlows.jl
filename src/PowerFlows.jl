@@ -4,8 +4,8 @@ export solve_powerflow
 export solve_powerflow!
 export PowerFlowData
 export DCPowerFlow
-export HybridACPowerFlow
-export KLUACPowerFlow
+export NewtonRaphsonACPowerFlow
+export MatrixOpACPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow
@@ -23,6 +23,7 @@ import DataFrames
 import PowerSystems
 import PowerSystems: System, with_units_base
 import LinearAlgebra
+import LinearAlgebra: norm
 import KLU
 import SparseArrays
 import InfrastructureSystems
@@ -31,7 +32,6 @@ import SparseArrays: SparseMatrixCSC, sparse
 import JSON3
 import DataStructures: OrderedDict
 import Dates
-import ProgressMeter
 
 const IS = InfrastructureSystems
 const PSY = PowerSystems
@@ -44,7 +44,6 @@ include("PowerFlowData.jl")
 include("psse_export.jl")
 include("LinearSolverCache/linear_solver_cache.jl")
 include("LinearSolverCache/klu_linear_solver.jl")
-include("LinearSolverCache/lu_linear_solver.jl")
 include("solve_dc_powerflow.jl")
 include("ac_power_flow.jl")
 include("ac_power_flow_jacobian.jl")

@@ -21,9 +21,9 @@ end
 # work in progress
 @testset "MULTI-PERIOD power flows evaluation: NR" for ACSolver in
                                                        (
-    KLUACPowerFlow,
+    MatrixOpACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
+    NewtonRaphsonACPowerFlow,
 )
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
@@ -37,7 +37,7 @@ end
     prepare_ts_data!(data, time_steps)
 
     # get power flows with NR KLU method and write results
-    solve_powerflow!(data; pf = pf, enable_progress_bar = false)
+    solve_powerflow!(data; pf = pf)
 
     # check results
     # for t in 1:length(data.timestep_map)
@@ -53,15 +53,15 @@ end
 
 @testset "MULTI-PERIOD power flows evaluation: compare results for different solvers" for ACSolver in
                                                                                           (
-    KLUACPowerFlow,
+    MatrixOpACPowerFlow,
     PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow,
+    NewtonRaphsonACPowerFlow,
 )
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
     # create structure for multi-period case
-    pf_klu = ACPowerFlow(KLUACPowerFlow)
+    pf_klu = ACPowerFlow(MatrixOpACPowerFlow)
     pf_test = ACPowerFlow(ACSolver)
 
     time_steps = 24
@@ -73,8 +73,8 @@ end
     prepare_ts_data!(data_test, time_steps)
 
     # get power flows with NR KLU method and write results
-    solve_powerflow!(data_klu; pf = pf_klu, enable_progress_bar = false)
-    solve_powerflow!(data_test; pf = pf_test, enable_progress_bar = false)
+    solve_powerflow!(data_klu; pf = pf_klu)
+    solve_powerflow!(data_test; pf = pf_test)
 
     # check results
     @test isapprox(data_klu.bus_magnitude, data_test.bus_magnitude, atol = 1e-9)
@@ -101,7 +101,8 @@ end
     )
 end
 
-@testset "test_loss_factors_case_14" for ACSolver in (KLUACPowerFlow, HybridACPowerFlow)
+@testset "test_loss_factors_case_14" for ACSolver in
+                                         (MatrixOpACPowerFlow, NewtonRaphsonACPowerFlow)
     sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
 
     pf_klu = ACPowerFlow(ACSolver; calc_loss_factors = true)
@@ -116,16 +117,16 @@ end
     prepare_ts_data!(data_no_factors, time_steps)
 
     # get power flows with NR KLU method and write results
-    solve_powerflow!(data_klu; pf = pf_klu, enable_progress_bar = false)
+    solve_powerflow!(data_klu; pf = pf_klu)
 
     # get loss factors using brute force approach (sequential power flow evaluations for each bus)
     bf_loss_factors =
-        PowerFlows.penalty_factors_brute_force(data_klu; enable_progress_bar = false)
+        PowerFlows.penalty_factors_brute_force(data_klu)
 
     # confirm that loss factors match for the Jacobian-based and brute force approaches
     @test isapprox(bf_loss_factors, data_klu.loss_factors, atol = 1e-5, rtol = 0)
 
     # get power flow results without loss factors
-    solve_powerflow!(data_no_factors; pf = pf_no_factors, enable_progress_bar = false)
+    solve_powerflow!(data_no_factors; pf = pf_no_factors)
     @test isnothing(data_no_factors.loss_factors)
 end

@@ -784,7 +784,6 @@ The loss factor value is computed as the change in the reference bus power injec
 function penalty_factors_brute_force(
     data::PowerFlowData;
     step_size::Float64 = 1e-6,
-    enable_progress_bar::Bool = true,
     kwargs...,
 )
     # we assume that the bus type for ref bus does not change between time steps
@@ -795,7 +794,7 @@ function penalty_factors_brute_force(
 
     loss_factors = zeros(Float64, n_buses, length(time_steps))
 
-    pf = ACPowerFlow()  # make a new pf instance without loss factors
+    pf = ACPowerFlow(NewtonRaphsonACPowerFlow)
 
     # initial PF to establish the ref power value
     solve_powerflow!(data; pf = pf, kwargs...)
@@ -830,6 +829,5 @@ function penalty_factors_brute_force(
             data.bus_activepower_injection[bx, :] .-= step_size
         end
     end
-
     return loss_factors
 end

@@ -3,21 +3,18 @@ using LinearAlgebra
 struct NLCache
     x::Vector{Float64}
     p::Vector{Float64}
-    # g::Tx # only used for more complex linesearch algorithms.
 end
 
 function NLCache(x0::Vector{Float64})
     x = copy(x0)
     p = copy(x)
-    # g = copy(x)
-    return NLCache(x, p) #, g)
+    return NLCache(x, p)
 end
 
 struct TrustRegionCache
     # Probably could cut down on the number of fields here:
     # I suspect NLSolve only includes some of these for the SolverTrace.
     x::Vector{Float64}
-    xold::Vector{Float64}
     r::Vector{Float64} # residual
     r_predict::Vector{Float64} # predicted residual
     p::Vector{Float64} # proposed Δx: Cauchy, NR, or dogleg step.
@@ -27,23 +24,22 @@ end
 
 function TrustRegionCache(x0::Vector{Float64}, f0::Vector{Float64})
     x = copy(x0)
-    xold = copy(x0)
     r = copy(f0)
     r_predict = copy(x0)
     p = copy(x0)
     p_c = copy(x0)
     pi = copy(x0)
-    return TrustRegionCache(x, xold, r, r_predict, p, p_c, pi)
+    return TrustRegionCache(x, r, r_predict, p, p_c, pi)
 end
 
-function dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
+function _dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
     r::Vector{Float64}, linSolveCache::KLULinSolveCache{Int32},
     Jv::SparseMatrixCSC{Float64, Int32}, delta::Float64)
 
     # p_i is newton-raphon step.
     copyto!(p_i, r)
     solve!(linSolveCache, p_i)
-    rmul!(p_i, -1.0)
+    LinearAlgebra.rmul!(p_i, -1.0)
 
     if norm(p_i) <= delta
         @debug "NR step"
@@ -51,12 +47,12 @@ function dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
     else
         # using p as a temporary buffer: alias to g for readability
         g = p
-        mul!(g, Jv', r)
+        LinearAlgebra.mul!(g, Jv', r)
         p_c .= -norm(g)^2 / norm(Jv * g)^2 .* g # Cauchy point
 
         if norm(p_c) >= delta
             # p_c outside region => take step of length delta in direction of -g.
-            rmul!(g, -delta / norm(g))
+            LinearAlgebra.rmul!(g, -delta / norm(g))
             @debug "Cauchy step"
             # not needed because g is already an alias for p.
             # copyto!(p, g) # update p: cauchy point case
@@ -69,7 +65,7 @@ function dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
             p_i .-= p_c
             p_diff = p_i
 
-            b = dot(p_c, p_diff)
+            b = LinearAlgebra.dot(p_c, p_diff)
             a = norm(p_diff)^2
             tau = (-b + sqrt(b^2 - 4a * (norm(p_c)^2 - delta^2))) / (2a)
             p_c .+= tau .* p_diff
@@ -78,21 +74,26 @@ function dogleg!(p::Vector{Float64}, p_c::Vector{Float64}, p_i::Vector{Float64},
     end
 end
 
-function _trust_region_step(time_step, cache::TrustRegionCache,
+function _trust_region_step(time_step::Int, 
+    cache::TrustRegionCache,
     linSolveCache::KLULinSolveCache{Int32},
-    pf::PolarPowerFlow, J::ACPowerFlowJacobian, delta::Float64, eta::Float64 = 1e-4)
+    pf::PolarPowerFlow, 
+    J::ACPowerFlowJacobian, 
+    delta::Float64, 
+    eta::Float64 = 1e-4)
+    
     copyto!(cache.xold, cache.x)
     numeric_refactor!(linSolveCache, J.Jv)
 
     # find proposed next point.
-    dogleg!(cache.p, cache.p_c, cache.pi, cache.r, linSolveCache, J.Jv, delta)
+    _dogleg!(cache.p, cache.p_c, cache.pi, cache.r, linSolveCache, J.Jv, delta)
     cache.x .+= cache.p
 
     # TODO this should really be compute-F-but-don't-update-data.
     pf(cache.x)
 
     # Ratio of actual to predicted reduction
-    mul!(cache.r_predict, J.Jv, cache.p)
+    LinearAlgebra.mul!(cache.r_predict, J.Jv, cache.p)
     cache.r_predict .+= cache.r
     rho =
         (sum(abs2, cache.r) - sum(abs2, pf.residual)) /
@@ -135,10 +136,10 @@ function _nr_step(time_step::Int64, nlCache::NLCache,
             nlCache.p .=
                 solve_w_refinement(linSolveCache, J.Jv, nlCache.p, refinement_eps)
         end
-        rmul!(nlCache.p, -1)
+        LinearAlgebra.rmul!(nlCache.p, -1)
     catch e
         # TODO cook up a test case where Jacobian is singular.
-        if e isa SingularException
+        if e isa LinearAlgebra.SingularException
             @warn("Newton-Raphson hit a point where the Jacobian is singular.")
             fjac2 = J.Jv' * J.Jv
             lambda = 1e6 * sqrt(length(ppf.x0) * eps()) * norm(fjac2, 1)
@@ -165,35 +166,8 @@ function _nr_step(time_step::Int64, nlCache::NLCache,
     return
 end
 
-function calculate_loss_factors(
-    data::ACPowerFlowData,
-    Jv::SparseMatrixCSC{Float64, Int32},
-    time_step::Int,
-)
-    num_buses = first(size(data.bus_type))
-    ref, pv, pq = bus_type_idx(data, time_step)
-    pvpq = vcat(pv, pq)
-    pvpq_coords = [
-        x for pair in zip(
-            [2 * x - 1 for x in 1:num_buses if x in pvpq],
-            [2 * x for x in 1:num_buses if x in pvpq],
-        ) for x in pair
-    ]
-    data.loss_factors[ref, time_step] .= 1.0
-    penalty_factors!(
-        Jv[pvpq_coords, pvpq_coords],
-        vec(collect(Jv[2 .* ref .- 1, pvpq_coords])),
-        view(
-            data.loss_factors,
-            [x for x in 1:num_buses if x in pvpq],
-            time_step,
-        ),
-        [2 * x - 1 for x in 1:length(pvpq)],
-    )
-end
-
 function _newton_powerflow(
-    pf::ACPowerFlow{HybridACPowerFlow},
+    pf::ACPowerFlow{NewtonRaphsonACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
@@ -221,7 +195,7 @@ function _newton_powerflow(
         end
         if converged
             @info(
-                "The HybridACPowerFlow solver converged after $i iterations with strategy $strategy"
+                "The NewtonRaphsonACPowerFlow solver converged after $i iterations with strategy $strategy"
             )
             V = _calc_V(data, nlCache.x, time_step)
             Sbus_result = V .* conj(data.power_network_matrix.data * V)
@@ -250,12 +224,12 @@ function _newton_powerflow(
         @debug "norm(r_$i2): $(norm(ppf.residual))"
         @debug "delta: $delta"
         delta = _trust_region_step(time_step, trCache, linSolveCache, ppf, J, delta)
-        converged2 = LinearAlgebra.norm(ppf.residual, Inf) < tol
+        converged2 = norm(ppf.residual, Inf) < tol
     end
 
     if converged2
         @info(
-            "The HybridACPowerFlow solver converged after $i2 iterations with strategy trust region"
+            "The NewtonRaphsonACPowerFlow solver converged after $i2 iterations with strategy trust region"
         )
         V = _calc_V(data, trCache.x, time_step)
         Sbus_result = V .* conj(data.power_network_matrix.data * V)
@@ -270,7 +244,7 @@ function _newton_powerflow(
     V = fill(NaN + NaN * im, length(trCache.x) ÷ 2)
     Sbus_result = fill(NaN + NaN * im, length(trCache.x) ÷ 2)
     @error(
-        "Solver HybridACPowerFlow did not converge in $maxIterations iterations with any strategy."
+        "Solver NewtonRaphsonACPowerFlow did not converge in $maxIterations iterations with any strategy."
     )
     return (false, V, Sbus_result)
 end
@@ -279,7 +253,7 @@ end
     _calc_V(data::ACPowerFlowData, x::Vector{Float64}, time_step::Int64) -> Vector{Complex{Float64}}
 
 Calculate the results for complex bus voltages from the "x" results of NLSolveACVPowerFlow.
-    This is for compatibility with the results of KLUACPowerFlow, ehich returns the vector V instead of the vector x.
+    This is for compatibility with the results of MatrixOpACPowerFlow, ehich returns the vector V instead of the vector x.
 
 # Arguments
 - `data::ACPowerFlowData`: The power flow data struct.

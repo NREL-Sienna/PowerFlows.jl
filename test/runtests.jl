@@ -31,6 +31,11 @@ const TEST_FILES_DIR = test_file_dir
 const DIFF_INF_TOLERANCE = 1e-4
 const DIFF_L2_TOLERANCE = 1e-3
 
+const AC_SOLVERS_TO_TEST = (
+    MatrixOpACPowerFlow,
+    PowerFlows.LUACPowerFlow,
+    NewtonRaphsonACPowerFlow)
+
 MAIN_DIR = dirname(@__DIR__)
 
 include("test_utils/common.jl")

@@ -1,8 +1,4 @@
-const AC_SOLVERS_TO_TEST = (
-    KLUACPowerFlow,
-    PowerFlows.LUACPowerFlow,
-    HybridACPowerFlow)
-@testset "AC Power Flow 14-Bus testing" for ACSolver in AC_SOLVERS_TO_TEST
+ @testset "AC Power Flow 14-Bus testing" for ACSolver in AC_SOLVERS_TO_TEST
     result_14 = [
         2.3255081760423684
         -0.15529254415401786
@@ -458,8 +454,8 @@ end
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
     pf_default = ACPowerFlow()
-    pf_klu = ACPowerFlow(KLUACPowerFlow)
-    pf_hybrid = ACPowerFlow(HybridACPowerFlow)
+    pf_klu = ACPowerFlow(MatrixOpACPowerFlow)
+    pf_hybrid = ACPowerFlow(NewtonRaphsonACPowerFlow)
 
     PSY.set_units_base_system!(sys, "SYSTEM_BASE")
     data = PowerFlowData(
@@ -620,8 +616,8 @@ end
 @testset "Test loss factors for larger grid" begin
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
-    pf_klu = ACPowerFlow(KLUACPowerFlow; calc_loss_factors = true)
-    pf_hybrid = ACPowerFlow(HybridACPowerFlow; calc_loss_factors = true)
+    pf_klu = ACPowerFlow(MatrixOpACPowerFlow; calc_loss_factors = true)
+    pf_hybrid = ACPowerFlow(NewtonRaphsonACPowerFlow; calc_loss_factors = true)
 
     data_klu = PowerFlowData(
         pf_klu,
@@ -648,7 +644,7 @@ end
     )
 
     bf_loss_factors =
-        PowerFlows.penalty_factors_brute_force(data_hybrid; enable_progress_bar = false)
+        PowerFlows.penalty_factors_brute_force(data_hybrid)
     @test all(isapprox.(
         data_hybrid.loss_factors,
         bf_loss_factors,

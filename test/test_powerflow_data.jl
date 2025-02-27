@@ -1,7 +1,7 @@
 @testset "PowerFlowData" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    @test PowerFlowData(ACPowerFlow{KLUACPowerFlow}(), sys) isa PF.ACPowerFlowData
-    @test PowerFlowData(ACPowerFlow{HybridACPowerFlow}(), sys) isa PF.ACPowerFlowData
+    @test PowerFlowData(ACPowerFlow{MatrixOpACPowerFlow}(), sys) isa PF.ACPowerFlowData
+    @test PowerFlowData(ACPowerFlow{NewtonRaphsonACPowerFlow}(), sys) isa PF.ACPowerFlowData
     @test PowerFlowData(DCPowerFlow(), sys) isa PF.ABAPowerFlowData
     @test PowerFlowData(PTDFDCPowerFlow(), sys) isa PF.PTDFPowerFlowData
     @test PowerFlowData(vPTDFDCPowerFlow(), sys) isa PF.vPTDFPowerFlowData
@@ -18,11 +18,7 @@ end
           PF.vPTDFPowerFlowData
 end
 
-@testset "System <-> PowerFlowData round trip" for ACSolver in
-                                                   (
-    KLUACPowerFlow,
-    HybridACPowerFlow,
-)
+@testset "System <-> PowerFlowData round trip" for ACSolver in AC_SOLVERS_TO_TEST
     # TODO currently only tested with ACPowerFlow
     # TODO test that update_system! errors if the PowerFlowData doesn't correspond to the system
 

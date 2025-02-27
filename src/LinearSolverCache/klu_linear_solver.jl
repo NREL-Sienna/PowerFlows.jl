@@ -1,4 +1,3 @@
-using LinearAlgebra
 """A cached linear solver using KLU. Carefully written so as to minimize
 allocations: solve! and numeric_refactor! are completely non-allocating.
 # Fields:
@@ -49,7 +48,7 @@ function symbolic_factor!(
 ) where {T <: TIs}
     if !(size(A, 1) == cache.K.n && size(A, 2) == cache.K.n)
         throw(
-            LinearAlgebra.DimensionMismatch(
+            DimensionMismatch(
                 "Can't factor: matrix has different dimensions."),
         )
     end
@@ -103,7 +102,7 @@ function symbolic_refactor!(
     if cache.reuse_symbolic && cache.check_pattern
         if !(size(A, 1) == cache.K.n && size(A, 2) == cache.K.n)
             throw(
-                LinearAlgebra.DimensionMismatch(
+                DimensionMismatch(
                     "Can't refactor: new matrix has different dimensions."),
             )
         end
@@ -183,7 +182,7 @@ end
 
 function solve!(cache::KLULinSolveCache{T}, B::StridedVecOrMat{Float64}) where {T <: TIs}
     size(B, 1) == cache.K.n || throw(
-        LinearAlgebra.DimensionMismatch(
+        DimensionMismatch(
             "Need size(B, 1) to equal $(cache.K.n), but got $(size(B, 1))."),
     )
     stride(B, 1) == 1 || throw(ArgumentError("B must have unit strides"))

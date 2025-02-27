@@ -273,9 +273,12 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
     Vm::Vector{Float64},
     θ::Vector{Float64},
-    bus_from::Int, bus_to::Int,
-    row_from_p::Int, row_from_q::Int,
-    col_to_vm::Int, col_to_va::Int,
+    bus_from::Int, 
+    bus_to::Int,
+    row_from_p::Int, 
+    row_from_q::Int,
+    col_to_vm::Int, 
+    col_to_va::Int,
     bus_from_neighbors::Set{Int},
     ::Val{PSY.ACBusTypes.REF})
     # State variables are Active and Reactive Power Generated
@@ -286,15 +289,19 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
         Jv[row_from_p, col_to_vm] = -1.0
         Jv[row_from_q, col_to_va] = -1.0
     end
+    return
 end
 
 function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
     Vm::Vector{Float64},
     θ::Vector{Float64},
-    bus_from::Int, bus_to::Int,
-    row_from_p::Int, row_from_q::Int,
-    col_to_vm::Int, col_to_va::Int,
+    bus_from::Int, 
+    bus_to::Int,
+    row_from_p::Int, 
+    row_from_q::Int,
+    col_to_vm::Int, 
+    col_to_va::Int,
     bus_from_neighbors::Set{Int},
     ::Val{PSY.ACBusTypes.PV})
     # State variables are Reactive Power Generated and Voltage Angle
@@ -335,15 +342,19 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
             Vm[bus_to] *
             (g_ij * -cos(θ[bus_from] - θ[bus_to]) - b_ij * sin(θ[bus_from] - θ[bus_to]))
     end
+    return
 end
 
 function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
     Vm::Vector{Float64},
     θ::Vector{Float64},
-    bus_from::Int, bus_to::Int,
-    row_from_p::Int, row_from_q::Int,
-    col_to_vm::Int, col_to_va::Int,
+    bus_from::Int, 
+    bus_to::Int,
+    row_from_p::Int, 
+    row_from_q::Int,
+    col_to_vm::Int, 
+    col_to_va::Int,
     bus_neighbors::Set{Int},
     ::Val{PSY.ACBusTypes.PQ})
     # State variables are Voltage Magnitude and Voltage Angle
@@ -405,6 +416,7 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
             Vm[bus_to] *
             (g_ij * -cos(θ[bus_from] - θ[bus_to]) - b_ij * sin(θ[bus_from] - θ[bus_to]))
     end
+    return
 end
 
 """Used to update Jv based on the bus voltages, angles, etc. in data."""
@@ -433,4 +445,31 @@ function _update_jacobian_matrix_values!(
         end
     end
     return
+end
+
+function calculate_loss_factors(
+    data::ACPowerFlowData,
+    Jv::SparseMatrixCSC{Float64, Int32},
+    time_step::Int,
+)
+    num_buses = first(size(data.bus_type))
+    ref, pv, pq = bus_type_idx(data, time_step)
+    pvpq = vcat(pv, pq)
+    pvpq_coords = [
+        x for pair in zip(
+            [2 * x - 1 for x in 1:num_buses if x in pvpq],
+            [2 * x for x in 1:num_buses if x in pvpq],
+        ) for x in pair
+    ]
+    data.loss_factors[ref, time_step] .= 0.0
+    penalty_factors!(
+        Jv[pvpq_coords, pvpq_coords],
+        vec(collect(Jv[2 .* ref .- 1, pvpq_coords])),
+        view(
+            data.loss_factors,
+            [x for x in 1:num_buses if x in pvpq],
+            time_step,
+        ),
+        [2 * x - 1 for x in 1:length(pvpq)],
+    )
 end
