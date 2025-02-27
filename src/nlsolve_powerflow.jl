@@ -1,6 +1,6 @@
 """Cache for non-linear methods. Only the first 2 fields are used
 for Newton-Raphson."""
-struct NLCache # only first 2 fields
+struct NLCache
     x::Vector{Float64}
     r::Vector{Float64} # residual
     r_predict::Vector{Float64} # predicted residual
@@ -60,6 +60,7 @@ function _dogleg!(p::Vector{Float64},
             copyto!(p, p_c) # update p: dogleg case.
         end
     end
+    return
 end
 
 function _trust_region_step(time_step::Int,
@@ -68,7 +69,7 @@ function _trust_region_step(time_step::Int,
     pf::PolarPowerFlow,
     J::ACPowerFlowJacobian,
     delta::Float64,
-    eta::Float64 = 1e-4)
+    eta::Float64 = DEFAULT_TRUST_REGION_ETA)
     numeric_refactor!(linSolveCache, J.Jv)
 
     # find proposed next point.
@@ -165,7 +166,10 @@ function _newton_powerflow(
 
     # Fetch maxIterations, tol from kwargs, or use defaults if not provided
     maxIterations = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
-    tol = get(kwargs, :tol, DEFAULT_NR_TOL)
+    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
+    # only used for trust region.
+    factor::Float64 = get(kwargs, :factor, DEFAULT_TRUST_REGION_FACTOR)
+    eta::Float64 = get(kwargs, :eta, DEFAULT_TRUST_REGION_ETA)
 
     # when we have multiperiod power flow calculation and want to preserve the ACPowerFlowJacobian instance between time steps:
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
@@ -207,10 +211,10 @@ function _newton_powerflow(
     @warn("Failed with iterative refinement. Trying trust region...")
 
     i2, converged2 = 0, false
-    delta::Float64 = norm(x0) > 0 ? norm(x0) : 1.0
+    delta::Float64 = norm(x0) > 0 ? factor * norm(x0) : factor
     while i2 < maxIterations && !converged2
         i2 += 1
-        delta = _trust_region_step(time_step, nlCache, linSolveCache, ppf, J, delta)
+        delta = _trust_region_step(time_step, nlCache, linSolveCache, ppf, J, delta, eta)
         converged2 = norm(ppf.residual, Inf) < tol
     end
 

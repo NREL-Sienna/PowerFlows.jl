@@ -7,6 +7,9 @@ const ISAPPROX_ZERO_TOLERANCE = 1e-6
 
 const DEFAULT_NR_MAX_ITER::Int64 = 30   # default maxIterations for the NR power flow
 const DEFAULT_NR_TOL::Float64 = 1e-9 # default tolerance for the NR power flow
+# only used for trust region.
+const DEFAULT_TRUST_REGION_ETA::Float64 = 1e-4
+const DEFAULT_TRUST_REGION_FACTOR::Float64 = 1.0
 
 const AC_PF_KW = []
 
