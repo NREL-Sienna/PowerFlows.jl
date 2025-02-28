@@ -7,8 +7,24 @@ struct RefinementMethod <: AbstractNewtonRaphsonMethod end
 """Trust region method with a dog leg step."""
 struct TrustRegionMethod <: AbstractNewtonRaphsonMethod end
 
-"""Cache for non-linear methods. The last 4 fields are only
-used for the trust region method."""
+"""Cache for non-linear methods
+# Fields
+-`x::Vector{Float64}`: the current state vector. Used for all methods.
+-`r::Vector{Float64}`: the current residual. Used for all methods.
+    For `SimpleMethod` and `RefinementMethod`, we solve `J_x Δx = r` in-place,
+    so this also stores the step `Δx` at times in those methods.
+The remainder of the fields are only used in the `TrustRegionMethod`:
+-`r_predict::Vector{Float64}`: the predicted residual at the proposed `x+Δx`,
+    under a linear approximation: i.e `J_x⋅(x+p)`.
+-`p::Vector{Float64}`: the suggested step `Δx`, selected among `pi`, `p_c`,
+    and the dogleg interpolation between the two. The first is chosen when
+    `pi` is inside the trust region, the second when both `p_c` and `pi` are outside
+    the trust region, and the third when `p_c` is inside and `pi` outside.
+    The dogleg step selects the point where the line from `x + p_c` to `x + pi`
+    crosses the boundary of the trust region.
+-`p_c::Vector{Float64}`: the step to the Cauchy point if the Cauchy point
+    lies within the trust region, otherwise a step in that direction.
+-`pi::Vector{Float64}`: the step under the Newton-Raphson method."""
 struct StateVectorCache
     x::Vector{Float64}
     r::Vector{Float64} # residual
@@ -28,6 +44,8 @@ function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     return StateVectorCache(x, r, r_predict, p, p_c, pi)
 end
 
+"""Reset all entries in a StateVectorCache to `x0` and `f0`, in preparation
+for re-using the cache for the next iterative method."""
 function resetCache!(
     StateVector::StateVectorCache,
     x0::Vector{Float64},
@@ -41,6 +59,9 @@ function resetCache!(
     copyto!(StateVector.pi, x0)
 end
 
+"""Sets `p` equal to the `Δx` by which we should update `x`. Decides
+between a Cauchy step (`p = p_c`), Newton-Raphson step (`p = p_i`), and the dogleg
+interpolation between the two, based on which fall within the trust region."""
 function _dogleg!(p::Vector{Float64},
     p_c::Vector{Float64},
     p_i::Vector{Float64},
@@ -85,6 +106,10 @@ function _dogleg!(p::Vector{Float64},
     return
 end
 
+"""Does a single iteration of the `TrustRegionMethod`:
+updates the `x` and `r` fields of the `StateVector` and computes
+the value of the Jacobian at the new `x`, if needed. Unlike 
+`_simple_step`, this has a return value, the updated value of `delta``."""
 function _trust_region_step(time_step::Int,
     StateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
@@ -140,7 +165,9 @@ function _trust_region_step(time_step::Int,
     return delta
 end
 
-"""Handles both SimpleMethod and RefinementMethod."""
+"""Does a single iteration of either `SimpleMethod` or `RefinementMethod`,
+based on the value of `refinement::Bool`. Updates the `r` and `x`
+ fields of the `StateVector`, and computes the Jacobian at the new `x`."""
 function _simple_step(time_step::Int,
     StateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
@@ -189,6 +216,11 @@ function _simple_step(time_step::Int,
     return
 end
 
+"""Runs the full `SimpleMethod`.
+# Keyword arguments:
+- `maxIterations::Int`: maximum iterations. Default: $DEFAULT_NR_MAX_ITER.
+- `tol::Float64`: tolerance. The iterative search ends when `maximum(abs.(residual)) < tol`.
+    Default: $DEFAULT_NR_TOL."""
 function _nr_method(time_step::Int,
     StateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
@@ -213,6 +245,14 @@ function _nr_method(time_step::Int,
     return converged, i
 end
 
+"""Runs the full `RefinementMethod`.
+# Keyword arguments:
+- `maxIterations::Int`: maximum iterations. Default: $DEFAULT_NR_MAX_ITER.
+- `tol::Float64`: tolerance. The iterative search ends when `maximum(abs.(residual)) < tol`.
+    Default: $DEFAULT_NR_TOL.
+- `refinement_eps::Float64`: run iterative refinement on `J_x Δx = r` until
+    `norm(Δx_{i}-Δx_{i+1}, 1)/norm(r,1) < refinement_eps`. Default: 
+    $DEFAULT_REFINEMENT_EPS """
 function _nr_method(time_step::Int,
     StateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
@@ -240,6 +280,16 @@ function _nr_method(time_step::Int,
     return converged, i
 end
 
+"""Runs the full `TrustRegionMethod`.
+# Keyword arguments:
+- `maxIterations::Int`: maximum iterations. Default: $DEFAULT_NR_MAX_ITER.
+- `tol::Float64`: tolerance. The iterative search ends when `maximum(abs.(residual)) < tol`.
+    Default: $DEFAULT_NR_TOL.
+- `factor::Float64`: the trust region starts out with radius `factor*norm(x_0, 1)`,
+    where `x_0` is our initial guess, taken from `data`. Default: $DEFAULT_TRUST_REGION_FACTOR.
+- `eta::Float64`: improvement threshold. If the observed improvement in our residual
+    exceeds `eta` times the predicted improvement, we accept the new `x_i`.
+    Default: $DEFAULT_TRUST_REGION_ETA."""
 function _nr_method(time_step::Int,
     StateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},

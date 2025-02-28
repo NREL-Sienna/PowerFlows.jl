@@ -47,6 +47,46 @@ function (R::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
     return
 end
 
+# dispatching on Val for performance reasons.
+function _set_state_vars_at_bus(
+    ix::Int,
+    P_net::Vector{Float64},
+    Q_net::Vector{Float64},
+    X::Vector{Float64},
+    data::ACPowerFlowData,
+    time_step::Int64,
+    ::Val{PSY.ACBusTypes.REF})
+    # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
+    P_net[ix] = X[2 * ix - 1] - data.bus_activepower_withdrawals[ix, time_step]
+    Q_net[ix] = X[2 * ix] - data.bus_reactivepower_withdrawals[ix, time_step]
+end
+
+function _set_state_vars_at_bus(
+    ix::Int,
+    P_net::Vector{Float64},
+    Q_net::Vector{Float64},
+    X::Vector{Float64},
+    data::ACPowerFlowData,
+    time_step::Int64,
+    ::Val{PSY.ACBusTypes.PV})
+    # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
+    Q_net[ix] = X[2 * ix - 1] - data.bus_reactivepower_withdrawals[ix, time_step]
+    data.bus_angles[ix, time_step] = X[2 * ix]
+end
+
+function _set_state_vars_at_bus(
+    ix::Int,
+    P_net::Vector{Float64},
+    Q_net::Vector{Float64},
+    X::Vector{Float64},
+    data::ACPowerFlowData,
+    time_step::Int64,
+    ::Val{PSY.ACBusTypes.PQ})
+    # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
+    data.bus_magnitude[ix, time_step] = X[2 * ix - 1]
+    data.bus_angles[ix, time_step] = X[2 * ix]
+end
+
 function _update_residual_values!(
     F::Vector{Float64},
     x::Vector{Float64},
@@ -59,19 +99,7 @@ function _update_residual_values!(
     Yb = data.power_network_matrix.data
     bus_types = view(data.bus_type, :, time_step)
     for (ix, bt) in enumerate(bus_types)
-        if bt == PSY.ACBusTypes.REF
-            # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
-            P_net[ix] = x[2 * ix - 1] - data.bus_activepower_withdrawals[ix, time_step]
-            Q_net[ix] = x[2 * ix] - data.bus_reactivepower_withdrawals[ix, time_step]
-        elseif bt == PSY.ACBusTypes.PV
-            # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
-            Q_net[ix] = x[2 * ix - 1] - data.bus_reactivepower_withdrawals[ix, time_step]
-            data.bus_angles[ix, time_step] = x[2 * ix]
-        elseif bt == PSY.ACBusTypes.PQ
-            # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
-            data.bus_magnitude[ix, time_step] = x[2 * ix - 1]
-            data.bus_angles[ix, time_step] = x[2 * ix]
-        end
+        _set_state_vars_at_bus(ix, P_net, Q_net, x, data, time_step, Val(bt))
     end
 
     # compute active, reactive power balances using the just updated values.
