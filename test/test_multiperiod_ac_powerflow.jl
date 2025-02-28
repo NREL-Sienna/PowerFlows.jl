@@ -96,11 +96,10 @@ end
                                          (MatrixOpACPowerFlow, NewtonRaphsonACPowerFlow)
     sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
 
-    pf_klu = ACPowerFlow(ACSolver; calc_loss_factors = true)
-    pf_no_factors = ACPowerFlow(ACSolver)  # calc_loss_factors = false by default
-
+    pf_klu = ACPowerFlow(ACSolver)
+    pf_no_factors = ACPowerFlow(ACSolver)
     time_steps = 24
-    data_klu = PowerFlowData(pf_klu, sys; time_steps = time_steps)
+    data_klu = PowerFlowData(pf_klu, sys; time_steps = time_steps, calc_loss_factors = true)
     data_no_factors = PowerFlowData(pf_no_factors, sys; time_steps = time_steps)
 
     # allocate timeseries data from csv

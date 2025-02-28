@@ -255,6 +255,7 @@ function _newton_powerflow(
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
+    calc_loss_factors_override = get(kwargs, :calc_loss_factors, true)
     R = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
     R(x0, time_step)
@@ -283,7 +284,7 @@ function _newton_powerflow(
             V = _calc_V(data, X.x, time_step)
             Sbus_result = V .* conj(data.power_network_matrix.data * V)
 
-            if pf.calc_loss_factors
+            if data.calc_loss_factors && calc_loss_factors_override
                 calculate_loss_factors(data, J.Jv, time_step)
             end
 

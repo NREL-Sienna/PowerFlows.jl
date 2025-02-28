@@ -616,18 +616,20 @@ end
 @testset "Test loss factors for larger grid" begin
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
-    pf_klu = ACPowerFlow(MatrixOpACPowerFlow; calc_loss_factors = true)
-    pf_hybrid = ACPowerFlow(NewtonRaphsonACPowerFlow; calc_loss_factors = true)
+    pf_klu = ACPowerFlow(MatrixOpACPowerFlow)
+    pf_hybrid = ACPowerFlow(NewtonRaphsonACPowerFlow)
 
     data_klu = PowerFlowData(
         pf_klu,
         sys;
-        check_connectivity = true)
+        check_connectivity = true,
+        calc_loss_factors = true)
 
     data_hybrid = PowerFlowData(
         pf_hybrid,
         sys;
-        check_connectivity = true)
+        check_connectivity = true,
+        calc_loss_factors = true)
 
     time_step = 1
 
