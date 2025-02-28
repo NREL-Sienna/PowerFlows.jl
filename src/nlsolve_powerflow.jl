@@ -84,7 +84,7 @@ end
 function _trust_region_step(time_step::Int,
     cache::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    pf::ACPowerFlowResidual,
+    R::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     delta::Float64,
     eta::Float64 = DEFAULT_TRUST_REGION_ETA)
@@ -97,24 +97,24 @@ function _trust_region_step(time_step::Int,
     # use cache.pi as temporary buffer to store old residual
     # to avoid recomputing if we don't change x.
     oldResidual = cache.pi
-    copyto!(oldResidual, pf.residual)
-    pf(cache.x)
+    copyto!(oldResidual, R.Rv)
+    R(cache.x, time_step)
 
     # Ratio of actual to predicted reduction
     LinearAlgebra.mul!(cache.r_predict, J.Jv, cache.p)
     cache.r_predict .+= cache.r
     rho =
-        (sum(abs2, cache.r) - sum(abs2, pf.residual)) /
+        (sum(abs2, cache.r) - sum(abs2, R.Rv)) /
         (sum(abs2, cache.r) - sum(abs2, cache.r_predict))
     if rho > eta
         # Successful iteration
-        cache.r .= pf.residual
+        cache.r .= R.Rv
         # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
         J(time_step)
     else
         # Unsuccessful: reset x and residual.
         cache.x .-= cache.p
-        copyto!(pf.residual, oldResidual)
+        copyto!(R.Rv, oldResidual)
     end
 
     # Update size of trust region
@@ -132,7 +132,7 @@ end
 function _simple_step(time_step::Int,
     nlCache::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    ppf::ACPowerFlowResidual,
+    R::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     refinement::Bool = false,
     refinement_eps::Float64 = 1e-6)
@@ -140,26 +140,25 @@ function _simple_step(time_step::Int,
         # factorize the numeric object of KLU inplace, while reusing the symbolic object
         numeric_refactor!(linSolveCache, J.Jv)
         # solve for dx in-place
-        copyto!(nlCache.r, ppf.residual)
+        copyto!(nlCache.r, R.Rv)
         if !refinement
             solve!(linSolveCache, nlCache.r)
         else
             nlCache.r .=
                 solve_w_refinement(linSolveCache, J.Jv, nlCache.r, refinement_eps)
         end
-        LinearAlgebra.rmul!(nlCache.r, -1)
     catch e
         # TODO cook up a test case where Jacobian is singular.
         if e isa LinearAlgebra.SingularException
             @warn("Newton-Raphson hit a point where the Jacobian is singular.")
             fjac2 = similar(J.Jv)
             LinearAlgebra.mul!(fjac2, J.Jv', J.Jv)
-            lambda = 1e6 * sqrt(length(ppf.x0) * eps()) * norm(fjac2, 1)
+            lambda = 1e6 * sqrt(length(nlCache.x) * eps()) * norm(fjac2, 1)
             M = -(fjac2 + lambda * I)
             tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
             # KLU factorization. TODO check if this is faster than Julia's default ldiv.
             full_factor!(tempCache, M)
-            copyto!(nlCache.r, ppf.residual)
+            copyto!(nlCache.r, R.Rv)
             solve!(tempCache, nlCache.r)
         else
             @error("KLU factorization failed: $e")
@@ -169,10 +168,10 @@ function _simple_step(time_step::Int,
         end
     end
     # update x
-    nlCache.x .+= nlCache.r
+    nlCache.x .-= nlCache.r
     # update data's fields (the bus angles/voltages) to match x, and update the residual.
     # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
-    ppf(nlCache.x)
+    R(nlCache.x, time_step)
     # update jacobian.
     J(time_step)
     return
@@ -181,7 +180,7 @@ end
 function _nr_method(time_step::Int,
     nlCache::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    ppf::ACPowerFlowResidual,
+    R::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::SimpleMethod;
     kwargs...)
@@ -193,10 +192,10 @@ function _nr_method(time_step::Int,
             time_step,
             nlCache,
             linSolveCache,
-            ppf,
+            R,
             J,
         )
-        converged = norm(ppf.residual, Inf) < tol
+        converged = norm(R.Rv, Inf) < tol
         i += 1
     end
     return converged, i
@@ -205,7 +204,7 @@ end
 function _nr_method(time_step::Int,
     nlCache::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    ppf::ACPowerFlowResidual,
+    R::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::RefinementMethod;
     kwargs...)
@@ -218,12 +217,12 @@ function _nr_method(time_step::Int,
             time_step,
             nlCache,
             linSolveCache,
-            ppf,
+            R,
             J,
             true,
             refinement_eps,
         )
-        converged = norm(ppf.residual, Inf) < tol
+        converged = norm(R.Rv, Inf) < tol
         i += 1
     end
     return converged, i
@@ -232,7 +231,7 @@ end
 function _nr_method(time_step::Int,
     nlCache::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    ppf::ACPowerFlowResidual,
+    R::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::TrustRegionMethod;
     kwargs...)
@@ -244,8 +243,8 @@ function _nr_method(time_step::Int,
     delta::Float64 = norm(nlCache.x) > 0 ? factor * norm(nlCache.x) : factor
     i, converged = 0, false
     while i < maxIterations && !converged
-        delta = _trust_region_step(time_step, nlCache, linSolveCache, ppf, J, delta, eta)
-        converged = norm(ppf.residual, Inf) < tol
+        delta = _trust_region_step(time_step, nlCache, linSolveCache, R, J, delta, eta)
+        converged = norm(R.Rv, Inf) < tol
         i += 1
     end
     return converged, i
@@ -257,15 +256,15 @@ function _newton_powerflow(
     time_step::Int64;
     kwargs...)
 
-    ppf = ACPowerFlowResidual(data, time_step)
+    R = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
-    ppf(x0)
+    R(x0, time_step)
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     J(time_step)  # we need to fill J with values because at this point it was just initialized
 
-    n_buses = length(data.bus_type)
-    if sum(ppf.residual) > 10 * (n_buses * 2)
-        _, ix = findmax(ppf.residual)
+    if sum(R.Rv) > 10 * (length(R.Rv))
+        n_buses = first(size(data.bus_type))
+        _, ix = findmax(R.Rv)
         bx = ix <= n_buses ? ix : ix - n_buses
         bus_no = data.bus_lookup[bx]
         @warn "Initial guess provided results in a large initial residual. Largest residual at bus $bus_no"
@@ -273,11 +272,11 @@ function _newton_powerflow(
 
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
-    nlCache = StateVectorCache(x0, ppf.residual)
+    nlCache = StateVectorCache(x0, R.Rv)
 
     for method in [SimpleMethod(), RefinementMethod(), TrustRegionMethod()]
         converged, i =
-            _nr_method(time_step, nlCache, linSolveCache, ppf, J, method; kwargs...)
+            _nr_method(time_step, nlCache, linSolveCache, R, J, method; kwargs...)
         if converged
             @info(
                 "The NewtonRaphsonACPowerFlow solver converged after $i iterations with method $method"
@@ -292,10 +291,10 @@ function _newton_powerflow(
             return (true, V, Sbus_result)
             @warn("Failed with method $method")
             # reset back to starting point before trying next method.
-            # Order here (ppf then J) is important.
-            ppf(x0)
+            # Order here (R then J) is important.
+            R(x0, time_step)
             J(time_step)
-            resetCache!(nlCache, x0, ppf.residual)
+            resetCache!(nlCache, x0, R.Rv)
         end
     end
 
