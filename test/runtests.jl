@@ -38,7 +38,6 @@ include("test_utils/psse_results_compare.jl")
 Base.eval(PowerFlows, :(include("./test_utils/legacy_pf.jl")))
 
 const AC_SOLVERS_TO_TEST = (
-    MatrixOpACPowerFlow,
     PowerFlows.LUACPowerFlow,
     NewtonRaphsonACPowerFlow)
 

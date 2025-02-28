@@ -3,6 +3,37 @@ import PowerFlows
 
 struct LUACPowerFlow <: ACPowerFlowSolverType end  # Only for testing, a basic implementation using LinearAlgebra.lu, allocates a lot of memory
 
+"""This function is to be able to compare the results of the legacy powerflow solver with the new one"""
+function _calc_x(
+    data::ACPowerFlowData,
+    V::Vector{Complex{Float64}},
+    Sbus_result::Vector{Complex{Float64}},
+    time_step::Int64,
+)
+    Vm = abs.(V)
+    Va = angle.(V)
+    n_buses = length(V)
+    # mock the expected x format, where the values depend on the type of the bus:
+    x = zeros(Float64, 2 * n_buses)
+    bus_types = view(data.bus_type, :, time_step)
+    for (ix, bt) in enumerate(bus_types)
+        if bt == PSY.ACBusTypes.REF
+            # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
+            x[2 * ix - 1] = real(Sbus_result[ix]) + data.bus_activepower_withdrawals[ix]
+            x[2 * ix] = imag(Sbus_result[ix]) + data.bus_reactivepower_withdrawals[ix]
+        elseif bt == PSY.ACBusTypes.PV
+            # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
+            x[2 * ix - 1] = imag(Sbus_result[ix]) + data.bus_reactivepower_withdrawals[ix]
+            x[2 * ix] = Va[ix]
+        elseif bt == PSY.ACBusTypes.PQ
+            # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
+            x[2 * ix - 1] = Vm[ix]
+            x[2 * ix] = Va[ix]
+        end
+    end
+    return x
+end
+
 # this function is for testing purposes only
 function _legacy_dSbus_dV(
     V::Vector{Complex{Float64}},
@@ -42,12 +73,13 @@ function _newton_powerflow(
     maxIter = get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER)
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
+    disable_calc_loss_factors = get(kwargs, :disable_calc_loss_factors, false)
 
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    pv, pq =
-        PowerFlows.bus_type_idx(data, time_step, (PSY.ACBusTypes.PV, PSY.ACBusTypes.PQ))
+    ref, pv, pq =
+        PowerFlows.bus_type_idx(data, time_step)
     pvpq = [pv; pq]
 
     npv = length(pv)
@@ -111,6 +143,13 @@ function _newton_powerflow(
         Sbus_result = fill(NaN + NaN * im, length(V))
         @error("The legacy powerflow solver with LU did not converge after $i iterations")
     else
+        if data.calc_loss_factors && !disable_calc_loss_factors
+            data.loss_factors[ref, :] .= 1.0
+            penalty_factors!(
+                J,
+                collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:]),
+                view(data.loss_factors, pvpq, time_step), collect(1:npvpq))
+        end
         Sbus_result = V .* conj(Ybus * V)
         @info("The legacy powerflow solver with LU converged after $i iterations")
     end

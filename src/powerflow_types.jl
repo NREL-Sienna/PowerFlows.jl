@@ -1,7 +1,6 @@
 abstract type PowerFlowEvaluationModel end
 abstract type ACPowerFlowSolverType end
 
-struct MatrixOpACPowerFlow <: ACPowerFlowSolverType end
 struct NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType end
 
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel

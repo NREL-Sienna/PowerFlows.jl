@@ -796,7 +796,7 @@ function penalty_factors_brute_force(
     loss_factors = zeros(Float64, n_buses, length(time_steps))
 
     # initial PF to establish the ref power value
-    solve_powerflow!(data; pf = pf, calc_loss_factors = false, kwargs...)
+    solve_powerflow!(data; pf = pf, disable_calc_loss_factors = true, kwargs...)
 
     ref_power = sum(data.bus_activepower_injection[ref, :]; dims = 1)
 
@@ -807,7 +807,7 @@ function penalty_factors_brute_force(
                 continue
             end
             data.bus_activepower_injection[bx, :] .+= step_size
-            solve_powerflow!(data; pf = pf, calc_loss_factors = false, kwargs...)
+            solve_powerflow!(data; pf = pf, disable_calc_loss_factors = true, kwargs...)
             loss_factors[bx, :] =
                 (sum(data.bus_activepower_injection[ref, :]; dims = 1) .- ref_power) ./
                 step_size

@@ -46,75 +46,73 @@ end
     # end
 end
 
-@testset "MULTI-PERIOD power flows evaluation: compare results for different solvers" for ACSolver in
-                                                                                          AC_SOLVERS_TO_TEST
+@testset "MULTI-PERIOD power flows evaluation: compare results for different solvers" begin
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
     # create structure for multi-period case
-    pf_klu = ACPowerFlow(MatrixOpACPowerFlow)
-    pf_test = ACPowerFlow(ACSolver)
+    pf_lu = ACPowerFlow(PowerFlows.LUACPowerFlow)
+    pf_test = ACPowerFlow(NewtonRaphsonACPowerFlow)
 
     time_steps = 24
-    data_klu = PowerFlowData(pf_klu, sys; time_steps = time_steps)
+    data_lu = PowerFlowData(pf_lu, sys; time_steps = time_steps)
     data_test = PowerFlowData(pf_test, sys; time_steps = time_steps)
 
     # allocate timeseries data from csv
-    prepare_ts_data!(data_klu, time_steps)
+    prepare_ts_data!(data_lu, time_steps)
     prepare_ts_data!(data_test, time_steps)
 
     # get power flows with NR KLU method and write results
-    solve_powerflow!(data_klu; pf = pf_klu)
+    solve_powerflow!(data_lu; pf = pf_lu)
     solve_powerflow!(data_test; pf = pf_test)
 
     # check results
-    @test isapprox(data_klu.bus_magnitude, data_test.bus_magnitude, atol = 1e-9)
-    @test isapprox(data_klu.bus_angles, data_test.bus_angles, atol = 1e-9)
+    @test isapprox(data_lu.bus_magnitude, data_test.bus_magnitude, atol = 1e-9)
+    @test isapprox(data_lu.bus_angles, data_test.bus_angles, atol = 1e-9)
     @test isapprox(
-        data_klu.branch_activepower_flow_from_to,
+        data_lu.branch_activepower_flow_from_to,
         data_test.branch_activepower_flow_from_to,
         atol = 1e-9,
     )
     @test isapprox(
-        data_klu.branch_activepower_flow_to_from,
+        data_lu.branch_activepower_flow_to_from,
         data_test.branch_activepower_flow_to_from,
         atol = 1e-9,
     )
     @test isapprox(
-        data_klu.branch_reactivepower_flow_from_to,
+        data_lu.branch_reactivepower_flow_from_to,
         data_test.branch_reactivepower_flow_from_to,
         atol = 1e-9,
     )
     @test isapprox(
-        data_klu.branch_reactivepower_flow_to_from,
+        data_lu.branch_reactivepower_flow_to_from,
         data_test.branch_reactivepower_flow_to_from,
         atol = 1e-9,
     )
 end
 
-@testset "test_loss_factors_case_14" for ACSolver in
-                                         (MatrixOpACPowerFlow, NewtonRaphsonACPowerFlow)
+@testset "test_loss_factors_case_14" for ACSolver in AC_SOLVERS_TO_TEST
     sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
 
-    pf_klu = ACPowerFlow(ACSolver)
+    pf_lu = ACPowerFlow(ACSolver)
     pf_no_factors = ACPowerFlow(ACSolver)
     time_steps = 24
-    data_klu = PowerFlowData(pf_klu, sys; time_steps = time_steps, calc_loss_factors = true)
+    data_lu = PowerFlowData(pf_lu, sys; time_steps = time_steps, calc_loss_factors = true)
     data_no_factors = PowerFlowData(pf_no_factors, sys; time_steps = time_steps)
 
     # allocate timeseries data from csv
-    prepare_ts_data!(data_klu, time_steps)
+    prepare_ts_data!(data_lu, time_steps)
     prepare_ts_data!(data_no_factors, time_steps)
 
     # get power flows with NR KLU method and write results
-    solve_powerflow!(data_klu; pf = pf_klu)
+    solve_powerflow!(data_lu; pf = pf_lu)
 
     # get loss factors using brute force approach (sequential power flow evaluations for each bus)
     bf_loss_factors =
-        PowerFlows.penalty_factors_brute_force(data_klu)
+        PowerFlows.penalty_factors_brute_force(data_lu)
 
     # confirm that loss factors match for the Jacobian-based and brute force approaches
-    @test isapprox(bf_loss_factors, data_klu.loss_factors, atol = 1e-5, rtol = 0)
+    @test isapprox(bf_loss_factors, data_lu.loss_factors, atol = 1e-5, rtol = 0)
 
     # get power flow results without loss factors
     solve_powerflow!(data_no_factors; pf = pf_no_factors)

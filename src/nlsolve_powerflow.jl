@@ -28,7 +28,11 @@ function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     return StateVectorCache(x, r, r_predict, p, p_c, pi)
 end
 
-function resetCache!(StateVector::StateVectorCache, x0::Vector{Float64}, f0::Vector{Float64})
+function resetCache!(
+    StateVector::StateVectorCache,
+    x0::Vector{Float64},
+    f0::Vector{Float64},
+)
     copyto!(StateVector.x, x0)
     copyto!(StateVector.r, f0)
     copyto!(StateVector.r_predict, x0)
@@ -91,7 +95,15 @@ function _trust_region_step(time_step::Int,
     numeric_refactor!(linSolveCache, J.Jv)
 
     # find proposed next point.
-    _dogleg!(StateVector.p, StateVector.p_c, StateVector.pi, StateVector.r, linSolveCache, J.Jv, delta)
+    _dogleg!(
+        StateVector.p,
+        StateVector.p_c,
+        StateVector.pi,
+        StateVector.r,
+        linSolveCache,
+        J.Jv,
+        delta,
+    )
     StateVector.x .+= StateVector.p
 
     # use cache.pi as temporary buffer to store old residual
@@ -243,7 +255,15 @@ function _nr_method(time_step::Int,
     delta::Float64 = norm(StateVector.x) > 0 ? factor * norm(StateVector.x) : factor
     i, converged = 0, false
     while i < maxIterations && !converged
-        delta = _trust_region_step(time_step, StateVector, linSolveCache, Residual, J, delta, eta)
+        delta = _trust_region_step(
+            time_step,
+            StateVector,
+            linSolveCache,
+            Residual,
+            J,
+            delta,
+            eta,
+        )
         converged = norm(Residual.Rv, Inf) < tol
         i += 1
     end
@@ -276,7 +296,15 @@ function _newton_powerflow(
 
     for method in [SimpleMethod(), RefinementMethod(), TrustRegionMethod()]
         converged, i =
-            _nr_method(time_step, StateVector, linSolveCache, Residual, J, method; kwargs...)
+            _nr_method(
+                time_step,
+                StateVector,
+                linSolveCache,
+                Residual,
+                J,
+                method;
+                kwargs...,
+            )
         if converged
             @info(
                 "The NewtonRaphsonACPowerFlow solver converged after $i iterations with method $method"
@@ -310,7 +338,7 @@ end
     _calc_V(data::ACPowerFlowData, x::Vector{Float64}, time_step::Int64) -> Vector{Complex{Float64}}
 
 Calculate the results for complex bus voltages from the "x" results of NLSolveACVPowerFlow.
-    This is for compatibility with the results of MatrixOpACPowerFlow, ehich returns the vector V instead of the vector x.
+    This is for compatibility with the results of legacy power flow method, ehich returns the vector V instead of the vector x.
 
 # Arguments
 - `data::ACPowerFlowData`: The power flow data struct.
