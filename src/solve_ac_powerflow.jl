@@ -529,7 +529,7 @@ function _newton_powerflow(
     maxIterations = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
-    calc_loss_factors_override = get(kwargs, :calc_loss_factors, true)
+    disable_calc_loss_factors = get(kwargs, :disable_calc_loss_factors, false)
 
     Ybus = data.power_network_matrix.data
 
@@ -676,7 +676,7 @@ function _newton_powerflow(
         Sbus_result .*= NaN
         @error("The powerflow solver with KLU did not converge after $i iterations")
     else
-        if data.calc_loss_factors && calc_loss_factors_override
+        if data.calc_loss_factors && !disable_calc_loss_factors
             data.loss_factors[ref, :] .= 1.0
             penalty_factors!(
                 J,
