@@ -28,13 +28,13 @@ function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     return StateVectorCache(x, r, r_predict, p, p_c, pi)
 end
 
-function resetCache!(cache::StateVectorCache, x0::Vector{Float64}, f0::Vector{Float64})
-    copyto!(cache.x, x0)
-    copyto!(cache.r, f0)
-    copyto!(cache.r_predict, x0)
-    copyto!(cache.p, x0)
-    copyto!(cache.p_c, x0)
-    copyto!(cache.pi, x0)
+function resetCache!(X::StateVectorCache, x0::Vector{Float64}, f0::Vector{Float64})
+    copyto!(X.x, x0)
+    copyto!(X.r, f0)
+    copyto!(X.r_predict, x0)
+    copyto!(X.p, x0)
+    copyto!(X.p_c, x0)
+    copyto!(X.pi, x0)
 end
 
 function _dogleg!(p::Vector{Float64},
@@ -82,7 +82,7 @@ function _dogleg!(p::Vector{Float64},
 end
 
 function _trust_region_step(time_step::Int,
-    cache::StateVectorCache,
+    X::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
     R::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
@@ -91,29 +91,29 @@ function _trust_region_step(time_step::Int,
     numeric_refactor!(linSolveCache, J.Jv)
 
     # find proposed next point.
-    _dogleg!(cache.p, cache.p_c, cache.pi, cache.r, linSolveCache, J.Jv, delta)
-    cache.x .+= cache.p
+    _dogleg!(X.p, X.p_c, X.pi, X.r, linSolveCache, J.Jv, delta)
+    X.x .+= X.p
 
     # use cache.pi as temporary buffer to store old residual
     # to avoid recomputing if we don't change x.
-    oldResidual = cache.pi
+    oldResidual = X.pi
     copyto!(oldResidual, R.Rv)
-    R(cache.x, time_step)
+    R(X.x, time_step)
 
     # Ratio of actual to predicted reduction
-    LinearAlgebra.mul!(cache.r_predict, J.Jv, cache.p)
-    cache.r_predict .+= cache.r
+    LinearAlgebra.mul!(X.r_predict, J.Jv, X.p)
+    X.r_predict .+= X.r
     rho =
-        (sum(abs2, cache.r) - sum(abs2, R.Rv)) /
-        (sum(abs2, cache.r) - sum(abs2, cache.r_predict))
+        (sum(abs2, X.r) - sum(abs2, R.Rv)) /
+        (sum(abs2, X.r) - sum(abs2, X.r_predict))
     if rho > eta
         # Successful iteration
-        cache.r .= R.Rv
+        X.r .= R.Rv
         # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
         J(time_step)
     else
         # Unsuccessful: reset x and residual.
-        cache.x .-= cache.p
+        X.x .-= X.p
         copyto!(R.Rv, oldResidual)
     end
 
@@ -121,31 +121,32 @@ function _trust_region_step(time_step::Int,
     if rho < 0.1 # insufficient improvement
         delta = delta / 2
     elseif rho >= 0.9 # good improvement
-        delta = 2 * norm(cache.p)
+        delta = 2 * norm(X.p)
     elseif rho >= 0.5 # so-so improvement
-        delta = max(delta, 2 * norm(cache.p))
+        delta = max(delta, 2 * norm(X.p))
     end
     return delta
 end
 
 """Handles both SimpleMethod and RefinementMethod."""
 function _simple_step(time_step::Int,
-    nlCache::StateVectorCache,
+    X::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
     R::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     refinement::Bool = false,
     refinement_eps::Float64 = 1e-6)
+    # Note: before solve, the R.Rv has the residuals. After solve, R.Rv has the solution (dx). This is
+    # because the solve! function modifies the input vector in-place.
     try
         # factorize the numeric object of KLU inplace, while reusing the symbolic object
         numeric_refactor!(linSolveCache, J.Jv)
         # solve for dx in-place
-        copyto!(nlCache.r, R.Rv)
         if !refinement
-            solve!(linSolveCache, nlCache.r)
+            solve!(linSolveCache, R.Rv)
         else
-            nlCache.r .=
-                solve_w_refinement(linSolveCache, J.Jv, nlCache.r, refinement_eps)
+            R.Rv .=
+                solve_w_refinement(linSolveCache, J.Jv, R.Rv, refinement_eps)
         end
     catch e
         # TODO cook up a test case where Jacobian is singular.
@@ -153,13 +154,12 @@ function _simple_step(time_step::Int,
             @warn("Newton-Raphson hit a point where the Jacobian is singular.")
             fjac2 = similar(J.Jv)
             LinearAlgebra.mul!(fjac2, J.Jv', J.Jv)
-            lambda = 1e6 * sqrt(length(nlCache.x) * eps()) * norm(fjac2, 1)
+            lambda = 1e6 * sqrt(length(X.x) * eps()) * norm(fjac2, 1)
             M = -(fjac2 + lambda * I)
             tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
             # KLU factorization. TODO check if this is faster than Julia's default ldiv.
             full_factor!(tempCache, M)
-            copyto!(nlCache.r, R.Rv)
-            solve!(tempCache, nlCache.r)
+            solve!(tempCache, R.Rv)
         else
             @error("KLU factorization failed: $e")
             # V = _calc_V(data, nlCache.x, time_step)
@@ -168,17 +168,17 @@ function _simple_step(time_step::Int,
         end
     end
     # update x
-    nlCache.x .-= nlCache.r
+    X.x .-= R.Rv
     # update data's fields (the bus angles/voltages) to match x, and update the residual.
     # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
-    R(nlCache.x, time_step)
+    R(X.x, time_step)
     # update jacobian.
     J(time_step)
     return
 end
 
 function _nr_method(time_step::Int,
-    nlCache::StateVectorCache,
+    X::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
     R::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
@@ -190,7 +190,7 @@ function _nr_method(time_step::Int,
     while i < maxIterations && !converged
         _simple_step(
             time_step,
-            nlCache,
+            X,
             linSolveCache,
             R,
             J,
@@ -202,7 +202,7 @@ function _nr_method(time_step::Int,
 end
 
 function _nr_method(time_step::Int,
-    nlCache::StateVectorCache,
+    X::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
     R::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
@@ -215,7 +215,7 @@ function _nr_method(time_step::Int,
     while i < maxIterations && !converged
         _simple_step(
             time_step,
-            nlCache,
+            X,
             linSolveCache,
             R,
             J,
@@ -229,7 +229,7 @@ function _nr_method(time_step::Int,
 end
 
 function _nr_method(time_step::Int,
-    nlCache::StateVectorCache,
+    X::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
     R::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
@@ -240,10 +240,10 @@ function _nr_method(time_step::Int,
     factor::Float64 = get(kwargs, :factor, DEFAULT_TRUST_REGION_FACTOR)
     eta::Float64 = get(kwargs, :eta, DEFAULT_TRUST_REGION_ETA)
 
-    delta::Float64 = norm(nlCache.x) > 0 ? factor * norm(nlCache.x) : factor
+    delta::Float64 = norm(X.x) > 0 ? factor * norm(X.x) : factor
     i, converged = 0, false
     while i < maxIterations && !converged
-        delta = _trust_region_step(time_step, nlCache, linSolveCache, R, J, delta, eta)
+        delta = _trust_region_step(time_step, X, linSolveCache, R, J, delta, eta)
         converged = norm(R.Rv, Inf) < tol
         i += 1
     end
@@ -255,7 +255,6 @@ function _newton_powerflow(
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
-
     R = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
     R(x0, time_step)
@@ -272,16 +271,16 @@ function _newton_powerflow(
 
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
-    nlCache = StateVectorCache(x0, R.Rv)
+    X = StateVectorCache(x0, R.Rv)
 
     for method in [SimpleMethod(), RefinementMethod(), TrustRegionMethod()]
         converged, i =
-            _nr_method(time_step, nlCache, linSolveCache, R, J, method; kwargs...)
+            _nr_method(time_step, X, linSolveCache, R, J, method; kwargs...)
         if converged
             @info(
                 "The NewtonRaphsonACPowerFlow solver converged after $i iterations with method $method"
             )
-            V = _calc_V(data, nlCache.x, time_step)
+            V = _calc_V(data, X.x, time_step)
             Sbus_result = V .* conj(data.power_network_matrix.data * V)
 
             if pf.calc_loss_factors
@@ -289,17 +288,17 @@ function _newton_powerflow(
             end
 
             return (true, V, Sbus_result)
-            @warn("Failed with method $method")
-            # reset back to starting point before trying next method.
-            # Order here (R then J) is important.
-            R(x0, time_step)
-            J(time_step)
-            resetCache!(nlCache, x0, R.Rv)
         end
+        @warn("Failed with method $method")
+        # reset back to starting point before trying next method.
+        # Order here (R then J) is important.
+        R(x0, time_step)
+        J(time_step)
+        resetCache!(X, x0, R.Rv)
     end
 
-    V = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
-    Sbus_result = fill(NaN + NaN * im, length(nlCache.x) ÷ 2)
+    V = fill(NaN + NaN * im, length(X.x) ÷ 2)
+    Sbus_result = fill(NaN + NaN * im, length(X.x) ÷ 2)
     @error(
         "Solver NewtonRaphsonACPowerFlow did not converge with any method."
     )

@@ -30,7 +30,7 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     return ACPowerFlowResidual(
         data,
         _update_residual_values!,
-        Vector{Float64}(undef, 2*n_buses),
+        Vector{Float64}(undef, 2 * n_buses),
         P_net,
         Q_net,
     )
