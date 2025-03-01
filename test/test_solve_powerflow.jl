@@ -2,15 +2,15 @@
     result_14 = [
         2.3255081760423684
         -0.15529254415401786
-        0.4692141795968793
+        0.4692141795968793 - 0.127  # Q_gen - Q_load
         -0.08704571860678871
-        0.27136388547189727
+        0.27136388547189727 - 0.19  # Q_gen - Q_load
         -0.22239752522709744
         1.014232467422514
         -0.17900878100582837
         1.0172382900002028
         -0.15297197376986682
-        0.21603888720954267
+        0.21603888720954267 - 0.075  # Q_gen - Q_load
         -0.2516366411330649
         1.0503438761049335
         -0.23128945395825606
@@ -35,8 +35,8 @@
     pf = ACPowerFlow{ACSolver}()
     data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
     #Compare results between finite diff methods and Jacobian method
-    converged1, V1, S1 = PowerFlows._solve_powerflow!(pf, data, false, 1)
-    x1 = PowerFlows._calc_x(data, V1, S1, 1)
+    converged1 = PowerFlows._ac_powerflow(data, pf, 1)
+    x1 = PowerFlows._calc_x(data, 1)
     @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6
 
     # Test that solve_powerflow! succeeds
@@ -57,13 +57,13 @@
           get_reactive_power_limits(get_component(ThermalStandard, solved3, "Bus8")).max
 
     # Test Newton method
-    @test solve_powerflow!(pf, deepcopy(sys); method = :newton)
+    @test solve_powerflow!(pf, deepcopy(sys))
 
     # Test enforcing the reactive power limits in closer detail
     set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
     data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
-    converged2, V2, S2 = PowerFlows._solve_powerflow!(pf, data, true, 1)
-    x2 = PowerFlows._calc_x(data, V2, S2, 1)
+    converged2 = PowerFlows._ac_powerflow(data, pf, 1; check_reactive_power_limits = true)
+    x2 = PowerFlows._calc_x(data, 1)
     @test LinearAlgebra.norm(result_14 - x2, Inf) >= 1e-6
     @test 1.08 <= x2[15] <= 1.09
 end
@@ -542,7 +542,7 @@ end
     )
 
     bf_loss_factors =
-        PowerFlows.penalty_factors_brute_force(data_newton)
+        PowerFlows.penalty_factors_brute_force(data_newton, pf_newton)
     @test all(isapprox.(
         data_newton.loss_factors,
         bf_loss_factors,

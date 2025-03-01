@@ -51,14 +51,11 @@ function solve_powerflow!(
             check_connectivity = get(kwargs, :check_connectivity, true),
         )
 
-        converged, V, Sbus_result =
-            _ac_powerflow(data, pf, time_step; kwargs...)
-        x = _calc_x(data, V, Sbus_result, time_step)
+        converged = _ac_powerflow(data, pf, time_step; kwargs...)
 
         if converged
             write_powerflow_solution!(
                 system,
-                x,
                 data,
                 get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER),
             )
@@ -100,12 +97,11 @@ function solve_powerflow(
             check_connectivity = get(kwargs, :check_connectivity, true),
         )
 
-        converged, V, Sbus_result = _ac_powerflow(data, pf, time_step; kwargs...)
-        x = _calc_x(data, V, Sbus_result, time_step)
+        converged = _ac_powerflow(data, pf, time_step; kwargs...)
 
         if converged
             @info("PowerFlow solve converged, the results are exported in DataFrames")
-            df_results = write_results(pf, system, data, x, time_step)
+            df_results = write_results(pf, system, data, time_step)
         else
             df_results = missing
             @error("The powerflow solver returned convergence = $(converged)")
@@ -160,8 +156,6 @@ function solve_powerflow!(
     sorted_time_steps = get(kwargs, :time_steps, sort(collect(keys(data.timestep_map))))
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
-    ts_V = zeros(Complex{Float64}, first(size(data.bus_type)), length(sorted_time_steps))
-    ts_S = zeros(Complex{Float64}, first(size(data.bus_type)), length(sorted_time_steps))
 
     # TODO If anything in the grid topology changes, 
     #  e.g. tap positions of transformers or in service 
@@ -172,32 +166,10 @@ function solve_powerflow!(
     tb = data.power_network_matrix.tb
 
     for time_step in sorted_time_steps
-        converged, V, Sbus_result =
-            _ac_powerflow(data, pf, time_step; kwargs...)
+        converged = _ac_powerflow(data, pf, time_step; kwargs...)
         ts_converged[time_step] = converged
-        ts_V[:, time_step] .= V
-        ts_S[:, time_step] .= Sbus_result
 
-        if converged
-            ref, pv, pq = bus_type_idx(data, time_step)
-
-            # write results to data:
-            # write results for REF
-            data.bus_activepower_injection[ref, time_step] .=
-                real.(Sbus_result[ref]) .+ data.bus_activepower_withdrawals[ref, time_step]
-            data.bus_reactivepower_injection[ref, time_step] .=
-                imag.(Sbus_result[ref]) .+
-                data.bus_reactivepower_withdrawals[ref, time_step]
-            # write Q results for PV
-            data.bus_reactivepower_injection[pv, time_step] .=
-                imag.(Sbus_result[pv]) .+ data.bus_reactivepower_withdrawals[pv, time_step]
-            # results for PQ buses do not need to be updated -> already consistent with inputs
-
-            # write voltage results
-            data.bus_magnitude[pq, time_step] .= abs.(V[pq])
-            data.bus_angles[pq, time_step] .= angle.(V[pq])
-            data.bus_angles[pv, time_step] .= angle.(V[pv])
-        else
+        if !converged  # set values to NaN for not converged time steps
             data.bus_activepower_injection[:, time_step] .= NaN
             data.bus_activepower_withdrawals[:, time_step] .= NaN
             data.bus_reactivepower_injection[:, time_step] .= NaN
@@ -209,6 +181,9 @@ function solve_powerflow!(
 
     # write branch flows
     # TODO if Yft, Ytf change between time steps, this must be moved inside the loop!
+    ts_V =
+        data.bus_magnitude[:, sorted_time_steps] .*
+        exp.(1im .* data.bus_angles[:, sorted_time_steps])
     Sft = ts_V[fb, :] .* conj.(Yft * ts_V)
     Stf = ts_V[tb, :] .* conj.(Ytf * ts_V)
 
@@ -231,21 +206,19 @@ function _ac_powerflow(
     check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
 
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
-        converged, V, Sbus_result =
-            _newton_powerflow(pf, data, time_step; kwargs...)
+        converged = _newton_powerflow(pf, data, time_step; kwargs...)
         if !converged || !check_reactive_power_limits ||
-           _check_q_limit_bounds!(data, Sbus_result, time_step)
-            return (converged, V, Sbus_result)
+           _check_q_limit_bounds!(data, time_step)
+            return converged
         end
     end
 
     @error("could not enforce reactive power limits after $MAX_REACTIVE_POWER_ITERATIONS")
-    return (converged, V, Sbus_result)
+    return converged
 end
 
 function _check_q_limit_bounds!(
     data::ACPowerFlowData,
-    Sbus_result::Vector{Complex{Float64}},
     time_step::Int64,
 )
     bus_names = data.power_network_matrix.axes[1]
@@ -253,7 +226,7 @@ function _check_q_limit_bounds!(
     bus_types = view(data.bus_type, :, time_step)
     for (ix, bt) in enumerate(bus_types)
         if bt == PSY.ACBusTypes.PV
-            Q_gen = imag(Sbus_result[ix])
+            Q_gen = data.bus_reactivepower_injection[ix, time_step]
         else
             continue
         end
@@ -275,26 +248,6 @@ function _check_q_limit_bounds!(
         end
     end
     return within_limits
-end
-
-function _solve_powerflow!(
-    pf::ACPowerFlow{<:ACPowerFlowSolverType},
-    data::ACPowerFlowData,
-    check_reactive_power_limits,
-    time_step::Int64;
-    kwargs...,
-)
-    for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
-        converged, V, Sbus_result =
-            _newton_powerflow(pf, data, time_step; kwargs...)
-        if !converged || !check_reactive_power_limits ||
-           _check_q_limit_bounds!(data, Sbus_result, time_step)
-            return converged, V, Sbus_result
-        end
-    end
-    # todo: throw error? set converged to false? -> leave as is for now
-    @error("could not enforce reactive power limits after $MAX_REACTIVE_POWER_ITERATIONS")
-    return converged, V, Sbus_result
 end
 
 function bus_type_idx(

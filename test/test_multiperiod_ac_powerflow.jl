@@ -108,8 +108,7 @@ end
     solve_powerflow!(data_lu; pf = pf_lu)
 
     # get loss factors using brute force approach (sequential power flow evaluations for each bus)
-    bf_loss_factors =
-        PowerFlows.penalty_factors_brute_force(data_lu)
+    bf_loss_factors = PowerFlows.penalty_factors_brute_force(data_lu, pf_lu)
 
     # confirm that loss factors match for the Jacobian-based and brute force approaches
     @test isapprox(bf_loss_factors, data_lu.loss_factors, atol = 1e-5, rtol = 0)

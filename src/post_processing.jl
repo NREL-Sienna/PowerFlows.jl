@@ -137,7 +137,7 @@ end
 function _get_fixed_admittance_power(
     sys::PSY.System,
     b::PSY.Bus,
-    result::AbstractVector,
+    data::PowerFlowData,
     ix::Int,
 )
     active_power = 0.0
@@ -147,7 +147,7 @@ function _get_fixed_admittance_power(
         if (l.bus == b)
             Vm_squared =
                 if b.bustype == PSY.ACBusTypes.PQ
-                    result[2 * ix - 1]^2
+                    data.bus_magnitude[ix]^2
                 else
                     PSY.get_magnitude(b)^2
                 end
@@ -435,9 +435,9 @@ Updates system voltages and powers with power flow results
 """
 function write_powerflow_solution!(
     sys::PSY.System,
-    result::Vector{Float64},
     data::PowerFlowData,
     max_iterations::Int,
+    time_step::Int = 1,
 )
     buses = enumerate(
         sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x)),
@@ -447,28 +447,28 @@ function write_powerflow_solution!(
     # Right now the only such change we handle is the one in _check_q_limit_bounds!
     for (ix, bus) in buses
         system_bustype = PSY.get_bustype(bus)
-        data_bustype = data.bus_type[ix]
+        data_bustype = data.bus_type[ix, time_step]
         (system_bustype == data_bustype) && continue
         @assert system_bustype == PSY.ACBusTypes.PV
         @assert data_bustype == PSY.ACBusTypes.PQ
-        @debug "Updating bus $(PSY.get_name(bus)) reactive power and type to PQ due to check_reactive_power_limits"
-        Q_gen = data.bus_reactivepower_injection[ix]
+        Q_gen = data.bus_reactivepower_injection[ix, time_step]
+        @debug "Updating bus $(PSY.get_name(bus)) reactive power and type to PQ due to check_reactive_power_limits: $Q_gen"
         _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
         PSY.set_bustype!(bus, data_bustype)
     end
 
     for (ix, bus) in buses
         if bus.bustype == PSY.ACBusTypes.REF
-            P_gen = result[2 * ix - 1]
-            Q_gen = result[2 * ix]
+            P_gen = data.bus_activepower_injection[ix, time_step]
+            Q_gen = data.bus_reactivepower_injection[ix, time_step]
             _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations)
         elseif bus.bustype == PSY.ACBusTypes.PV
-            Q_gen = result[2 * ix - 1]
-            bus.angle = result[2 * ix]
+            Q_gen = data.bus_reactivepower_injection[ix, time_step]
+            bus.angle = data.bus_angles[ix, time_step]
             _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
         elseif bus.bustype == PSY.ACBusTypes.PQ
-            Vm = result[2 * ix - 1]
-            θ = result[2 * ix]
+            Vm = data.bus_magnitude[ix, time_step]
+            θ = data.bus_angles[ix, time_step]
             PSY.set_magnitude!(bus, Vm)
             PSY.set_angle!(bus, θ)
         end
@@ -573,7 +573,7 @@ function write_results(
             buses,
             from_bus,
             to_bus,
-            data.bus_magnitude[:, 1],
+            data.bus_magnitude[:, i],
             data.bus_angles[:, i],
             data.bus_activepower_injection[:, i],
             data.bus_reactivepower_injection[:, i],
@@ -608,7 +608,6 @@ function write_results(
     ::ACPowerFlow{<:ACPowerFlowSolverType},
     sys::PSY.System,
     data::ACPowerFlowData,
-    result::Union{Vector{Float64}, Matrix{Float64}},
     time_step::Int64,
 )
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
@@ -627,22 +626,22 @@ function write_results(
     for (ix, bt) in enumerate(bus_types)
         P_load_vect[ix] = data.bus_activepower_withdrawals[ix, time_step] * sys_basepower
         Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix, time_step] * sys_basepower
-        P_admittance, Q_admittance = _get_fixed_admittance_power(sys, buses[ix], result, ix)
+        P_admittance, Q_admittance = _get_fixed_admittance_power(sys, buses[ix], data, ix)
         P_load_vect[ix] += P_admittance * sys_basepower
         Q_load_vect[ix] += Q_admittance * sys_basepower
         if bt == PSY.ACBusTypes.REF
             Vm_vect[ix] = data.bus_magnitude[ix, time_step]
             θ_vect[ix] = data.bus_angles[ix, time_step]
-            P_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
-            Q_gen_vect[ix] = result[2 * ix] * sys_basepower
+            P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
+            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix, time_step] * sys_basepower
         elseif bt == PSY.ACBusTypes.PV
             Vm_vect[ix] = data.bus_magnitude[ix, time_step]
-            θ_vect[ix] = result[2 * ix]
+            θ_vect[ix] = data.bus_angles[ix, time_step]
             P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
-            Q_gen_vect[ix] = result[2 * ix - 1] * sys_basepower
+            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix, time_step] * sys_basepower
         elseif bt == PSY.ACBusTypes.PQ
-            Vm_vect[ix] = result[2 * ix - 1]
-            θ_vect[ix] = result[2 * ix]
+            Vm_vect[ix] = data.bus_magnitude[ix, time_step]
+            θ_vect[ix] = data.bus_angles[ix, time_step]
             P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
             Q_gen_vect[ix] = data.bus_reactivepower_injection[ix, time_step] * sys_basepower
         end
@@ -782,15 +781,15 @@ The loss factor value is computed as the change in the reference bus power injec
 """
 
 function penalty_factors_brute_force(
-    data::PowerFlowData;
-    pf::ACPowerFlow = ACPowerFlow(),
+    data::PowerFlowData,
+    pf::ACPowerFlow;
     step_size::Float64 = 1e-6,
     kwargs...,
 )
     # we assume that the bus type for ref bus does not change between time steps
     ref, = bus_type_idx(data, 1, (PSY.ACBusTypes.REF,))
 
-    n_buses = size(data.bus_type, 1)
+    n_buses = first(size(data.bus_type))
     time_steps = collect(values(data.timestep_map))
 
     loss_factors = zeros(Float64, n_buses, length(time_steps))
@@ -798,21 +797,19 @@ function penalty_factors_brute_force(
     # initial PF to establish the ref power value
     solve_powerflow!(data; pf = pf, disable_calc_loss_factors = true, kwargs...)
 
-    ref_power = sum(data.bus_activepower_injection[ref, :]; dims = 1)
+    ref_power = copy(sum(data.bus_activepower_injection[ref, :]; dims = 1))
 
-    Logging.with_logger(Logging.NullLogger()) do
-        for bx in 1:n_buses
-            if bx in ref
-                loss_factors[bx, :] .= 1.0
-                continue
-            end
-            data.bus_activepower_injection[bx, :] .+= step_size
-            solve_powerflow!(data; pf = pf, disable_calc_loss_factors = true, kwargs...)
-            loss_factors[bx, :] =
-                (sum(data.bus_activepower_injection[ref, :]; dims = 1) .- ref_power) ./
-                step_size
-            data.bus_activepower_injection[bx, :] .-= step_size
+    for bx in 1:n_buses
+        if bx in ref
+            loss_factors[bx, :] .= 1.0
+            continue
         end
+        data.bus_activepower_injection[bx, :] .+= step_size
+        solve_powerflow!(data; pf = pf, disable_calc_loss_factors = true, kwargs...)
+        loss_factors[[bx], :] .=
+            (sum(data.bus_activepower_injection[ref, :]; dims = 1) .- ref_power) ./
+            step_size
+        data.bus_activepower_injection[bx, :] .-= step_size
     end
     return loss_factors
 end

@@ -36,14 +36,18 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     )
 end
 
-function (R::ACPowerFlowResidual)(Rv::Vector{Float64}, x::Vector{Float64}, time_step::Int64)
-    R.Rf!(R.Rv, x, R.P_net, R.Q_net, R.data, time_step)
-    copyto!(Rv, R.Rv)
+function (Residual::ACPowerFlowResidual)(
+    Rv::Vector{Float64},
+    x::Vector{Float64},
+    time_step::Int64,
+)
+    Residual.Rf!(Residual.Rv, x, Residual.P_net, Residual.Q_net, Residual.data, time_step)
+    copyto!(Rv, Residual.Rv)
     return
 end
 
-function (R::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
-    R.Rf!(R.Rv, x, R.P_net, R.Q_net, R.data, time_step)
+function (Residual::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
+    Residual.Rf!(Residual.Rv, x, Residual.P_net, Residual.Q_net, Residual.data, time_step)
     return
 end
 
@@ -52,39 +56,45 @@ function _set_state_vars_at_bus(
     ix::Int,
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
-    X::Vector{Float64},
+    StateVector::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.REF})
     # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
-    P_net[ix] = X[2 * ix - 1] - data.bus_activepower_withdrawals[ix, time_step]
-    Q_net[ix] = X[2 * ix] - data.bus_reactivepower_withdrawals[ix, time_step]
+    P_net[ix] = StateVector[2 * ix - 1]
+    Q_net[ix] = StateVector[2 * ix]
+    data.bus_activepower_injection[ix, time_step] =
+        StateVector[2 * ix - 1] + data.bus_activepower_withdrawals[ix, time_step]
+    data.bus_reactivepower_injection[ix, time_step] =
+        StateVector[2 * ix] + data.bus_reactivepower_withdrawals[ix, time_step]
 end
 
 function _set_state_vars_at_bus(
     ix::Int,
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
-    X::Vector{Float64},
+    StateVector::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.PV})
     # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
-    Q_net[ix] = X[2 * ix - 1] - data.bus_reactivepower_withdrawals[ix, time_step]
-    data.bus_angles[ix, time_step] = X[2 * ix]
+    Q_net[ix] = StateVector[2 * ix - 1]
+    data.bus_reactivepower_injection[ix, time_step] =
+        StateVector[2 * ix - 1] + data.bus_reactivepower_withdrawals[ix, time_step]
+    data.bus_angles[ix, time_step] = StateVector[2 * ix]
 end
 
 function _set_state_vars_at_bus(
     ix::Int,
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
-    X::Vector{Float64},
+    StateVector::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.PQ})
     # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
-    data.bus_magnitude[ix, time_step] = X[2 * ix - 1]
-    data.bus_angles[ix, time_step] = X[2 * ix]
+    data.bus_magnitude[ix, time_step] = StateVector[2 * ix - 1]
+    data.bus_angles[ix, time_step] = StateVector[2 * ix]
 end
 
 function _update_residual_values!(
