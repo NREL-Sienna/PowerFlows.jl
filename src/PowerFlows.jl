@@ -47,6 +47,6 @@ include("solve_dc_powerflow.jl")
 include("ac_power_flow_residual.jl")
 include("ac_power_flow_jacobian.jl")
 include("solve_ac_powerflow.jl")
-include("nlsolve_powerflow.jl")
+include("powerflow_method.jl")
 include("post_processing.jl")
 end
