@@ -191,10 +191,9 @@ function _simple_step(time_step::Int,
         # TODO cook up a test case where Jacobian is singular.
         if e isa LinearAlgebra.SingularException
             @warn("Newton-Raphson hit a point where the Jacobian is singular.")
-            fjac2 = similar(J.Jv)
-            LinearAlgebra.mul!(fjac2, J.Jv', J.Jv)
+            fjac2 = J.Jv' * J.Jv
             lambda = 1e6 * sqrt(length(StateVector.x) * eps()) * norm(fjac2, 1)
-            M = -(fjac2 + lambda * I)
+            M = -(fjac2 + lambda * LinearAlgebra.I)
             tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
             # KLU factorization. TODO check if this is faster than Julia's default ldiv.
             full_factor!(tempCache, M)
