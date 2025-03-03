@@ -16,8 +16,8 @@ end
 
 function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     n_buses = first(size(data.bus_type))
-    P_net = zeros(n_buses)
-    Q_net = zeros(n_buses)
+    P_net = Vector{Float64}(undef, n_buses)
+    Q_net = Vector{Float64}(undef, n_buses)
     for ix in 1:n_buses
         P_net[ix] =
             data.bus_activepower_injection[ix, time_step] -

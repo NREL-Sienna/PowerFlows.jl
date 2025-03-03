@@ -505,6 +505,10 @@ end
 end
 
 @testset "Test loss factors for larger grid" begin
+    if Sys.iswindows()
+        @test_skip "This test is not supported on Windows"
+    end
+
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
     pf_lu = ACPowerFlow(PowerFlows.LUACPowerFlow)
