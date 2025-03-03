@@ -97,7 +97,8 @@ end
     pf_lu = ACPowerFlow(ACSolver)
     pf_no_factors = ACPowerFlow(ACSolver)
     time_steps = 24
-    data_lu = PowerFlowData(pf_lu, sys; time_steps = time_steps, calc_loss_factors = true)
+    data_lu =
+        PowerFlowData(pf_lu, sys; time_steps = time_steps, calculate_loss_factors = true)
     data_no_factors = PowerFlowData(pf_no_factors, sys; time_steps = time_steps)
 
     # allocate timeseries data from csv

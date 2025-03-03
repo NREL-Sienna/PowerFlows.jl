@@ -359,7 +359,7 @@ function _newton_powerflow(
             @info(
                 "The NewtonRaphsonACPowerFlow solver converged after $i iterations with method $method"
             )
-            if data.calc_loss_factors && !disable_calc_loss_factors
+            if data.calculate_loss_factors && !disable_calc_loss_factors
                 calculate_loss_factors(data, J.Jv, time_step)
             end
 

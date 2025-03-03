@@ -518,13 +518,13 @@ end
         pf_lu,
         sys;
         check_connectivity = true,
-        calc_loss_factors = true)
+        calculate_loss_factors = true)
 
     data_newton = PowerFlowData(
         pf_newton,
         sys;
         check_connectivity = true,
-        calc_loss_factors = true)
+        calculate_loss_factors = true)
 
     time_step = 1
 

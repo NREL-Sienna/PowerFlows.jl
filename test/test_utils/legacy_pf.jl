@@ -214,7 +214,7 @@ function _newton_powerflow(
             end
         end
 
-        if data.calc_loss_factors && !disable_calc_loss_factors
+        if data.calculate_loss_factors && !disable_calc_loss_factors
             data.loss_factors[ref, :] .= 1.0
             penalty_factors!(
                 J,
