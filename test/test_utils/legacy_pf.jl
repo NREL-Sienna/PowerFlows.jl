@@ -132,7 +132,6 @@ function _newton_powerflow(
     maxIter = get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER)
     tol = get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
-    disable_calc_loss_factors = get(kwargs, :disable_calc_loss_factors, false)
 
     Ybus = data.power_network_matrix.data
 
@@ -214,7 +213,7 @@ function _newton_powerflow(
             end
         end
 
-        if data.calculate_loss_factors && !disable_calc_loss_factors
+        if data.calculate_loss_factors
             data.loss_factors[ref, :] .= 1.0
             penalty_factors!(
                 J,

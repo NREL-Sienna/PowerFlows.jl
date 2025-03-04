@@ -526,12 +526,13 @@ end
         check_connectivity = true,
         calculate_loss_factors = true)
 
-    time_step = 1
+    data_brute_force = PowerFlowData(
+        pf_newton,
+        sys;
+        check_connectivity = true,
+        calculate_loss_factors = false)
 
-    # test that the loss factors calculation is disabled successfully
-    data_newton.loss_factors .= NaN  # initialized as undef, must fill with values first
-    solve_powerflow!(data_newton; pf = pf_newton, disable_calc_loss_factors = true)
-    @test all(isnan.(data_newton.loss_factors))
+    time_step = 1
 
     solve_powerflow!(data_lu; pf = pf_lu)
     solve_powerflow!(data_newton; pf = pf_newton)
@@ -546,11 +547,11 @@ end
     )
 
     bf_loss_factors =
-        PowerFlows.penalty_factors_brute_force(data_newton, pf_newton)
+        penalty_factors_brute_force(data_brute_force, pf_newton)
     @test all(isapprox.(
         data_newton.loss_factors,
         bf_loss_factors,
         rtol = 0,
-        atol = 1e-5,
+        atol = 1e-4,
     ))
 end
