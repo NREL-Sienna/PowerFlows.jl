@@ -197,6 +197,9 @@ function _newton_powerflow(
     end
 
     if !converged
+        if data.calculate_loss_factors
+            data.loss_factors[:, time_step] .= NaN
+        end
         @error("The legacy powerflow solver with LU did not converge after $i iterations")
     else
         Sbus_result = V .* conj.(Ybus * V)
@@ -214,7 +217,7 @@ function _newton_powerflow(
         end
 
         if data.calculate_loss_factors
-            data.loss_factors[ref, :] .= 1.0
+            data.loss_factors[ref, time_step] .= 1.0
             penalty_factors!(
                 J,
                 collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:]),

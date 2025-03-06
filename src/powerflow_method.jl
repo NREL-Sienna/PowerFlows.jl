@@ -371,6 +371,10 @@ function _newton_powerflow(
         resetCache!(StateVector, x0, Residual.Rv)
     end
 
+    if data.calculate_loss_factors
+        data.loss_factors[:, time_step] .= NaN
+    end
+
     @error(
         "Solver NewtonRaphsonACPowerFlow did not converge with any method."
     )
