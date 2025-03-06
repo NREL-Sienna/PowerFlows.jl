@@ -1,6 +1,6 @@
 @testset "PowerFlowData" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    @test PowerFlowData(ACPowerFlow{MatrixOpACPowerFlow}(), sys) isa PF.ACPowerFlowData
+    @test PowerFlowData(ACPowerFlow{PowerFlows.LUACPowerFlow}(), sys) isa PF.ACPowerFlowData
     @test PowerFlowData(ACPowerFlow{NewtonRaphsonACPowerFlow}(), sys) isa PF.ACPowerFlowData
     @test PowerFlowData(DCPowerFlow(), sys) isa PF.ABAPowerFlowData
     @test PowerFlowData(PTDFDCPowerFlow(), sys) isa PF.PTDFPowerFlowData

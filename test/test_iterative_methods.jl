@@ -17,14 +17,14 @@ end
     # found by hand: all methods fail to converge => decrease loads, newton converges => increase loads.
     # repeat, until find a point where trust region method converges and newton doesn't.
     # (if these values stop working, could automate the above process via taking midpoint or centroid.)
-    @test_logs (:info, r"converged[\w\s]*trust region") match_mode = :any run_pf(
+    @test_logs (:info, r"converged.*TrustRegionMethod") match_mode = :any run_pf(
         [
         35.407000101,
         23.5000028166,
         50.0,
     ])
     # test trust region kwargs.
-    @test_logs (:info, r"converged[\w\s]*trust region") match_mode = :any run_pf(
+    @test_logs (:info, r"converged.*TrustRegionMethod") match_mode = :any run_pf(
         [
             35.407000101,
             23.5000028166,

@@ -271,8 +271,20 @@ end
 
 function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
-    Vm::Vector{Float64},
-    θ::Vector{Float64},
+    Vm::SubArray{
+        Float64,
+        1,
+        Matrix{Float64},
+        Tuple{Base.Slice{Base.OneTo{Int64}}, Int64},
+        true,
+    },
+    θ::SubArray{
+        Float64,
+        1,
+        Matrix{Float64},
+        Tuple{Base.Slice{Base.OneTo{Int64}}, Int64},
+        true,
+    },
     bus_from::Int,
     bus_to::Int,
     row_from_p::Int,
@@ -294,8 +306,20 @@ end
 
 function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
-    Vm::Vector{Float64},
-    θ::Vector{Float64},
+    Vm::SubArray{
+        Float64,
+        1,
+        Matrix{Float64},
+        Tuple{Base.Slice{Base.OneTo{Int64}}, Int64},
+        true,
+    },
+    θ::SubArray{
+        Float64,
+        1,
+        Matrix{Float64},
+        Tuple{Base.Slice{Base.OneTo{Int64}}, Int64},
+        true,
+    },
     bus_from::Int,
     bus_to::Int,
     row_from_p::Int,
@@ -347,8 +371,20 @@ end
 
 function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
-    Vm::Vector{Float64},
-    θ::Vector{Float64},
+    Vm::SubArray{
+        Float64,
+        1,
+        Matrix{Float64},
+        Tuple{Base.Slice{Base.OneTo{Int64}}, Int64},
+        true,
+    },
+    θ::SubArray{
+        Float64,
+        1,
+        Matrix{Float64},
+        Tuple{Base.Slice{Base.OneTo{Int64}}, Int64},
+        true,
+    },
     bus_from::Int,
     bus_to::Int,
     row_from_p::Int,
@@ -426,8 +462,8 @@ function _update_jacobian_matrix_values!(
     time_step::Int64,
 )
     Yb = data.power_network_matrix.data
-    Vm = data.bus_magnitude[:, time_step]
-    θ = data.bus_angles[:, time_step]
+    Vm = view(data.bus_magnitude, :, time_step)
+    θ = view(data.bus_angles, :, time_step)
     num_buses = first(size(data.bus_type))
     for bus_from in 1:num_buses
         row_from_p = 2 * bus_from - 1
