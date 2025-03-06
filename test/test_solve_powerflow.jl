@@ -512,13 +512,13 @@ end
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
     pf_lu = ACPowerFlow(PowerFlows.LUACPowerFlow)
-    pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow)
+    pf_lu_lf = ACPowerFlow(PowerFlows.LUACPowerFlow; calculate_loss_factors = true)
+    pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow, calculate_loss_factors = true)
 
     data_lu = PowerFlowData(
-        pf_lu,
+        pf_lu_lf,
         sys;
-        check_connectivity = true,
-        calculate_loss_factors = true)
+        check_connectivity = true)
 
     data_newton = PowerFlowData(
         pf_newton,
