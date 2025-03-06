@@ -189,8 +189,7 @@ function PowerFlowData(
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true)
-    
-    calculate_loss_factors = pf.calculate_loss_factors
+
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
     if time_steps != 0

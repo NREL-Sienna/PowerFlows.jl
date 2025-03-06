@@ -96,20 +96,19 @@ end
                                          (MatrixOpACPowerFlow, NewtonRaphsonACPowerFlow)
     sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
 
-    pf = ACPowerFlow(ACSolver)
-    pf_lf = ACPowerFlow(ACSolver; calculate_loss_factors = true)
+    pf_klu = ACPowerFlow(ACSolver; calc_loss_factors = true)
+    pf_no_factors = ACPowerFlow(ACSolver)  # calc_loss_factors = false by default
+
     time_steps = 24
-    data_loss_factors =
-        PowerFlowData(pf_lf, sys; time_steps = time_steps)
-    data_brute_force =
-        PowerFlowData(pf, sys; time_steps = time_steps)
+    data_klu = PowerFlowData(pf_klu, sys; time_steps = time_steps)
+    data_no_factors = PowerFlowData(pf_no_factors, sys; time_steps = time_steps)
 
     # allocate timeseries data from csv
     prepare_ts_data!(data_klu, time_steps)
     prepare_ts_data!(data_no_factors, time_steps)
 
     # get power flows with NR KLU method and write results
-    solve_powerflow!(data_loss_factors; pf = pf_lf)
+    solve_powerflow!(data_klu; pf = pf_klu)
 
     # get loss factors using brute force approach (sequential power flow evaluations for each bus)
     bf_loss_factors =
