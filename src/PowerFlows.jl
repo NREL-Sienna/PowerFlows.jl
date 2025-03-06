@@ -5,7 +5,6 @@ export solve_powerflow!
 export PowerFlowData
 export DCPowerFlow
 export NewtonRaphsonACPowerFlow
-export MatrixOpACPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow
@@ -45,9 +44,9 @@ include("psse_export.jl")
 include("LinearSolverCache/linear_solver_cache.jl")
 include("LinearSolverCache/klu_linear_solver.jl")
 include("solve_dc_powerflow.jl")
-include("ac_power_flow.jl")
+include("ac_power_flow_residual.jl")
 include("ac_power_flow_jacobian.jl")
-include("newton_ac_powerflow.jl")
-include("nlsolve_powerflow.jl")
+include("solve_ac_powerflow.jl")
+include("powerflow_method.jl")
 include("post_processing.jl")
 end
