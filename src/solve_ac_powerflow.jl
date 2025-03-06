@@ -128,9 +128,6 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 - 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
 - `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `data.timestep_map`.
 
-# Returns
-- `Nothing`. The results are written directly to the `data` object.
-
 # Description
 This function solves the AC power flow problem for each time step specified in `data`. 
 It preallocates memory for the results and iterates over the sorted time steps. 

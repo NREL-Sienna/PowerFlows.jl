@@ -185,12 +185,11 @@ NOTE: use it for AC power flow computations.
 WARNING: functions for the evaluation of the multi-period AC PF still to be implemented.
 """
 function PowerFlowData(
-    ::ACPowerFlow{<:ACPowerFlowSolverType},
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
     sys::PSY.System;
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true)
-    
     calculate_loss_factors = pf.calculate_loss_factors
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
