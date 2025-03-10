@@ -14,106 +14,106 @@ struct TrustRegionMethod <: AbstractNewtonRaphsonMethod end
     For `SimpleMethod` and `RefinementMethod`, we solve `J_x Δx = r` in-place,
     so this also stores the step `Δx` at times in those methods.
 The remainder of the fields are only used in the `TrustRegionMethod`:
--`r_predict::Vector{Float64}`: the predicted residual at the proposed `x+Δx`,
-    under a linear approximation: i.e `J_x⋅(x+p)`.
--`p::Vector{Float64}`: the suggested step `Δx`, selected among `pi`, `p_c`,
-    and the dogleg interpolation between the two. The first is chosen when
-    `pi` is inside the trust region, the second when both `p_c` and `pi` are outside
-    the trust region, and the third when `p_c` is inside and `pi` outside.
-    The dogleg step selects the point where the line from `x + p_c` to `x + pi`
-    crosses the boundary of the trust region.
--`p_c::Vector{Float64}`: the step to the Cauchy point if the Cauchy point
+-`r_predict::Vector{Float64}`: the predicted residual at `x+Δx_proposed`,
+    under a linear approximation: i.e `J_x⋅(x+Δx_proposed)`.
+-`Δx_proposed::Vector{Float64}`: the suggested step `Δx`, selected among `Δx_nr`, 
+    `Δx_cauchy`, and the dogleg interpolation between the two. The first is chosen when
+    `x+Δx_nr` is inside the trust region, the second when both `x+Δx_cauchy`
+    and `x+Δx_nr` are outside the trust region, and the third when `x+Δx_cauchy`
+    is inside and `x+Δx_nr` outside. The dogleg step selects the point where the line
+    from `x+Δx_cauchy` to `x+Δx_nr` crosses the boundary of the trust region.
+-`Δx_cauchy::Vector{Float64}`: the step to the Cauchy point if the Cauchy point
     lies within the trust region, otherwise a step in that direction.
--`pi::Vector{Float64}`: the step under the Newton-Raphson method."""
+-`Δx_nr::Vector{Float64}`: the step under the Newton-Raphson method."""
 struct StateVectorCache
     x::Vector{Float64}
     r::Vector{Float64} # residual
     r_predict::Vector{Float64} # predicted residual
-    p::Vector{Float64} # proposed Δx: Cauchy, NR, or dogleg step.
-    p_c::Vector{Float64} # Cauchy step
-    pi::Vector{Float64} # Newton-Raphson step
+    Δx_proposed::Vector{Float64} # proposed Δx: Cauchy, NR, or dogleg step.
+    Δx_cauchy::Vector{Float64} # Cauchy step
+    Δx_nr::Vector{Float64} # Newton-Raphson step
 end
 
 function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     x = copy(x0)
     r = copy(f0)
     r_predict = copy(x0)
-    p = copy(x0)
-    p_c = copy(x0)
-    pi = copy(x0)
-    return StateVectorCache(x, r, r_predict, p, p_c, pi)
+    Δx_proposed = copy(x0)
+    Δx_cauchy = copy(x0)
+    Δx_nr = copy(x0)
+    return StateVectorCache(x, r, r_predict, Δx_proposed, Δx_cauchy, Δx_nr)
 end
 
 """Reset all entries in a StateVectorCache to `x0` and `f0`, in preparation
 for re-using the cache for the next iterative method."""
 function resetCache!(
-    StateVector::StateVectorCache,
+    stateVector::StateVectorCache,
     x0::Vector{Float64},
     f0::Vector{Float64},
 )
-    copyto!(StateVector.x, x0)
-    copyto!(StateVector.r, f0)
-    copyto!(StateVector.r_predict, x0)
-    copyto!(StateVector.p, x0)
-    copyto!(StateVector.p_c, x0)
-    copyto!(StateVector.pi, x0)
+    copyto!(stateVector.x, x0)
+    copyto!(stateVector.r, f0)
+    copyto!(stateVector.r_predict, x0)
+    copyto!(stateVector.Δx_proposed, x0)
+    copyto!(stateVector.Δx_cauchy, x0)
+    copyto!(stateVector.Δx_nr, x0)
+    return
 end
 
-"""Sets `p` equal to the `Δx` by which we should update `x`. Decides
-between a Cauchy step (`p = p_c`), Newton-Raphson step (`p = p_i`), and the dogleg
+"""Sets `Δx_proposed` equal to the `Δx` by which we should update `x`. Decides
+between the Cauchy step `Δx_cauchy`, Newton-Raphson step `Δx_nr`, and the dogleg
 interpolation between the two, based on which fall within the trust region."""
-function _dogleg!(p::Vector{Float64},
-    p_c::Vector{Float64},
-    p_i::Vector{Float64},
+function _dogleg!(Δx_proposed::Vector{Float64},
+    Δx_cauchy::Vector{Float64},
+    Δx_nr::Vector{Float64},
     r::Vector{Float64},
     linSolveCache::KLULinSolveCache{Int32},
     Jv::SparseMatrixCSC{Float64, Int32},
     delta::Float64)
+    copyto!(Δx_nr, r)
+    solve!(linSolveCache, Δx_nr)
+    LinearAlgebra.rmul!(Δx_nr, -1.0)
 
-    # p_i is newton-raphon step.
-    copyto!(p_i, r)
-    solve!(linSolveCache, p_i)
-    LinearAlgebra.rmul!(p_i, -1.0)
-
-    if norm(p_i) <= delta
-        copyto!(p, p_i) # update p: newton-raphson case.
+    if norm(Δx_nr) <= delta
+        copyto!(Δx_proposed, Δx_nr) # update Δx_proposed: newton-raphson case.
     else
-        # using p as a temporary buffer: alias to g for readability
-        g = p
+        # using Δx_proposed as a temporary buffer: alias to g for readability
+        g = Δx_proposed
         LinearAlgebra.mul!(g, Jv', r)
-        p_c .= -norm(g)^2 / norm(Jv * g)^2 .* g # Cauchy point
+        Δx_cauchy .= -norm(g)^2 / norm(Jv * g)^2 .* g # Cauchy point
 
-        if norm(p_c) >= delta
-            # p_c outside region => take step of length delta in direction of -g.
+        if norm(Δx_cauchy) >= delta
+            # Δx_cauchy outside region => take step of length delta in direction of -g.
             LinearAlgebra.rmul!(g, -delta / norm(g))
-            # not needed because g is already an alias for p.
-            # copyto!(p, g) # update p: cauchy point case
+            # not needed because g is already an alias for Δx_proposed.
+            # copyto!(Δx_proposed, g) # update Δx_proposed: cauchy point case
         else
-            # p_c inside region => next point is the spot where the line from p_c to p_i
-            # crosses the boundary of the trust region. this is the "dogleg" part.
+            # Δx_cauchy inside region => next point is the spot where the line from 
+            # Δx_cauchy to Δx_nr crosses the boundary of the trust region.
+            # this is the "dogleg" part.
 
-            # using p_i as temporary buffer: alias to p_diff for readability.
-            p_i .-= p_c
-            p_diff = p_i
+            # using Δx_nr as temporary buffer: alias to Δx_diff for readability.
+            Δx_nr .-= Δx_cauchy
+            Δx_diff = Δx_nr
 
-            b = LinearAlgebra.dot(p_c, p_diff)
-            a = norm(p_diff)^2
-            tau = (-b + sqrt(b^2 - 4a * (norm(p_c)^2 - delta^2))) / (2a)
-            p_c .+= tau .* p_diff
-            copyto!(p, p_c) # update p: dogleg case.
+            b = LinearAlgebra.dot(Δx_cauchy, Δx_diff)
+            a = norm(Δx_diff)^2
+            tau = (-b + sqrt(b^2 - 4a * (norm(Δx_cauchy)^2 - delta^2))) / (2a)
+            Δx_cauchy .+= tau .* Δx_diff
+            copyto!(Δx_proposed, Δx_cauchy) # update Δx_proposed: dogleg case.
         end
     end
     return
 end
 
 """Does a single iteration of the `TrustRegionMethod`:
-updates the `x` and `r` fields of the `StateVector` and computes
+updates the `x` and `r` fields of the `stateVector` and computes
 the value of the Jacobian at the new `x`, if needed. Unlike 
 `_simple_step`, this has a return value, the updated value of `delta``."""
 function _trust_region_step(time_step::Int,
-    StateVector::StateVectorCache,
+    stateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    Residual::ACPowerFlowResidual,
+    residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     delta::Float64,
     eta::Float64 = DEFAULT_TRUST_REGION_ETA)
@@ -121,57 +121,57 @@ function _trust_region_step(time_step::Int,
 
     # find proposed next point.
     _dogleg!(
-        StateVector.p,
-        StateVector.p_c,
-        StateVector.pi,
-        StateVector.r,
+        stateVector.Δx_proposed,
+        stateVector.Δx_cauchy,
+        stateVector.Δx_nr,
+        stateVector.r,
         linSolveCache,
         J.Jv,
         delta,
     )
-    StateVector.x .+= StateVector.p
+    stateVector.x .+= stateVector.Δx_proposed
 
-    # use cache.pi as temporary buffer to store old residual
+    # use cache.Δx_nr as temporary buffer to store old residual
     # to avoid recomputing if we don't change x.
-    oldResidual = StateVector.pi
-    copyto!(oldResidual, Residual.Rv)
-    Residual(StateVector.x, time_step)
+    oldResidual = stateVector.Δx_nr
+    copyto!(oldResidual, residual.Rv)
+    residual(stateVector.x, time_step)
 
     # Ratio of actual to predicted reduction
-    LinearAlgebra.mul!(StateVector.r_predict, J.Jv, StateVector.p)
-    StateVector.r_predict .+= StateVector.r
+    LinearAlgebra.mul!(stateVector.r_predict, J.Jv, stateVector.Δx_proposed)
+    stateVector.r_predict .+= stateVector.r
     rho =
-        (sum(abs2, StateVector.r) - sum(abs2, Residual.Rv)) /
-        (sum(abs2, StateVector.r) - sum(abs2, StateVector.r_predict))
+        (sum(abs2, stateVector.r) - sum(abs2, residual.Rv)) /
+        (sum(abs2, stateVector.r) - sum(abs2, stateVector.r_predict))
     if rho > eta
         # Successful iteration
-        StateVector.r .= Residual.Rv
+        stateVector.r .= residual.Rv
         # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
         J(time_step)
     else
         # Unsuccessful: reset x and residual.
-        StateVector.x .-= StateVector.p
-        copyto!(Residual.Rv, oldResidual)
+        stateVector.x .-= stateVector.Δx_proposed
+        copyto!(residual.Rv, oldResidual)
     end
 
     # Update size of trust region
-    if rho < 0.1 # insufficient improvement
+    if rho < HALVE_TRUST_REGION # rho < 0.1: insufficient improvement
         delta = delta / 2
-    elseif rho >= 0.9 # good improvement
-        delta = 2 * norm(StateVector.p)
-    elseif rho >= 0.5 # so-so improvement
-        delta = max(delta, 2 * norm(StateVector.p))
+    elseif rho >= DOUBLE_TRUST_REGION # rho >= 0.9: good improvement
+        delta = 2 * norm(stateVector.Δx_proposed)
+    elseif rho >= MAX_DOUBLE_TRUST_REGION # rho >= 0.5: so-so improvement
+        delta = max(delta, 2 * norm(stateVector.Δx_proposed))
     end
     return delta
 end
 
 """Does a single iteration of either `SimpleMethod` or `RefinementMethod`,
 based on the value of `refinement::Bool`. Updates the `r` and `x`
- fields of the `StateVector`, and computes the Jacobian at the new `x`."""
+ fields of the `stateVector`, and computes the Jacobian at the new `x`."""
 function _simple_step(time_step::Int,
-    StateVector::StateVectorCache,
+    stateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    Residual::ACPowerFlowResidual,
+    residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     refinement::Bool = false,
     refinement_eps::Float64 = 1e-6)
@@ -180,36 +180,35 @@ function _simple_step(time_step::Int,
     try
         # factorize the numeric object of KLU inplace, while reusing the symbolic object
         numeric_refactor!(linSolveCache, J.Jv)
-        # solve for dx in-place
+        # solve for Δx in-place
         if !refinement
-            solve!(linSolveCache, Residual.Rv)
+            solve!(linSolveCache, residual.Rv)
         else
-            Residual.Rv .=
-                solve_w_refinement(linSolveCache, J.Jv, Residual.Rv, refinement_eps)
+            residual.Rv .=
+                solve_w_refinement(linSolveCache, J.Jv, residual.Rv, refinement_eps)
         end
     catch e
         # TODO cook up a test case where Jacobian is singular.
         if e isa LinearAlgebra.SingularException
             @warn("Newton-Raphson hit a point where the Jacobian is singular.")
             fjac2 = J.Jv' * J.Jv
-            lambda = 1e6 * sqrt(length(StateVector.x) * eps()) * norm(fjac2, 1)
+            lambda =
+                NR_SINGULAR_SCALING * sqrt(length(stateVector.x) * eps()) * norm(fjac2, 1)
             M = -(fjac2 + lambda * LinearAlgebra.I)
             tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
             # KLU factorization. TODO check if this is faster than Julia's default ldiv.
             full_factor!(tempCache, M)
-            solve!(tempCache, Residual.Rv)
+            solve!(tempCache, residual.Rv)
         else
             @error("KLU factorization failed: $e")
-            # V = _calc_V(data, nlCache.x, time_step)
-            # Sbus_result = V .* conj(data.power_network_matrix.data * V)
             return
         end
     end
     # update x
-    StateVector.x .-= Residual.Rv
+    stateVector.x .-= residual.Rv
     # update data's fields (the bus angles/voltages) to match x, and update the residual.
     # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
-    Residual(StateVector.x, time_step)
+    residual(stateVector.x, time_step)
     # update jacobian.
     J(time_step)
     return
@@ -221,9 +220,9 @@ end
 - `tol::Float64`: tolerance. The iterative search ends when `maximum(abs.(residual)) < tol`.
     Default: $DEFAULT_NR_TOL."""
 function _nr_method(time_step::Int,
-    StateVector::StateVectorCache,
+    stateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    Residual::ACPowerFlowResidual,
+    residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::SimpleMethod;
     kwargs...)
@@ -233,12 +232,12 @@ function _nr_method(time_step::Int,
     while i < maxIterations && !converged
         _simple_step(
             time_step,
-            StateVector,
+            stateVector,
             linSolveCache,
-            Residual,
+            residual,
             J,
         )
-        converged = norm(Residual.Rv, Inf) < tol
+        converged = norm(residual.Rv, Inf) < tol
         i += 1
     end
     return converged, i
@@ -253,9 +252,9 @@ end
     `norm(Δx_{i}-Δx_{i+1}, 1)/norm(r,1) < refinement_eps`. Default: 
     $DEFAULT_REFINEMENT_EPS """
 function _nr_method(time_step::Int,
-    StateVector::StateVectorCache,
+    stateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    Residual::ACPowerFlowResidual,
+    residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::RefinementMethod;
     kwargs...)
@@ -266,14 +265,14 @@ function _nr_method(time_step::Int,
     while i < maxIterations && !converged
         _simple_step(
             time_step,
-            StateVector,
+            stateVector,
             linSolveCache,
-            Residual,
+            residual,
             J,
             true,
             refinement_eps,
         )
-        converged = norm(Residual.Rv, Inf) < tol
+        converged = norm(residual.Rv, Inf) < tol
         i += 1
     end
     return converged, i
@@ -290,9 +289,9 @@ end
     exceeds `eta` times the predicted improvement, we accept the new `x_i`.
     Default: $DEFAULT_TRUST_REGION_ETA."""
 function _nr_method(time_step::Int,
-    StateVector::StateVectorCache,
+    stateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
-    Residual::ACPowerFlowResidual,
+    residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::TrustRegionMethod;
     kwargs...)
@@ -301,19 +300,19 @@ function _nr_method(time_step::Int,
     factor::Float64 = get(kwargs, :factor, DEFAULT_TRUST_REGION_FACTOR)
     eta::Float64 = get(kwargs, :eta, DEFAULT_TRUST_REGION_ETA)
 
-    delta::Float64 = norm(StateVector.x) > 0 ? factor * norm(StateVector.x) : factor
+    delta::Float64 = norm(stateVector.x) > 0 ? factor * norm(stateVector.x) : factor
     i, converged = 0, false
     while i < maxIterations && !converged
         delta = _trust_region_step(
             time_step,
-            StateVector,
+            stateVector,
             linSolveCache,
-            Residual,
+            residual,
             J,
             delta,
             eta,
         )
-        converged = norm(Residual.Rv, Inf) < tol
+        converged = norm(residual.Rv, Inf) < tol
         i += 1
     end
     return converged, i
@@ -324,15 +323,15 @@ function _newton_powerflow(
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
-    Residual = ACPowerFlowResidual(data, time_step)
+    residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
-    Residual(x0, time_step)
+    residual(x0, time_step)
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     J(time_step)  # we need to fill J with values because at this point it was just initialized
 
-    if sum(Residual.Rv) > 10 * (length(Residual.Rv))
+    if sum(residual.Rv) > 10 * (length(residual.Rv))
         n_buses = first(size(data.bus_type))
-        _, ix = findmax(Residual.Rv)
+        _, ix = findmax(residual.Rv)
         bx = ix <= n_buses ? ix : ix - n_buses
         bus_no = data.bus_lookup[bx]
         @warn "Initial guess provided results in a large initial residual. Largest residual at bus $bus_no"
@@ -340,15 +339,15 @@ function _newton_powerflow(
 
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
-    StateVector = StateVectorCache(x0, Residual.Rv)
+    stateVector = StateVectorCache(x0, residual.Rv)
 
     for method in [SimpleMethod(), RefinementMethod(), TrustRegionMethod()]
         converged, i =
             _nr_method(
                 time_step,
-                StateVector,
+                stateVector,
                 linSolveCache,
-                Residual,
+                residual,
                 J,
                 method;
                 kwargs...,
@@ -366,9 +365,9 @@ function _newton_powerflow(
         @warn("Failed with method $method")
         # reset back to starting point before trying next method.
         # Order here (R then J) is important.
-        Residual(x0, time_step)
+        residual(x0, time_step)
         J(time_step)
-        resetCache!(StateVector, x0, Residual.Rv)
+        resetCache!(stateVector, x0, residual.Rv)
     end
 
     if data.calculate_loss_factors
