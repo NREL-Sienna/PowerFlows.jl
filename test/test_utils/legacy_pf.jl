@@ -5,7 +5,7 @@ struct LUACPowerFlow <: ACPowerFlowSolverType end  # Only for testing, a basic i
 
 """This function is to be able to compare the results of the legacy powerflow solver with the new one"""
 function _calc_x(
-    data::ACPowerFlowData,
+    data::PowerFlows.ACPowerFlowData,
     time_step::Int64,
 )
     n_buses = first(size(data.bus_type))
@@ -60,7 +60,7 @@ The state vector `x` is assumed to have 2 values per bus (real and imaginary par
 """
 
 function _calc_V(
-    data::ACPowerFlowData,
+    data::PowerFlows.ACPowerFlowData,
     x::Vector{Float64},
     time_step::Int64,
 )
@@ -123,7 +123,7 @@ end
 
 # legacy NR implementation - here we do not care about allocations, we use this function only for testing purposes
 function _newton_powerflow(
-    pf::ACPowerFlow{PowerFlows.LUACPowerFlow},
+    pf::ACPowerFlow{LUACPowerFlow},
     data::PowerFlows.ACPowerFlowData,
     time_step::Int64;
     kwargs...,

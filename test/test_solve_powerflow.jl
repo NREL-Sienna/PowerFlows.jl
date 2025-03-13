@@ -36,7 +36,7 @@
     data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
     #Compare results between finite diff methods and Jacobian method
     converged1 = PowerFlows._ac_powerflow(data, pf, 1)
-    x1 = PowerFlows._calc_x(data, 1)
+    x1 = _calc_x(data, 1)
     @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6
 
     # Test that solve_powerflow! succeeds
@@ -63,7 +63,7 @@
     set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
     data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
     converged2 = PowerFlows._ac_powerflow(data, pf, 1; check_reactive_power_limits = true)
-    x2 = PowerFlows._calc_x(data, 1)
+    x2 = _calc_x(data, 1)
     @test LinearAlgebra.norm(result_14 - x2, Inf) >= 1e-6
     @test 1.08 <= x2[15] <= 1.09
 end
@@ -454,7 +454,7 @@ end
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
     pf_default = ACPowerFlow()
-    pf_lu = ACPowerFlow(PowerFlows.LUACPowerFlow)
+    pf_lu = ACPowerFlow(LUACPowerFlow)
     pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow)
 
     PSY.set_units_base_system!(sys, "SYSTEM_BASE")
@@ -511,8 +511,8 @@ end
 
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
-    pf_lu = ACPowerFlow(PowerFlows.LUACPowerFlow)
-    pf_lu_lf = ACPowerFlow(PowerFlows.LUACPowerFlow; calculate_loss_factors = true)
+    pf_lu = ACPowerFlow(LUACPowerFlow)
+    pf_lu_lf = ACPowerFlow(LUACPowerFlow; calculate_loss_factors = true)
     pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow; calculate_loss_factors = true)
 
     data_lu = PowerFlowData(

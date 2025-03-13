@@ -91,10 +91,11 @@ J.Jv  # Access the Jacobian matrix stored internally in J.
 ```
 """
 function ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64)
-    # Create the initial Jacobian matrix structure - a sparse matrix with structural zeros that will be updated by the function Jf!
-    # It has the same structure as the expected Jacobian matrix.
+    # Create the initial Jacobian matrix structure - a sparse matrix with structural zeros
+    # that will be updated by the function Jf! It has the same structure as the expected
+    # Jacobian matrix.
     Jv0 = _create_jacobian_matrix_structure(data, time_step)
-    # _update_jacobian_matrix_values!(Jv0, data, time_step)  # We just initialize the structure here, evaluation must happen later
+    # We just initialize the structure here, evaluation must happen later
     return ACPowerFlowJacobian(data, _update_jacobian_matrix_values!, Jv0)
 end
 
@@ -127,7 +128,7 @@ end
 
 """
 Create the Jacobian matrix structure for a PV bus. Ignoring this because we fill all four values even for PV buses with 
-    structiural zeros using the same function as for PQ buses.
+    structural zeros using the same function as for PQ buses.
 """
 function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
     columns::Vector{Int32},
@@ -208,16 +209,7 @@ This function initializes the structure of the Jacobian matrix for an AC power f
 The Jacobian matrix is used in power flow analysis to represent the partial derivatives of bus active and reactive power injections with respect to bus voltage magnitudes and angles.
 
 Unlike some commonly used approaches where the Jacobian matrix is constructed as four submatrices, each grouping values for the four types of partial derivatives,
-this function groups the partial derivatives by bus.
-The structure is organized as groups of 4 values per bus, corresponding to the following partial derivatives:
-
-| ∂P₁/∂V₁  | ∂P₁/∂θ₁ | ...      | ...     | ...     | ...     | ...     |
-| ∂Q₁/∂V₁  | ∂Q₁/∂θ₁ | ...      | ...     | ...     | ...     | ...     | 
-| ...      |         | ∂P₂/∂V₂  | ∂P₂/∂θ₂ | ...     | ...     | ...     |
-| ...      |         | ∂Q₂/∂V₂  | ∂Q₂/∂θ₂ | ...     | ...     | ...     |
-| ...      | ...     | ...      | ...     | ...     | ∂Pₙ/∂Vₙ  | ∂Pₙ/∂θₙ |
-| ...      | ...     | ...      | ...     | ...     | ∂Qₙ/∂Vₙ  | ∂Qₙ/∂θₙ |
-
+this function groups the partial derivatives by bus. The structure is organized as groups of 4 values per bus. See the example below for details.
 
 This approach is more memory-efficient. Furthermore, this structure results in a more efficient factorization because the values are more likely to be grouped close to the diagonal.
 Refer to Electric Energy Systems: Analysis and Operation by Antonio Gomez-Exposito and Fernando L. Alvarado for more details.
@@ -230,6 +222,21 @@ Depending on the bus type, the function adds the appropriate entries to the Jaco
 - For `REF` buses, entries are added for local active and reactive power.
 - For `PV` buses, entries are added for active and reactive power with respect to angle, and for local reactive power.
 - For `PQ` buses, entries are added for active and reactive power with respect to voltage magnitude and angle.
+
+For example, suppose we have a system with 3 buses: bus 1 is `REF`, bus 2 is `PV`, and bus 3 is `PQ`.
+Let ΔPⱼ, ΔQⱼ be the active, reactive power balance at the `j`th bus. Let Pⱼ and Qⱼ be the
+active and reactive power generated at the `j`th bus (`REF` and `PV` only). Then the state vector is
+[P₁, Q₁, Q₂, θ₂, V₃, θ₃], and the Jacobian matrix is
+
+| ∂ΔP₁/∂P₁ | ∂ΔP₁/∂Q₁ | ∂ΔP₁/∂Q₂ | ∂ΔP₁/∂θ₂ | ∂ΔP₁/∂V₃ | ∂ΔP₁/∂θ₃ |  
+| ∂ΔQ₁/∂P₁ | ∂ΔQ₁/∂Q₁ | ∂ΔQ₁/∂Q₂ | ∂ΔQ₁/∂θ₂ | ∂ΔQ₁/∂V₃ | ∂ΔQ₁/∂θ₃ |
+| ∂ΔP₂/∂P₁ | ∂ΔP₂/∂Q₁ | ∂ΔP₂/∂Q₂ | ∂ΔP₂/∂θ₂ | ∂ΔP₂/∂V₃ | ∂ΔP₂/∂θ₃ |
+| ∂ΔQ₂/∂P₁ | ∂ΔQ₂/∂Q₁ | ∂ΔQ₂/∂Q₂ | ∂ΔQ₂/∂θ₂ | ∂ΔQ₂/∂V₃ | ∂ΔQ₂/∂θ₃ |
+| ∂ΔP₃/∂P₁ | ∂ΔP₃/∂Q₁ | ∂ΔP₃/∂Q₂ | ∂ΔP₃/∂θ₂ | ∂ΔP₃/∂V₃ | ∂ΔP₃/∂θ₃ |
+| ∂ΔQ₃/∂P₁ | ∂ΔQ₃/∂Q₁ | ∂ΔQ₃/∂Q₂ | ∂ΔQ₃/∂θ₂ | ∂ΔQ₃/∂V₃ | ∂ΔQ₃/∂θ₃ |
+
+In reality, for large networks, this matrix would be sparse, and each 4x4 block would only be nonzero
+when there's a line between the respective buses.
 
 Finally, the function constructs a sparse matrix from the collected indices and values and returns it.
 """
@@ -394,7 +401,7 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     bus_neighbors::Set{Int},
     ::Val{PSY.ACBusTypes.PQ})
     # State variables are Voltage Magnitude and Voltage Angle
-    # Everything appears in everything
+    # both state variables appear in both outputs.
     if bus_from == bus_to
         # Jac: Active PF against same voltage magnitude Vm[bus_from]
         Jv[row_from_p, col_to_vm] =

@@ -41,7 +41,8 @@ system_data = build_system(PSITestSystems, "c_sys14")
 Solving the power flow with mode 1:
 
 ````@example generated_power_flow
-results = run_powerflow(system_data)
+pf = ACPowerFlow()
+results = solve_powerflow(pf, system_data)
 results["bus_results"]
 ````
 
@@ -56,11 +57,11 @@ for b in get_components(Bus, system_data)
 end
 ````
 
-[`run_powerflow!`](@ref) return true or false to signal the successful result of the power
+[`solve_powerflow!`](@ref) return true or false to signal the successful result of the power
 flow. This enables the integration of a power flow into functions and use the return as check.
 
 ````@example generated_power_flow
-run_powerflow!(system_data; method = :newton)
+solve_powerflow!(pf, system_data; method = :newton)
 ````
 
 After running the power flow command this are the values of the

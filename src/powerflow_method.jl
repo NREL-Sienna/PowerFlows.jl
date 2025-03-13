@@ -1,19 +1,19 @@
 """Abstract supertype for all variations of Newton-Raphson."""
 abstract type AbstractNewtonRaphsonMethod end
 """Basic, no-frills Newton-Raphson."""
-struct SimpleMethod <: AbstractNewtonRaphsonMethod end
+struct SimpleNRMethod <: AbstractNewtonRaphsonMethod end
 """Use iterative refinement to get better accuracy when solving J(x)*Δx = -f(x)."""
-struct RefinementMethod <: AbstractNewtonRaphsonMethod end
+struct RefinementNRMethod <: AbstractNewtonRaphsonMethod end
 """Trust region method with a dog leg step."""
-struct TrustRegionMethod <: AbstractNewtonRaphsonMethod end
+struct TrustRegionNRMethod <: AbstractNewtonRaphsonMethod end
 
 """Cache for non-linear methods
 # Fields
 -`x::Vector{Float64}`: the current state vector. Used for all methods.
 -`r::Vector{Float64}`: the current residual. Used for all methods.
-    For `SimpleMethod` and `RefinementMethod`, we solve `J_x Δx = r` in-place,
+    For `SimpleNRMethod` and `RefinementNRMethod`, we solve `J_x Δx = r` in-place,
     so this also stores the step `Δx` at times in those methods.
-The remainder of the fields are only used in the `TrustRegionMethod`:
+The remainder of the fields are only used in the `TrustRegionNRMethod`:
 -`r_predict::Vector{Float64}`: the predicted residual at `x+Δx_proposed`,
     under a linear approximation: i.e `J_x⋅(x+Δx_proposed)`.
 -`Δx_proposed::Vector{Float64}`: the suggested step `Δx`, selected among `Δx_nr`, 
@@ -106,7 +106,7 @@ function _dogleg!(Δx_proposed::Vector{Float64},
     return
 end
 
-"""Does a single iteration of the `TrustRegionMethod`:
+"""Does a single iteration of the `TrustRegionNRMethod`:
 updates the `x` and `r` fields of the `stateVector` and computes
 the value of the Jacobian at the new `x`, if needed. Unlike 
 `_simple_step`, this has a return value, the updated value of `delta``."""
@@ -165,7 +165,7 @@ function _trust_region_step(time_step::Int,
     return delta
 end
 
-"""Does a single iteration of either `SimpleMethod` or `RefinementMethod`,
+"""Does a single iteration of either `SimpleNRMethod` or `RefinementNRMethod`,
 based on the value of `refinement::Bool`. Updates the `r` and `x`
  fields of the `stateVector`, and computes the Jacobian at the new `x`."""
 function _simple_step(time_step::Int,
@@ -214,7 +214,7 @@ function _simple_step(time_step::Int,
     return
 end
 
-"""Runs the full `SimpleMethod`.
+"""Runs the full `SimpleNRMethod`.
 # Keyword arguments:
 - `maxIterations::Int`: maximum iterations. Default: $DEFAULT_NR_MAX_ITER.
 - `tol::Float64`: tolerance. The iterative search ends when `maximum(abs.(residual)) < tol`.
@@ -224,7 +224,7 @@ function _nr_method(time_step::Int,
     linSolveCache::KLULinSolveCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
-    ::SimpleMethod;
+    ::SimpleNRMethod;
     kwargs...)
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
@@ -243,7 +243,7 @@ function _nr_method(time_step::Int,
     return converged, i
 end
 
-"""Runs the full `RefinementMethod`.
+"""Runs the full `RefinementNRMethod`.
 # Keyword arguments:
 - `maxIterations::Int`: maximum iterations. Default: $DEFAULT_NR_MAX_ITER.
 - `tol::Float64`: tolerance. The iterative search ends when `maximum(abs.(residual)) < tol`.
@@ -256,7 +256,7 @@ function _nr_method(time_step::Int,
     linSolveCache::KLULinSolveCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
-    ::RefinementMethod;
+    ::RefinementNRMethod;
     kwargs...)
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
@@ -278,7 +278,7 @@ function _nr_method(time_step::Int,
     return converged, i
 end
 
-"""Runs the full `TrustRegionMethod`.
+"""Runs the full `TrustRegionNRMethod`.
 # Keyword arguments:
 - `maxIterations::Int`: maximum iterations. Default: $DEFAULT_NR_MAX_ITER.
 - `tol::Float64`: tolerance. The iterative search ends when `maximum(abs.(residual)) < tol`.
@@ -293,7 +293,7 @@ function _nr_method(time_step::Int,
     linSolveCache::KLULinSolveCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
-    ::TrustRegionMethod;
+    ::TrustRegionNRMethod;
     kwargs...)
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
@@ -319,7 +319,7 @@ function _nr_method(time_step::Int,
 end
 
 function _newton_powerflow(
-    pf::ACPowerFlow{NewtonRaphsonACPowerFlow},
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
@@ -329,7 +329,7 @@ function _newton_powerflow(
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     J(time_step)  # we need to fill J with values because at this point it was just initialized
 
-    if sum(residual.Rv) > 10 * (length(residual.Rv))
+    if sum(abs, residual.Rv) > WARN_LARGE_RESIDUAL * length(residual.Rv)
         n_buses = first(size(data.bus_type))
         _, ix = findmax(residual.Rv)
         bx = ix <= n_buses ? ix : ix - n_buses
@@ -341,7 +341,7 @@ function _newton_powerflow(
     symbolic_factor!(linSolveCache, J.Jv)
     stateVector = StateVectorCache(x0, residual.Rv)
 
-    for method in [SimpleMethod(), RefinementMethod(), TrustRegionMethod()]
+    for method in [SimpleNRMethod(), RefinementNRMethod(), TrustRegionNRMethod()]
         converged, i =
             _nr_method(
                 time_step,

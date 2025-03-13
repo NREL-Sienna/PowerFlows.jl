@@ -10,7 +10,7 @@ Supports passing kwargs to the PF solver.
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `NewtonRaphsonACPowerFlow` or `PowerFlows.LUACPowerFlow` (to be used for testing only).
+- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `NewtonRaphsonACPowerFlow` or `LUACPowerFlow` (to be used for testing only).
 - `system::PSY.System`: The power system model.
 - `kwargs...`: Additional keyword arguments.
 
@@ -76,9 +76,6 @@ Returns the results in a dictionary of dataframes.
 
 ```julia
 res = solve_powerflow(pf, sys)
-
-# Passing NLsolve arguments
-res = solve_powerflow(pf, sys; method=:newton)
 ```
 """
 function solve_powerflow(
@@ -258,6 +255,6 @@ function bus_type_idx(
 )
     # Find indices for each bus type
     return [
-        findall(x -> x == bus_type, data.bus_type[:, time_step]) for bus_type in bus_types
+        findall(==(bus_type), data.bus_type[:, time_step]) for bus_type in bus_types
     ]
 end

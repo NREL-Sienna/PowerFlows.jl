@@ -11,7 +11,7 @@ using DataFrames
 using JSON3
 using DataStructures
 import SparseArrays
-import SparseArrays: SparseMatrixCSC, sparse
+import SparseArrays: SparseMatrixCSC, sparse, sprandn, sprand
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
@@ -36,10 +36,10 @@ MAIN_DIR = dirname(@__DIR__)
 include("test_utils/common.jl")
 include("test_utils/psse_results_compare.jl")
 include("test_utils/penalty_factors_brute_force.jl")
-Base.eval(PowerFlows, :(include("./test_utils/legacy_pf.jl")))
+include("test_utils/legacy_pf.jl")
 
 const AC_SOLVERS_TO_TEST = (
-    PowerFlows.LUACPowerFlow,
+    LUACPowerFlow,
     NewtonRaphsonACPowerFlow)
 
 LOG_FILE = "power-flows.log"

@@ -51,7 +51,7 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
     # create structure for multi-period case
-    pf_lu = ACPowerFlow(PowerFlows.LUACPowerFlow)
+    pf_lu = ACPowerFlow(LUACPowerFlow)
     pf_test = ACPowerFlow(NewtonRaphsonACPowerFlow)
 
     time_steps = 24
