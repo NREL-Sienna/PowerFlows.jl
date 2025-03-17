@@ -217,11 +217,12 @@ function _newton_powerflow(
         end
 
         if data.calculate_loss_factors
+            dSbus_dV_ref = collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:])
+            J_t = sparse(transpose(J))
+            fact = KLU.klu(J_t)
+            lf = fact \ dSbus_dV_ref  # only take the dPref_dP loss factors, ignore dPref_dQ
+            data.loss_factors[pvpq, time_step] .= lf[1:npvpq]
             data.loss_factors[ref, time_step] .= 1.0
-            penalty_factors!(
-                J,
-                collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:]),
-                view(data.loss_factors, pvpq, time_step), collect(1:npvpq))
         end
         @info("The legacy powerflow solver with LU converged after $i iterations")
     end

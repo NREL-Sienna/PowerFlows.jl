@@ -728,33 +728,3 @@ function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
         end
     end
 end
-
-"""
-    penalty_factors!(J::SparseMatrixCSC{Float64, Int32}, dSbus_dV_ref::Vector{Float64}, destination::SubArray{Float64})
-
-Compute the penalty factors (active power loss factors) and store the result in `destination`, which is the view in the `loss_factors`` matrix of the `PowerFlowData``.
-The loss factors are computed using the Jacobian matrix `J` and the vector of partial derivatives of 
-slack power with respect to bus voltages (angle and magnitude) `dSbus_dV_ref`.
-The approach is interpreting the change in slack active power injection as the change of the grid active power losses.
-The function uses the KLU library for sparse matrix factorization to calculate the loss factors.
-The loss factors are a linear approximation of the change in slack active power injection respect to the change in active power injections at each bus.
-
-# Arguments
-- `J::SparseMatrixCSC{Float64, Int32}`: The Jacobian matrix in sparse format.
-- `dSbus_dV_ref::Vector{Float64}`: The reference vector for the change in slack bus power with respect to bus voltages (PV, PQ buses for voltage angle, PQ buses for voltage magnitude).
-- `destination::SubArray{Float64}`: The view in the penalty factors matrix where the computed penalty factors will be stored.
-
-"""
-function penalty_factors!(
-    J::SparseMatrixCSC{Float64, Int32},
-    dSbus_dV_ref::Vector{Float64},
-    destination::SubArray{Float64},
-    source_index::Vector{Int},
-)
-    J_t = SparseMatrixCSC(transpose(J))
-    # fact = LinearAlgebra.factorize(J_t)
-    # note: KLU only operates on square matrices
-    fact = KLU.klu(J_t)
-    f = fact \ dSbus_dV_ref
-    destination .= f[source_index]  # we are only interested in the active power loss factors
-end

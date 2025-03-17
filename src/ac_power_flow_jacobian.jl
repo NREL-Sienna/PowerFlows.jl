@@ -490,29 +490,41 @@ function _update_jacobian_matrix_values!(
     return
 end
 
+"""
+    calculate_loss_factors(data::ACPowerFlowData, Jv::SparseMatrixCSC{Float64, Int32}, time_step::Int)
+
+Calculate and store the active power loss factors in the `loss_factors` matrix of the `ACPowerFlowData` structure for a given time step.
+
+The loss factors are computed using the Jacobian matrix `Jv` and the vector `dSbus_dV_ref`, which contains the 
+partial derivatives of slack power with respect to bus voltages. The function interprets changes in 
+slack active power injection as indicative of changes in grid active power losses. 
+KLU is used to factorize the sparse Jacobian matrix to solve for the loss factors.
+
+# Arguments
+- `data::ACPowerFlowData`: The data structure containing power flow information, including the `loss_factors` matrix.
+- `Jv::SparseMatrixCSC{Float64, Int32}`: The sparse Jacobian matrix of the power flow system.
+- `time_step::Int`: The time step index for which the loss factors are calculated.
+"""
 function calculate_loss_factors(
     data::ACPowerFlowData,
     Jv::SparseMatrixCSC{Float64, Int32},
     time_step::Int,
 )
-    num_buses = first(size(data.bus_type))
-    ref, pv, pq = bus_type_idx(data, time_step)
-    pvpq = vcat(pv, pq)
-    pvpq_coords = [
-        x for pair in zip(
-            [2 * x - 1 for x in 1:num_buses if x in pvpq],
-            [2 * x for x in 1:num_buses if x in pvpq],
-        ) for x in pair
-    ]
-    data.loss_factors[ref, time_step] .= 1.0
-    penalty_factors!(
-        Jv[pvpq_coords, pvpq_coords],
-        vec(collect(Jv[2 .* ref .- 1, pvpq_coords])),
-        view(
-            data.loss_factors,
-            [x for x in 1:num_buses if x in pvpq],
-            time_step,
-        ),
-        [2 * x - 1 for x in 1:length(pvpq)],
-    )
+    bus_numbers = 1:first(size(data.bus_type))
+    ref_mask = data.bus_type[:, time_step] .== (PSY.ACBusTypes.REF,)
+    pvpq_mask = .!ref_mask
+    ref = bus_numbers[ref_mask]
+    pvpq = bus_numbers[pvpq_mask]
+    pvpq_coords = Int32[]
+    for i in pvpq
+        push!(pvpq_coords, 2 * i - 1)  # 2x - 1
+        push!(pvpq_coords, 2 * i)      # 2x
+    end
+    J_t = sparse(transpose(Jv[pvpq_coords, pvpq_coords]))
+    dSbus_dV_ref = collect(Jv[2 .* ref .- 1, pvpq_coords])[:]
+    fact = KLU.klu(J_t)
+    lf = fact \ dSbus_dV_ref
+    idx = 1:2:(2 * length(pvpq) - 1)  # only take the dPref_dP loss factors, ignore dPref_dQ
+    data.loss_factors[pvpq_mask, time_step] .= lf[idx]
+    data.loss_factors[ref_mask, time_step] .= 1.0
 end
