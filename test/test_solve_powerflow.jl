@@ -505,13 +505,6 @@ end
 end
 
 @testset "Test loss factors for larger grid" begin
-    # if Sys.iswindows()
-    #     @warn(
-    #         "This test fails on Windows. The reason is unknown and should be investigated. See issue #113."
-    #     )
-    #     return
-    # end
-
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
     pf_lu = ACPowerFlow(LUACPowerFlow)

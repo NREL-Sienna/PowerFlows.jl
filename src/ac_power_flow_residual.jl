@@ -6,6 +6,18 @@ const ACPowerFlowData = PowerFlowData{
     Nothing,
 }
 
+"""
+    struct ACPowerFlowResidual
+
+A struct to keep track of the residuals in the Newton-Raphson AC power flow calculation.
+
+# Fields
+- `data::ACPowerFlowData`: The grid model data.
+- `Rf!::Function`: A function that updates the residuals based on the latest values stored in the grid at the given iteration.
+- `Rv::Vector{Float64}`: A vector of the values of the residuals.
+- `P_net::Vector{Float64}`: A vector of net active power injections.
+- `Q_net::Vector{Float64}`: A vector of net reactive power injections.
+"""
 struct ACPowerFlowResidual
     data::ACPowerFlowData
     Rf!::Function
@@ -14,6 +26,19 @@ struct ACPowerFlowResidual
     Q_net::Vector{Float64}
 end
 
+"""
+    ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
+
+Create an instance of `ACPowerFlowResidual` for a given time step.
+
+# Arguments
+- `data::ACPowerFlowData`: The power flow data representing the power system model.
+- `time_step::Int64`: The time step for which the power flow calculation is executed.
+
+# Returns
+- `ACPowerFlowResidual`: An instance containing the residual values, net bus active power injections, 
+and net bus reactive power injections.
+"""
 function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     n_buses = first(size(data.bus_type))
     P_net = Vector{Float64}(undef, n_buses)
@@ -36,6 +61,21 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     )
 end
 
+"""
+    (Residual::ACPowerFlowResidual)(Rv::Vector{Float64}, x::Vector{Float64}, time_step::Int64)
+
+Evaluate the AC power flow residuals and store the result in `Rv` using the provided 
+state vector `x` and the current time step `time_step`.
+The residuals are updated inplace in the struct and additionally copied to the provided array. 
+This function implements the functor approach for the `ACPowerFlowResidual` struct. 
+This makes the struct callable.
+Calling the `ACPowerFlowResidual` will also update the values of P, Q, V, Θ in the `data` struct.
+
+# Arguments
+- `Rv::Vector{Float64}`: The vector to store the calculated residuals.
+- `x::Vector{Float64}`: The state vector.
+- `time_step::Int64`: The current time step.
+"""
 function (Residual::ACPowerFlowResidual)(
     Rv::Vector{Float64},
     x::Vector{Float64},
@@ -46,6 +86,19 @@ function (Residual::ACPowerFlowResidual)(
     return
 end
 
+"""
+    (Residual::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
+
+Update the AC power flow residuals inplace and store the result in the attribute `Rv` of the struct.
+The inputs are the values of state vector `x` and the current time step `time_step`.
+This function implements the functor approach for the `ACPowerFlowResidual` struct. 
+This makes the struct callable.
+Calling the `ACPowerFlowResidual` will also update the values of P, Q, V, Θ in the `data` struct.
+
+# Arguments
+- `x::Vector{Float64}`: The state vector values.
+- `time_step::Int64`: The current time step.
+"""
 function (Residual::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
     Residual.Rf!(Residual.Rv, x, Residual.P_net, Residual.Q_net, Residual.data, time_step)
     return
@@ -97,6 +150,27 @@ function _set_state_vars_at_bus(
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
 end
 
+"""
+    _update_residual_values!(
+        F::Vector{Float64},
+        x::Vector{Float64},
+        P_net::Vector{Float64},
+        Q_net::Vector{Float64},
+        data::ACPowerFlowData,
+        time_step::Int64,
+    )
+
+Update the residual values for the Newton-Raphson AC power flow calculation. This function is used internally in the
+`ACPowerFlowResidual` struct. This function also updates the values of P, Q, V, Θ in the `data` struct.
+
+# Arguments
+- `F::Vector{Float64}`: Vector of the values of the residuals.
+- `x::Vector{Float64}`: State vector values.
+- `P_net::Vector{Float64}`: Vector of net active power injections at each bus.
+- `Q_net::Vector{Float64}`: Vector of net reactive power injections at each bus.
+- `data::ACPowerFlowData`: Data structure representing the grid model for the AC power flow calculation.
+- `time_step::Int64`: The current time step for which the residual values are being updated.
+"""
 function _update_residual_values!(
     F::Vector{Float64},
     x::Vector{Float64},
