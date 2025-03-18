@@ -119,18 +119,35 @@ function _initialize_bus_data!(
     for (bus_no, ix) in bus_lookup
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.Bus, sys, bus_name)
-        bus_type[ix] = PSY.get_bustype(bus)
+        bt = PSY.get_bustype(bus)
+        bus_type[ix] = bt
         if bus_type[ix] == PSY.ACBusTypes.REF
             bus_angles[ix] = 0.0
         else
             bus_angles[ix] = PSY.get_angle(bus)
         end
-        bus_magnitude[ix] = PSY.get_magnitude(bus)
+        bus_vm = PSY.get_magnitude(bus)
+        # prevent unfeasible starting values for voltage magnitude at PQ buses (for PV and REF buses we cannot do this):
+        if bt == PSY.ACBusTypes.PQ && bus_vm < BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
+            @warn(
+                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is below the plausible minimum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u."
+            )
+            bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
+        elseif bt == PSY.ACBusTypes.PQ && bus_vm > BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
+            @warn(
+                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is above the plausible maximum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u."
+            )
+            bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
+        end
+        bus_magnitude[ix] = bus_vm
     end
 end
 ##############################################################################
 # Matrix Methods #############################################################
 
+"""Matrix multiplication A*x. Written this way because a VirtualPTDF 
+matrix does not store all of its entries: instead, it calculates
+them (or retrieves them from cache), one element or one row at a time."""
 function my_mul_mt(
     A::PNM.VirtualPTDF,
     x::Vector{Float64},
@@ -142,6 +159,12 @@ function my_mul_mt(
     end
     return y
 end
+
+"""Similar to above: A*X where X is a matrix."""
+my_mul_mt(
+    A::PNM.VirtualPTDF,
+    X::Matrix{Float64},
+) = vcat((A[name_, :]' * X for name_ in A.axes[1])...)
 
 function make_dc_powerflowdata(
     sys,
@@ -157,6 +180,7 @@ function make_dc_powerflowdata(
     valid_ix,
     converged,
     loss_factors,
+    calculate_loss_factors,
 )
     branch_type = Vector{DataType}(undef, length(branch_lookup))
     for (ix, b) in enumerate(PNM.get_ac_branches(sys))
@@ -181,6 +205,7 @@ function make_dc_powerflowdata(
         neighbors,
         converged,
         loss_factors,
+        calculate_loss_factors,
     )
 end
 
@@ -200,6 +225,7 @@ function make_powerflowdata(
     neighbors,
     converged,
     loss_factors,
+    calculate_loss_factors,
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
@@ -290,5 +316,6 @@ function make_powerflowdata(
         neighbors,
         converged,
         loss_factors,
+        calculate_loss_factors,
     )
 end

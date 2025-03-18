@@ -63,7 +63,7 @@ function modify_rts_system!(sys::System)
     # For PQ bus, active and reactive are fixed; update voltage and angle
     pq_bus = get_bus(sys, 117)  # "Aston"
     @assert get_bustype(pq_bus) == ACBusTypes.PQ
-    set_magnitude!(pq_bus, 0.54783)
+    set_magnitude!(pq_bus, 0.84783)
     set_angle!(pq_bus, 0.14956)
 end
 
@@ -78,6 +78,6 @@ function modify_rts_powerflow!(data::PowerFlowData)
     data.bus_angles[data.bus_lookup[202]] = -0.13778
 
     # For PQ bus, active and reactive are fixed; update voltage and angle
-    data.bus_magnitude[data.bus_lookup[117]] = 0.54783
+    data.bus_magnitude[data.bus_lookup[117]] = 0.84783
     data.bus_angles[data.bus_lookup[117]] = 0.14956
 end

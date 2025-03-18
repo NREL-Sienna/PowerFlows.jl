@@ -332,8 +332,8 @@ end
 end
 
 @testset "PSSE Exporter with system_240[32].json, v33" for (ACSolver, folder_name) in (
-    (NLSolveACPowerFlow, "system_240_NLSolve"),
-    (KLUACPowerFlow, "system_240_KLU"),
+    (LUACPowerFlow, "system_240_LU"),
+    (NewtonRaphsonACPowerFlow, "system_240_newton"),
 )
     sys = load_test_system()
     pf = ACPowerFlow{ACSolver}()
@@ -380,8 +380,8 @@ end
 end
 
 @testset "PSSE Exporter with RTS_GMLC_DA_sys, v33" for (ACSolver, folder_name) in (
-    (NLSolveACPowerFlow, "rts_gmlc_NLSolve"),
-    (KLUACPowerFlow, "rts_gmlc_KLU"),
+    (NewtonRaphsonACPowerFlow, "rts_gmlc_newton"), # fails to converge if starting guess for V not plausible, fixed in PowerFlowData by clipping V
+    (LUACPowerFlow, "rts_gmlc_LU"),
 )
     sys = create_pf_friendly_rts_gmlc()
     pf = ACPowerFlow{ACSolver}()

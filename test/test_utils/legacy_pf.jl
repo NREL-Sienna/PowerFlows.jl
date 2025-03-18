@@ -3,11 +3,101 @@ import PowerFlows
 
 struct LUACPowerFlow <: ACPowerFlowSolverType end  # Only for testing, a basic implementation using LinearAlgebra.lu, allocates a lot of memory
 
+"""This function is to be able to compare the results of the legacy powerflow solver with the new one"""
+function _calc_x(
+    data::PowerFlows.ACPowerFlowData,
+    time_step::Int64,
+)
+    n_buses = first(size(data.bus_type))
+    # mock the expected x format, where the values depend on the type of the bus:
+    x = zeros(Float64, 2 * n_buses)
+    bus_types = view(data.bus_type, :, time_step)
+    for (ix, bt) in enumerate(bus_types)
+        if bt == PSY.ACBusTypes.REF
+            # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
+            x[2 * ix - 1] =
+                data.bus_activepower_injection[ix, time_step] -
+                data.bus_activepower_withdrawals[ix, time_step]
+            x[2 * ix] =
+                data.bus_reactivepower_injection[ix, time_step] -
+                data.bus_reactivepower_withdrawals[ix, time_step]
+        elseif bt == PSY.ACBusTypes.PV
+            # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
+            x[2 * ix - 1] =
+                data.bus_reactivepower_injection[ix, time_step] -
+                data.bus_reactivepower_withdrawals[ix, time_step]
+            x[2 * ix] = data.bus_angles[ix, time_step]
+        elseif bt == PSY.ACBusTypes.PQ
+            # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
+            x[2 * ix - 1] = data.bus_magnitude[ix, time_step]
+            x[2 * ix] = data.bus_angles[ix, time_step]
+        end
+    end
+    return x
+end
+
+"""
+    _calc_V(data::ACPowerFlowData, x::Vector{Float64}, time_step::Int64) -> Vector{Complex{Float64}}
+
+Calculate the results for complex bus voltages from the "x" results of NLSolveACVPowerFlow.
+    This is for compatibility with the results of legacy power flow method, ehich returns the vector V instead of the vector x.
+
+# Arguments
+- `data::ACPowerFlowData`: The power flow data struct.
+- `x::Vector{Float64}`: The results vector from NLSolveACPowerFlow containing voltage magnitudes and angles, as well as active and reactive powers.
+- `time_step::Int64`: The time step index for which to calculate the voltages (default is 1).
+
+# Returns
+- `Vector{Complex{Float64}}`: A vector of complex bus voltages.
+
+# Details
+This function calculates the complex bus voltages based on the bus types:
+- REF bus: Voltage magnitude and angle are taken from `data`, because the reference buses maintain the voltage specified by the input data.
+- PV bus: Voltage magnitude is taken from `data`, and the angle is taken from `x`. The voltage magnitude is maintained according to the inputs, and the voltage angle is determined in the PF calculation.
+- PQ bus: Both voltage magnitude and angle are taken from `x`, as the voltage magnitude and angle are results of the PF calculation for PQ buses.
+
+The state vector `x` is assumed to have 2 values per bus (real and imaginary parts, two of P, Q, Vm (V), Va (θ)).
+"""
+
+function _calc_V(
+    data::PowerFlows.ACPowerFlowData,
+    x::Vector{Float64},
+    time_step::Int64,
+)
+    n_buses = length(x) ÷ 2  # Since x has 2 elements per bus (real and imaginary)
+    V = zeros(Complex{Float64}, n_buses)
+    Vm_data = data.bus_magnitude[:, time_step]
+    Va_data = data.bus_angles[:, time_step]
+    bus_types = view(data.bus_type, :, time_step)
+
+    # Extract values for Vm and Va from x
+    for (ix, bt) in enumerate(bus_types)
+        if bt == PSY.ACBusTypes.REF
+            # For REF bus, we have active and reactive power
+            Vm = Vm_data[ix]
+            Va = Va_data[ix]
+            V[ix] = Vm * exp(im * Va)
+        elseif bt == PSY.ACBusTypes.PV
+            # For PV bus, we have reactive power and voltage angle
+            Vm = Vm_data[ix]
+            Va = x[2 * ix]
+            V[ix] = Vm * exp(im * Va)  # Rebuild voltage from magnitude and angle
+        elseif bt == PSY.ACBusTypes.PQ
+            # For PQ bus, we have voltage magnitude and voltage angle
+            Vm = x[2 * ix - 1]
+            Va = x[2 * ix]
+            V[ix] = Vm * exp(im * Va)  # Rebuild voltage from magnitude and angle
+        end
+    end
+
+    return V
+end
+
 # this function is for testing purposes only
 function _legacy_dSbus_dV(
     V::Vector{Complex{Float64}},
     Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
-)::Tuple{SparseMatrixCSC{Complex{Float64}, Int64}, SparseMatrixCSC{Complex{Float64}, Int64}}
+)::Tuple{SparseMatrixCSC{Complex{Float64}, Int32}, SparseMatrixCSC{Complex{Float64}, Int32}}
     diagV = SparseArrays.spdiagm(0 => V)
     diagVnorm = SparseArrays.spdiagm(0 => V ./ abs.(V))
     diagIbus = SparseArrays.spdiagm(0 => Ybus * V)
@@ -18,8 +108,8 @@ end
 
 # this function is for testing purposes only
 function _legacy_J(
-    dSbus_dVa::SparseMatrixCSC{Complex{Float64}, Int64},
-    dSbus_dVm::SparseMatrixCSC{Complex{Float64}, Int64},
+    dSbus_dVa::SparseMatrixCSC{Complex{Float64}, Int32},
+    dSbus_dVm::SparseMatrixCSC{Complex{Float64}, Int32},
     pvpq::Vector{Int64},
     pq::Vector{Int64},
 )
@@ -33,7 +123,7 @@ end
 
 # legacy NR implementation - here we do not care about allocations, we use this function only for testing purposes
 function _newton_powerflow(
-    pf::ACPowerFlow{PowerFlows.LUACPowerFlow},
+    pf::ACPowerFlow{LUACPowerFlow},
     data::PowerFlows.ACPowerFlowData,
     time_step::Int64;
     kwargs...,
@@ -46,8 +136,8 @@ function _newton_powerflow(
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    pv, pq =
-        PowerFlows.bus_type_idx(data, time_step, (PSY.ACBusTypes.PV, PSY.ACBusTypes.PQ))
+    ref, pv, pq =
+        PowerFlows.bus_type_idx(data, time_step)
     pvpq = [pv; pq]
 
     npv = length(pv)
@@ -55,8 +145,6 @@ function _newton_powerflow(
     npvpq = npv + npq
 
     Vm = data.bus_magnitude[:, time_step]
-    # prevent unfeasible starting values for Vm; for pv and ref buses we cannot do this:
-    Vm[pq] .= clamp.(Vm[pq], 0.9, 1.1)
     Va = data.bus_angles[:, time_step]
     V = zeros(Complex{Float64}, length(Vm))
     V .= Vm .* exp.(1im .* Va)
@@ -109,12 +197,34 @@ function _newton_powerflow(
     end
 
     if !converged
-        V .*= NaN
-        Sbus_result = fill(NaN + NaN * im, length(V))
+        if data.calculate_loss_factors
+            data.loss_factors[:, time_step] .= NaN
+        end
         @error("The legacy powerflow solver with LU did not converge after $i iterations")
     else
-        Sbus_result = V .* conj(Ybus * V)
+        Sbus_result = V .* conj.(Ybus * V)
+        data.bus_magnitude[:, time_step] .= Vm
+        data.bus_angles[:, time_step] .= Va
+        P_gen = real(Sbus_result) + data.bus_activepower_withdrawals[:, time_step]
+        Q_gen = imag(Sbus_result) + data.bus_reactivepower_withdrawals[:, time_step]
+        for (ix, bt) in enumerate(data.bus_type[:, time_step])
+            if bt == PSY.ACBusTypes.REF
+                data.bus_activepower_injection[ix, time_step] = P_gen[ix]
+                data.bus_reactivepower_injection[ix, time_step] = Q_gen[ix]
+            elseif bt == PSY.ACBusTypes.PV
+                data.bus_reactivepower_injection[ix, time_step] = Q_gen[ix]
+            end
+        end
+
+        if data.calculate_loss_factors
+            dSbus_dV_ref = collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:])
+            J_t = sparse(transpose(J))
+            fact = KLU.klu(J_t)
+            lf = fact \ dSbus_dV_ref  # only take the dPref_dP loss factors, ignore dPref_dQ
+            data.loss_factors[pvpq, time_step] .= lf[1:npvpq]
+            data.loss_factors[ref, time_step] .= 1.0
+        end
         @info("The legacy powerflow solver with LU converged after $i iterations")
     end
-    return (converged, V, Sbus_result)
+    return converged
 end
