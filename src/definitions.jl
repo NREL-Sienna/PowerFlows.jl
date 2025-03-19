@@ -2,8 +2,8 @@ const MAX_INIT_RESIDUAL = 10.0
 const BOUNDS_TOLERANCE = 1e-6
 const MAX_REACTIVE_POWER_ITERATIONS = 10
 const DEFAULT_MAX_REDISTRIBUTION_ITERATIONS = 10
-const WARN_LARGE_RESIDUAL = 10 # print a warning about "bad initial guess" if 
-# sum(abs, residual)/length(residual) > 10.
+const LARGE_RESIDUAL = 10 # threshold for "bad initial guess": default
+# norm(residual, 1)/length(residual) > 10.
 
 const ISAPPROX_ZERO_TOLERANCE = 1e-6
 
