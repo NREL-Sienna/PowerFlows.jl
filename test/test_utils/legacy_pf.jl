@@ -122,6 +122,7 @@ function _legacy_J(
 end
 
 # legacy NR implementation - here we do not care about allocations, we use this function only for testing purposes
+# FIXME: why can't _ac_powerflow inside solve_ac_powerflow.jl find this???
 function _newton_powerflow(
     pf::ACPowerFlow{LUACPowerFlow},
     data::PowerFlows.ACPowerFlowData,

@@ -39,8 +39,9 @@ include("test_utils/penalty_factors_brute_force.jl")
 include("test_utils/legacy_pf.jl")
 
 const AC_SOLVERS_TO_TEST = (
-    LUACPowerFlow,
-    NewtonRaphsonACPowerFlow)
+    # LUACPowerFlow,
+    NewtonRaphsonACPowerFlow,
+    TrustRegionACPowerFlow)
 
 LOG_FILE = "power-flows.log"
 

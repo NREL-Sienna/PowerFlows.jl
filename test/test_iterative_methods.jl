@@ -7,24 +7,21 @@ function run_pf(loads::Vector{Float64}; kwargs...)
         set_active_power!(comp, loads[i])
     end
     return PF.solve_powerflow(
-        ACPowerFlow{PF.NewtonRaphsonACPowerFlow}(),
+        ACPowerFlow{TrustRegionACPowerFlow}(),
         sys2;
-        kwargs,
+        kwargs...
     )
 end
 
 @testset "trust region" begin
-    # found by hand: all methods fail to converge => decrease loads, newton converges => increase loads.
-    # repeat, until find a point where trust region method converges and newton doesn't.
-    # (if these values stop working, could automate the above process via taking midpoint or centroid.)
-    @test_logs (:info, r"converged.*TrustRegionNRMethod") match_mode = :any run_pf(
+    @test_logs (:info, r".*TrustRegionACPowerFlow solver converged") match_mode = :any run_pf(
         [
         35.407000101,
         23.5000028166,
         50.0,
     ])
     # test trust region kwargs.
-    @test_logs (:info, r"converged.*TrustRegionNRMethod") match_mode = :any run_pf(
+    @test_logs (:info, r".*TrustRegionACPowerFlow solver converged") match_mode = :any run_pf(
         [
             35.407000101,
             23.5000028166,
