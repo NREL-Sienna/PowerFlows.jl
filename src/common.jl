@@ -75,7 +75,7 @@ function _get_withdrawals!(
     bus_lookup::Dict{Int, Int},
     sys::PSY.System,
 )
-    loads = PSY.get_components(x -> !isa(x, PSY.FixedAdmittance), PSY.ElectricLoad, sys)
+    loads = PSY.get_components(x -> (!isa(x, PSY.FixedAdmittance) & !isa(x, PSY.SwitchedAdmittance)), PSY.ElectricLoad, sys)
     for l in loads
         !PSY.get_available(l) && continue
         bus = PSY.get_bus(l)
@@ -176,16 +176,14 @@ function make_dc_powerflowdata(
     n_branches,
     bus_lookup,
     branch_lookup,
+    transformer_3w_lookup,
     temp_bus_map,
+    branch_type,
     valid_ix,
     converged,
     loss_factors,
     calculate_loss_factors,
 )
-    branch_type = Vector{DataType}(undef, length(branch_lookup))
-    for (ix, b) in enumerate(PNM.get_ac_branches(sys))
-        branch_type[ix] = typeof(b)
-    end
     bus_reactivepower_bounds = Vector{Vector{Float64}}(undef, n_buses)
     timestep_map = Dict(zip([i for i in 1:time_steps], timestep_names))
     neighbors = Vector{Set{Int}}()
@@ -198,6 +196,7 @@ function make_dc_powerflowdata(
         n_branches,
         bus_lookup,
         branch_lookup,
+        transformer_3w_lookup,
         temp_bus_map,
         branch_type,
         timestep_map,
@@ -218,6 +217,7 @@ function make_powerflowdata(
     n_branches,
     bus_lookup,
     branch_lookup,
+    transformer_3w_lookup,
     temp_bus_map,
     branch_type,
     timestep_map,
@@ -296,6 +296,7 @@ function make_powerflowdata(
     return PowerFlowData(
         bus_lookup,
         branch_lookup,
+        transformer_3w_lookup,
         bus_activepower_injection_1,
         bus_reactivepower_injection_1,
         bus_activepower_withdrawals_1,

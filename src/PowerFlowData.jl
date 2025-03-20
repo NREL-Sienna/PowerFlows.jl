@@ -84,6 +84,7 @@ struct PowerFlowData{
 } <: PowerFlowContainer
     bus_lookup::Dict{Int, Int}
     branch_lookup::Dict{String, Int}
+    transformer_3w_lookup::Dict{String, Vector{String}}
     bus_activepower_injection::Matrix{Float64}
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
@@ -109,6 +110,7 @@ end
 
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
 get_branch_lookup(pfd::PowerFlowData) = pfd.branch_lookup
+get_transformer_3w_lookup(pfd::PowerFlowData) = pfd.transformer_3w_lookup
 get_bus_activepower_injection(pfd::PowerFlowData) = pfd.bus_activepower_injection
 get_bus_reactivepower_injection(pfd::PowerFlowData) = pfd.bus_reactivepower_injection
 get_bus_activepower_withdrawals(pfd::PowerFlowData) = pfd.bus_activepower_withdrawals
@@ -216,18 +218,13 @@ function PowerFlowData(
     ref_bus_positions = PNM.find_slack_positions(buses)
 
     branches = PNM.get_ac_branches(sys)
-    n_branches = length(branches)
+    branch_lookup, transformer_3w_lookup, branch_type = PNM.get_branch_lookups(branches)
+    n_branches = length(power_network_matrix.fb)
 
     bus_lookup = power_network_matrix.lookup[2]
-    branch_lookup = Dict{String, Int}()
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
-    branch_types = Vector{DataType}(undef, n_branches)
-    for (ix, b) in enumerate(branches)
-        branch_lookup[PSY.get_name(b)] = ix
-        branch_types[ix] = typeof(b)
-    end
 
     valid_ix = setdiff(1:n_buses, ref_bus_positions)
     neighbors = _calculate_neighbors(power_network_matrix)
@@ -249,8 +246,9 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
+        transformer_3w_lookup,
         temp_bus_map,
-        branch_types,
+        branch_type,
         timestep_map,
         valid_ix,
         neighbors,
@@ -309,6 +307,7 @@ function PowerFlowData(
 
     bus_lookup = aux_network_matrix.lookup[1]
     branch_lookup = aux_network_matrix.lookup[2]
+    _, transformer_3w_lookup, branch_type = PNM.get_branch_lookups(PSY.get_components(PSY.ACBranch, sys))
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
@@ -326,7 +325,9 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
+        transformer_3w_lookup,
         temp_bus_map,
+        branch_type,
         valid_ix,
         converged,
         loss_factors,
@@ -384,6 +385,7 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
+    _, transformer_3w_lookup, branch_type = PNM.get_branch_lookups(PSY.get_components(PSY.ACBranch, sys))
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
@@ -401,7 +403,9 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
+        transformer_3w_lookup,
         temp_bus_map,
+        branch_type,
         valid_ix,
         converged,
         loss_factors,
@@ -458,6 +462,7 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
+    _, transformer_3w_lookup, branch_type = PNM.get_branch_lookups(PSY.get_components(PSY.ACBranch, sys))
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
@@ -475,7 +480,9 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
+        transformer_3w_lookup,
         temp_bus_map,
+        branch_type,
         valid_ix,
         converged,
         loss_factors,
