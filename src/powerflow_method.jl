@@ -149,7 +149,7 @@ function _simple_step(time_step::Int,
     J::ACPowerFlowJacobian,
     refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD,
     refinement_eps::Float64 = DEFAULT_REFINEMENT_EPS,
-    )
+)
     copyto!(stateVector.r, residual.Rv)
     try
         # factorize the numeric object of KLU inplace, while reusing the symbolic object
@@ -159,9 +159,9 @@ function _simple_step(time_step::Int,
         # use one of the other fields of stateVector as a temporary buffer
         # to work out error on solution: if error is large, try doing refinement.
         δ_temp = stateVector.r_predict
-        copyto!(δ_temp, J.Jv*stateVector.r)
+        copyto!(δ_temp, J.Jv * stateVector.r)
         δ_temp .-= residual.Rv
-        delta = norm(δ_temp, 1)/norm(residual.Rv, 1)
+        delta = norm(δ_temp, 1) / norm(residual.Rv, 1)
         if delta > refinement_threshold
             stateVector.r .= solve_w_refinement(linSolveCache,
                 J.Jv,
@@ -216,8 +216,8 @@ function _run_powerflow_method(time_step::Int,
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
     refinement_threshold::Float64 = get(kwargs,
-            :refinement_eps,
-            DEFAULT_REFINEMENT_THRESHOLD)
+        :refinement_eps,
+        DEFAULT_REFINEMENT_THRESHOLD)
     refinement_eps::Float64 = get(kwargs, :refinement_eps, DEFAULT_REFINEMENT_EPS)
     i, converged = 0, false
     while i < maxIterations && !converged
@@ -280,7 +280,7 @@ function _newton_powerflow(
     pf::ACPowerFlow{T},
     data::ACPowerFlowData,
     time_step::Int64;
-    kwargs...) where T<:Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}
+    kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
     residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
@@ -299,7 +299,15 @@ function _newton_powerflow(
     symbolic_factor!(linSolveCache, J.Jv)
     stateVector = StateVectorCache(x0, residual.Rv)
 
-    converged, i = _run_powerflow_method(time_step, stateVector, linSolveCache, residual, J, T; kwargs...)
+    converged, i = _run_powerflow_method(
+        time_step,
+        stateVector,
+        linSolveCache,
+        residual,
+        J,
+        T;
+        kwargs...,
+    )
     if converged
         @info("The $T solver converged after $i iterations.")
         if data.calculate_loss_factors
