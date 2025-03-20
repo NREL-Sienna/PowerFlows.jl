@@ -5,8 +5,11 @@ CurrentModule = PowerFlows
 ```
 
 ## Overview
-
-`PowerFlows.jl` is a [`Julia`](http://www.julialang.org) package for solving Power Flows
+PowerFlows.jl is part of the National Renewable Energy Laboratory's
+[Sienna ecosystem](https://www.nrel.gov/analysis/sienna.html), an open source framework for
+scheduling problems and dynamic simulations for power systems. The Sienna ecosystem can be
+[found on github](https://github.com/NREL-Sienna/Sienna).
+The documentation is still in progress. 
 
 ## Installation
 
@@ -22,7 +25,3 @@ For the current development version, "checkout" this package with
 ] add PowerFlows#main
 ```
 
-------------
-PowerFlows has been developed as part of the Scalable Integrated Infrastructure Planning
-(SIIP) initiative at the U.S. Department of Energy's National Renewable Energy
-Laboratory ([NREL](https://www.nrel.gov/))

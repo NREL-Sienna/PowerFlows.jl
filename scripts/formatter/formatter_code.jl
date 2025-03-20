@@ -20,6 +20,7 @@ for main_path in main_paths
                 conditional_to_if = true,
                 join_lines_based_on_source = true,
                 separate_kwargs_with_semicolon = true,
+                format_markdown = true,
 
                 # always_use_return = true. # Disabled since it throws a lot of false positives
             )
