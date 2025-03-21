@@ -332,8 +332,8 @@ function _newton_powerflow(
     if sum(abs, residual.Rv) > WARN_LARGE_RESIDUAL * length(residual.Rv)
         n_buses = first(size(data.bus_type))
         _, ix = findmax(residual.Rv)
-        bx = ix <= n_buses ? ix : ix - n_buses
-        bus_no = data.bus_lookup[bx]
+        bus_ix = div(ix+1, 2)
+        bus_no = axes(data.power_network_matrix,1)[bus_ix]
         @warn "Initial guess provided results in a large initial residual. Largest residual at bus $bus_no"
     end
 
