@@ -3,12 +3,12 @@ const ACPowerFlowData = PowerFlowData{
         Tuple{Vector{Int64}, Vector{Int64}},
         Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
     },
-    <: Union{
+    <:Union{
         PNM.ABA_Matrix{Tuple{Vector{Int64}, Vector{Int64}},
             Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
             Nothing},
-        Nothing
-    }
+        Nothing,
+    },
 }
 
 """

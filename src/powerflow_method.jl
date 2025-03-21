@@ -324,7 +324,11 @@ function _newton_powerflow(
     time_step::Int64;
     kwargs...)
     residual = ACPowerFlowResidual(data, time_step)
-    x0 = improved_x0(data, time_step, residual)
+    if pf.robust_power_flow
+        x0::Vector{Float64} = improved_x0(data, time_step, residual)
+    else
+        x0 = calculate_x0(data, time_step)
+    end
     residual(x0, time_step)
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     J(time_step)  # we need to fill J with values because at this point it was just initialized
@@ -386,7 +390,6 @@ whichever gives the smaller residual."""
 function improved_x0(data::ACPowerFlowData,
     time_step::Int64,
     residual::ACPowerFlowResidual)
-
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
     residualSize = norm(residual.Rv, 1)
@@ -453,8 +456,8 @@ function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
     ABA_matrix = data.aux_network_matrix.data
     solver_cache = KLULinSolveCache(ABA_matrix)
     full_factor!(solver_cache, ABA_matrix)
-    p_inj = data.bus_activepower_injection[data.valid_ix, time_step] 
-            - data.bus_activepower_withdrawals[data.valid_ix, time_step]
+    p_inj = data.bus_activepower_injection[data.valid_ix, time_step]
+    -data.bus_activepower_withdrawals[data.valid_ix, time_step]
     solve!(solver_cache, p_inj)
     data.bus_angles[data.valid_ix, time_step] .= p_inj
 end

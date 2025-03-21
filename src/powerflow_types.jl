@@ -7,21 +7,34 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     check_reactive_power_limits::Bool
     exporter::Union{Nothing, PowerFlowEvaluationModel}
     calculate_loss_factors::Bool
+    robust_power_flow::Bool
 end
 
 ACPowerFlow{ACSolver}(;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
+    robust_power_flow::Bool = false,
 ) where {ACSolver <: ACPowerFlowSolverType} =
-    ACPowerFlow{ACSolver}(check_reactive_power_limits, exporter, calculate_loss_factors)
+    ACPowerFlow{ACSolver}(
+        check_reactive_power_limits,
+        exporter,
+        calculate_loss_factors,
+        robust_power_flow,
+    )
 
 ACPowerFlow(
     ACSolver::Type{<:ACPowerFlowSolverType} = NewtonRaphsonACPowerFlow;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
-) = ACPowerFlow{ACSolver}(check_reactive_power_limits, exporter, calculate_loss_factors)
+    robust_power_flow::Bool = false,
+) = ACPowerFlow{ACSolver}(
+    check_reactive_power_limits,
+    exporter,
+    calculate_loss_factors,
+    robust_power_flow,
+)
 
 @kwdef struct DCPowerFlow <: PowerFlowEvaluationModel
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing

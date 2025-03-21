@@ -38,15 +38,15 @@ end
 # need jacobian to be ill-conditioned...
 
 @testset "dc fallback" begin
-    pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
+    pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(; robust_power_flow = true)
     # test that _dc_powerflow_fallback! solves correctly.
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
     sys2 = deepcopy(sys)
     data = PowerFlowData(pf, sys2)
     PF._dc_powerflow_fallback!(data, 1)
     ABA_angles = data.bus_angles[data.valid_ix, 1]
-    p_inj = data.bus_activepower_injection[data.valid_ix, 1] 
-            - data.bus_activepower_withdrawals[data.valid_ix, 1]
+    p_inj = data.bus_activepower_injection[data.valid_ix, 1]
+    -data.bus_activepower_withdrawals[data.valid_ix, 1]
     @test data.aux_network_matrix.data * ABA_angles ≈ p_inj
 
     # check behavior of improved_x0 via creating bogus awful starting point.

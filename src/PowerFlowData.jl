@@ -231,15 +231,19 @@ function PowerFlowData(
 
     valid_ix = setdiff(1:n_buses, ref_bus_positions)
     neighbors = _calculate_neighbors(power_network_matrix)
-    aux_network_matrix = PNM.ABA_Matrix(sys)
     converged = fill(false, time_steps)
+    # PERF: type instability.
     # loss factors order matches the order of buses in the grid model, and is calculated for all buses including ref buses (equals 0 for ref buses)
     if calculate_loss_factors
         loss_factors = Matrix{Float64}(undef, (n_buses, length(timestep_names)))
     else
         loss_factors = nothing
     end
-
+    if pf.robust_power_flow
+        aux_network_matrix = PNM.ABA_Matrix(sys)
+    else
+        aux_network_matrix = nothing
+    end
     return make_powerflowdata(
         sys,
         time_steps,
