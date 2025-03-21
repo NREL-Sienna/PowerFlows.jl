@@ -75,7 +75,11 @@ function _get_withdrawals!(
     bus_lookup::Dict{Int, Int},
     sys::PSY.System,
 )
-    loads = PSY.get_components(x -> (!isa(x, PSY.FixedAdmittance) & !isa(x, PSY.SwitchedAdmittance)), PSY.ElectricLoad, sys)
+    loads = PSY.get_components(
+        x -> (!isa(x, PSY.FixedAdmittance) & ! isa (x, PSY.SwitchedAdmittance)),
+        PSY.ElectricLoad,
+        sys,
+    )
     for l in loads
         !PSY.get_available(l) && continue
         bus = PSY.get_bus(l)

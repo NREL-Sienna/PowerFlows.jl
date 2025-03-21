@@ -307,7 +307,8 @@ function PowerFlowData(
 
     bus_lookup = aux_network_matrix.lookup[1]
     branch_lookup = aux_network_matrix.lookup[2]
-    _, transformer_3w_lookup, branch_type = PNM.get_branch_lookups(PSY.get_components(PSY.ACBranch, sys))
+    _, transformer_3w_lookup, branch_type =
+        PNM.get_branch_lookups(PSY.get_components(PSY.ACBranch, sys))
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
@@ -385,7 +386,8 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
-    _, transformer_3w_lookup, branch_type = PNM.get_branch_lookups(PSY.get_components(PSY.ACBranch, sys))
+    _, transformer_3w_lookup, branch_type =
+        PNM.get_branch_lookups(PSY.get_components(PSY.ACBranch, sys))
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
@@ -462,7 +464,8 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
-    _, transformer_3w_lookup, branch_type = PNM.get_branch_lookups(PSY.get_components(PSY.ACBranch, sys))
+    _, transformer_3w_lookup, branch_type =
+        PNM.get_branch_lookups(PSY.get_components(PSY.ACBranch, sys))
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
