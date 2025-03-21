@@ -1,17 +1,23 @@
-using Documenter, PowerSystems, DocStringExtensions, PowerFlows
+using Documenter, PowerSystems, DocStringExtensions, PowerFlows, DataStructures
+
+pages = OrderedDict(
+    "Welcome Page" => "index.md",
+    "How-to-Guides" => "how-tos/stub.md",
+    "Tutorials" => "tutorials/stub.md",
+    "Explanation" => "explanation/stub.md",
+    "Reference" => Any[
+        "Code Base Developer Guide" => "reference/developers/developer.md",
+        "Public API Reference" => "reference/api/public.md",
+        "Internal API Reference" => "reference/api/internal.md"],
+)
 
 makedocs(;
     modules = [PowerFlows],
     format = Documenter.HTML(; mathengine = Documenter.MathJax()),
     sitename = "PowerFlows.jl",
-    pages = Any[
-        "Welcome Page" => "index.md",
-        "Modeler Guide" => Any["modeler_guide/power_flow.md"],
-        "Code Base Developer Guide" => Any["Developer Guide" => "code_base_developer_guide/developer.md",],
-        "Public API Reference" => "api/public.md",
-        "Internal API Reference" => "api/internal.md",
-    ],
+    pages = Any[p for p in pages]
 )
+
 
 deploydocs(;
     repo = "github.com/NREL-Sienna/PowerFlows.jl.git",
