@@ -76,7 +76,7 @@ function _get_withdrawals!(
     sys::PSY.System,
 )
     loads = PSY.get_components(
-        x -> (!isa(x, PSY.FixedAdmittance) & ! isa (x, PSY.SwitchedAdmittance)),
+        x -> (!isa(x, PSY.FixedAdmittance) & !isa(x, PSY.SwitchedAdmittance)),
         PSY.ElectricLoad,
         sys,
     )
