@@ -48,6 +48,6 @@ end
     bus_no = bus.number
     bus_ix = PowerFlows.get_bus_lookup(data)[bus_no]
     data.bus_magnitude[bus_ix] = 100.0
-    @test_logs (:warn, Regex(".*Largest residual at bus $(bus_no)")
+    @test_logs (:warn, Regex(".*Largest residual at bus $(bus_no).*")
     ) match_mode = :any solve_powerflow!(data)
 end
