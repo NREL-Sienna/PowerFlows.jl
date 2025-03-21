@@ -122,15 +122,15 @@ function _legacy_J(
 end
 
 # legacy NR implementation - here we do not care about allocations, we use this function only for testing purposes
-function _newton_powerflow(
+function PowerFlows._newton_powerflow(
     pf::ACPowerFlow{LUACPowerFlow},
     data::PowerFlows.ACPowerFlowData,
     time_step::Int64;
     kwargs...,
 )
     # Fetch maxIter and tol from kwargs, or use defaults if not provided
-    maxIter = get(kwargs, :maxIter, DEFAULT_NR_MAX_ITER)
-    tol = get(kwargs, :tol, DEFAULT_NR_TOL)
+    maxIter = get(kwargs, :maxIter, PowerFlows.DEFAULT_NR_MAX_ITER)
+    tol = get(kwargs, :tol, PowerFlows.DEFAULT_NR_TOL)
     i = 0
 
     Ybus = data.power_network_matrix.data
@@ -173,7 +173,7 @@ function _newton_powerflow(
     while i < maxIter && !converged
         i += 1
 
-        # using a different factorization that KLU for testing
+        # using a different factorization than KLU for testing
         factor_J = LinearAlgebra.lu(J)
         dx .= factor_J \ F
 
@@ -219,7 +219,7 @@ function _newton_powerflow(
         if data.calculate_loss_factors
             dSbus_dV_ref = collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:])
             J_t = sparse(transpose(J))
-            fact = KLU.klu(J_t)
+            fact = PowerFlows.KLU.klu(J_t)
             lf = fact \ dSbus_dV_ref  # only take the dPref_dP loss factors, ignore dPref_dQ
             data.loss_factors[pvpq, time_step] .= lf[1:npvpq]
             data.loss_factors[ref, time_step] .= 1.0

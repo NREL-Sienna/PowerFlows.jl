@@ -1,19 +1,10 @@
-"""Abstract supertype for all variations of Newton-Raphson."""
-abstract type AbstractNewtonRaphsonMethod end
-"""Basic, no-frills Newton-Raphson."""
-struct SimpleNRMethod <: AbstractNewtonRaphsonMethod end
-"""Use iterative refinement to get better accuracy when solving J(x)*Δx = -f(x)."""
-struct RefinementNRMethod <: AbstractNewtonRaphsonMethod end
-"""Trust region method with a dog leg step."""
-struct TrustRegionNRMethod <: AbstractNewtonRaphsonMethod end
-
 """Cache for non-linear methods
 # Fields
 -`x::Vector{Float64}`: the current state vector. Used for all methods.
 -`r::Vector{Float64}`: the current residual. Used for all methods.
-    For `SimpleNRMethod` and `RefinementNRMethod`, we solve `J_x Δx = r` in-place,
+    For `NewtonRaphsonACPowerFlow`, we solve `J_x Δx = r` in-place,
     so this also stores the step `Δx` at times in those methods.
-The remainder of the fields are only used in the `TrustRegionNRMethod`:
+The remainder of the fields are only used in the `TrustRegionACPowerFlow`:
 -`r_predict::Vector{Float64}`: the predicted residual at `x+Δx_proposed`,
     under a linear approximation: i.e `J_x⋅(x+Δx_proposed)`.
 -`Δx_proposed::Vector{Float64}`: the suggested step `Δx`, selected among `Δx_nr`, 
@@ -42,22 +33,6 @@ function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     Δx_cauchy = copy(x0)
     Δx_nr = copy(x0)
     return StateVectorCache(x, r, r_predict, Δx_proposed, Δx_cauchy, Δx_nr)
-end
-
-"""Reset all entries in a StateVectorCache to `x0` and `f0`, in preparation
-for re-using the cache for the next iterative method."""
-function resetCache!(
-    stateVector::StateVectorCache,
-    x0::Vector{Float64},
-    f0::Vector{Float64},
-)
-    copyto!(stateVector.x, x0)
-    copyto!(stateVector.r, f0)
-    copyto!(stateVector.r_predict, x0)
-    copyto!(stateVector.Δx_proposed, x0)
-    copyto!(stateVector.Δx_cauchy, x0)
-    copyto!(stateVector.Δx_nr, x0)
-    return
 end
 
 """Sets `Δx_proposed` equal to the `Δx` by which we should update `x`. Decides
@@ -165,27 +140,33 @@ function _trust_region_step(time_step::Int,
     return delta
 end
 
-"""Does a single iteration of either `SimpleNRMethod` or `RefinementNRMethod`,
-based on the value of `refinement::Bool`. Updates the `r` and `x`
+"""Does a single iteration of `NewtonRaphsonACPowerFlow`. Updates the `r` and `x`
  fields of the `stateVector`, and computes the Jacobian at the new `x`."""
 function _simple_step(time_step::Int,
     stateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
-    refinement::Bool = false,
-    refinement_eps::Float64 = 1e-6)
-    # Note: before solve, the R.Rv has the residuals. After solve, R.Rv has the solution (dx). This is
-    # because the solve! function modifies the input vector in-place.
+    refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD,
+    refinement_eps::Float64 = DEFAULT_REFINEMENT_EPS,
+)
+    copyto!(stateVector.r, residual.Rv)
     try
         # factorize the numeric object of KLU inplace, while reusing the symbolic object
         numeric_refactor!(linSolveCache, J.Jv)
         # solve for Δx in-place
-        if !refinement
-            solve!(linSolveCache, residual.Rv)
-        else
-            residual.Rv .=
-                solve_w_refinement(linSolveCache, J.Jv, residual.Rv, refinement_eps)
+        solve!(linSolveCache, stateVector.r)
+        # use one of the other fields of stateVector as a temporary buffer
+        # to work out error on solution: if error is large, try doing refinement.
+        δ_temp = stateVector.r_predict
+        copyto!(δ_temp, J.Jv * stateVector.r)
+        δ_temp .-= residual.Rv
+        delta = norm(δ_temp, 1) / norm(residual.Rv, 1)
+        if delta > refinement_threshold
+            stateVector.r .= solve_w_refinement(linSolveCache,
+                J.Jv,
+                residual.Rv,
+                refinement_eps)
         end
     catch e
         # TODO cook up a test case where Jacobian is singular.
@@ -198,14 +179,14 @@ function _simple_step(time_step::Int,
             tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
             # KLU factorization. TODO check if this is faster than Julia's default ldiv.
             full_factor!(tempCache, M)
-            solve!(tempCache, residual.Rv)
+            solve!(tempCache, stateVector.r)
         else
             @error("KLU factorization failed: $e")
             return
         end
     end
     # update x
-    stateVector.x .-= residual.Rv
+    stateVector.x .-= stateVector.r
     # update data's fields (the bus angles/voltages) to match x, and update the residual.
     # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
     residual(stateVector.x, time_step)
@@ -214,52 +195,29 @@ function _simple_step(time_step::Int,
     return
 end
 
-"""Runs the full `SimpleNRMethod`.
+"""Runs the full `NewtonRaphsonACPowerFlow`.
 # Keyword arguments:
 - `maxIterations::Int`: maximum iterations. Default: $DEFAULT_NR_MAX_ITER.
-- `tol::Float64`: tolerance. The iterative search ends when `maximum(abs.(residual)) < tol`.
-    Default: $DEFAULT_NR_TOL."""
-function _nr_method(time_step::Int,
-    stateVector::StateVectorCache,
-    linSolveCache::KLULinSolveCache{Int32},
-    residual::ACPowerFlowResidual,
-    J::ACPowerFlowJacobian,
-    ::SimpleNRMethod;
-    kwargs...)
-    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
-    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
-    i, converged = 0, false
-    while i < maxIterations && !converged
-        _simple_step(
-            time_step,
-            stateVector,
-            linSolveCache,
-            residual,
-            J,
-        )
-        converged = norm(residual.Rv, Inf) < tol
-        i += 1
-    end
-    return converged, i
-end
-
-"""Runs the full `RefinementNRMethod`.
-# Keyword arguments:
-- `maxIterations::Int`: maximum iterations. Default: $DEFAULT_NR_MAX_ITER.
-- `tol::Float64`: tolerance. The iterative search ends when `maximum(abs.(residual)) < tol`.
+- `tol::Float64`: tolerance. The iterative search ends when `norm(abs.(residual)) < tol`.
     Default: $DEFAULT_NR_TOL.
+- `refinement_threshold::Float64`: If the solution to `J_x Δx = r` satisfies
+    `norm(J_x Δx - r, 1)/norm(r, 1) > refinement_threshold`, do iterative refinement to
+    improve the accuracy. Default: $DEFAULT_REFINEMENT_THRESHOLD.
 - `refinement_eps::Float64`: run iterative refinement on `J_x Δx = r` until
     `norm(Δx_{i}-Δx_{i+1}, 1)/norm(r,1) < refinement_eps`. Default: 
     $DEFAULT_REFINEMENT_EPS """
-function _nr_method(time_step::Int,
+function _run_powerflow_method(time_step::Int,
     stateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
-    ::RefinementNRMethod;
+    ::Type{NewtonRaphsonACPowerFlow};
     kwargs...)
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
+    refinement_threshold::Float64 = get(kwargs,
+        :refinement_eps,
+        DEFAULT_REFINEMENT_THRESHOLD)
     refinement_eps::Float64 = get(kwargs, :refinement_eps, DEFAULT_REFINEMENT_EPS)
     i, converged = 0, false
     while i < maxIterations && !converged
@@ -269,7 +227,7 @@ function _nr_method(time_step::Int,
             linSolveCache,
             residual,
             J,
-            true,
+            refinement_threshold,
             refinement_eps,
         )
         converged = norm(residual.Rv, Inf) < tol
@@ -288,12 +246,12 @@ end
 - `eta::Float64`: improvement threshold. If the observed improvement in our residual
     exceeds `eta` times the predicted improvement, we accept the new `x_i`.
     Default: $DEFAULT_TRUST_REGION_ETA."""
-function _nr_method(time_step::Int,
+function _run_powerflow_method(time_step::Int,
     stateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
-    ::TrustRegionNRMethod;
+    ::Type{TrustRegionACPowerFlow};
     kwargs...)
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
@@ -319,10 +277,10 @@ function _nr_method(time_step::Int,
 end
 
 function _newton_powerflow(
-    pf::ACPowerFlow{<:ACPowerFlowSolverType},
+    pf::ACPowerFlow{T},
     data::ACPowerFlowData,
     time_step::Int64;
-    kwargs...)
+    kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
     residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
@@ -341,42 +299,23 @@ function _newton_powerflow(
     symbolic_factor!(linSolveCache, J.Jv)
     stateVector = StateVectorCache(x0, residual.Rv)
 
-    for method in [SimpleNRMethod(), RefinementNRMethod(), TrustRegionNRMethod()]
-        converged, i =
-            _nr_method(
-                time_step,
-                stateVector,
-                linSolveCache,
-                residual,
-                J,
-                method;
-                kwargs...,
-            )
-        if converged
-            @info(
-                "The NewtonRaphsonACPowerFlow solver converged after $i iterations with method $method"
-            )
-            if data.calculate_loss_factors
-                calculate_loss_factors(data, J.Jv, time_step)
-            end
-
-            return true
-        end
-        @warn("Failed with method $method")
-        # reset back to starting point before trying next method.
-        # Order here (R then J) is important.
-        residual(x0, time_step)
-        J(time_step)
-        resetCache!(stateVector, x0, residual.Rv)
-    end
-
-    if data.calculate_loss_factors
-        data.loss_factors[:, time_step] .= NaN
-    end
-
-    @error(
-        "Solver NewtonRaphsonACPowerFlow did not converge with any method."
+    converged, i = _run_powerflow_method(
+        time_step,
+        stateVector,
+        linSolveCache,
+        residual,
+        J,
+        T;
+        kwargs...,
     )
+    if converged
+        @info("The $T solver converged after $i iterations.")
+        if data.calculate_loss_factors
+            calculate_loss_factors(data, J.Jv, time_step)
+        end
+        return true
+    end
+    @error("The $T solver failed to converge.")
     return false
 end
 
