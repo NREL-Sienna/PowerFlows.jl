@@ -330,11 +330,12 @@ function _newton_powerflow(
     J(time_step)  # we need to fill J with values because at this point it was just initialized
 
     if sum(abs, residual.Rv) > WARN_LARGE_RESIDUAL * length(residual.Rv)
-        _, ix = findmax(residual.Rv)
+        lg_res, ix = findmax(residual.Rv)
+        lg_res_rounded = round(lg_res; sigdigits = 3)
         pow_type = ix % 2 == 1 ? "active" : "reactive"
         bus_ix = div(ix + 1, 2)
         bus_no = axes(data.power_network_matrix, 1)[bus_ix]
-        @warn "Initial guess provided results in a large initial residual. " *
+        @warn "Initial guess provided results in a large initial residual of $lg_res_rounded. " *
               "Largest residual at bus $bus_no ($bus_ix by matrix indexing; $pow_type power)"
     end
 
