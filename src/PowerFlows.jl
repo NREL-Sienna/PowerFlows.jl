@@ -6,6 +6,7 @@ export PowerFlowData
 export DCPowerFlow
 export NewtonRaphsonACPowerFlow
 export TrustRegionACPowerFlow
+export RobustHomoptyPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow
@@ -50,4 +51,9 @@ include("ac_power_flow_jacobian.jl")
 include("solve_ac_powerflow.jl")
 include("powerflow_method.jl")
 include("post_processing.jl")
+
+include("RobustHomotopy/homotopy_function.jl")
+include("RobustHomotopy/homotopy_gradient.jl")
+include("RobustHomotopy/homotopy_hessian.jl")
+include("RobustHomotopy/robust_homotopy_method.jl")
 end
