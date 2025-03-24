@@ -5,6 +5,7 @@ export solve_powerflow!
 export PowerFlowData
 export DCPowerFlow
 export NewtonRaphsonACPowerFlow
+export TrustRegionACPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow
