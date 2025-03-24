@@ -288,11 +288,13 @@ function _newton_powerflow(
     J(time_step)  # we need to fill J with values because at this point it was just initialized
 
     if sum(abs, residual.Rv) > WARN_LARGE_RESIDUAL * length(residual.Rv)
-        n_buses = first(size(data.bus_type))
-        _, ix = findmax(residual.Rv)
-        bx = ix <= n_buses ? ix : ix - n_buses
-        bus_no = data.bus_lookup[bx]
-        @warn "Initial guess provided results in a large initial residual. Largest residual at bus $bus_no"
+        lg_res, ix = findmax(residual.Rv)
+        lg_res_rounded = round(lg_res; sigdigits = 3)
+        pow_type = ix % 2 == 1 ? "active" : "reactive"
+        bus_ix = div(ix + 1, 2)
+        bus_no = axes(data.power_network_matrix, 1)[bus_ix]
+        @warn "Initial guess provided results in a large initial residual of $lg_res_rounded. " *
+              "Largest residual at bus $bus_no ($bus_ix by matrix indexing; $pow_type power)"
     end
 
     linSolveCache = KLULinSolveCache(J.Jv)
