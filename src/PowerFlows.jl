@@ -7,6 +7,7 @@ export DCPowerFlow
 export NewtonRaphsonACPowerFlow
 export TrustRegionACPowerFlow
 export LevenbergMarquardtACPowerFlow
+export RobustHomotopyPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow
@@ -53,4 +54,7 @@ include("powerflow_setup.jl")
 include("powerflow_method.jl")
 include("levenberg-marquardt.jl")
 include("post_processing.jl")
+include("RobustHomotopy/homotopy_hessian.jl")
+include("RobustHomotopy/wolfe_conditions.jl")
+include("RobustHomotopy/robust_homotopy_method.jl")
 end
