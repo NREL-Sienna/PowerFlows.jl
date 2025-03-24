@@ -15,9 +15,8 @@ makedocs(;
     modules = [PowerFlows],
     format = Documenter.HTML(; mathengine = Documenter.MathJax()),
     sitename = "PowerFlows.jl",
-    pages = Any[p for p in pages]
+    pages = Any[p for p in pages],
 )
-
 
 deploydocs(;
     repo = "github.com/NREL-Sienna/PowerFlows.jl.git",
