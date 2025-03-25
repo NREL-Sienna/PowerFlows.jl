@@ -152,8 +152,6 @@ function _newton_powerflow(
     # pre-allocate dx
     dx = zeros(Float64, npv + 2 * npq)
 
-    Ybus = data.power_network_matrix.data
-
     Sbus =
         data.bus_activepower_injection[:, time_step] -
         data.bus_activepower_withdrawals[:, time_step] +
@@ -217,6 +215,8 @@ function _newton_powerflow(
         end
 
         if data.calculate_loss_factors
+            dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus)
+            J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
             dSbus_dV_ref = collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:])
             J_t = sparse(transpose(J))
             fact = KLU.klu(J_t)
