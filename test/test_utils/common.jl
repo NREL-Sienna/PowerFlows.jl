@@ -12,7 +12,7 @@ powerflow_match_fn(a, b) = IS.isequivalent(a, b)
 "Create a version of the RTS_GMLC system that plays nice with the current implementation of AC power flow"
 function create_pf_friendly_rts_gmlc()
     sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
-    remove_component!(sys, only(get_components(TwoTerminalHVDCLine, sys)))  # HVDC power flow not implemented yet
+    remove_component!(sys, only(get_components(TwoTerminalGenericHVDCLine, sys)))  # HVDC power flow not implemented yet
     # Modify some things so reactive power redistribution succeeds
     for (component_type, component_name, new_limits) in [
         (RenewableDispatch, "113_PV_1", (min = -30.0, max = 30.0))
