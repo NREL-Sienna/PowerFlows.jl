@@ -110,6 +110,7 @@ end
 
 function _initialize_bus_data!(
     bus_type::Vector{PSY.ACBusTypes},
+    slack_participation_factors::Vector{Float64},
     bus_angles::Vector{Float64},
     bus_magnitude::Vector{Float64},
     temp_bus_map::Dict{Int, String},
@@ -123,6 +124,7 @@ function _initialize_bus_data!(
         bus_type[ix] = bt
         if bus_type[ix] == PSY.ACBusTypes.REF
             bus_angles[ix] = 0.0
+            slack_participation_factors[ix] = 1.0
         else
             bus_angles[ix] = PSY.get_angle(bus)
         end
@@ -231,8 +233,11 @@ function make_powerflowdata(
     bus_angles = zeros(Float64, n_buses)
     bus_magnitude = ones(Float64, n_buses)
 
+    slack_participation_factors = zeros(Float64, n_buses)
+
     _initialize_bus_data!(
         bus_type,
+        slack_participation_factors,
         bus_angles,
         bus_magnitude,
         temp_bus_map,
@@ -287,6 +292,11 @@ function make_powerflowdata(
     bus_type_1 = repeat(bus_type; outer = [1, time_steps])
     @assert size(bus_type_1) == (n_buses, time_steps)
 
+    # Initial slack participation factors are same for every time period
+    slack_participation_factors_1 =
+        repeat(slack_participation_factors; outer = [1, time_steps])
+    @assert size(slack_participation_factors_1) == (n_buses, time_steps)
+
     # Initial flows are all zero
     branch_activepower_flow_from_to = zeros(Float64, n_branches, time_steps)
     branch_reactivepower_flow_from_to = zeros(Float64, n_branches, time_steps)
@@ -301,6 +311,7 @@ function make_powerflowdata(
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
         bus_reactivepower_bounds_1,
+        slack_participation_factors_1,
         bus_type_1,
         branch_type,
         bus_magnitude_1,

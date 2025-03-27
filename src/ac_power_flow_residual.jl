@@ -24,6 +24,9 @@ struct ACPowerFlowResidual
     Rv::Vector{Float64}
     P_net::Vector{Float64}
     Q_net::Vector{Float64}
+    P_net_set::Vector{Float64}
+    slack_participation_factors::Vector{Float64}
+    slack_bus::Int
 end
 
 """
@@ -43,6 +46,11 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     n_buses = first(size(data.bus_type))
     P_net = Vector{Float64}(undef, n_buses)
     Q_net = Vector{Float64}(undef, n_buses)
+    P_net_set = zeros(Float64, n_buses)
+    slack_participation_factors = zeros(Float64, n_buses)
+    slack_bus = 0
+    sum_sl_weights = 0.0
+    bus_type = view(data.bus_type, :, time_step)
     for ix in 1:n_buses
         P_net[ix] =
             data.bus_activepower_injection[ix, time_step] -
@@ -50,7 +58,31 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
         Q_net[ix] =
             data.bus_reactivepower_injection[ix, time_step] -
             data.bus_reactivepower_withdrawals[ix, time_step]
+        P_net_set[ix] = P_net[ix]
+        if bus_type[ix] ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV)
+            slack_participation_factors[ix] =
+                data.slack_participation_factors[ix, time_step]
+            if slack_participation_factors[ix] < 0.0
+                throw(ArgumentError("slack_participation_factors must be non-negative"))
+            end
+            sum_sl_weights += slack_participation_factors[ix]
+            # slack_bus is set to the first REF bus found - will be used for the total slack power
+            # TODO: check if there are multiple REF buses and treat the remaining ones as if they were PV buses
+            # TODO: enable multiple slack buses, multiple disconnected zones
+            slack_bus != 0 || (bus_type[ix] == PSY.ACBusTypes.REF && (slack_bus = ix))
+        end
     end
+
+    if sum_sl_weights == 0.0
+        throw(ArgumentError("sum of slack_participation_factors cannot be zero"))
+    end
+
+    # Actually should be fine e.g. when PV is changed to PQ
+    # if sum_sl_weights != sum(abs.(data.slack_participation_factors[:, time_step]))
+    #     warn("Only slack weights for REF and PV buses can be considered.")
+    # end
+
+    slack_participation_factors ./= sum_sl_weights
 
     return ACPowerFlowResidual(
         data,
@@ -58,6 +90,9 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
         Vector{Float64}(undef, 2 * n_buses),
         P_net,
         Q_net,
+        P_net_set,
+        slack_participation_factors,
+        slack_bus,
     )
 end
 
@@ -81,7 +116,17 @@ function (Residual::ACPowerFlowResidual)(
     x::Vector{Float64},
     time_step::Int64,
 )
-    Residual.Rf!(Residual.Rv, x, Residual.P_net, Residual.Q_net, Residual.data, time_step)
+    Residual.Rf!(
+        Residual.Rv,
+        x,
+        Residual.P_net,
+        Residual.Q_net,
+        Residual.P_net_set,
+        Residual.slack_participation_factors,
+        Residual.slack_bus,
+        Residual.data,
+        time_step,
+    )
     copyto!(Rv, Residual.Rv)
     return
 end
@@ -100,47 +145,66 @@ Calling the `ACPowerFlowResidual` will also update the values of P, Q, V, Θ in 
 - `time_step::Int64`: The current time step.
 """
 function (Residual::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
-    Residual.Rf!(Residual.Rv, x, Residual.P_net, Residual.Q_net, Residual.data, time_step)
+    Residual.Rf!(
+        Residual.Rv,
+        x,
+        Residual.P_net,
+        Residual.Q_net,
+        Residual.P_net_set,
+        Residual.slack_participation_factors,
+        Residual.slack_bus,
+        Residual.data,
+        time_step,
+    )
     return
 end
 
 # dispatching on Val for performance reasons.
-function _set_state_vars_at_bus(
+function _set_state_vars_at_bus!(
     ix::Int,
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
+    P_net_set::Vector{Float64},
+    P_slack::Float64,
     StateVector::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.REF})
     # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
-    P_net[ix] = StateVector[2 * ix - 1]
+    P_net[ix] = P_net_set[ix] + P_slack
     Q_net[ix] = StateVector[2 * ix]
     data.bus_activepower_injection[ix, time_step] =
-        StateVector[2 * ix - 1] + data.bus_activepower_withdrawals[ix, time_step]
+        P_net[ix] + data.bus_activepower_withdrawals[ix, time_step]
     data.bus_reactivepower_injection[ix, time_step] =
         StateVector[2 * ix] + data.bus_reactivepower_withdrawals[ix, time_step]
 end
 
-function _set_state_vars_at_bus(
+function _set_state_vars_at_bus!(
     ix::Int,
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
+    P_net_set::Vector{Float64},
+    P_slack::Float64,
     StateVector::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.PV})
     # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
+    P_net[ix] = P_net_set[ix] + P_slack
     Q_net[ix] = StateVector[2 * ix - 1]
+    data.bus_activepower_injection[ix, time_step] =
+        P_net[ix] + data.bus_activepower_withdrawals[ix, time_step]
     data.bus_reactivepower_injection[ix, time_step] =
         StateVector[2 * ix - 1] + data.bus_reactivepower_withdrawals[ix, time_step]
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
 end
 
-function _set_state_vars_at_bus(
+function _set_state_vars_at_bus!(
     ix::Int,
-    P_net::Vector{Float64},
-    Q_net::Vector{Float64},
+    ::Vector{Float64},
+    ::Vector{Float64},
+    ::Vector{Float64},
+    ::Float64,
     StateVector::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
@@ -176,14 +240,28 @@ function _update_residual_values!(
     x::Vector{Float64},
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
+    P_net_set::Vector{Float64},
+    slack_participation_factors::Vector{Float64},
+    slack_bus::Int,
     data::ACPowerFlowData,
     time_step::Int64,
 )
     # update P_net, Q_net, data.bus_angles, data.bus_magnitude based on X
     Yb = data.power_network_matrix.data
     bus_types = view(data.bus_type, :, time_step)
+    P_slack = (x[2 * slack_bus - 1] - P_net_set[slack_bus]) .* slack_participation_factors
     for (ix, bt) in enumerate(bus_types)
-        _set_state_vars_at_bus(ix, P_net, Q_net, x, data, time_step, Val(bt))
+        _set_state_vars_at_bus!(
+            ix,
+            P_net,
+            Q_net,
+            P_net_set,
+            P_slack[ix],
+            x,
+            data,
+            time_step,
+            Val(bt),
+        )
     end
 
     # compute active, reactive power balances using the just updated values.

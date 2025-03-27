@@ -549,3 +549,109 @@ end
         atol = 1e-4,
     ))
 end
+
+@testset "AC PF with distributed slack" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    bus_numbers = get_bus_numbers(sys)
+
+    original_gen_power = zeros(Float64, 14)
+    with_units_base(sys, UnitSystem.NATURAL_UNITS) do
+        original_gen_power .= [
+            isempty(g) ? 0 : get_active_power(first(g)) for g in [
+                get_components(x -> get_number(get_bus(x)) == i, ThermalStandard, sys)
+                for i in bus_numbers
+            ]
+        ]
+    end
+
+    pf = ACPowerFlow()
+    res1 = solve_powerflow(pf, sys)
+
+    ref = []
+    pv = []
+    for i in bus_numbers
+        isempty(get_components(x -> get_number(get_bus(x)) == i, ThermalStandard, sys)) &&
+            continue
+        b = first(get_components(x -> get_number(x) == i, ACBus, sys))
+        get_bustype(b) == ACBusTypes.REF && push!(ref, i)
+        get_bustype(b) == ACBusTypes.PV && push!(pv, i)
+    end
+
+    slack_participation_factors = zeros(Float64, length(bus_numbers))
+    slack_participation_factors[ref] .= 1.0
+
+    res2 =
+        solve_powerflow(pf, sys; slack_participation_factors = slack_participation_factors)
+
+    # basic test: if we pass the same slack participation factors as the default ones, the results
+    # should be the same
+    @test isapprox(res1["bus_results"].Vm, res2["bus_results"].Vm, atol = 1e-6, rtol = 0)
+    @test isapprox(res1["bus_results"].θ, res2["bus_results"].θ, atol = 1e-6, rtol = 0)
+
+    # now test with REF and one PV bus having slack participation factors of 1.0
+    slack_participation_factors[pv[1]] = 1.0  # next bus after REF is a PV bus
+    res3 =
+        solve_powerflow(pf, sys; slack_participation_factors = slack_participation_factors)
+    # the results now must be different
+    @test !isapprox(res1["bus_results"].Vm, res3["bus_results"].Vm; atol = 1e-6, rtol = 0)
+    @test !isapprox(res1["bus_results"].θ, res3["bus_results"].θ; atol = 1e-6, rtol = 0)
+    # check the slack power distribution logic
+    slack_provided = res3["bus_results"][:, :P_gen] .- original_gen_power
+    nnz = slack_participation_factors .!= 0.0
+    @test all(slack_provided[.!nnz] .== 0.0)
+    @test all(slack_provided[nnz] .!= 0.0)
+    @test all(
+        isapprox(x, sum(slack_provided[nnz]) / sum(slack_participation_factors)) for
+        x in slack_provided[nnz]
+    )
+
+    # now test with all REF and PV buses having equal slack participation factors of 1.0
+    slack_participation_factors[pv] .= 1.0
+    res4 =
+        solve_powerflow(pf, sys; slack_participation_factors = slack_participation_factors)
+    # the results now must be different
+    @test !isapprox(res1["bus_results"].Vm, res4["bus_results"].Vm; atol = 1e-6, rtol = 0)
+    @test !isapprox(res1["bus_results"].θ, res4["bus_results"].θ; atol = 1e-6, rtol = 0)
+
+    # now check the slack power distribution logic
+    slack_provided = res4["bus_results"][:, :P_gen] .- original_gen_power
+    nnz = slack_participation_factors .!= 0.0
+    @test all(slack_provided[.!nnz] .== 0.0)
+    @test all(slack_provided[nnz] .!= 0.0)
+    @test all(
+        isapprox(x, sum(slack_provided[nnz]) / sum(slack_participation_factors)) for
+        x in slack_provided[nnz]
+    )
+
+    # Now set the slack participation factor to 0.0 for the REF bus
+    slack_participation_factors[ref] .= 0.0
+    res5 =
+        solve_powerflow(pf, sys; slack_participation_factors = slack_participation_factors)
+    # now check the slack power distribution logic
+    slack_provided = res5["bus_results"][:, :P_gen] .- original_gen_power
+    nnz = slack_participation_factors .!= 0.0
+    @test all(slack_provided[ref] .== 0.0)
+    @test all(slack_provided[.!nnz] .== 0.0)
+    @test all(slack_provided[nnz] .!= 0.0)
+    @test all(
+        isapprox(x, sum(slack_provided[nnz]) / sum(slack_participation_factors)) for
+        x in slack_provided[nnz]
+    )
+
+    # now check the formula of the distribution of slack provision
+    slack_participation_factors[ref] .= 2.5
+    slack_participation_factors[pv] .= pv
+    res6 =
+        solve_powerflow(pf, sys; slack_participation_factors = slack_participation_factors)
+    # now check the slack power distribution logic
+    slack_provided = res6["bus_results"][:, :P_gen] .- original_gen_power
+    nnz = slack_participation_factors .!= 0.0
+    @test all(slack_provided[.!nnz] .== 0.0)
+    @test all(slack_provided[nnz] .!= 0.0)
+    @test isapprox(
+        slack_provided[nnz] ./ sum(slack_provided),
+        slack_participation_factors[nnz] ./ sum(slack_participation_factors),
+        atol = 1e-6,
+        rtol = 0,
+    )
+end

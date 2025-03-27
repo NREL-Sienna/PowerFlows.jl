@@ -89,6 +89,7 @@ struct PowerFlowData{
     bus_activepower_withdrawals::Matrix{Float64}
     bus_reactivepower_withdrawals::Matrix{Float64}
     bus_reactivepower_bounds::Matrix{Vector{Float64}}
+    slack_participation_factors::Matrix{Float64}
     bus_type::Matrix{PSY.ACBusTypes}
     branch_type::Vector{DataType}
     bus_magnitude::Matrix{Float64}
@@ -114,6 +115,7 @@ get_bus_reactivepower_injection(pfd::PowerFlowData) = pfd.bus_reactivepower_inje
 get_bus_activepower_withdrawals(pfd::PowerFlowData) = pfd.bus_activepower_withdrawals
 get_bus_reactivepower_withdrawals(pfd::PowerFlowData) = pfd.bus_reactivepower_withdrawals
 get_bus_reactivepower_bounds(pfd::PowerFlowData) = pfd.bus_reactivepower_bounds
+get_slack_participation_factors(pfd::PowerFlowData) = pfd.slack_participation_factors
 get_bus_type(pfd::PowerFlowData) = pfd.bus_type
 get_branch_type(pfd::PowerFlowData) = pfd.branch_type
 get_bus_magnitude(pfd::PowerFlowData) = pfd.bus_magnitude
