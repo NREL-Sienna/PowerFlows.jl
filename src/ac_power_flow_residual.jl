@@ -176,7 +176,7 @@ function _set_state_vars_at_bus!(
     data.bus_activepower_injection[ix, time_step] =
         P_net[ix] + data.bus_activepower_withdrawals[ix, time_step]
     data.bus_reactivepower_injection[ix, time_step] =
-        StateVector[2 * ix] + data.bus_reactivepower_withdrawals[ix, time_step]
+        Q_net[ix] + data.bus_reactivepower_withdrawals[ix, time_step]
 end
 
 function _set_state_vars_at_bus!(
@@ -190,12 +190,18 @@ function _set_state_vars_at_bus!(
     time_step::Int64,
     ::Val{PSY.ACBusTypes.PV})
     # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
-    P_net[ix] = P_net_set[ix] + P_slack
-    Q_net[ix] = StateVector[2 * ix - 1]
-    data.bus_activepower_injection[ix, time_step] =
-        P_net[ix] + data.bus_activepower_withdrawals[ix, time_step]
-    data.bus_reactivepower_injection[ix, time_step] =
-        StateVector[2 * ix - 1] + data.bus_reactivepower_withdrawals[ix, time_step]
+    # We still update both P and Q values in case the PV bus participates in distributed slack
+    _set_state_vars_at_bus!(
+        ix,
+        P_net,
+        Q_net,
+        P_net_set,
+        P_slack,
+        StateVector,
+        data,
+        time_step,
+        Val(PSY.ACBusTypes.REF),
+    )
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
 end
 

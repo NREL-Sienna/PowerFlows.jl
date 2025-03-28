@@ -557,7 +557,7 @@ end
     original_gen_power = zeros(Float64, 14)
     with_units_base(sys, UnitSystem.NATURAL_UNITS) do
         original_gen_power .= [
-            isempty(g) ? 0 : get_active_power(first(g)) for g in [
+            isempty(g) ? 0 : get_active_power(only(g)) for g in [
                 get_components(x -> get_number(get_bus(x)) == i, ThermalStandard, sys)
                 for i in bus_numbers
             ]
