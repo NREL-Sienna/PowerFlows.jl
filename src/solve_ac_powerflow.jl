@@ -198,9 +198,6 @@ function _ac_powerflow(
     kwargs...,
 )
     check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
-    if :slack_participation_factors in keys(kwargs)
-        data.slack_participation_factors .= kwargs[:slack_participation_factors]
-    end
 
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
         converged = _newton_powerflow(pf, data, time_step; kwargs...)

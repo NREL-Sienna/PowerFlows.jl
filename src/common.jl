@@ -110,7 +110,6 @@ end
 
 function _initialize_bus_data!(
     bus_type::Vector{PSY.ACBusTypes},
-    slack_participation_factors::Vector{Float64},
     bus_angles::Vector{Float64},
     bus_magnitude::Vector{Float64},
     temp_bus_map::Dict{Int, String},
@@ -124,7 +123,6 @@ function _initialize_bus_data!(
         bus_type[ix] = bt
         if bus_type[ix] == PSY.ACBusTypes.REF
             bus_angles[ix] = 0.0
-            slack_participation_factors[ix] = 1.0
         else
             bus_angles[ix] = PSY.get_angle(bus)
         end
@@ -211,6 +209,72 @@ function make_dc_powerflowdata(
     )
 end
 
+function make_slack_participation_factors_data(
+    slack_participation_factors::Dict{PSY.ACBus, Float64},
+    bus_lookup::Dict{Int, Int},
+    time_steps::Int,
+    n_buses::Int,
+    ::Matrix{PSY.ACBusTypes},
+)
+    slack_participation_factors_data = zeros(Float64, n_buses, time_steps)
+    for (b, f) in slack_participation_factors
+        slack_participation_factors_data[bus_lookup[PSY.get_number(b)], :] .= f
+    end
+    return slack_participation_factors_data
+end
+
+function make_slack_participation_factors_data(
+    slack_participation_factors::Vector{Dict{PSY.ACBus, Float64}},
+    bus_lookup::Dict{Int, Int},
+    time_steps::Int,
+    n_buses::Int,
+    bus_types::Matrix{PSY.ACBusTypes},
+)
+    if length(slack_participation_factors) == 1
+        return make_slack_participation_factors_data(
+            slack_participation_factors[1],
+            bus_lookup,
+            time_steps,
+            n_buses,
+            bus_types,
+        )
+    end
+
+    if length(slack_participation_factors) < time_steps
+        throw(
+            ArgumentError(
+                "slack_participation_factors must have at least the same length as time_steps",
+            ),
+        )
+    end
+
+    slack_participation_factors_data = zeros(Float64, n_buses, time_steps)
+    for (time_step, factors) in enumerate(slack_participation_factors)
+        for (b, f) in factors
+            slack_participation_factors_data[bus_lookup[PSY.get_number(b)], time_step] = f
+        end
+    end
+    return slack_participation_factors_data
+end
+
+function make_slack_participation_factors_data(
+    ::Nothing,
+    ::Dict{Int, Int},
+    time_steps::Int,
+    n_buses::Int,
+    bus_types::Matrix{PSY.ACBusTypes},
+)
+    get_f(bt::Val{PSY.ACBusTypes.REF}) = 1.0
+    get_f(bt::Union{Val{PSY.ACBusTypes.PV}, Val{PSY.ACBusTypes.PQ}}) = 0.0
+
+    slack_participation_factors_data = Matrix{Float64}(undef, n_buses, time_steps)
+    for time_step in 1:time_steps
+        slack_participation_factors_data[:, time_step] .=
+            get_f.(Val.(bus_types[:, time_step]))
+    end
+    return slack_participation_factors_data
+end
+
 function make_powerflowdata(
     sys,
     time_steps,
@@ -228,16 +292,14 @@ function make_powerflowdata(
     converged,
     loss_factors,
     calculate_loss_factors,
+    slack_participation_factors = nothing,
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
     bus_magnitude = ones(Float64, n_buses)
 
-    slack_participation_factors = zeros(Float64, n_buses)
-
     _initialize_bus_data!(
         bus_type,
-        slack_participation_factors,
         bus_angles,
         bus_magnitude,
         temp_bus_map,
@@ -293,9 +355,13 @@ function make_powerflowdata(
     @assert size(bus_type_1) == (n_buses, time_steps)
 
     # Initial slack participation factors are same for every time period
-    slack_participation_factors_1 =
-        repeat(slack_participation_factors; outer = [1, time_steps])
-    @assert size(slack_participation_factors_1) == (n_buses, time_steps)
+    slack_participation_factors_data = make_slack_participation_factors_data(
+        slack_participation_factors,
+        bus_lookup,
+        time_steps,
+        n_buses,
+        bus_type_1,
+    )
 
     # Initial flows are all zero
     branch_activepower_flow_from_to = zeros(Float64, n_branches, time_steps)
@@ -311,7 +377,7 @@ function make_powerflowdata(
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
         bus_reactivepower_bounds_1,
-        slack_participation_factors_1,
+        slack_participation_factors_data,
         bus_type_1,
         branch_type,
         bus_magnitude_1,
