@@ -43,6 +43,14 @@ Create an instance of `ACPowerFlowResidual` for a given time step.
 and net bus reactive power injections.
 """
 function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
+    get_spf_ref_pv(ix::Int, bt::Union{Val{PSY.ACBusTypes.REF}, Val{PSY.ACBusTypes.PV}}) =
+        data.slack_participation_factors[ix, time_step]
+    get_spf_ref_pv(ix::Int, bt::Val{PSY.ACBusTypes.PQ}) = 0.0
+    set_first_slack_bus(ix::Int, bt::Val{PSY.ACBusTypes.REF}) = ix
+    set_first_slack_bus(
+        ix::Int,
+        bt::Union{Val{PSY.ACBusTypes.PV}, Val{PSY.ACBusTypes.PQ}},
+    ) = 0.0
     n_buses = first(size(data.bus_type))
     P_net = Vector{Float64}(undef, n_buses)
     Q_net = Vector{Float64}(undef, n_buses)
@@ -59,22 +67,20 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
             data.bus_reactivepower_injection[ix, time_step] -
             data.bus_reactivepower_withdrawals[ix, time_step]
         P_net_set[ix] = P_net[ix]
-        if bus_type[ix] ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV)
-            slack_participation_factors[ix] =
-                data.slack_participation_factors[ix, time_step]
-            if slack_participation_factors[ix] < 0.0
-                throw(ArgumentError("slack_participation_factors must be non-negative"))
-            end
-            sum_sl_weights += slack_participation_factors[ix]
-            # slack_bus is set to the first REF bus found - will be used for the total slack power
-            # TODO: check if there are multiple REF buses and treat the remaining ones as if they were PV buses
-            # TODO: enable multiple slack buses, multiple disconnected zones
-            slack_bus != 0 || (bus_type[ix] == PSY.ACBusTypes.REF && (slack_bus = ix))
-        end
+        slack_participation_factors[ix] = get_spf_ref_pv(ix, Val(bus_type[ix]))
+        sum_sl_weights += slack_participation_factors[ix]
+        # slack_bus is set to the first REF bus found - will be used for the total slack power
+        # TODO: check if there are multiple REF buses and treat the remaining ones as if they were PV buses
+        # TODO: enable multiple slack buses, multiple disconnected zones
+        slack_bus != 0 || (slack_bus = set_first_slack_bus(ix, Val(bus_type[ix])))
     end
 
     if sum_sl_weights == 0.0
         throw(ArgumentError("sum of slack_participation_factors cannot be zero"))
+    end
+
+    if any(slack_participation_factors .< 0.0)
+        throw(ArgumentError("slack_participation_factors cannot be negative"))
     end
 
     # Actually should be fine e.g. when PV is changed to PQ
@@ -159,6 +165,20 @@ function (Residual::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
     return
 end
 
+function _setpq(
+    ix::Int,
+    P_net::Vector{Float64},
+    Q_net::Vector{Float64},
+    data::ACPowerFlowData,
+    time_step::Int64,
+)
+    # Set the active and reactive power injections at the bus
+    data.bus_activepower_injection[ix, time_step] =
+        P_net[ix] + data.bus_activepower_withdrawals[ix, time_step]
+    data.bus_reactivepower_injection[ix, time_step] =
+        Q_net[ix] + data.bus_reactivepower_withdrawals[ix, time_step]
+end
+
 # dispatching on Val for performance reasons.
 function _set_state_vars_at_bus!(
     ix::Int,
@@ -173,10 +193,13 @@ function _set_state_vars_at_bus!(
     # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
     P_net[ix] = P_net_set[ix] + P_slack
     Q_net[ix] = StateVector[2 * ix]
-    data.bus_activepower_injection[ix, time_step] =
-        P_net[ix] + data.bus_activepower_withdrawals[ix, time_step]
-    data.bus_reactivepower_injection[ix, time_step] =
-        Q_net[ix] + data.bus_reactivepower_withdrawals[ix, time_step]
+    _setpq(
+        ix,
+        P_net,
+        Q_net,
+        data,
+        time_step,
+    )
 end
 
 function _set_state_vars_at_bus!(
@@ -191,16 +214,14 @@ function _set_state_vars_at_bus!(
     ::Val{PSY.ACBusTypes.PV})
     # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
     # We still update both P and Q values in case the PV bus participates in distributed slack
-    _set_state_vars_at_bus!(
+    P_net[ix] = P_net_set[ix] + P_slack
+    Q_net[ix] = StateVector[2 * ix - 1]
+    _setpq(
         ix,
         P_net,
         Q_net,
-        P_net_set,
-        P_slack,
-        StateVector,
         data,
         time_step,
-        Val(PSY.ACBusTypes.REF),
     )
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
 end
