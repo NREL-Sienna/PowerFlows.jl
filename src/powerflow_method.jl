@@ -282,10 +282,9 @@ function _newton_powerflow(
     time_step::Int64;
     kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
     residual = ACPowerFlowResidual(data, time_step)
+    x0 = calculate_x0(data, time_step)
     if pf.robust_power_flow
-        x0::Vector{Float64} = improved_x0(data, time_step, residual)
-    else
-        x0 = calculate_x0(data, time_step)
+        improve_x0!(x0, data, time_step, residual)
     end
     residual(x0, time_step)
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
@@ -328,15 +327,15 @@ end
 """If initial residual is large, run a DC power flow and see if that gives
 a better starting point for angles. Return the original or the result of the DC powerflow,
 whichever gives the smaller residual."""
-function improved_x0(data::ACPowerFlowData,
+function improve_x0!(x0::Vector{Float64},
+    data::ACPowerFlowData,
     time_step::Int64,
     residual::ACPowerFlowResidual)
-    x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
     residualSize = norm(residual.Rv, 1)
 
     if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv)
-        @info "Trying to improve x0 via DC powerflow fallback"
+        @debug "Trying to improve x0 via DC powerflow fallback"
         _dc_powerflow_fallback!(data, time_step)
         # is the new starting point better?
         newx0 = calculate_x0(data, time_step)
@@ -344,12 +343,12 @@ function improved_x0(data::ACPowerFlowData,
         newResidualSize = norm(residual.Rv, 1)
         if newResidualSize < residualSize
             @info "success: DC powerflow fallback yields better x0"
-            x0 = newx0
+            copyto!(x0, newx0)
         else
-            @info "no improvement from DC powerflow fallback"
+            @debug "no improvement from DC powerflow fallback"
         end
     end
-    return x0
+    return nothing
 end
 
 """Calculate x0 from data."""
@@ -397,8 +396,9 @@ function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
     ABA_matrix = data.aux_network_matrix.data
     solver_cache = KLULinSolveCache(ABA_matrix)
     full_factor!(solver_cache, ABA_matrix)
-    p_inj = data.bus_activepower_injection[data.valid_ix, time_step]
-    -data.bus_activepower_withdrawals[data.valid_ix, time_step]
+    p_inj =
+        data.bus_activepower_injection[data.valid_ix, time_step] -
+        data.bus_activepower_withdrawals[data.valid_ix, time_step]
     solve!(solver_cache, p_inj)
     data.bus_angles[data.valid_ix, time_step] .= p_inj
 end
