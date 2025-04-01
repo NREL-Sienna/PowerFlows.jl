@@ -61,16 +61,11 @@ end
     sys4 = deepcopy(sys)
     bad_x0!(sys4)
     improvement_regex = r".*DC powerflow fallback yields better x0"
-    # maybe the reason this isn't working is because it's applying:
-    # all are (type info AND match pattern) instead of
-    # all OF type info match the pattern.
-    #=
     @test_logs (:info, improvement_regex) match_mode = :any PF.solve_powerflow(pf, sys4)
     pf_no_dc = ACPowerFlow{NewtonRaphsonACPowerFlow}(; robust_power_flow = false)
     sys5 = deepcopy(sys)
     bad_x0!(sys5)
-    no_dc_regex = r"^((?!fallback).)*$"
-    @test_logs (:info, no_dc_regex) PF.solve_powerflow(pf_no_dc, sys5)=#
+    @test_logs (:debug, "skipping DC powerflow fallback") match_mode = :any min_level = Logging.Debug PF.solve_powerflow(pf_no_dc, sys5)
 end
 
 @testset "large residual warning" begin

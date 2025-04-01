@@ -285,6 +285,8 @@ function _newton_powerflow(
     x0 = calculate_x0(data, time_step)
     if pf.robust_power_flow
         improve_x0!(x0, data, time_step, residual)
+    else
+        @debug "skipping DC powerflow fallback"
     end
     residual(x0, time_step)
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
