@@ -17,6 +17,9 @@ A struct to keep track of the residuals in the Newton-Raphson AC power flow calc
 - `Rv::Vector{Float64}`: A vector of the values of the residuals.
 - `P_net::Vector{Float64}`: A vector of net active power injections.
 - `Q_net::Vector{Float64}`: A vector of net reactive power injections.
+- `P_net_set::Vector{Float64}`: A vector of the set-points for active power injections (their initial values before power flow calculation).
+- `bus_slack_participation_factors::SparseVector{Float64, Int}`: A sparse vector of the slack participation factors aggregated at the bus level.
+- `slack_bus::Int`: The index of the slack bus to be used for the total slack power.
 """
 struct ACPowerFlowResidual
     data::ACPowerFlowData
@@ -25,7 +28,7 @@ struct ACPowerFlowResidual
     P_net::Vector{Float64}
     Q_net::Vector{Float64}
     P_net_set::Vector{Float64}
-    slack_participation_factors::Vector{Float64}
+    bus_slack_participation_factors::SparseVector{Float64, Int}
     slack_bus::Int
 end
 
@@ -43,23 +46,28 @@ Create an instance of `ACPowerFlowResidual` for a given time step.
 and net bus reactive power injections.
 """
 function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
-    get_spf_ref_pv(ix::Int, bt::Union{Val{PSY.ACBusTypes.REF}, Val{PSY.ACBusTypes.PV}}) =
-        data.slack_participation_factors[ix, time_step]
-    get_spf_ref_pv(ix::Int, bt::Val{PSY.ACBusTypes.PQ}) = 0.0
-    set_first_slack_bus(ix::Int, bt::Val{PSY.ACBusTypes.REF}) = ix
-    set_first_slack_bus(
-        ix::Int,
-        bt::Union{Val{PSY.ACBusTypes.PV}, Val{PSY.ACBusTypes.PQ}},
-    ) = 0.0
+    is_ref(bt::Val{PSY.ACBusTypes.REF}) = true
+    is_ref(bt::Union{Val{PSY.ACBusTypes.PV}, Val{PSY.ACBusTypes.PQ}}) = false
+    is_refpv(bt::Union{Val{PSY.ACBusTypes.REF}, Val{PSY.ACBusTypes.PV}}) = true
+    is_refpv(bt::Val{PSY.ACBusTypes.PQ}) = false
+
     n_buses = first(size(data.bus_type))
     P_net = Vector{Float64}(undef, n_buses)
     Q_net = Vector{Float64}(undef, n_buses)
+
     P_net_set = zeros(Float64, n_buses)
-    slack_participation_factors = zeros(Float64, n_buses)
-    slack_bus = 0
-    sum_sl_weights = 0.0
     bus_type = view(data.bus_type, :, time_step)
-    for ix in 1:n_buses
+
+    spf_idx = Int[]
+    spf_val = Float64[]
+    sum_sl_weights = 0.0  # for scope
+
+    # slack_bus is set to the first REF bus found - will be used for the total slack power
+    # TODO: check if there are multiple REF buses and treat the remaining ones as if they were PV buses
+    # TODO: enable multiple slack buses, multiple disconnected zones
+    slack_bus = findfirst(is_ref.(Val.(bus_type)))
+
+    for (ix, bt) in zip(1:n_buses, bus_type)
         P_net[ix] =
             data.bus_activepower_injection[ix, time_step] -
             data.bus_activepower_withdrawals[ix, time_step]
@@ -67,19 +75,19 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
             data.bus_reactivepower_injection[ix, time_step] -
             data.bus_reactivepower_withdrawals[ix, time_step]
         P_net_set[ix] = P_net[ix]
-        slack_participation_factors[ix] = get_spf_ref_pv(ix, Val(bus_type[ix]))
-        sum_sl_weights += slack_participation_factors[ix]
-        # slack_bus is set to the first REF bus found - will be used for the total slack power
-        # TODO: check if there are multiple REF buses and treat the remaining ones as if they were PV buses
-        # TODO: enable multiple slack buses, multiple disconnected zones
-        slack_bus != 0 || (slack_bus = set_first_slack_bus(ix, Val(bus_type[ix])))
+
+        is_refpv(Val(bt)) || continue
+        (spf_v = data.bus_slack_participation_factors[ix, time_step]) == 0.0 && continue
+        push!(spf_idx, ix)
+        push!(spf_val, spf_v)
+        sum_sl_weights += spf_v
     end
 
     if sum_sl_weights == 0.0
         throw(ArgumentError("sum of slack_participation_factors cannot be zero"))
     end
 
-    if any(slack_participation_factors .< 0.0)
+    if any(spf_val .< 0.0)
         throw(ArgumentError("slack_participation_factors cannot be negative"))
     end
 
@@ -88,7 +96,8 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     #     warn("Only slack weights for REF and PV buses can be considered.")
     # end
 
-    slack_participation_factors ./= sum_sl_weights
+    # bus slack participation factors relevant for the current time step:
+    bus_slack_participation_factors = sparsevec(spf_idx, spf_val ./ sum_sl_weights, n_buses)
 
     return ACPowerFlowResidual(
         data,
@@ -97,7 +106,7 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
         P_net,
         Q_net,
         P_net_set,
-        slack_participation_factors,
+        bus_slack_participation_factors,
         slack_bus,
     )
 end
@@ -128,7 +137,7 @@ function (Residual::ACPowerFlowResidual)(
         Residual.P_net,
         Residual.Q_net,
         Residual.P_net_set,
-        Residual.slack_participation_factors,
+        Residual.bus_slack_participation_factors,
         Residual.slack_bus,
         Residual.data,
         time_step,
@@ -157,7 +166,7 @@ function (Residual::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
         Residual.P_net,
         Residual.Q_net,
         Residual.P_net_set,
-        Residual.slack_participation_factors,
+        Residual.bus_slack_participation_factors,
         Residual.slack_bus,
         Residual.data,
         time_step,
@@ -259,6 +268,9 @@ Update the residual values for the Newton-Raphson AC power flow calculation. Thi
 - `x::Vector{Float64}`: State vector values.
 - `P_net::Vector{Float64}`: Vector of net active power injections at each bus.
 - `Q_net::Vector{Float64}`: Vector of net reactive power injections at each bus.
+- `P_net_set::Vector{Float64}`: Vector of the set-points for active power injections (their initial values before power flow calculation).
+- `bus_slack_participation_factors::SparseVector{Float64, Int}`: Sparse vector of the slack participation factors aggregated at the bus level.
+- `slack_bus::Int`: The index of the slack bus to be used for the total slack power.
 - `data::ACPowerFlowData`: Data structure representing the grid model for the AC power flow calculation.
 - `time_step::Int64`: The current time step for which the residual values are being updated.
 """
@@ -268,7 +280,7 @@ function _update_residual_values!(
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
     P_net_set::Vector{Float64},
-    slack_participation_factors::Vector{Float64},
+    bus_slack_participation_factors::SparseVector{Float64, Int},
     slack_bus::Int,
     data::ACPowerFlowData,
     time_step::Int64,
@@ -276,7 +288,8 @@ function _update_residual_values!(
     # update P_net, Q_net, data.bus_angles, data.bus_magnitude based on X
     Yb = data.power_network_matrix.data
     bus_types = view(data.bus_type, :, time_step)
-    P_slack = (x[2 * slack_bus - 1] - P_net_set[slack_bus]) .* slack_participation_factors
+    P_slack =
+        (x[2 * slack_bus - 1] - P_net_set[slack_bus]) .* bus_slack_participation_factors
     for (ix, bt) in enumerate(bus_types)
         _set_state_vars_at_bus!(
             ix,

@@ -465,7 +465,12 @@ function write_powerflow_solution!(
         elseif bus.bustype == PSY.ACBusTypes.PV
             Q_gen = data.bus_reactivepower_injection[ix, time_step]
             bus.angle = data.bus_angles[ix, time_step]
-            _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+            if data.bus_slack_participation_factors[ix, time_step] != 0.0
+                P_gen = data.bus_activepower_injection[ix, time_step]
+                _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations)
+            else
+                _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+            end
         elseif bus.bustype == PSY.ACBusTypes.PQ
             Vm = data.bus_magnitude[ix, time_step]
             θ = data.bus_angles[ix, time_step]

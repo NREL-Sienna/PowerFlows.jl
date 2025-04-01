@@ -8,10 +8,10 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     check_reactive_power_limits::Bool
     exporter::Union{Nothing, PowerFlowEvaluationModel}
     calculate_loss_factors::Bool
-    slack_participation_factors::Union{
+    generator_slack_participation_factors::Union{
         Nothing,
-        Dict{PSY.ACBus, Float64},
-        Vector{Dict{PSY.ACBus, Float64}},
+        Dict{String, Float64},
+        Vector{Dict{String, Float64}},
     }
 end
 
@@ -19,17 +19,17 @@ ACPowerFlow{ACSolver}(;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
-    slack_participation_factors::Union{
+    generator_slack_participation_factors::Union{
         Nothing,
-        Dict{PSY.ACBus, Float64},
-        Vector{Dict{PSY.ACBus, Float64}},
+        Dict{String, Float64},
+        Vector{Dict{String, Float64}},
     } = nothing,
 ) where {ACSolver <: ACPowerFlowSolverType} =
     ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,
         calculate_loss_factors,
-        slack_participation_factors,
+        generator_slack_participation_factors,
     )
 
 ACPowerFlow(
@@ -37,16 +37,16 @@ ACPowerFlow(
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
-    slack_participation_factors::Union{
+    generator_slack_participation_factors::Union{
         Nothing,
-        Dict{PSY.ACBus, Float64},
-        Vector{Dict{PSY.ACBus, Float64}},
+        Dict{String, Float64},
+        Vector{Dict{String, Float64}},
     } = nothing,
 ) = ACPowerFlow{ACSolver}(
     check_reactive_power_limits,
     exporter,
     calculate_loss_factors,
-    slack_participation_factors,
+    generator_slack_participation_factors,
 )
 
 @kwdef struct DCPowerFlow <: PowerFlowEvaluationModel
