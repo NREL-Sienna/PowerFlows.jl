@@ -65,7 +65,8 @@ end
     pf_no_dc = ACPowerFlow{NewtonRaphsonACPowerFlow}(; robust_power_flow = false)
     sys5 = deepcopy(sys)
     bad_x0!(sys5)
-    @test_logs (:debug, "skipping DC powerflow fallback") match_mode = :any min_level = Logging.Debug PF.solve_powerflow(pf_no_dc, sys5)
+    @test_logs (:debug, "skipping DC powerflow fallback") match_mode = :any min_level =
+        Logging.Debug PF.solve_powerflow(pf_no_dc, sys5)
 end
 
 @testset "large residual warning" begin
