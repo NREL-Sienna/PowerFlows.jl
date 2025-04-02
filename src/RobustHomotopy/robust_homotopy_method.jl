@@ -1,5 +1,6 @@
 
 const INSUFFICIENT_CHANGE_IN_X = 10^(-11)
+const GRAD_ZERO = 2 * eps()
 function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
@@ -21,15 +22,9 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
 
     t_k = Δt_k
     homHess.t_k_ref[] = t_k
-    converging::Bool = true
+    success::Bool = true
     while true
-        println("t_k = ", round(t_k; sigdigits = 2))
-        converging, _ = _second_order_newton(homHess, time_step, x)
-        println("converged? $converging")
-        g = gradient_value(homHess, x, time_step)
-        if LinearAlgebra.isposdef(homHess.Hv) && dot(g, g) < 2 * eps()
-            println("local minimum")
-        end
+        success, _ = _second_order_newton(homHess, time_step, x)
         if t_k == 1.0
             break
         end
@@ -37,7 +32,18 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
         homHess.t_k_ref[] = t_k
     end
     # MUMPS.finalize(mumps)
-    return converging
+    if !success
+        @warn "RobustHomotopyPowerFlow failed to find a solution"
+    end
+    return success
+end
+
+sig3(x::Float64) = round(x; sigdigits = 3)
+
+function info_helper(homHess::HomotopyHessian, F_val::Float64, msg::String)
+    t_k = homHess.t_k_ref[]
+    r_val = norm(homHess.pfResidual.Rv, Inf)
+    @info "t_k = $(sig3(t_k)): $msg, F_k $(sig3(F_val)), residual $(sig3(r_val))"
 end
 
 function _second_order_newton(homHess::HomotopyHessian,
@@ -49,34 +55,45 @@ function _second_order_newton(homHess::HomotopyHessian,
 
     i, converged, stop = 0, false, false
     F_val = F_value(homHess, x, time_step)
+    last_tk = homHess.t_k_ref[] == 1.0
     while i < maxIterations && !converged && !stop
-        x_rounded = round.(x, sigdigits = 3)
-        println("\t$F_val")
         stop = _second_order_newton_step(
             homHess,
             time_step,
             x,
         )
         F_val = F_value(homHess, x, time_step)
-        converged = abs(F_val) < tol
+        converged = (last_tk ? norm(homHess.pfResidual.Rv, Inf) : abs(F_val)) < tol
         i += 1
+        if converged
+            info_helper(homHess, F_val, "converged")
+        elseif i == maxIterations && !stop
+            info_helper(homHess, F_val, "max iterations")
+        end
     end
-    return converged, i
+    return converged || stop, i
 end
-
 function _second_order_newton_step(homHess::HomotopyHessian,
     time_step::Int,
     x::Vector{Float64})
+    t_k = homHess.t_k_ref[]
+    F_val = F_value(homHess, x, time_step)
+    last_step = t_k == 1.0
     homHess(x, time_step)
+    if !last_step && dot(homHess.grad, homHess.grad) < GRAD_ZERO &&
+       LinearAlgebra.isposdef(homHess.Hv) # stop case 1: hit local minimum.
+        info_helper(homHess, F_val, "local minimum")
+        return true
+    end
     Hv_dense = Matrix{Float64}(homHess.Hv)
     δ = -1 * LinearAlgebra.pinv(Hv_dense) * homHess.grad
     α_star = line_search(x, time_step, homHess, δ)
-    # println(round(norm(δ*α_star); sigdigits = 3))
-    stop = norm(δ * α_star) < INSUFFICIENT_CHANGE_IN_X
-    x .+= δ * α_star
-    if stop
-        @warn "insufficient change in x: bailing out"
+    if !last_step && norm(δ * α_star) < INSUFFICIENT_CHANGE_IN_X
+        # stop case 2: slow progress.
+        info_helper(homHess, F_val, "slow progress")
+        return true
     end
+    x .+= δ * α_star
 
     #= y = homHess.grad
     if all(abs(dot(y, v)) < 10^(-6) for v in eachcol(LinearAlgebra.nullspace(Hv_dense')))
@@ -90,5 +107,5 @@ function _second_order_newton_step(homHess::HomotopyHessian,
     MUMPS.associate_rhs!(mumps, homHess.grad)
     MUMPS.solve!(mumps)
     x .-= MUMPS.get_solution(mumps)=#
-    return stop
+    return false
 end
