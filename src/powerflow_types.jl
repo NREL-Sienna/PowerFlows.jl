@@ -3,7 +3,7 @@ abstract type ACPowerFlowSolverType end
 
 struct NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType end
 struct TrustRegionACPowerFlow <: ACPowerFlowSolverType end
-struct RobustHomoptyPowerFlow <: ACPowerFlowSolverType end
+struct RobustHomotopyPowerFlow <: ACPowerFlowSolverType end
 
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel
     check_reactive_power_limits::Bool

@@ -6,7 +6,7 @@ export PowerFlowData
 export DCPowerFlow
 export NewtonRaphsonACPowerFlow
 export TrustRegionACPowerFlow
-export RobustHomoptyPowerFlow
+export RobustHomotopyPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow
@@ -24,15 +24,18 @@ import DataFrames
 import PowerSystems
 import PowerSystems: System, with_units_base
 import LinearAlgebra
-import LinearAlgebra: norm
+import LinearAlgebra: norm, dot
 import KLU
 import SparseArrays
 import InfrastructureSystems
 import PowerNetworkMatrices
-import SparseArrays: SparseMatrixCSC, sparse
+import SparseArrays: SparseMatrixCSC, sparse, spdiagm
 import JSON3
 import DataStructures: OrderedDict
 import Dates
+# import MUMPS
+# import MUMPS: Mumps
+# import MPI
 
 const IS = InfrastructureSystems
 const PSY = PowerSystems
@@ -51,9 +54,7 @@ include("ac_power_flow_jacobian.jl")
 include("solve_ac_powerflow.jl")
 include("powerflow_method.jl")
 include("post_processing.jl")
-
-include("RobustHomotopy/homotopy_function.jl")
-include("RobustHomotopy/homotopy_gradient.jl")
 include("RobustHomotopy/homotopy_hessian.jl")
+include("RobustHomotopy/wolfe_conditions.jl")
 include("RobustHomotopy/robust_homotopy_method.jl")
 end
