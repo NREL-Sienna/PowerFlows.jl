@@ -224,6 +224,8 @@ function make_bus_slack_participation_factors(
     for (gen_name, val) in generator_slack_participation_factors
         val == 0.0 && continue
         gen = PSY.get_component(PSY.Generator, sys, gen_name)
+        isnothing(gen) && throw(ArgumentError("Generator $gen_name not found"))
+        PSY.get_available(gen) || continue
         bus = PSY.get_bus(gen)
         bus_idx = bus_lookup[PSY.get_number(bus)]
         for time_step in 1:time_steps
@@ -272,6 +274,8 @@ function make_bus_slack_participation_factors(
         for (gen_name, val) in factors
             val == 0.0 && continue
             gen = PSY.get_component(PSY.Generator, sys, gen_name)
+            isnothing(gen) && throw(ArgumentError("Generator $gen_name not found"))
+            PSY.get_available(gen) || continue
             bus = PSY.get_bus(gen)
             push!(I, bus_lookup[PSY.get_number(bus)])
             push!(J, time_step)
