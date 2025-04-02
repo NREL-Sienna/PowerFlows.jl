@@ -1,4 +1,3 @@
-# Works!! YAY!!
 @testset "homotopy hessian" begin
     time_step = 1
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
