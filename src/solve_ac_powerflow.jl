@@ -166,7 +166,7 @@ function solve_powerflow!(
         # FIXME before release: just so I don't need to reset the fields of data
         # each time a RobustHomotopyPowerFlow powerflow fails to converge.
         # set values to NaN for not converged time steps
-        if !isa(pf, ACPowerFlow{RobustHomotopyPowerFlow}) && !converged  
+        if !isa(pf, ACPowerFlow{RobustHomotopyPowerFlow}) && !converged
             data.bus_activepower_injection[:, time_step] .= NaN
             data.bus_activepower_withdrawals[:, time_step] .= NaN
             data.bus_reactivepower_injection[:, time_step] .= NaN
