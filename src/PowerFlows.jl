@@ -33,9 +33,9 @@ import SparseArrays: SparseMatrixCSC, sparse, spdiagm
 import JSON3
 import DataStructures: OrderedDict
 import Dates
-# import MUMPS
-# import MUMPS: Mumps
-# import MPI
+import MUMPS
+import MUMPS: Mumps
+import MPI
 
 const IS = InfrastructureSystems
 const PSY = PowerSystems

@@ -6,9 +6,9 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     time_step::Int64;
     kwargs...)
 
-    # this probably isn't the right spot for this.
-    #MPI.Init()
-    #mumps = Mumps{Float64}(MUMPS.mumps_symmetric, MUMPS.default_icntl, MUMPS.default_cntl32)
+    # this probably isn't the right spot for this: only need to call once,
+    # at very start, e.g. when package is loaded.
+    MPI.Init()
 
     Δt_k = get(kwargs, :Δt_k, DEFAULT_Δt_k)
 
@@ -24,7 +24,7 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     homHess.t_k_ref[] = t_k
     success::Bool = true
     while true
-        success, _ = _second_order_newton(homHess, time_step, x)
+        success, _ = _second_order_newton(homHess, time_step, x) #, mumps)
         if t_k == 1.0
             break
         end
@@ -49,6 +49,7 @@ end
 function _second_order_newton(homHess::HomotopyHessian,
     time_step::Int,
     x::Vector{Float64};
+    # mumps::Mumps{Float64};
     kwargs...)
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
@@ -61,6 +62,7 @@ function _second_order_newton(homHess::HomotopyHessian,
             homHess,
             time_step,
             x,
+            # mumps
         )
         F_val = F_value(homHess, x, time_step)
         converged = (last_tk ? norm(homHess.pfResidual.Rv, Inf) : abs(F_val)) < tol
@@ -76,6 +78,7 @@ end
 function _second_order_newton_step(homHess::HomotopyHessian,
     time_step::Int,
     x::Vector{Float64})
+    #mumps::Mumps{Float64})
     t_k = homHess.t_k_ref[]
     F_val = F_value(homHess, x, time_step)
     last_step = t_k == 1.0
@@ -85,8 +88,24 @@ function _second_order_newton_step(homHess::HomotopyHessian,
         info_helper(homHess, F_val, "local minimum")
         return true
     end
-    Hv_dense = Matrix{Float64}(homHess.Hv)
-    δ = -1 * LinearAlgebra.pinv(Hv_dense) * homHess.grad
+
+    # TODO: fiugre out how to reuse the mumps object and the symbolic factorization.
+    # When I tried naively--see commented out arguments--the first solve was correct,
+    # but then future ones were wrong.
+    settings = deepcopy(MUMPS.default_icntl)
+    settings[4] = 1 # errors only
+
+    mumps = Mumps{Float64}(MUMPS.mumps_symmetric, settings, MUMPS.default_cntl32)
+    MUMPS.associate_matrix!(mumps, homHess.Hv)
+    MUMPS.factorize!(mumps)
+    MUMPS.associate_rhs!(mumps, homHess.grad)
+    # TODO: what if the hessian is singular and there's no solution?
+    MUMPS.solve!(mumps)
+    δ = -1 * MUMPS.get_solution(mumps)[:, 1]
+
+    err = homHess.Hv * δ + homHess.grad
+    @assert dot(err, err) < 10 * eps()
+
     α_star = line_search(x, time_step, homHess, δ)
     if !last_step && norm(δ * α_star) < INSUFFICIENT_CHANGE_IN_X
         # stop case 2: slow progress.
@@ -94,18 +113,5 @@ function _second_order_newton_step(homHess::HomotopyHessian,
         return true
     end
     x .+= δ * α_star
-
-    #= y = homHess.grad
-    if all(abs(dot(y, v)) < 10^(-6) for v in eachcol(LinearAlgebra.nullspace(Hv_dense')))
-        println("should solve successfully")
-    else
-        println("gradient fails to be in the image of the hessian")
-    end
-    # end debugging code
-    MUMPS.associate_matrix!(mumps, homHess.Hv)
-    MUMPS.factorize!(mumps)
-    MUMPS.associate_rhs!(mumps, homHess.grad)
-    MUMPS.solve!(mumps)
-    x .-= MUMPS.get_solution(mumps)=#
     return false
 end
