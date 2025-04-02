@@ -16,7 +16,6 @@ function sufficient_decrease(x::Vector{Float64},
     δ::Vector{Float64},
     α::Float64,
     c_1::Float64)
-
     h_x0 = F_value(homInfo, x, time_step)
     h_α = F_value(homInfo, x + α * δ, time_step)
 

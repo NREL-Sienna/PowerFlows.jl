@@ -19,7 +19,7 @@ function (hess::HomotopyHessian)(x::Vector{Float64}, time_step::Int)
     hess.Hv .+= Jv' * Jv
     SparseArrays.nonzeros(hess.Hv) .*= t_k
     hess.Hv .+= (1 - t_k) * spdiagm(Float64.(hess.PQ_V_mags))
-    hess.grad .= (1 - t_k) * hess.PQ_V_mags .* (x - ones(size(x,1))) + t_k * Jv' * Rv
+    hess.grad .= (1 - t_k) * hess.PQ_V_mags .* (x - ones(size(x, 1))) + t_k * Jv' * Rv
     return
 end
 
@@ -27,8 +27,8 @@ function F_value(hess::HomotopyHessian, x::Vector{Float64}, time_step::Int)
     t_k = hess.t_k_ref[]
     hess.pfResidual(x, time_step)
     Rv = hess.pfResidual.Rv
-    φ_vector = hess.PQ_V_mags .* (x - ones(size(x,1)))
-    F_value = (1-t_k) * 0.5 * dot(φ_vector, φ_vector) + t_k * 0.5 * dot(Rv, Rv)
+    φ_vector = x[hess.PQ_V_mags] .- 1.0
+    F_value = (1 - t_k) * 0.5 * dot(φ_vector, φ_vector) + t_k * 0.5 * dot(Rv, Rv)
     return F_value
 end
 
@@ -38,7 +38,7 @@ function gradient_value(hess::HomotopyHessian, x::Vector{Float64}, time_step::In
     hess.J(time_step)
     Jv = hess.J.Jv
     mask = hess.PQ_V_mags
-    grad = (1 - t_k) * (mask .* (x - ones(size(x,1)))) + t_k * Jv' * hess.pfResidual.Rv
+    grad = (1 - t_k) * (mask .* (x - ones(size(x, 1)))) + t_k * Jv' * hess.pfResidual.Rv
     return grad
 end
 
@@ -47,9 +47,9 @@ function HomotopyHessian(data::ACPowerFlowData, time_step::Int)
     Hv = _create_hessian_matrix_structure(data, time_step)
     J = ACPowerFlowJacobian(data, time_step)
     nbuses = size(get_bus_type(data), 1)
-    PQ_mask = get_bus_type(data)[:, time_step] .== (PSY.ACBusTypes.PQ, )
+    PQ_mask = get_bus_type(data)[:, time_step] .== (PSY.ACBusTypes.PQ,)
     PQ_V_mags = collect(Iterators.flatten(zip(PQ_mask, falses(nbuses))))
-    return HomotopyHessian(data, pfResidual, J, PQ_V_mags, zeros(2*nbuses), Hv, Ref(0.0))
+    return HomotopyHessian(data, pfResidual, J, PQ_V_mags, zeros(2 * nbuses), Hv, Ref(0.0))
 end
 
 function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int64)

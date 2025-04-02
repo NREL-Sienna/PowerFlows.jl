@@ -15,7 +15,7 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     x = calculate_x0(data, time_step)
     for (bus_ix, bt) in enumerate(get_bus_type(data)[:, time_step])
         if bt == PSY.ACBusTypes.PQ
-            x[2*bus_ix - 1] = 1.0
+            x[2 * bus_ix - 1] = 1.0
         end
     end
 
@@ -27,7 +27,7 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
         converging, _ = _second_order_newton(homHess, time_step, x)
         println("converged? $converging")
         g = gradient_value(homHess, x, time_step)
-        if LinearAlgebra.isposdef(homHess.Hv) && dot(g, g) < 2*eps()
+        if LinearAlgebra.isposdef(homHess.Hv) && dot(g, g) < 2 * eps()
             println("local minimum")
         end
         if t_k == 1.0
@@ -44,14 +44,13 @@ function _second_order_newton(homHess::HomotopyHessian,
     time_step::Int,
     x::Vector{Float64};
     kwargs...)
-
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
 
     i, converged, stop = 0, false, false
     F_val = F_value(homHess, x, time_step)
     while i < maxIterations && !converged && !stop
-        x_rounded = round.(x, sigdigits=3)
+        x_rounded = round.(x, sigdigits = 3)
         println("\t$F_val")
         stop = _second_order_newton_step(
             homHess,
@@ -68,15 +67,13 @@ end
 function _second_order_newton_step(homHess::HomotopyHessian,
     time_step::Int,
     x::Vector{Float64})
-
-
     homHess(x, time_step)
     Hv_dense = Matrix{Float64}(homHess.Hv)
-    δ = -1*LinearAlgebra.pinv(Hv_dense)*homHess.grad
+    δ = -1 * LinearAlgebra.pinv(Hv_dense) * homHess.grad
     α_star = line_search(x, time_step, homHess, δ)
     # println(round(norm(δ*α_star); sigdigits = 3))
-    stop = norm(δ*α_star) < INSUFFICIENT_CHANGE_IN_X
-    x .+= δ*α_star
+    stop = norm(δ * α_star) < INSUFFICIENT_CHANGE_IN_X
+    x .+= δ * α_star
     if stop
         @warn "insufficient change in x: bailing out"
     end
