@@ -22,7 +22,7 @@ end
 Calculates the From - To complex power flow (Flow injected at the bus) of branch of type
 Line
 """
-function flow_val(b::PSY.ACBranch)
+function flow_val(b::PSY.ACTransmission)
     !PSY.get_available(b) && return 0.0
     Y_t = PSY.get_series_admittance(b)
     arc = PSY.get_arc(b)
@@ -78,7 +78,7 @@ end
 Calculates the From - To complex power flow using external data of voltages of branch of type
 Line
 """
-function flow_func(b::PSY.ACBranch, V_from::Complex{Float64}, V_to::Complex{Float64})
+function flow_func(b::PSY.ACTransmission, V_from::Complex{Float64}, V_to::Complex{Float64})
     !PSY.get_available(b) && return (0.0, 0.0)
     Y_t = PSY.get_series_admittance(b)
     I = V_from * (Y_t + (1im * PSY.get_b(b).from)) - V_to * Y_t
@@ -111,7 +111,7 @@ end
 Updates the flow on the branches
 """
 function _update_branch_flow!(sys::PSY.System)
-    for b in PSY.get_components(PSY.ACBranch, sys)
+    for b in PSY.get_components(PSY.ACTransmission, sys)
         S_flow = PSY.get_available(b) ? flow_val(b) : 0.0 + 0.0im
         PSY.set_active_power_flow!(b, real(S_flow))
         PSY.set_reactive_power_flow!(b, imag(S_flow))
@@ -566,7 +566,7 @@ function write_results(
     from_bus = Vector{Int}(undef, length(branches))
     to_bus = Vector{Int}(undef, length(branches))
     for (i, branch) in enumerate(branches)
-        br = PSY.get_component(PSY.ACBranch, sys, branch)
+        br = PSY.get_component(PSY.ACTransmission, sys, branch)
         from_bus[i] = PSY.get_number(PSY.get_arc(br).from)
         to_bus[i] = PSY.get_number(PSY.get_arc(br).to)
     end
@@ -652,7 +652,7 @@ function write_results(
         end
     end
 
-    branches = PSY.get_components(PSY.ACBranch, sys)
+    branches = PSY.get_components(PSY.ACTransmission, sys)
     N_BRANCH = length(branches)
     P_from_to_vect = fill(0.0, N_BRANCH)
     Q_from_to_vect = fill(0.0, N_BRANCH)
