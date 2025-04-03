@@ -554,13 +554,10 @@ end
     (PSB.PSITestSystems, "c_sys14"),
     (PSB.MatpowerTestSystems, "matpower_case30_sys"),
 ]
-    function _get_spf_dict(slack_participation_factors)
+    function _get_spf_dict(bus_slack_participation_factors)
         generator_slack_participation_factors = Dict{String, Float64}()
-        for (b, spf) in enumerate(slack_participation_factors)
-            get_bustype(
-                get_bus(sys, bus_numbers[b])
-            ) ==
-            ACBusTypes.PQ && continue
+        for (b, spf) in enumerate(bus_slack_participation_factors)
+            get_bustype(get_bus(sys, bus_numbers[b])) == ACBusTypes.PQ && continue
             gens = get_components(
                 x -> get_number(get_bus(x)) == bus_numbers[b],
                 ThermalStandard,
@@ -636,11 +633,13 @@ end
     data_original_bus_power = copy(data.bus_activepower_injection[:, 1])
     res1 = solve_powerflow(pf, sys)
 
-    slack_participation_factors = zeros(Float64, length(bus_numbers))
-    slack_participation_factors[ref_n] .= 1.0
+    bus_slack_participation_factors = zeros(Float64, length(bus_numbers))
+    bus_slack_participation_factors[ref_n] .= 1.0
 
     pf2 = ACPowerFlow(;
-        generator_slack_participation_factors = _get_spf_dict(slack_participation_factors),
+        generator_slack_participation_factors = _get_spf_dict(
+            bus_slack_participation_factors,
+        ),
     )
     res2 = solve_powerflow(pf2, sys)
 
@@ -652,7 +651,7 @@ end
     _check_ds_pf(
         pf2,
         sys,
-        slack_participation_factors,
+        bus_slack_participation_factors,
         bus_numbers,
         original_bus_power,
         original_gen_power,
@@ -660,14 +659,17 @@ end
     )
 
     # now test with REF and one PV bus having slack participation factors of 1.0
-    slack_participation_factors[pv_n[1]] = 1.0
+    bus_slack_participation_factors[pv_n[1]] = 1.0
     pf3 = ACPowerFlow(;
-        generator_slack_participation_factors = _get_spf_dict(slack_participation_factors))
+        generator_slack_participation_factors = _get_spf_dict(
+            bus_slack_participation_factors,
+        ),
+    )
 
     _check_ds_pf(
         pf3,
         sys,
-        slack_participation_factors,
+        bus_slack_participation_factors,
         bus_numbers,
         original_bus_power,
         original_gen_power,
@@ -675,14 +677,17 @@ end
     )
 
     # now test with all REF and PV buses having equal slack participation factors of 1.0
-    slack_participation_factors[pv_n] .= 1.0
+    bus_slack_participation_factors[pv_n] .= 1.0
     pf4 = ACPowerFlow(;
-        generator_slack_participation_factors = _get_spf_dict(slack_participation_factors))
+        generator_slack_participation_factors = _get_spf_dict(
+            bus_slack_participation_factors,
+        ),
+    )
 
     _check_ds_pf(
         pf4,
         sys,
-        slack_participation_factors,
+        bus_slack_participation_factors,
         bus_numbers,
         original_bus_power,
         original_gen_power,
@@ -690,14 +695,17 @@ end
     )
 
     # Now set the slack participation factor to 0.0 for the REF bus
-    slack_participation_factors[ref_n] .= 0.0
+    bus_slack_participation_factors[ref_n] .= 0.0
     pf5 = ACPowerFlow(;
-        generator_slack_participation_factors = _get_spf_dict(slack_participation_factors))
+        generator_slack_participation_factors = _get_spf_dict(
+            bus_slack_participation_factors,
+        ),
+    )
 
     _check_ds_pf(
         pf5,
         sys,
-        slack_participation_factors,
+        bus_slack_participation_factors,
         bus_numbers,
         original_bus_power,
         original_gen_power,
@@ -705,15 +713,18 @@ end
     )
 
     # now check the formula of the distribution of slack provision for different factors
-    slack_participation_factors[ref_n] .= 2.5
-    slack_participation_factors[pv_n] .= pv_n
+    bus_slack_participation_factors[ref_n] .= 2.5
+    bus_slack_participation_factors[pv_n] .= pv_n
     pf6 = ACPowerFlow(;
-        generator_slack_participation_factors = _get_spf_dict(slack_participation_factors))
+        generator_slack_participation_factors = _get_spf_dict(
+            bus_slack_participation_factors,
+        ),
+    )
 
     _check_ds_pf(
         pf6,
         sys,
-        slack_participation_factors,
+        bus_slack_participation_factors,
         bus_numbers,
         original_bus_power,
         original_gen_power,
