@@ -332,7 +332,8 @@ whichever gives the smaller residual."""
 function improve_x0!(x0::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
-    residual::ACPowerFlowResidual)
+    residual::ACPowerFlowResidual,
+)
     residual(x0, time_step)
     residualSize = norm(residual.Rv, 1)
 
@@ -389,9 +390,9 @@ end
 """When solving AC power flows, if the initial guess has large residual, we run a DC power 
 flow as a fallback. This runs a DC powerflow on `data::ACPowerFlowData` for the given
 `time_step`, and writes the solution to `data.bus_angles`."""
-# dev note: for DC, we can efficiently solve for all timesteps at once, and we want branch
-# flows. For AC fallback, we're only interested in the current timestep, and no branch flows
 function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
+    # dev note: for DC, we can efficiently solve for all timesteps at once, and we want branch
+    # flows. For AC fallback, we're only interested in the current timestep, and no branch flows
     # PERF: if multi-period and multiple time steps have bad initial guesses,
     #       we're re-creating this factorization for each time step. Store it inside
     #       data.aux_network_matrix instead.
