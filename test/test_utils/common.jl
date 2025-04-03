@@ -82,24 +82,6 @@ function modify_rts_powerflow!(data::PowerFlowData)
     data.bus_angles[data.bus_lookup[117]] = 0.14956
 end
 
-function _check_distributed_slack_consistency(
-    gen_power::Vector{Float64},
-    slack_participation_factors::Vector{Float64},
-    original_bus_power::Vector{Float64},
-)::Bool
-    slack_provided = gen_power .- original_bus_power
-    nnz = slack_participation_factors .!= 0.0
-    test_1 = all(isapprox.(slack_provided[.!nnz], 0.0, atol = 1e-6, rtol = 0))
-    test_2 = !any(isapprox.(slack_provided[nnz], 0.0, atol = 1e-6, rtol = 0))
-    test_3 = isapprox(
-        slack_provided[nnz] ./ sum(slack_provided),
-        slack_participation_factors[nnz] ./ sum(slack_participation_factors);
-        atol = 1e-6,
-        rtol = 0,
-    )
-    return test_1 && test_2 && test_3
-end
-
 function _system_generation_power(
     sys::System,
     bus_numbers::Vector{Int},
@@ -121,7 +103,6 @@ end
 
 function _reset_gen_power!(
     sys::System,
-    bus_numbers::Vector{Int},
     original_gen_power::Vector{Float64},
 )
     with_units_base(sys, UnitSystem.NATURAL_UNITS) do
@@ -129,6 +110,24 @@ function _reset_gen_power!(
             set_active_power!(g, og)
         end
     end
+end
+
+function _check_distributed_slack_consistency(
+    gen_power::Vector{Float64},
+    slack_participation_factors::Vector{Float64},
+    original_bus_power::Vector{Float64},
+)
+    slack_provided = gen_power .- original_bus_power
+    nnz = slack_participation_factors .!= 0.0
+    @test all(isapprox.(slack_provided[.!nnz], 0.0, atol = 1e-6, rtol = 0))
+    @test !any(isapprox.(slack_provided[nnz], 0.0, atol = 1e-6, rtol = 0))
+    @test isapprox(
+        slack_provided[nnz] ./ sum(slack_provided),
+        slack_participation_factors[nnz] ./ sum(slack_participation_factors);
+        atol = 1e-6,
+        rtol = 0,
+    )
+    return
 end
 
 function _check_ds_pf(
@@ -146,29 +145,27 @@ function _check_ds_pf(
         res["bus_results"][:, :P_gen],
         slack_participation_factors,
         original_bus_power,
-    ) || return false
+    )
 
     solve_powerflow!(pf, sys)
     p_solve, _ = _system_generation_power(sys, bus_numbers)
 
-    isapprox(p_solve, res["bus_results"][:, :P_gen]; atol = 1e-6, rtol = 0) || return false
+    @test isapprox(p_solve, res["bus_results"][:, :P_gen]; atol = 1e-6, rtol = 0)
 
-    _reset_gen_power!(sys, bus_numbers, original_gen_power)
+    _reset_gen_power!(sys, original_gen_power)
     # to make sure the reset function is working properly:
     p_bus_reset, p_gen_reset = _system_generation_power(sys, bus_numbers)
-    original_bus_power == p_bus_reset || return false
-    original_gen_power == p_gen_reset || return false
+    @test original_bus_power == p_bus_reset
+    @test original_gen_power == p_gen_reset
 
     data = PowerFlowData(pf, sys)
-    data.bus_slack_participation_factors[:, 1] == slack_participation_factors ||
-        return false
+    @test data.bus_slack_participation_factors[:, 1] == slack_participation_factors
     solve_powerflow!(data; pf = pf)
     # now check the slack power distribution logic
     _check_distributed_slack_consistency(
         data.bus_activepower_injection[:, 1],
         slack_participation_factors,
         data_original_bus_power,
-    ) || return false
-
-    return true
+    )
+    return
 end

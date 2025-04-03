@@ -613,8 +613,9 @@ end
         isempty(get_components(x -> get_number(get_bus(x)) == bn, ThermalStandard, sys)) &&
             continue
         b = only(get_components(x -> get_number(x) == bn, ACBus, sys))
-        get_bustype(b) == ACBusTypes.REF && (push!(ref_n, i))
-        get_bustype(b) == ACBusTypes.PV && (push!(pv_n, i))
+        bus_type = get_bustype(b)
+        bus_type == ACBusTypes.REF && (push!(ref_n, i))
+        bus_type == ACBusTypes.PV && (push!(pv_n, i))
     end
 
     # make sure we have active power imbalance in the starting grid
@@ -648,7 +649,7 @@ end
     @test isapprox(res1["bus_results"].Vm, res2["bus_results"].Vm, atol = 1e-6, rtol = 0)
     @test isapprox(res1["bus_results"].θ, res2["bus_results"].θ, atol = 1e-6, rtol = 0)
 
-    @test _check_ds_pf(
+    _check_ds_pf(
         pf2,
         sys,
         slack_participation_factors,
@@ -663,7 +664,7 @@ end
     pf3 = ACPowerFlow(;
         generator_slack_participation_factors = _get_spf_dict(slack_participation_factors))
 
-    @test _check_ds_pf(
+    _check_ds_pf(
         pf3,
         sys,
         slack_participation_factors,
@@ -678,7 +679,7 @@ end
     pf4 = ACPowerFlow(;
         generator_slack_participation_factors = _get_spf_dict(slack_participation_factors))
 
-    @test _check_ds_pf(
+    _check_ds_pf(
         pf4,
         sys,
         slack_participation_factors,
@@ -693,7 +694,7 @@ end
     pf5 = ACPowerFlow(;
         generator_slack_participation_factors = _get_spf_dict(slack_participation_factors))
 
-    @test _check_ds_pf(
+    _check_ds_pf(
         pf5,
         sys,
         slack_participation_factors,
@@ -709,7 +710,7 @@ end
     pf6 = ACPowerFlow(;
         generator_slack_participation_factors = _get_spf_dict(slack_participation_factors))
 
-    @test _check_ds_pf(
+    _check_ds_pf(
         pf6,
         sys,
         slack_participation_factors,
