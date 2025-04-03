@@ -10,8 +10,8 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     calculate_loss_factors::Bool
     generator_slack_participation_factors::Union{
         Nothing,
-        Dict{String, Float64},
-        Vector{Dict{String, Float64}},
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
     }
 end
 
@@ -21,8 +21,8 @@ ACPowerFlow{ACSolver}(;
     calculate_loss_factors::Bool = false,
     generator_slack_participation_factors::Union{
         Nothing,
-        Dict{String, Float64},
-        Vector{Dict{String, Float64}},
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
     } = nothing,
 ) where {ACSolver <: ACPowerFlowSolverType} =
     ACPowerFlow{ACSolver}(
@@ -39,8 +39,8 @@ ACPowerFlow(
     calculate_loss_factors::Bool = false,
     generator_slack_participation_factors::Union{
         Nothing,
-        Dict{String, Float64},
-        Vector{Dict{String, Float64}},
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
     } = nothing,
 ) = ACPowerFlow{ACSolver}(
     check_reactive_power_limits,

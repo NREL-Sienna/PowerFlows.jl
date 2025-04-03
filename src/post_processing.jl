@@ -465,6 +465,10 @@ function write_powerflow_solution!(
         elseif bus.bustype == PSY.ACBusTypes.PV
             Q_gen = data.bus_reactivepower_injection[ix, time_step]
             bus.angle = data.bus_angles[ix, time_step]
+            # If the PV bus has a nonzero slack participation factor, 
+            # then not only reactive power but also active power could have been changed 
+            # in the power flow calculation. This requires thge same 
+            # active and reacvtive power redistribution step as for the REF bus.
             if data.bus_slack_participation_factors[ix, time_step] != 0.0
                 P_gen = data.bus_activepower_injection[ix, time_step]
                 _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations)

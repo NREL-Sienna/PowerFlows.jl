@@ -555,7 +555,7 @@ end
     (PSB.MatpowerTestSystems, "matpower_case30_sys"),
 ]
     function _get_spf_dict(bus_slack_participation_factors)
-        generator_slack_participation_factors = Dict{String, Float64}()
+        generator_slack_participation_factors = Dict{Tuple{DataType, String}, Float64}()
         for (b, spf) in enumerate(bus_slack_participation_factors)
             get_bustype(get_bus(sys, bus_numbers[b])) == ACBusTypes.PQ && continue
             gens = get_components(
@@ -566,8 +566,8 @@ end
             isempty(gens) && continue
             gens = collect(gens)
             for g in gens
-                generator_slack_participation_factors[get_name(g)] = spf /
-                                                                     length(gens)
+                generator_slack_participation_factors[(ThermalStandard, get_name(g))] =
+                    spf / length(gens)
             end
         end
         return generator_slack_participation_factors
