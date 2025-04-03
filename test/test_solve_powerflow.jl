@@ -558,7 +558,7 @@ end
         generator_slack_participation_factors = Dict{String, Float64}()
         for (b, spf) in enumerate(slack_participation_factors)
             get_bustype(
-                only(get_components(x -> get_number(x) == bus_numbers[b], ACBus, sys)),
+                get_bus(sys, bus_numbers[b])
             ) ==
             ACBusTypes.PQ && continue
             gens = get_components(
