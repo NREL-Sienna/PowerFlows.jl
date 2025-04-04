@@ -119,3 +119,60 @@ end
     solve_powerflow!(data_brute_force; pf = pf)
     @test isnothing(data_brute_force.loss_factors)
 end
+
+@testset failfast = true "MULTI-PERIOD power flows evaluation with DS" for mode in (
+    :nothing,
+    :equal,
+    :dict,
+    :array_1,
+    :array_24,
+)
+    # get system
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    generators = get_components(ThermalStandard, sys)
+    create_gspf(generators) =
+        Dict((ThermalStandard, get_name(x)) => abs(randn()) for x in generators)
+    generator_slack_participation_factors =
+        if mode == :nothing
+            nothing
+        elseif mode == :equal
+            Dict((ThermalStandard, get_name(x)) => 1.0 for x in generators)
+        elseif mode == :dict
+            create_gspf(generators)
+        elseif mode == :array_1
+            [create_gspf(generators)]
+        elseif mode == :array_24
+            [create_gspf(generators) for _ in 1:24]
+        end
+
+    # create structure for multi-period case
+    pf = ACPowerFlow(;
+        generator_slack_participation_factors = generator_slack_participation_factors,
+    )
+    time_steps = 24
+    data = PowerFlowData(pf, sys; time_steps = time_steps)
+
+    # allocate timeseries data from csv
+    prepare_ts_data!(data, time_steps)
+
+    init_p_injections = copy(data.bus_activepower_injection)
+    solve_powerflow!(data; pf = pf)
+
+    # check results
+    for time_step in 1:time_steps
+        _check_distributed_slack_consistency(
+            data.bus_activepower_injection[:, time_step],
+            collect(data.bus_slack_participation_factors[:, time_step]),
+            init_p_injections[:, time_step],
+        )
+    end
+
+    if mode == :array_24
+        pf = ACPowerFlow(;
+            generator_slack_participation_factors = generator_slack_participation_factors[1:5],
+        )
+        @test_throws ArgumentError(
+            "slack_participation_factors must have at least the same length as time_steps",
+        ) PowerFlowData(pf, sys; time_steps = time_steps)
+    end
+end

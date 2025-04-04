@@ -549,3 +549,189 @@ end
         atol = 1e-4,
     ))
 end
+
+@testset "AC PF with distributed slack" for (grid_lib, grid_name) in [
+    (PSB.PSITestSystems, "c_sys14"),
+    (PSB.MatpowerTestSystems, "matpower_case30_sys"),
+]
+    function _get_spf_dict(bus_slack_participation_factors)
+        generator_slack_participation_factors = Dict{Tuple{DataType, String}, Float64}()
+        for (b, spf) in enumerate(bus_slack_participation_factors)
+            get_bustype(get_bus(sys, bus_numbers[b])) == ACBusTypes.PQ && continue
+            gens = get_components(
+                x -> get_number(get_bus(x)) == bus_numbers[b],
+                ThermalStandard,
+                sys,
+            )
+            isempty(gens) && continue
+            gens = collect(gens)
+            for g in gens
+                generator_slack_participation_factors[(ThermalStandard, get_name(g))] =
+                    spf / length(gens)
+            end
+        end
+        return generator_slack_participation_factors
+    end
+
+    sys = PSB.build_system(grid_lib, grid_name)
+
+    # add a duplicate generator to a PV bus to make sure the method works for such set-ups
+    g1 = first(
+        get_components(x -> get_bustype(get_bus(x)) == ACBusTypes.PV, ThermalStandard, sys),
+    )
+
+    g2 = ThermalStandard(;
+        name = "Duplicate",
+        available = true,
+        status = true,
+        bus = get_bus(g1),
+        active_power = 0.1,
+        reactive_power = 0.1,
+        rating = 1.0,
+        active_power_limits = (min = 0.0, max = 1.0),
+        reactive_power_limits = (min = -1.0, max = 1.0),
+        ramp_limits = nothing,
+        operation_cost = ThermalGenerationCost(nothing),
+        base_power = 100.0,
+        time_limits = nothing,
+        prime_mover_type = PrimeMovers.OT,
+        fuel = ThermalFuels.OTHER,
+        services = Device[],
+        dynamic_injector = nothing,
+        ext = Dict{String, Any}(),
+    )
+    add_component!(sys, g2)
+
+    bus_numbers = get_bus_numbers(sys)
+
+    ref_n = []
+    pv_n = []
+    for (i, bn) in enumerate(bus_numbers)
+        isempty(get_components(x -> get_number(get_bus(x)) == bn, ThermalStandard, sys)) &&
+            continue
+        b = only(get_components(x -> get_number(x) == bn, ACBus, sys))
+        bus_type = get_bustype(b)
+        bus_type == ACBusTypes.REF && (push!(ref_n, i))
+        bus_type == ACBusTypes.PV && (push!(pv_n, i))
+    end
+
+    # make sure we have active power imbalance in the starting grid
+    g = first(
+        get_components(
+            x -> get_bustype(get_bus(x)) == ACBusTypes.REF,
+            ThermalStandard,
+            sys,
+        ),
+    )
+    with_units_base(sys, UnitSystem.NATURAL_UNITS) do
+        set_active_power!(g, 20.0)
+    end
+
+    pf = ACPowerFlow()
+    data = PowerFlowData(pf, sys)
+    original_bus_power, original_gen_power = _system_generation_power(sys, bus_numbers)
+    data_original_bus_power = copy(data.bus_activepower_injection[:, 1])
+    res1 = solve_powerflow(pf, sys)
+
+    bus_slack_participation_factors = zeros(Float64, length(bus_numbers))
+    bus_slack_participation_factors[ref_n] .= 1.0
+
+    pf2 = ACPowerFlow(;
+        generator_slack_participation_factors = _get_spf_dict(
+            bus_slack_participation_factors,
+        ),
+    )
+    res2 = solve_powerflow(pf2, sys)
+
+    # basic test: if we pass the same slack participation factors as the default ones, the results
+    # should be the same
+    @test isapprox(res1["bus_results"].Vm, res2["bus_results"].Vm, atol = 1e-6, rtol = 0)
+    @test isapprox(res1["bus_results"].θ, res2["bus_results"].θ, atol = 1e-6, rtol = 0)
+
+    _check_ds_pf(
+        pf2,
+        sys,
+        bus_slack_participation_factors,
+        bus_numbers,
+        original_bus_power,
+        original_gen_power,
+        data_original_bus_power,
+    )
+
+    # now test with REF and one PV bus having slack participation factors of 1.0
+    bus_slack_participation_factors[pv_n[1]] = 1.0
+    pf3 = ACPowerFlow(;
+        generator_slack_participation_factors = _get_spf_dict(
+            bus_slack_participation_factors,
+        ),
+    )
+
+    _check_ds_pf(
+        pf3,
+        sys,
+        bus_slack_participation_factors,
+        bus_numbers,
+        original_bus_power,
+        original_gen_power,
+        data_original_bus_power,
+    )
+
+    # now test with all REF and PV buses having equal slack participation factors of 1.0
+    bus_slack_participation_factors[pv_n] .= 1.0
+    pf4 = ACPowerFlow(;
+        generator_slack_participation_factors = _get_spf_dict(
+            bus_slack_participation_factors,
+        ),
+    )
+
+    _check_ds_pf(
+        pf4,
+        sys,
+        bus_slack_participation_factors,
+        bus_numbers,
+        original_bus_power,
+        original_gen_power,
+        data_original_bus_power,
+    )
+
+    # Now set the slack participation factor to 0.0 for the REF bus
+    bus_slack_participation_factors[ref_n] .= 0.0
+    pf5 = ACPowerFlow(;
+        generator_slack_participation_factors = _get_spf_dict(
+            bus_slack_participation_factors,
+        ),
+    )
+
+    _check_ds_pf(
+        pf5,
+        sys,
+        bus_slack_participation_factors,
+        bus_numbers,
+        original_bus_power,
+        original_gen_power,
+        data_original_bus_power,
+    )
+
+    # now check the formula of the distribution of slack provision for different factors
+    bus_slack_participation_factors[ref_n] .= 2.5
+    bus_slack_participation_factors[pv_n] .= pv_n
+    pf6 = ACPowerFlow(;
+        generator_slack_participation_factors = [
+            _get_spf_dict(
+                bus_slack_participation_factors,
+            ),
+        ],
+    )  # [] to test this input variant
+
+    _check_ds_pf(
+        pf6,
+        sys,
+        bus_slack_participation_factors,
+        bus_numbers,
+        original_bus_power,
+        original_gen_power,
+        data_original_bus_power,
+    )
+
+    # TODO: add a test when two generators at the same bus have unequal slack participation factors
+end
