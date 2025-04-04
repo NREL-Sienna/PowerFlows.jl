@@ -716,10 +716,12 @@ end
     bus_slack_participation_factors[ref_n] .= 2.5
     bus_slack_participation_factors[pv_n] .= pv_n
     pf6 = ACPowerFlow(;
-        generator_slack_participation_factors = _get_spf_dict(
-            bus_slack_participation_factors,
-        ),
-    )
+        generator_slack_participation_factors = [
+            _get_spf_dict(
+                bus_slack_participation_factors,
+            ),
+        ],
+    )  # [] to test this input variant
 
     _check_ds_pf(
         pf6,
@@ -732,7 +734,4 @@ end
     )
 
     # TODO: add a test when two generators at the same bus have unequal slack participation factors
-    # TODO: add test for multiperiod with just one time step and one Dict input in the vector
-    # TODO: add test for multiperiod with just one Dict input of slack factors for different time steps
-    # TODO: add test for multiperiod with different Dict inputs for different time steps
 end
