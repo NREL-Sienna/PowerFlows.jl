@@ -239,7 +239,7 @@ function PowerFlowData(
     else
         loss_factors = nothing
     end
-    if pf.robust_power_flow
+    if get_robust_power_flow(pf)
         aux_network_matrix = PNM.ABA_Matrix(sys)
     else
         aux_network_matrix = nothing

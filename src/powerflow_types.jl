@@ -37,6 +37,8 @@ ACPowerFlow(
     robust_power_flow,
 )
 
+get_robust_power_flow(pf::ACPowerFlow{ACSolver}) where {ACSolver} = pf.robust_power_flow
+
 @kwdef struct DCPowerFlow <: PowerFlowEvaluationModel
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end

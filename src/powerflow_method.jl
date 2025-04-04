@@ -283,12 +283,13 @@ function _newton_powerflow(
     kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
     residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
-    if pf.robust_power_flow
+    residual(x0, time_step)
+    if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
+       get_robust_power_flow(pf)
         improve_x0!(x0, data, time_step, residual)
     else
         @debug "skipping DC powerflow fallback"
     end
-    residual(x0, time_step)
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     J(time_step)  # we need to fill J with values because at this point it was just initialized
 
@@ -334,22 +335,19 @@ function improve_x0!(x0::Vector{Float64},
     time_step::Int64,
     residual::ACPowerFlowResidual,
 )
-    residual(x0, time_step)
+    @debug "Trying to improve x0 via DC powerflow fallback"
     residualSize = norm(residual.Rv, 1)
-
-    if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv)
-        @debug "Trying to improve x0 via DC powerflow fallback"
-        _dc_powerflow_fallback!(data, time_step)
-        # is the new starting point better?
-        newx0 = calculate_x0(data, time_step)
-        residual(newx0, time_step)
-        newResidualSize = norm(residual.Rv, 1)
-        if newResidualSize < residualSize
-            @info "success: DC powerflow fallback yields better x0"
-            copyto!(x0, newx0)
-        else
-            @debug "no improvement from DC powerflow fallback"
-        end
+    _dc_powerflow_fallback!(data, time_step)
+    # is the new starting point better?
+    newx0 = calculate_x0(data, time_step)
+    residual(newx0, time_step)
+    newResidualSize = norm(residual.Rv, 1)
+    if newResidualSize < residualSize
+        @info "success: DC powerflow fallback yields better x0"
+        copyto!(x0, newx0)
+        residual(x0, time_step) # re-calculate for new x0.
+    else
+        @debug "no improvement from DC powerflow fallback"
     end
     return nothing
 end
