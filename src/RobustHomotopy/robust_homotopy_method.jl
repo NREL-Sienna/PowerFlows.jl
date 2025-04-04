@@ -1,37 +1,48 @@
 
 const INSUFFICIENT_CHANGE_IN_X = 10^(-11)
 const GRAD_ZERO = 2 * eps()
+
+function mumps_job!(mumps::Mumps, job::Int)
+    MUMPS.set_job!(mumps, job)
+    MUMPS.invoke_mumps!(mumps)
+    return
+end
+
 function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
 
     # this probably isn't the right spot for this: only need to call once,
-    # at very start, e.g. when package is loaded.
+    # at very start, e.g. when package is loaded. also seems to be a bit picky: I'm
+    # frequently getting errors upon exiting the REPL.
     MPI.Init()
 
     Δt_k = get(kwargs, :Δt_k, DEFAULT_Δt_k)
+    homHess = HomotopyHessian(data, time_step)
+    t_k_ref = homHess.t_k_ref
+    x = homotopy_x0(data, time_step)
 
-    homHess = HomotopyHessian(data, 1)
-    x = calculate_x0(data, time_step)
-    for (bus_ix, bt) in enumerate(get_bus_type(data)[:, time_step])
-        if bt == PSY.ACBusTypes.PQ
-            x[2 * bus_ix - 1] = 1.0
-        end
-    end
+    t_k_ref[] += Δt_k
 
-    t_k = Δt_k
-    homHess.t_k_ref[] = t_k
-    success::Bool = true
-    while true
-        success, _ = _second_order_newton(homHess, time_step, x) #, mumps)
-        if t_k == 1.0
+    # save-restore approach. see later TODO
+    #=
+    icntl = deepcopy(MUMPS.default_icntl)
+    icntl[4] = 1 # errors only
+    save_dir = mktempdir(;prefix=MUMP_SAVE_DIR_PREFIX)
+    mumps = Mumps{Float64}(MUMPS.mumps_symmetric, settings, MUMPS.default_cntl32)
+    associate_matrix!(mumps, homHess.Hv; unsafe = true)
+    mumps_job!(mumps, 1) # symbolic factor=#
+
+    success = true
+    while true # go onto next t_k even if search doesn't terminate within max iterations.
+        converged_t_k, _ = _second_order_newton(homHess, time_step, x)
+        if t_k_ref[] == 1.0
+            success = converged_t_k
             break
         end
-        t_k = min(1.0, t_k + Δt_k)
-        homHess.t_k_ref[] = t_k
+        t_k_ref[] = min(t_k_ref[] + Δt_k, 1.0)
     end
-    # MUMPS.finalize(mumps)
     if !success
         @warn "RobustHomotopyPowerFlow failed to find a solution"
     end
@@ -49,7 +60,6 @@ end
 function _second_order_newton(homHess::HomotopyHessian,
     time_step::Int,
     x::Vector{Float64};
-    # mumps::Mumps{Float64};
     kwargs...)
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
@@ -73,7 +83,7 @@ function _second_order_newton(homHess::HomotopyHessian,
             info_helper(homHess, F_val, "max iterations")
         end
     end
-    return converged || stop, i
+    return converged, i
 end
 function _second_order_newton_step(homHess::HomotopyHessian,
     time_step::Int,
@@ -90,17 +100,19 @@ function _second_order_newton_step(homHess::HomotopyHessian,
     end
 
     # TODO: fiugre out how to reuse the mumps object and the symbolic factorization.
-    # When I tried naively--see commented out arguments--the first solve was correct,
-    # but then future ones were wrong.
+    # one approach: save after initial symbolic factorization, then restore
+    #       requires creating a new mumps instance each time, and file IO isn't fast.
+    # better: have the mumps object's pointers directly point to the matrix and rhs.
+    #       reuse the mumps instance and the symbolic factorization: reset via JOB = -3
+    #       but see https://github.com/JuliaSmoothOptimizers/MUMPS.jl/issues/160
     settings = deepcopy(MUMPS.default_icntl)
     settings[4] = 1 # errors only
 
     mumps = Mumps{Float64}(MUMPS.mumps_symmetric, settings, MUMPS.default_cntl32)
     MUMPS.associate_matrix!(mumps, homHess.Hv)
-    MUMPS.factorize!(mumps)
     MUMPS.associate_rhs!(mumps, homHess.grad)
-    # TODO: what if the hessian is singular and there's no solution?
     MUMPS.solve!(mumps)
+    # TODO: what if the hessian is singular? is that okay, as long as RHS is still in image?
     δ = -1 * MUMPS.get_solution(mumps)[:, 1]
 
     err = homHess.Hv * δ + homHess.grad

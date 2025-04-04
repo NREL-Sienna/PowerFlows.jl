@@ -1,4 +1,5 @@
 struct HomotopyHessian
+    # PERF: data is stored in triplicate: here, inside pfResidual, and inside J.
     data::ACPowerFlowData
     pfResidual::ACPowerFlowResidual
     J::ACPowerFlowJacobian
@@ -15,10 +16,15 @@ function (hess::HomotopyHessian)(x::Vector{Float64}, time_step::Int)
     Rv = hess.pfResidual.Rv
     hess.J(time_step)
     Jv = hess.J.Jv
-    _update_hessian_matrix_values(hess.Hv, Rv, hess.data, time_step)
+    _update_hessian_matrix_values!(hess.Hv, Rv, hess.data, time_step)
     hess.Hv .+= Jv' * Jv
     SparseArrays.nonzeros(hess.Hv) .*= t_k
-    hess.Hv .+= (1 - t_k) * spdiagm(Float64.(hess.PQ_V_mags))
+    # manipulate entries directly: SparseArrays seems to run dropzeros! after doing .+=
+    for (bus_ix, bt) in enumerate(get_bus_type(hess.data)[:, time_step])
+        if bt == PSY.ACBusTypes.PQ
+            hess.Hv[2 * bus_ix - 1, 2 * bus_ix - 1] += (1 - t_k)
+        end
+    end
     hess.grad .= (1 - t_k) * hess.PQ_V_mags .* (x - ones(size(x, 1))) + t_k * Jv' * Rv
     return
 end
@@ -40,6 +46,16 @@ function gradient_value(hess::HomotopyHessian, x::Vector{Float64}, time_step::In
     mask = hess.PQ_V_mags
     grad = (1 - t_k) * (mask .* (x - ones(size(x, 1)))) + t_k * Jv' * hess.pfResidual.Rv
     return grad
+end
+
+function homotopy_x0(data::ACPowerFlowData, time_step::Int)
+    x = calculate_x0(data, time_step)
+    for (bus_ix, bt) in enumerate(get_bus_type(data)[:, time_step])
+        if bt == PSY.ACBusTypes.PQ
+            x[2 * bus_ix - 1] = 1.0
+        end
+    end
+    return x
 end
 
 function HomotopyHessian(data::ACPowerFlowData, time_step::Int)
@@ -71,12 +87,17 @@ function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int6
             end
         end
     end
+    for i in 1:(2 * num_buses)
+        push!(rows, i)
+        push!(columns, i)
+        push!(values, 0.0)
+    end
     return SparseArrays.sparse(rows, columns, values)
 end
 
 """Sets Hv equal to F_1(x) H_{F_1}(x) + ...+ F_{2n}(x) H_{F_{2n}}(x),
 where F_k denotes the kth power balance equation and H_{F_k} its Hessian."""
-function _update_hessian_matrix_values(
+function _update_hessian_matrix_values!(
     Hv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     F_value::Vector{Float64},
     data::ACPowerFlowData,
