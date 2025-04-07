@@ -249,6 +249,11 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
 
     num_buses = first(size(data.bus_type))
 
+    numlines = length(get_branch_lookup(data))
+    sizehint!(rows, 4*numlines)
+    sizehint!(columns, 4*numlines)
+    sizehint!(values, 4*numlines)
+
     for bus_from in 1:num_buses
         row_from_p = 2 * bus_from - 1  # Row index for the value that is related to active power
         row_from_q = 2 * bus_from      # Row index for the value that is related to reactive power
