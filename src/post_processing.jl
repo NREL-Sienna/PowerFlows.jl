@@ -169,7 +169,7 @@ function _power_redistribution_ref(
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
     all_devices = devices_
-        
+
     sources = filter(x -> typeof(x) == PSY.Source, collect(devices_))
     non_source_devices = filter(x -> typeof(x) !== PSY.Source, collect(devices_))
     if length(sources) > 0 && length(non_source_devices) > 0
@@ -206,15 +206,18 @@ function _power_redistribution_ref(
             c = PSY.get_component(t, sys, n)
             PSY.get_bus(c) == bus && c ∈ all_devices && (devices_gspf[c] = f)
         end
-        
+
         if isempty(devices_gspf)
             @debug "No devices with slack factors for bus $(PSY.get_name(bus))"
-        else            
+        else
             to_redistribute = P_gen - sum(PSY.get_active_power.(all_devices))
             sum_bus_gspf = sum(values(devices_gspf))
 
             for (device, factor) in devices_gspf
-                PSY.set_active_power!(device, PSY.get_active_power(device) + to_redistribute * factor / sum_bus_gspf)
+                PSY.set_active_power!(
+                    device,
+                    PSY.get_active_power(device) + to_redistribute * factor / sum_bus_gspf,
+                )
             end
             _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
             return
@@ -481,7 +484,11 @@ function write_powerflow_solution!(
         PSY.set_bustype!(bus, data_bustype)
     end
 
-    gspf = isnothing(data.generator_slack_participation_factors) ? nothing : data.generator_slack_participation_factors[time_step]
+    gspf = if isnothing(data.generator_slack_participation_factors)
+        nothing
+    else
+        data.generator_slack_participation_factors[time_step]
+    end
 
     for (ix, bus) in buses
         if bus.bustype == PSY.ACBusTypes.REF
