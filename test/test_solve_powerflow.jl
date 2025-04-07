@@ -733,5 +733,137 @@ end
         data_original_bus_power,
     )
 
-    # TODO: add a test when two generators at the same bus have unequal slack participation factors
+end
+
+@testset "DS power redistribution" begin
+    sys = System(100.0)
+    b1 = ACBus(;
+        number = 1,
+        name = "01",
+        bustype = ACBusTypes.REF,
+        angle = 0.0,
+        magnitude = 1.1,
+        voltage_limits = (0.0, 2.0),
+        base_voltage = 230,
+    )
+    add_component!(sys, b1)
+    b2 = ACBus(;
+        number = 2,
+        name = "02",
+        bustype = ACBusTypes.PV,
+        angle = 0.0,
+        magnitude = 1.1,
+        voltage_limits = (0.0, 2.0),
+        base_voltage = 230,
+    )
+    add_component!(sys, b2)
+    a = Arc(; from = b1, to = b2)
+    add_component!(sys, a)
+    l = Line(;
+        name = "l1",
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = a,
+        r = 1e-3,
+        x = 1e-3,
+        b = (from = 0.0, to = 0.0),
+        rating = 1.0,
+        angle_limits = (min = -pi / 2, max = pi / 2),
+    )
+    add_component!(sys, l)
+
+    ps = -0.5
+
+    s1 = Source(;
+        name = "source_1",
+        available = true,
+        bus = b1,
+        active_power = ps,
+        reactive_power = 0.1,
+        R_th = 1e-5,
+        X_th = 1e-5,
+    )
+    add_component!(sys, s1)
+
+    p1 = 0.1
+    
+    g1 = ThermalStandard(;
+        name = "G1",
+        available = true,
+        status = true,
+        bus = b2,
+        active_power = p1,
+        reactive_power = 0.1,
+        rating = 1.0,
+        active_power_limits = (min=0, max=1),
+        reactive_power_limits = (min=-1, max=1),
+        ramp_limits = nothing,
+        operation_cost = ThermalGenerationCost(nothing),
+        base_power = 100.0,
+        time_limits = nothing,
+        prime_mover_type = PrimeMovers.OT,
+        fuel = ThermalFuels.OTHER,
+        services = Device[],
+        dynamic_injector = nothing,
+        ext = Dict{String, Any}(),
+    )
+    add_component!(sys, g1)
+
+    p2 = 0.2
+
+    g2 = ThermalStandard(;
+        name = "G2",
+        available = true,
+        status = true,
+        bus = b2,
+        active_power = p2,
+        reactive_power = 0.1,
+        rating = 1.0,
+        active_power_limits = (min=0, max=1),
+        reactive_power_limits = (min=-1, max=1),
+        ramp_limits = nothing,
+        operation_cost = ThermalGenerationCost(nothing),
+        base_power = 100.0,
+        time_limits = nothing,
+        prime_mover_type = PrimeMovers.OT,
+        fuel = ThermalFuels.OTHER,
+        services = Device[],
+        dynamic_injector = nothing,
+        ext = Dict{String, Any}(),
+    )
+    add_component!(sys, g2)
+
+    reset_p() = for (c, p) in zip((s1,g1,g2), (ps, p1, p2)) set_active_power!(c, p) end
+
+    gspf = Dict((Source, "source_1") => 1.0, (ThermalStandard, "G1") => 0., (ThermalStandard, "G2") => 0.)
+    pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
+    solve_powerflow!(pf, sys)
+    @test isapprox(get_active_power(g1), p1; atol = 1e-6, rtol = 0)
+    @test isapprox(get_active_power(g2), p2; atol = 1e-6, rtol = 0)
+    reset_p()
+
+    gspf = Dict((Source, "source_1") => 0.0, (ThermalStandard, "G1") => 0.5, (ThermalStandard, "G2") => 0.5)
+    pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
+    solve_powerflow!(pf, sys)
+    @test isapprox(get_active_power(s1), ps; atol = 1e-6, rtol = 0)
+    @test isapprox(get_active_power(g1) - p1, get_active_power(g2) - p2; atol = 1e-6, rtol = 0)
+    reset_p()
+
+    gspf = Dict((ThermalStandard, "G1") => 0.0, (ThermalStandard, "G2") => 1.0)
+    pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
+    solve_powerflow!(pf, sys)
+    @test isapprox(get_active_power(s1), ps; atol = 1e-6, rtol = 0)
+    @test isapprox(get_active_power(g1), p1; atol = 1e-6, rtol = 0)
+    @test isapprox(-get_active_power(g2), get_active_power(g1) + get_active_power(s1); atol = 1e-3, rtol = 0)
+    reset_p()
+
+    gspf = Dict((Source, "source_1") => 0.1, (ThermalStandard, "G1") => 0.2, (ThermalStandard, "G2") => 0.4)
+    pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
+    solve_powerflow!(pf, sys)
+    total_slack_power = -(get_active_power(s1) - ps) + get_active_power(g1) - p1 + get_active_power(g2) - p2
+    @test isapprox(get_active_power(s1) - ps, total_slack_power * 0.2; atol = 1e-6, rtol = 0)
+    @test isapprox(get_active_power(g1) - p1, total_slack_power * 0.4; atol = 1e-6, rtol = 0)
+    @test isapprox(get_active_power(g2) - p2, total_slack_power * 0.8; atol = 1e-3, rtol = 0)
+    reset_p()
 end
