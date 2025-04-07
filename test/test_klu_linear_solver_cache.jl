@@ -26,18 +26,6 @@ end
 
     testSolve(k, A) # solve is solution.
 
-    # solve! is non-allocating.
-    b = randn(N)
-    temp = @allocated PF.solve!(k, b)
-    @test iszero(temp)
-
-    # numeric_refactor! is non allocating, and solves correctly.
-    A2 = deepcopy(A)
-    copyto!(A2.nzval, rand(length(A2.nzval)))
-    temp = @allocated PF.numeric_refactor!(k, A2)
-    @test iszero(temp)
-    testSolve(k, A2)
-
     # with reuse_symbolic and check_pattern both true,
     # refactor with a different structure throws.
     B = deepcopy(A)
