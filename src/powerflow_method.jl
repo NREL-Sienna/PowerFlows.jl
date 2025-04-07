@@ -96,7 +96,13 @@ function _set_Δx_nr!(stateVector::StateVectorCache,
         end
     else
         _solve_Δx_nr!(stateVector, linSolveCache)
-        _do_refinement!(stateVector, J.Jv, linSolveCache, refinement_threshold, refinement_eps)
+        _do_refinement!(
+            stateVector,
+            J.Jv,
+            linSolveCache,
+            refinement_threshold,
+            refinement_eps,
+        )
         LinearAlgebra.rmul!(stateVector.Δx_nr, -1.0)
     end
     return
