@@ -1,9 +1,8 @@
 """Cache for non-linear methods
 # Fields
--`x::Vector{Float64}`: the current state vector. Used for all methods.
--`r::Vector{Float64}`: the current residual. Used for all methods.
-    For `NewtonRaphsonACPowerFlow`, we solve `J_x Δx = r` in-place,
-    so this also stores the step `Δx` at times in those methods.
+-`x::Vector{Float64}`: the current state vector.
+-`r::Vector{Float64}`: the current residual.
+-`Δx_nr::Vector{Float64}`: the step under the Newton-Raphson method.
 The remainder of the fields are only used in the `TrustRegionACPowerFlow`:
 -`r_predict::Vector{Float64}`: the predicted residual at `x+Δx_proposed`,
     under a linear approximation: i.e `J_x⋅(x+Δx_proposed)`.
@@ -14,8 +13,7 @@ The remainder of the fields are only used in the `TrustRegionACPowerFlow`:
     is inside and `x+Δx_nr` outside. The dogleg step selects the point where the line
     from `x+Δx_cauchy` to `x+Δx_nr` crosses the boundary of the trust region.
 -`Δx_cauchy::Vector{Float64}`: the step to the Cauchy point if the Cauchy point
-    lies within the trust region, otherwise a step in that direction.
--`Δx_nr::Vector{Float64}`: the step under the Newton-Raphson method."""
+    lies within the trust region, otherwise a step in that direction."""
 struct StateVectorCache
     x::Vector{Float64}
     r::Vector{Float64} # residual
@@ -35,6 +33,75 @@ function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     return StateVectorCache(x, r, r_predict, Δx_proposed, Δx_cauchy, Δx_nr)
 end
 
+"""Returns a stand-in matrix for singular J's."""
+function _singular_J_fallback(Jv::SparseMatrixCSC{Float64, Int32},
+    x::Vector{Float64})
+    fjac2 = Jv' * Jv
+    lambda = NR_SINGULAR_SCALING * sqrt(length(x) * eps()) * norm(fjac2, 1)
+    return -(fjac2 + lambda * LinearAlgebra.I)
+end
+
+"""Solve for the Newton-Raphson step, given the factorization object for `J.Jv` 
+(if non-singular) or its stand-in (if singular)."""
+function _solve_Δx_nr!(stateVector::StateVectorCache, cache::KLULinSolveCache{Int32})
+    copyto!(stateVector.Δx_nr, stateVector.r)
+    solve!(cache, stateVector.Δx_nr)
+    return
+end
+
+"""Check error and do refinement."""
+function _do_refinement!(stateVector::StateVectorCache,
+    A::SparseMatrixCSC{Float64, Int32},
+    cache::KLULinSolveCache{Int32},
+    refinement_threshold::Float64,
+    refinement_eps::Float64,
+)
+    # use stateVector.r_predict as temporary buffer.
+    δ_temp = stateVector.r_predict
+    copyto!(δ_temp, A * stateVector.Δx_nr)
+    δ_temp .-= stateVector.r
+    delta = norm(δ_temp, 1) / norm(stateVector.r, 1)
+    if delta > refinement_threshold
+        stateVector.Δx_nr .= solve_w_refinement(cache,
+            A,
+            stateVector.r,
+            refinement_eps)
+    end
+    return
+end
+
+"""Sets the Newton-Raphson step. Usually, this is just `J.Jv \\ stateVector.r`, but
+`J.Jv` might be singular."""
+function _set_Δx_nr!(stateVector::StateVectorCache,
+    J::ACPowerFlowJacobian,
+    linSolveCache::KLULinSolveCache{Int32},
+    solver::ACPowerFlowSolverType,
+    refinement_threshold::Float64,
+    refinement_eps::Float64)
+    try
+        numeric_refactor!(linSolveCache, J.Jv)
+    catch e
+        if e isa LinearAlgebra.SingularException
+            @warn("$solver hit a point where the Jacobian is singular.")
+            M = _singular_J_fallback(J.Jv, stateVector.x)
+            tempCache = KLULinSolveCache(M)
+            # creating a new solver cache to solve Mx = stateVector.r once. Default ldiv!
+            # might be faster, but singular J's should be rare.
+            full_factor!(tempCache, M)
+            _solve_Δx_nr!(stateVector, tempCache)
+            _do_refinement!(stateVector, M, tempCache, refinement_threshold, refinement_eps)
+            LinearAlgebra.rmul!(stateVector.Δx_nr, -1.0)
+        else
+            @error("KLU factorization failed: $e")
+        end
+    else
+        _solve_Δx_nr!(stateVector, linSolveCache)
+        _do_refinement!(stateVector, J.Jv, linSolveCache, refinement_threshold, refinement_eps)
+        LinearAlgebra.rmul!(stateVector.Δx_nr, -1.0)
+    end
+    return
+end
+
 """Sets `Δx_proposed` equal to the `Δx` by which we should update `x`. Decides
 between the Cauchy step `Δx_cauchy`, Newton-Raphson step `Δx_nr`, and the dogleg
 interpolation between the two, based on which fall within the trust region."""
@@ -42,13 +109,9 @@ function _dogleg!(Δx_proposed::Vector{Float64},
     Δx_cauchy::Vector{Float64},
     Δx_nr::Vector{Float64},
     r::Vector{Float64},
-    linSolveCache::KLULinSolveCache{Int32},
     Jv::SparseMatrixCSC{Float64, Int32},
-    delta::Float64)
-    copyto!(Δx_nr, r)
-    solve!(linSolveCache, Δx_nr)
-    LinearAlgebra.rmul!(Δx_nr, -1.0)
-
+    delta::Float64,
+)
     if norm(Δx_nr) <= delta
         copyto!(Δx_proposed, Δx_nr) # update Δx_proposed: newton-raphson case.
     else
@@ -91,19 +154,25 @@ function _trust_region_step(time_step::Int,
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     delta::Float64,
-    eta::Float64 = DEFAULT_TRUST_REGION_ETA)
-    numeric_refactor!(linSolveCache, J.Jv)
-
-    # find proposed next point.
+    eta::Float64 = DEFAULT_TRUST_REGION_ETA,
+)
+    _set_Δx_nr!(
+        stateVector,
+        J,
+        linSolveCache,
+        TrustRegionACPowerFlow(),
+        DEFAULT_REFINEMENT_THRESHOLD,
+        DEFAULT_REFINEMENT_EPS,
+    )
     _dogleg!(
         stateVector.Δx_proposed,
         stateVector.Δx_cauchy,
         stateVector.Δx_nr,
         stateVector.r,
-        linSolveCache,
         J.Jv,
         delta,
     )
+    # find proposed next point.
     stateVector.x .+= stateVector.Δx_proposed
 
     # use cache.Δx_nr as temporary buffer to store old residual
@@ -151,42 +220,16 @@ function _simple_step(time_step::Int,
     refinement_eps::Float64 = DEFAULT_REFINEMENT_EPS,
 )
     copyto!(stateVector.r, residual.Rv)
-    try
-        # factorize the numeric object of KLU inplace, while reusing the symbolic object
-        numeric_refactor!(linSolveCache, J.Jv)
-        # solve for Δx in-place
-        solve!(linSolveCache, stateVector.r)
-        # use one of the other fields of stateVector as a temporary buffer
-        # to work out error on solution: if error is large, try doing refinement.
-        δ_temp = stateVector.r_predict
-        copyto!(δ_temp, J.Jv * stateVector.r)
-        δ_temp .-= residual.Rv
-        delta = norm(δ_temp, 1) / norm(residual.Rv, 1)
-        if delta > refinement_threshold
-            stateVector.r .= solve_w_refinement(linSolveCache,
-                J.Jv,
-                residual.Rv,
-                refinement_eps)
-        end
-    catch e
-        # TODO cook up a test case where Jacobian is singular.
-        if e isa LinearAlgebra.SingularException
-            @warn("Newton-Raphson hit a point where the Jacobian is singular.")
-            fjac2 = J.Jv' * J.Jv
-            lambda =
-                NR_SINGULAR_SCALING * sqrt(length(stateVector.x) * eps()) * norm(fjac2, 1)
-            M = -(fjac2 + lambda * LinearAlgebra.I)
-            tempCache = KLULinSolveCache(M) # not reused: just want a minimally-allocating
-            # KLU factorization. TODO check if this is faster than Julia's default ldiv.
-            full_factor!(tempCache, M)
-            solve!(tempCache, stateVector.r)
-        else
-            @error("KLU factorization failed: $e")
-            return
-        end
-    end
+    _set_Δx_nr!(
+        stateVector,
+        J,
+        linSolveCache,
+        NewtonRaphsonACPowerFlow(),
+        refinement_threshold,
+        refinement_eps,
+    )
     # update x
-    stateVector.x .-= stateVector.r
+    stateVector.x .+= stateVector.Δx_nr
     # update data's fields (the bus angles/voltages) to match x, and update the residual.
     # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
     residual(stateVector.x, time_step)
