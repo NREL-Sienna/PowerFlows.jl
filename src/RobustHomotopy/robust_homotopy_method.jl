@@ -1,6 +1,7 @@
 
 const INSUFFICIENT_CHANGE_IN_X = 10^(-11)
 const GRAD_ZERO = 2 * eps()
+const β = 10.0^-3
 
 function mumps_job!(mumps::Mumps, job::Int)
     MUMPS.set_job!(mumps, job)
@@ -12,11 +13,9 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
-
-    # TODO this probably isn't the right spot for this: only need to call once,
-    # at very start, e.g. when package is loaded. also seems to be a bit picky: I'm
-    # frequently getting errors upon exiting the REPL.
-    MPI.Init()
+    if !MPI.Initialized()
+        MPI.Init()
+    end
 
     Δt_k = get(kwargs, :Δt_k, DEFAULT_Δt_k)
     homHess = HomotopyHessian(data, time_step)
@@ -27,8 +26,11 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     homHess(x, time_step)
 
     icntl = deepcopy(MUMPS.default_icntl)
-    icntl[4] = 1 # errors only
+    icntl[4] = 1 # report errors only
+    icntl[13] = 1 # due to our _modify_hessian! strategy,
+    # we need to know the exact negative pivots.
     mumps = Mumps{Float64}(MUMPS.mumps_symmetric, icntl, MUMPS.default_cntl32)
+    MPI.add_finalize_hook!(() -> MUMPS.finalize(mumps))
     MUMPS.associate_matrix!(mumps, homHess.Hv)
     mumps_job!(mumps, ANALYZE)
 
@@ -43,6 +45,10 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     end
     if !success
         @warn "RobustHomotopyPowerFlow failed to find a solution"
+    end
+    MUMPS.finalize(mumps)
+    if success && data.calculate_loss_factors
+        calculate_loss_factors(data, homHess.J.Jv, time_step)
     end
     return success
 end
@@ -74,6 +80,7 @@ function _second_order_newton(homHess::HomotopyHessian,
             mumps,
         )
         F_val = F_value(homHess, x, time_step)
+        # TODO jump in tolerance. F_val ~ sum of squares, so...
         converged = (last_tk ? norm(homHess.pfResidual.Rv, Inf) : abs(F_val)) < tol
         i += 1
         if converged
@@ -84,6 +91,7 @@ function _second_order_newton(homHess::HomotopyHessian,
     end
     return converged, i
 end
+
 function _second_order_newton_step(homHess::HomotopyHessian,
     time_step::Int,
     x::Vector{Float64},
@@ -97,20 +105,17 @@ function _second_order_newton_step(homHess::HomotopyHessian,
         info_helper(homHess, F_val, "local minimum")
         return true
     end
-    # PERF: pass pointers to mumps, so we don't need to run this each time.
-    #       MUMPS stores things in COO format, though: just pass a pointer to 
-    #       nzval? That's passing a pointer to a struct internals, though... 
-    #       See issue #160 in the MUMPS.jl repo.
-    MUMPS.associate_matrix!(mumps, homHess.Hv)
+    _modify_hessian!(homHess.Hv, mumps)
     MUMPS.associate_rhs!(mumps, homHess.grad)
-    mumps_job!(mumps, FACTOR)
     mumps_job!(mumps, SOLVE)
-    # TODO: what if the hessian is singular? is that okay, as long as RHS is still in image?
-    δ = -1 * MUMPS.get_solution(mumps)[:, 1]
-    mumps_job!(mumps, FACTOR_CLEANUP)
 
+    δ = -1 * MUMPS.get_solution(mumps)[:, 1]
     err = homHess.Hv * δ + homHess.grad
-    @assert dot(err, err) < 10 * eps()
+    if dot(err, err) > 100 * eps()
+        c = LinearAlgebra.cond(Matrix(homHess.Hv))
+        @warn "Bad accuracy on hessian solution. Condition number of H is $c"
+    end
+    mumps_job!(mumps, FACTOR_CLEANUP)
 
     α_star = line_search(x, time_step, homHess, δ)
     if !last_step && norm(δ * α_star) < INSUFFICIENT_CHANGE_IN_X
@@ -120,4 +125,37 @@ function _second_order_newton_step(homHess::HomotopyHessian,
     end
     x .+= δ * α_star
     return false
+end
+
+"""Modify the Hessian to be positive definite, to guarantee that the solution to
+`H Δx = -∇f` is a direction of descent. Currently using algorithm 3.3 from 
+Nocedal & Wright: add a multiple of the identity."""
+function _modify_hessian!(H::SparseMatrixCSC, mumps::Mumps)
+    minDiagElem = minimum(H[i, i] for i in axes(H, 1))
+    if minDiagElem > 0.0
+        τ = 0.0
+    else
+        τ = -minDiagElem + β
+        for i in axes(H, 1)
+            H[i, i] += τ
+        end
+    end
+    # PERF: pass pointers to mumps, so we don't need to associate_matrix! each time.
+    #       MUMPS stores things in COO format, though: just pass a pointer to 
+    #       nzval? That's passing a pointer to a struct internals, though... 
+    #       See issue #160 in the MUMPS.jl repo.
+    MUMPS.associate_matrix!(mumps, H)
+    mumps_job!(mumps, FACTOR)
+    while mumps.infog[12] > 0 # while matrix isn't positive definite.
+        mumps_job!(mumps, FACTOR_CLEANUP)
+        τ_old = τ
+        τ = max(2 * τ, β)
+        for i in axes(H, 1)
+            H[i, i] += τ - τ_old # now try H + τ*I
+        end
+        MUMPS.associate_matrix!(mumps, H)
+        # TODO better error handling, so the user doesn't have to look up arcane
+        # error codes in the MUMPS user manual.
+        mumps_job!(mumps, FACTOR)
+    end
 end

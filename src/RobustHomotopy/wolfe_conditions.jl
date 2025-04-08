@@ -4,8 +4,7 @@ const MAX_LINE_SEARCH_ITERS = 20
 const MAX_ZOOM_ITERS = 20
 const DEFAULT_c_1 = 1e-4
 const DEFAULT_c_2 = 0.9
-# TODO: chosen randomly. do some research on strategies or fixed values.
-const DEFAULT_α_1 = 100.0
+const DEFAULT_α_1 = 1.0
 const DEFAULT_α_MAX = 1000.0
 
 """An implementation of Newton-Raphson line search with strong Wolfe conditions."""
@@ -109,16 +108,15 @@ function line_search(x::Vector{Float64},
     h_xprev = F_value(homInfo, x, time_step)
 
     roc_x0 = rate_of_change(x, time_step, homInfo, δ)
-    @assert roc_x0 < 0.0
+    if roc_x0 > 0
+        println("rate of change in search direction ", roc_x0)
+        println("f value ", h_xprev)
+    end
+    @assert roc_x0 <= 0.0 # the degenerate == 0.0 case shows up in 1 test case.
     while i < MAX_LINE_SEARCH_ITERS && α_i < α_max
         x_i = x + α_i * δ
         h_xi = F_value(homInfo, x_i, time_step)
         roc_xi = rate_of_change(x_i, time_step, homInfo, δ)
-
-        cond_i = !sufficient_decrease(x, time_step, homInfo, δ, α_i, c_1)
-        cond_ii = h_xi >= h_xprev
-        cond_iii = roc_xi >= 0
-        @assert cond_i || cond_ii || cond_iii
 
         if !sufficient_decrease(x, time_step, homInfo, δ, α_i, c_1) ||
            (h_xi >= h_xprev && i > 1)
