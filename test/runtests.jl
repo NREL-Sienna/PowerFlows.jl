@@ -41,7 +41,9 @@ include("test_utils/legacy_pf.jl")
 const AC_SOLVERS_TO_TEST = (
     LUACPowerFlow,
     NewtonRaphsonACPowerFlow,
-    TrustRegionACPowerFlow)
+    TrustRegionACPowerFlow,
+    RobustHomotopyPowerFlow,
+)
 
 LOG_FILE = "power-flows.log"
 

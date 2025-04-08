@@ -169,7 +169,6 @@ function _simple_step(time_step::Int,
                 refinement_eps)
         end
     catch e
-        # TODO cook up a test case where Jacobian is singular.
         if e isa LinearAlgebra.SingularException
             @warn("Newton-Raphson hit a point where the Jacobian is singular.")
             fjac2 = J.Jv' * J.Jv

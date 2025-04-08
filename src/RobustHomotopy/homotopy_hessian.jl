@@ -9,6 +9,23 @@ struct HomotopyHessian
     t_k_ref::Base.RefValue{Float64}
 end
 
+"""Does `A += B' * B`, in a way that preserves the sparse structure of `A`, if possible.
+A workaround for the fact that Julia seems to run `dropzeros!(A)` automatically if I just 
+do `A += B' * B`."""
+function A_plus_eq_BT_B!(A::SparseMatrixCSC, B::SparseMatrixCSC)
+    for i in axes(B, 1)
+        v = @view B[:, i]
+        for j in axes(B, 2)
+            w = @view B[:, j]
+            val = SparseArrays.dot(v, w)
+            if val != 0.0
+                A[i, j] += val
+            end
+        end
+    end
+    return
+end
+
 """Compute value of gradient and Hessian at x."""
 function (hess::HomotopyHessian)(x::Vector{Float64}, time_step::Int)
     t_k = hess.t_k_ref[]
@@ -16,16 +33,17 @@ function (hess::HomotopyHessian)(x::Vector{Float64}, time_step::Int)
     Rv = hess.pfResidual.Rv
     hess.J(time_step)
     Jv = hess.J.Jv
+    old_row, old_col = copy(hess.Hv.rowval), copy(hess.Hv.colptr)
     _update_hessian_matrix_values!(hess.Hv, Rv, hess.data, time_step)
-    hess.Hv .+= Jv' * Jv
+    A_plus_eq_BT_B!(hess.Hv, Jv)
     SparseArrays.nonzeros(hess.Hv) .*= t_k
-    # manipulate entries directly: SparseArrays seems to run dropzeros! after doing .+=
     for (bus_ix, bt) in enumerate(get_bus_type(hess.data)[:, time_step])
         if bt == PSY.ACBusTypes.PQ
             hess.Hv[2 * bus_ix - 1, 2 * bus_ix - 1] += (1 - t_k)
         end
     end
     hess.grad .= (1 - t_k) * hess.PQ_V_mags .* (x - ones(size(x, 1))) + t_k * Jv' * Rv
+    @assert hess.Hv.rowval == old_row && hess.Hv.colptr == old_col
     return
 end
 
@@ -72,13 +90,17 @@ function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int6
     rows = Int32[]      # I
     columns = Int32[]   # J
     values = Float64[]  # V
+    # H is J'*J + c*I
+    # J' * J is dot products of pairs of columns.
+    # so look at pairs of columns and check if there's a row in which both are nonzero.
+    # i.e. look at pairs of buses and see if they have a neighbor in common.
 
-    num_buses = first(size(data.bus_type))
-
-    for bus_from in 1:num_buses
-        # I'll follow the same strategy as the Jacobian, and take the worst case
-        # where all buses are PQ.
-        for bus_to in data.neighbors[bus_from]
+    enum_nbhrs = enumerate(data.neighbors)
+    for (b1, b2) in Iterators.product(enum_nbhrs, enum_nbhrs)
+        if !isdisjoint(b1[2], b2[2])
+            bus_from, bus_to = b1[1], b2[1]
+            # PERF: J.Jv^T * J.Jv would have fewer nonzero entries if J.Jv's sparse
+            # structure took into account the bus type
             for (i, j) in Iterators.product((2 * bus_from - 1, 2 * bus_from),
                 (2 * bus_to - 1, 2 * bus_to))
                 push!(rows, i)
@@ -87,16 +109,30 @@ function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int6
             end
         end
     end
-    for i in 1:(2 * num_buses)
-        push!(rows, i)
-        push!(columns, i)
-        push!(values, 0.0)
-    end
     return SparseArrays.sparse(rows, columns, values)
 end
 
 """Sets Hv equal to F_1(x) H_{F_1}(x) + ...+ F_{2n}(x) H_{F_{2n}}(x),
-where F_k denotes the kth power balance equation and H_{F_k} its Hessian."""
+where F_k denotes the kth power balance equation and H_{F_k} its Hessian.
+This isn't the full Hessian of our function: it's only the terms in that come
+from the second derivatives of our power balance equations. (There's also a `J'*J` term.)
+
+What's the sparse structure of that expression? It's split into 2x2 blocks, each 
+corresponding to a pair of buses. The sparse structure of a block for a pair of buses 
+connected by a branch is:
+   | REF| PV | PQ 
+---+----+----+----
+REF|    |    |   
+   |    |    |
+---+----+----+----
+PV |    |    |
+   |    |   .| . .
+---+----+----+----
+PQ |    |   .| . .
+   |    |   .| . .
+Diagonal blocks follow the same pattern as above (as if each bus is its own neighbor).
+Off-diagonal blocks for a pair of buses not connected by a branch are structurally zero.
+"""
 function _update_hessian_matrix_values!(
     Hv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     F_value::Vector{Float64},

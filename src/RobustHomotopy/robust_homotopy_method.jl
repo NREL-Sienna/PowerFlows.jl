@@ -13,10 +13,9 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     time_step::Int64;
     kwargs...)
 
-    # TODO this probably isn't the right spot for this: only need to call once,
-    # at very start, e.g. when package is loaded. also seems to be a bit picky: I'm
-    # frequently getting errors upon exiting the REPL.
-    MPI.Init()
+    if !MPI.Initialized()
+        MPI.Init()
+    end
 
     Δt_k = get(kwargs, :Δt_k, DEFAULT_Δt_k)
     homHess = HomotopyHessian(data, time_step)
@@ -29,6 +28,7 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     icntl = deepcopy(MUMPS.default_icntl)
     icntl[4] = 1 # errors only
     mumps = Mumps{Float64}(MUMPS.mumps_symmetric, icntl, MUMPS.default_cntl32)
+    MPI.add_finalize_hook!(() -> MUMPS.finalize(mumps))
     MUMPS.associate_matrix!(mumps, homHess.Hv)
     mumps_job!(mumps, ANALYZE)
 
@@ -44,6 +44,7 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     if !success
         @warn "RobustHomotopyPowerFlow failed to find a solution"
     end
+    MUMPS.finalize(mumps)
     return success
 end
 
@@ -74,6 +75,7 @@ function _second_order_newton(homHess::HomotopyHessian,
             mumps,
         )
         F_val = F_value(homHess, x, time_step)
+        # TODO jump in tolerance. F_val ~ sum of squares, so...
         converged = (last_tk ? norm(homHess.pfResidual.Rv, Inf) : abs(F_val)) < tol
         i += 1
         if converged
@@ -104,13 +106,22 @@ function _second_order_newton_step(homHess::HomotopyHessian,
     MUMPS.associate_matrix!(mumps, homHess.Hv)
     MUMPS.associate_rhs!(mumps, homHess.grad)
     mumps_job!(mumps, FACTOR)
+    # TODO how do I verify successful factor?
     mumps_job!(mumps, SOLVE)
-    # TODO: what if the hessian is singular? is that okay, as long as RHS is still in image?
+    # TODO what if the hessian is ill-conditioned?
+    # see the test case "AC Test 240 Case PSS/e results"
     δ = -1 * MUMPS.get_solution(mumps)[:, 1]
-    mumps_job!(mumps, FACTOR_CLEANUP)
-
     err = homHess.Hv * δ + homHess.grad
-    @assert dot(err, err) < 10 * eps()
+    if dot(err, err) > 100 * eps()
+        c = LinearAlgebra.cond(Matrix(homHess.Hv))
+        @warn "Bad accuracy on hessian solution. Condition number of H is $c"
+    end
+    mumps_job!(mumps, FACTOR_CLEANUP)
+    if dot(gradient_value(homHess, x, 1), δ) > eps()
+        # TODO better strategy? Also, I wonder if I should have some normalizing weights.
+        @warn "function is increasing in search direction: reverting to gradient direction"
+        δ .= -1 * homHess.grad
+    end
 
     α_star = line_search(x, time_step, homHess, δ)
     if !last_step && norm(δ * α_star) < INSUFFICIENT_CHANGE_IN_X

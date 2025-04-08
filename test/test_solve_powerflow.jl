@@ -145,6 +145,8 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
+    # TODO this test fails with the RobustHomotopyPowerFlow. I suspect
+    # it's because the hessian is poorly conditioned, almost singular.
     pf1 = solve_powerflow!(pf, system)
     @test pf1
     pf_result_df = solve_powerflow(pf, system)
