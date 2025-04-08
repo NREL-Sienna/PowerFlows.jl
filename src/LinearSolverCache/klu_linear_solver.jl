@@ -1,11 +1,10 @@
-
 """A cached linear solver using KLU. 
 # Fields:
 - `K`: the underlying KLU object.
 - `reuse_symbolic::Bool`: reuse the symbolic factorization. Defaults to true.
 - `check_pattern::Bool`: if true, `numeric_refactor!` verifies that the new
 matrix has the same sparsity structure. Defaults to true.
-- `been_factored::Bool`: internal usage."""
+- `been_factored::Bool`: used internally. Keeps track of whether we've done a numeric factorization."""
 mutable struct KLULinSolveCache{T} <: LinearSolverCache{T}
     K::KLU.KLUFactorization{Float64, T}
     reuse_symbolic::Bool
@@ -101,18 +100,11 @@ function numeric_refactor!(
 ) where {T <: TIs}
     # KLU differentiates between factor and refactor. Might be a better solution
     # via checking the status of the KLU object.
-    if cache.check_pattern && !same_pattern(cache, A)
-        throw(
-            ArgumentError(
-                "Matrix has different sparse structure. Either make cache with reuse_" *
-                "symbolic = false, or call symbolic_factor! instead of symbolic_refactor!",
-            ),
-        )
-    end
     if !cache.been_factored
         KLU.klu_factor!(cache.K)
         cache.been_factored = true
     end
+    # this checks that the symbolic structure matches for us.
     KLU.klu!(cache.K, A)
     return
 end
