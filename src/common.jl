@@ -216,7 +216,7 @@ function _add_gspf_to_ijv!(
     sys::System,
     gsp_factors::Dict{Tuple{DataType, String}, Float64},
     bus_lookup::Dict{Int, Int},
-    time_steps_iter::UnitRange{Int},
+    time_steps_iter::AbstractVector{<:Integer},
 )
     for ((gen_type, gen_name), val) in gsp_factors
         val == 0.0 && continue
