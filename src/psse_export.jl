@@ -111,6 +111,9 @@ end
 
 supports_multi_period(::PSSEExporter) = false
 
+_value_or_default(val, default) = isnothing(val) ? default : val
+
+
 function _validate_same_system(sys1::PSY.System, sys2::PSY.System)
     return IS.get_uuid(PSY.get_internal(sys1)) == IS.get_uuid(PSY.get_internal(sys2))
 end
