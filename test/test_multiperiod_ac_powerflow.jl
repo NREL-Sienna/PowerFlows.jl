@@ -135,9 +135,9 @@ end
         Dict(
             (ThermalStandard, get_name(x)) => v for (x, v) in zip(generators, factor_values)
         )
-    Random.seed!(IS.get_random_seed())
+    Random.seed!(0)
     factor_values_1 = abs.(randn(Float64, length(generators)))
-    Random.seed!(IS.get_random_seed())
+    Random.seed!(0)
     factor_values_24 = abs.(randn(Float64, length(generators), 24))
     generator_slack_participation_factors =
         if mode == :nothing

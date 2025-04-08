@@ -310,16 +310,13 @@ function make_bus_slack_participation_factors(
     n_buses::Int,
     bus_types::Matrix{PSY.ACBusTypes},
 )
-    is_ref(bt::Val{PSY.ACBusTypes.REF}) = true
-    is_ref(bt::Union{Val{PSY.ACBusTypes.PV}, Val{PSY.ACBusTypes.PQ}}) = false
-
     I = Int[]
     J = Int[]
     V = Float64[]
 
     for time_step in 1:time_steps
         for (ix, bt) in enumerate(bus_types[:, time_step])
-            is_ref(Val(bt)) || continue
+            bt == PSY.ACBusTypes.REF || continue
             push!(I, ix)
             push!(J, time_step)
             push!(V, 1.0)

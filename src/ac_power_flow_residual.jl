@@ -46,11 +46,6 @@ Create an instance of `ACPowerFlowResidual` for a given time step.
 and net bus reactive power injections.
 """
 function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
-    is_ref(bt::Val{PSY.ACBusTypes.REF}) = true
-    is_ref(bt::Union{Val{PSY.ACBusTypes.PV}, Val{PSY.ACBusTypes.PQ}}) = false
-    is_refpv(bt::Union{Val{PSY.ACBusTypes.REF}, Val{PSY.ACBusTypes.PV}}) = true
-    is_refpv(bt::Val{PSY.ACBusTypes.PQ}) = false
-
     n_buses = first(size(data.bus_type))
     P_net = Vector{Float64}(undef, n_buses)
     Q_net = Vector{Float64}(undef, n_buses)
@@ -65,7 +60,7 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     # slack_bus is set to the first REF bus found - will be used for the total slack power
     # TODO: check if there are multiple REF buses and treat the remaining ones as if they were PV buses
     # TODO: enable multiple slack buses, multiple disconnected zones
-    slack_bus = findfirst(is_ref.(Val.(bus_type)))
+    slack_bus = findfirst(x -> x == PSY.ACBusTypes.REF, bus_type)
 
     for (ix, bt) in zip(1:n_buses, bus_type)
         P_net[ix] =
@@ -76,7 +71,7 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
             data.bus_reactivepower_withdrawals[ix, time_step]
         P_net_set[ix] = P_net[ix]
 
-        is_refpv(Val(bt)) || continue
+        bt ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
         (spf_v = data.bus_slack_participation_factors[ix, time_step]) == 0.0 && continue
         push!(spf_idx, ix)
         push!(spf_val, spf_v)
