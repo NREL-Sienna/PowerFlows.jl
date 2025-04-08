@@ -13,7 +13,7 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     time_step::Int64;
     kwargs...)
 
-    # this probably isn't the right spot for this: only need to call once,
+    # TODO this probably isn't the right spot for this: only need to call once,
     # at very start, e.g. when package is loaded. also seems to be a bit picky: I'm
     # frequently getting errors upon exiting the REPL.
     MPI.Init()
@@ -24,19 +24,17 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     x = homotopy_x0(data, time_step)
 
     t_k_ref[] += Δt_k
+    homHess(x, time_step)
 
-    # save-restore approach. see later TODO
-    #=
     icntl = deepcopy(MUMPS.default_icntl)
     icntl[4] = 1 # errors only
-    save_dir = mktempdir(;prefix=MUMP_SAVE_DIR_PREFIX)
-    mumps = Mumps{Float64}(MUMPS.mumps_symmetric, settings, MUMPS.default_cntl32)
-    associate_matrix!(mumps, homHess.Hv; unsafe = true)
-    mumps_job!(mumps, 1) # symbolic factor=#
+    mumps = Mumps{Float64}(MUMPS.mumps_symmetric, icntl, MUMPS.default_cntl32)
+    MUMPS.associate_matrix!(mumps, homHess.Hv)
+    mumps_job!(mumps, ANALYZE)
 
     success = true
     while true # go onto next t_k even if search doesn't terminate within max iterations.
-        converged_t_k, _ = _second_order_newton(homHess, time_step, x)
+        converged_t_k, _ = _second_order_newton(homHess, time_step, x, mumps)
         if t_k_ref[] == 1.0
             success = converged_t_k
             break
@@ -59,7 +57,8 @@ end
 
 function _second_order_newton(homHess::HomotopyHessian,
     time_step::Int,
-    x::Vector{Float64};
+    x::Vector{Float64},
+    mumps::Mumps;
     kwargs...)
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
@@ -72,7 +71,7 @@ function _second_order_newton(homHess::HomotopyHessian,
             homHess,
             time_step,
             x,
-            # mumps
+            mumps,
         )
         F_val = F_value(homHess, x, time_step)
         converged = (last_tk ? norm(homHess.pfResidual.Rv, Inf) : abs(F_val)) < tol
@@ -87,8 +86,8 @@ function _second_order_newton(homHess::HomotopyHessian,
 end
 function _second_order_newton_step(homHess::HomotopyHessian,
     time_step::Int,
-    x::Vector{Float64})
-    #mumps::Mumps{Float64})
+    x::Vector{Float64},
+    mumps::Mumps{Float64})
     t_k = homHess.t_k_ref[]
     F_val = F_value(homHess, x, time_step)
     last_step = t_k == 1.0
@@ -98,22 +97,17 @@ function _second_order_newton_step(homHess::HomotopyHessian,
         info_helper(homHess, F_val, "local minimum")
         return true
     end
-
-    # TODO: fiugre out how to reuse the mumps object and the symbolic factorization.
-    # one approach: save after initial symbolic factorization, then restore
-    #       requires creating a new mumps instance each time, and file IO isn't fast.
-    # better: have the mumps object's pointers directly point to the matrix and rhs.
-    #       reuse the mumps instance and the symbolic factorization: reset via JOB = -3
-    #       but see https://github.com/JuliaSmoothOptimizers/MUMPS.jl/issues/160
-    settings = deepcopy(MUMPS.default_icntl)
-    settings[4] = 1 # errors only
-
-    mumps = Mumps{Float64}(MUMPS.mumps_symmetric, settings, MUMPS.default_cntl32)
+    # PERF: pass pointers to mumps, so we don't need to run this each time.
+    #       MUMPS stores things in COO format, though: just pass a pointer to 
+    #       nzval? That's passing a pointer to a struct internals, though... 
+    #       See issue #160 in the MUMPS.jl repo.
     MUMPS.associate_matrix!(mumps, homHess.Hv)
     MUMPS.associate_rhs!(mumps, homHess.grad)
-    MUMPS.solve!(mumps)
+    mumps_job!(mumps, FACTOR)
+    mumps_job!(mumps, SOLVE)
     # TODO: what if the hessian is singular? is that okay, as long as RHS is still in image?
     δ = -1 * MUMPS.get_solution(mumps)[:, 1]
+    mumps_job!(mumps, FACTOR_CLEANUP)
 
     err = homHess.Hv * δ + homHess.grad
     @assert dot(err, err) < 10 * eps()
