@@ -111,6 +111,9 @@ end
 
 supports_multi_period(::PSSEExporter) = false
 
+_value_or_default(val, default) = isnothing(val) ? default : val
+
+
 function _validate_same_system(sys1::PSY.System, sys2::PSY.System)
     return IS.get_uuid(PSY.get_internal(sys1)) == IS.get_uuid(PSY.get_internal(sys2))
 end
@@ -934,8 +937,6 @@ function write_to_buffers!(
 
     bus_number_mapping = md["bus_number_mapping"]
     transformer_name_mapping = md["transformer_name_mapping"]
-
-    _value_or_default(val, default) = isnothing(val) ? default : val
 
     for (transformer, (from_n, to_n)) in transformers_with_numbers
         from_n, to_n = branch_to_bus_numbers(transformer)
