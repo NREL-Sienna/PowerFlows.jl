@@ -111,6 +111,8 @@ end
 
 supports_multi_period(::PSSEExporter) = false
 
+_value_or_default(val, default) = isnothing(val) ? default : val
+
 function _validate_same_system(sys1::PSY.System, sys2::PSY.System)
     return IS.get_uuid(PSY.get_internal(sys1)) == IS.get_uuid(PSY.get_internal(sys2))
 end
@@ -828,14 +830,12 @@ function write_to_buffers!(
         R = PSY.get_r(branch)
         X = PSY.get_x(branch)
         B = 0.0  # NOTE PowerSystems only represents BI, BJ
-        RATEA =
-            RATEB =
-                RATEC =
-                    with_units_base(
-                        () -> PSY.get_rating(branch),
-                        exporter.system,
-                        PSY.UnitSystem.NATURAL_UNITS,
-                    )
+        RATEA, RATEB, RATEC =
+            with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_b(branch), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_c(branch), PSSE_DEFAULT)
+            end
         GI, BI = 0.0, PSY.get_b(branch).from
         GJ, BJ = 0.0, PSY.get_b(branch).to
         ST = PSY.get_available(branch) ? 1 : 0
@@ -968,14 +968,12 @@ function write_to_buffers!(
         else
             0.0
         end
-        RATA1 =
-            RATB1 =
-                RATC1 =
-                    with_units_base(
-                        () -> PSY.get_rating(transformer),
-                        exporter.system,
-                        PSY.UnitSystem.NATURAL_UNITS,
-                    )
+        RATA1, RATB1, RATC1 =
+            with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+            end
         COD1 = PSSE_DEFAULT
         CONT1 = PSSE_DEFAULT
         RMA1 = RMI1 = VMA1 = VMI1 = PSSE_DEFAULT
