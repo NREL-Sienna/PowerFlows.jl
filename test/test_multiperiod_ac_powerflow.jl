@@ -130,19 +130,26 @@ end
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     generators = get_components(ThermalStandard, sys)
-    create_gspf(generators) =
-        Dict((ThermalStandard, get_name(x)) => abs(randn()) for x in generators)
+
+    create_gspf(generators, factor_values) =
+        Dict(
+            (ThermalStandard, get_name(x)) => v for (x, v) in zip(generators, factor_values)
+        )
+    Random.seed!(IS.get_random_seed())
+    factor_values_1 = abs.(randn(Float64, length(generators)))
+    Random.seed!(IS.get_random_seed())
+    factor_values_24 = abs.(randn(Float64, length(generators), 24))
     generator_slack_participation_factors =
         if mode == :nothing
             nothing
         elseif mode == :equal
             Dict((ThermalStandard, get_name(x)) => 1.0 for x in generators)
         elseif mode == :dict
-            create_gspf(generators)
+            create_gspf(generators, factor_values_1)
         elseif mode == :array_1
-            [create_gspf(generators)]
+            [create_gspf(generators, factor_values_1)]
         elseif mode == :array_24
-            [create_gspf(generators) for _ in 1:24]
+            [create_gspf(generators, factor_values_24[:, t]) for t in 1:24]
         end
 
     # create structure for multi-period case

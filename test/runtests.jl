@@ -12,6 +12,7 @@ using JSON3
 using DataStructures
 import SparseArrays
 import SparseArrays: SparseMatrixCSC, sparse, sprandn, sprand
+import Random
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
