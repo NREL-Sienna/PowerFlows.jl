@@ -828,14 +828,12 @@ function write_to_buffers!(
         R = PSY.get_r(branch)
         X = PSY.get_x(branch)
         B = 0.0  # NOTE PowerSystems only represents BI, BJ
-        RATEA =
-            RATEB =
-                RATEC =
-                    with_units_base(
-                        () -> PSY.get_rating(branch),
-                        exporter.system,
-                        PSY.UnitSystem.NATURAL_UNITS,
-                    )
+        RATEA, RATEB, RATEC =
+            with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_b(branch), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_c(branch), PSSE_DEFAULT)
+            end
         GI, BI = 0.0, PSY.get_b(branch).from
         GJ, BJ = 0.0, PSY.get_b(branch).to
         ST = PSY.get_available(branch) ? 1 : 0
@@ -937,6 +935,8 @@ function write_to_buffers!(
     bus_number_mapping = md["bus_number_mapping"]
     transformer_name_mapping = md["transformer_name_mapping"]
 
+    _value_or_default(val, default) = isnothing(val) ? default : val
+
     for (transformer, (from_n, to_n)) in transformers_with_numbers
         from_n, to_n = branch_to_bus_numbers(transformer)
         I = bus_number_mapping[from_n]
@@ -968,14 +968,12 @@ function write_to_buffers!(
         else
             0.0
         end
-        RATA1 =
-            RATB1 =
-                RATC1 =
-                    with_units_base(
-                        () -> PSY.get_rating(transformer),
-                        exporter.system,
-                        PSY.UnitSystem.NATURAL_UNITS,
-                    )
+        RATA1, RATB1, RATC1 =
+            with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+            end
         COD1 = PSSE_DEFAULT
         CONT1 = PSSE_DEFAULT
         RMA1 = RMI1 = VMA1 = VMI1 = PSSE_DEFAULT
