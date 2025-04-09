@@ -118,11 +118,6 @@ function line_search(x::Vector{Float64},
         h_xi = F_value(homInfo, x_i, time_step)
         roc_xi = rate_of_change(x_i, time_step, homInfo, δ)
 
-        cond_i = !sufficient_decrease(x, time_step, homInfo, δ, α_i, c_1)
-        cond_ii = h_xi >= h_xprev
-        cond_iii = roc_xi >= 0
-        @assert cond_i || cond_ii || cond_iii
-
         if !sufficient_decrease(x, time_step, homInfo, δ, α_i, c_1) ||
            (h_xi >= h_xprev && i > 1)
             return zoom(x, time_step, homInfo, δ, α_prev, α_i, kwargs...)

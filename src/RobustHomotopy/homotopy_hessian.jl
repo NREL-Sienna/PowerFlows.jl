@@ -112,8 +112,8 @@ function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int6
     return SparseArrays.sparse(rows, columns, values)
 end
 
-"""Sets Hv equal to F_1(x) H_{F_1}(x) + ...+ F_{2n}(x) H_{F_{2n}}(x),
-where F_k denotes the kth power balance equation and H_{F_k} its Hessian.
+"""Sets Hv equal to `F_1(x) H_{F_1}(x) + ...+ F_{2n}(x) H_{F_{2n}}(x)`,
+where F_k denotes the kth power balance equation and `H_{F_k}` its Hessian.
 This isn't the full Hessian of our function: it's only the terms in that come
 from the second derivatives of our power balance equations. (There's also a `J'*J` term.)
 
