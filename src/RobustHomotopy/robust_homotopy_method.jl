@@ -13,7 +13,6 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
-
     if !MPI.Initialized()
         MPI.Init()
     end
@@ -48,6 +47,9 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
         @warn "RobustHomotopyPowerFlow failed to find a solution"
     end
     MUMPS.finalize(mumps)
+    if success && data.calculate_loss_factors
+        calculate_loss_factors(data, homHess.J.Jv, time_step)
+    end
     return success
 end
 
@@ -129,13 +131,13 @@ end
 `H Δx = -∇f` is a direction of descent. Currently using algorithm 3.3 from 
 Nocedal & Wright: add a multiple of the identity."""
 function _modify_hessian!(H::SparseMatrixCSC, mumps::Mumps)
-    minDiagElem = minimum(H[i,i] for i in axes(H, 1))
+    minDiagElem = minimum(H[i, i] for i in axes(H, 1))
     if minDiagElem > 0.0
         τ = 0.0
     else
         τ = -minDiagElem + β
         for i in axes(H, 1)
-            H[i,i] += τ
+            H[i, i] += τ
         end
     end
     # PERF: pass pointers to mumps, so we don't need to associate_matrix! each time.
@@ -147,9 +149,9 @@ function _modify_hessian!(H::SparseMatrixCSC, mumps::Mumps)
     while mumps.infog[12] > 0 # while matrix isn't positive definite.
         mumps_job!(mumps, FACTOR_CLEANUP)
         τ_old = τ
-        τ = max(2*τ, β)
+        τ = max(2 * τ, β)
         for i in axes(H, 1)
-            H[i,i] += τ-τ_old # now try H + τ*I
+            H[i, i] += τ - τ_old # now try H + τ*I
         end
         MUMPS.associate_matrix!(mumps, H)
         # TODO better error handling, so the user doesn't have to look up arcane

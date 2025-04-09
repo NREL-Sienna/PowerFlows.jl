@@ -44,7 +44,7 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
     data = PowerFlowData(pf, sys)
-    
+
     hess = PF.HomotopyHessian(data, time_step)
     x0 = PF.homotopy_x0(data, time_step)
     hess(x0, time_step)
@@ -71,8 +71,8 @@ end
 
     g0 = PF.gradient_value(hess, x0, time_step)
     for (ind, bt) in enumerate(PF.get_bus_type(data)[:, time_step])
-        @test g0[2*ind-1] == (bt == PSY.ACBusTypes.PQ ? x0[2 * ind - 1] - 1 : 0.0)
-        @test g0[2*ind] == 0.0
+        @test g0[2 * ind - 1] == (bt == PSY.ACBusTypes.PQ ? x0[2 * ind - 1] - 1 : 0.0)
+        @test g0[2 * ind] == 0.0
     end
 
     hess.t_k_ref[] = 0.5

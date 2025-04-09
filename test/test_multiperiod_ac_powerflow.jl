@@ -113,10 +113,7 @@ end
     bf_loss_factors = penalty_factors_brute_force(data_brute_force, pf)
 
     # confirm that loss factors match for the Jacobian-based and brute force approaches
-    # TODO this is failing for RobustHomotopyPowerFlow
-    if ACSolver != RobustHomotopyPowerFlow
-        @test isapprox(bf_loss_factors, data_loss_factors.loss_factors, atol = 1e-4, rtol = 0)
-    end
+    @test isapprox(bf_loss_factors, data_loss_factors.loss_factors, atol = 1e-4, rtol = 0)
 
     # get power flow results without loss factors
     solve_powerflow!(data_brute_force; pf = pf)
