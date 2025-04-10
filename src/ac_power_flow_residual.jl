@@ -61,7 +61,8 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     # TODO: check if there are multiple REF buses and treat the remaining ones as if they were PV buses
     # TODO: enable multiple slack buses, multiple disconnected zones
 
-    subnetworks = _find_subnetworks_for_reference_buses(data.power_network_matrix.data, bus_type)
+    subnetworks =
+        _find_subnetworks_for_reference_buses(data.power_network_matrix.data, bus_type)
 
     for (ix, bt) in zip(1:n_buses, bus_type)
         P_net[ix] =
@@ -99,7 +100,11 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     for subnetwork_buses in values(subnetworks)
         bspf_subnetwork = view(bus_slack_participation_factors, subnetwork_buses)
         sum_bspf_subnetwork = sum(bspf_subnetwork)
-        sum_bspf_subnetwork == 0.0 && throw(ArgumentError("sum of slack_participation_factors per subnetwork cannot be zero"))
+        sum_bspf_subnetwork == 0.0 && throw(
+            ArgumentError(
+                "sum of slack_participation_factors per subnetwork cannot be zero",
+            ),
+        )
         bspf_subnetwork ./= sum_bspf_subnetwork
     end
 
@@ -292,11 +297,14 @@ function _update_residual_values!(
     # update P_net, Q_net, data.bus_angles, data.bus_magnitude based on X
     Yb = data.power_network_matrix.data
     bus_types = view(data.bus_type, :, time_step)
-    
-    for (slack_bus, subnetwork_buses) in subnetworks
-        P_slack = (x[2 * slack_bus - 1] - P_net_set[slack_bus]) .* bus_slack_participation_factors[subnetwork_buses]
 
-        for (ix, bt, p_bus_slack) in zip(subnetwork_buses, bus_types[subnetwork_buses], P_slack)
+    for (slack_bus, subnetwork_buses) in subnetworks
+        P_slack =
+            (x[2 * slack_bus - 1] - P_net_set[slack_bus]) .*
+            bus_slack_participation_factors[subnetwork_buses]
+
+        for (ix, bt, p_bus_slack) in
+            zip(subnetwork_buses, bus_types[subnetwork_buses], P_slack)
             _set_state_vars_at_bus!(
                 ix,
                 P_net,
@@ -341,8 +349,10 @@ function _update_residual_values!(
     return
 end
 
-
-function _find_subnetworks_for_reference_buses(Ybus::SparseMatrixCSC, bus_type::AbstractArray{PSY.ACBusTypes})
+function _find_subnetworks_for_reference_buses(
+    Ybus::SparseMatrixCSC,
+    bus_type::AbstractArray{PSY.ACBusTypes},
+)
     subnetworks = PNM.find_subnetworks(Ybus, collect(eachindex(bus_type)))
     ref_buses = findall(x -> x == PSY.ACBusTypes.REF, bus_type)
     bus_groups = Dict{Int, Vector{Int}}()
@@ -351,7 +361,11 @@ function _find_subnetworks_for_reference_buses(Ybus::SparseMatrixCSC, bus_type::
         if length(ref_bus) >= 1
             bus_groups[first(ref_bus)] = collect(pop!(subnetworks, bus_key))
         elseif length(ref_bus) == 0
-            throw(ArgumentError("No REF bus found in the subnetwork with $(length(subnetwork_buses)) buses defined by bus key $bus_key"))
+            throw(
+                ArgumentError(
+                    "No REF bus found in the subnetwork with $(length(subnetwork_buses)) buses defined by bus key $bus_key",
+                ),
+            )
         end
     end
     return bus_groups
