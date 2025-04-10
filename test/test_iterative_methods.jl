@@ -34,3 +34,14 @@ end
         ) match_mode = :any solve_powerflow!(data)
     end
 end
+
+@testset "singular Jacobian trust region" begin
+    # NewtonRaphsonACPowerFlow fails to converge on this system.
+    pf = ACPowerFlow{TrustRegionACPowerFlow}()
+    sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg10k_sys")
+    data = PowerFlowData(pf, sys)
+    @test_logs (:warn, Regex(".*Jacobian is singular.*")
+    ) match_mode = :any for _ in 1:20
+        solve_powerflow!(data; pf = pf)
+    end
+end
