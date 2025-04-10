@@ -11,18 +11,11 @@ end
 
 """Does `A += B' * B`, in a way that preserves the sparse structure of `A`, if possible.
 A workaround for the fact that Julia seems to run `dropzeros!(A)` automatically if I just 
-do `A += B' * B`."""
+do `A .+= B' * B`."""
 function A_plus_eq_BT_B!(A::SparseMatrixCSC, B::SparseMatrixCSC)
-    for i in axes(B, 1)
-        v = @view B[:, i]
-        for j in axes(B, 2)
-            w = @view B[:, j]
-            val = SparseArrays.dot(v, w)
-            if val != 0.0
-                A[i, j] += val
-            end
-        end
-    end
+    M = B' * B
+    @assert M.colptr == A.colptr && M.rowval == A.rowval
+    A.nzval .+= M.nzval
     return
 end
 
@@ -90,6 +83,14 @@ function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int6
     rows = Int32[]      # I
     columns = Int32[]   # J
     values = Float64[]  # V
+
+    # an over-estimate: I want ordered pairs of vertices that are 2 or fewer
+    # steps apart, whereas this counts directed paths of 2 edges.
+    numEdgePairs = sum(x -> length(x)^2, get_branch_lookup(data))
+    sizehint!(rows, 4 * numEdgePairs)
+    sizehint!(columns, 4 * numEdgePairs)
+    sizehint!(values, 4 * numEdgePairs)
+
     # H is J'*J + c*I
     # J' * J is dot products of pairs of columns.
     # so look at pairs of columns and check if there's a row in which both are nonzero.
