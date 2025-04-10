@@ -37,6 +37,9 @@ end
 
 @testset "singular Jacobian trust region" begin
     # NewtonRaphsonACPowerFlow fails to converge on this system.
+    # Empirically found: this system happens to have singular J's right next to the solution,
+    # and if we call solve_powerflow! repeatedly, TrustRegion happens to pick such a point.
+    # (May break if trust region is changed. TODO eventually: find a better test case.)
     pf = ACPowerFlow{TrustRegionACPowerFlow}()
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg10k_sys")
     data = PowerFlowData(pf, sys)
