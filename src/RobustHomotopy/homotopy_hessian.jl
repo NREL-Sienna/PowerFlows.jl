@@ -86,7 +86,10 @@ function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int6
 
     # an over-estimate: I want ordered pairs of vertices that are 2 or fewer
     # steps apart, whereas this counts directed paths of 2 edges.
-    numEdgePairs = sum(x -> length(x)^2, get_branch_lookup(data))
+    numEdgePairs = size(get_bus_type(data), 1)
+    if length(get_branch_lookup(data)) < 0
+        numEdgePairs = sum(x -> length(x)^2, get_branch_lookup(data))
+    end
     sizehint!(rows, 4 * numEdgePairs)
     sizehint!(columns, 4 * numEdgePairs)
     sizehint!(values, 4 * numEdgePairs)
