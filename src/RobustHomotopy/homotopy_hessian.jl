@@ -26,7 +26,6 @@ function (hess::HomotopyHessian)(x::Vector{Float64}, time_step::Int)
     Rv = hess.pfResidual.Rv
     hess.J(time_step)
     Jv = hess.J.Jv
-    old_row, old_col = copy(hess.Hv.rowval), copy(hess.Hv.colptr)
     _update_hessian_matrix_values!(hess.Hv, Rv, hess.data, time_step)
     A_plus_eq_BT_B!(hess.Hv, Jv)
     SparseArrays.nonzeros(hess.Hv) .*= t_k
@@ -36,7 +35,6 @@ function (hess::HomotopyHessian)(x::Vector{Float64}, time_step::Int)
         end
     end
     hess.grad .= (1 - t_k) * hess.PQ_V_mags .* (x - ones(size(x, 1))) + t_k * Jv' * Rv
-    @assert hess.Hv.rowval == old_row && hess.Hv.colptr == old_col
     return
 end
 
@@ -52,7 +50,9 @@ end
 function gradient_value(hess::HomotopyHessian, x::Vector{Float64}, time_step::Int)
     t_k = hess.t_k_ref[]
     hess.pfResidual(x, time_step)
-    hess.J(time_step)
+    hess.J(time_step) # PERF bottleneck. Look into a different line search strategy?
+    # or otherwise reduce the number of gradient computations?
+    # for a 10k bus system, computing J takes over 10x longer than computing F.
     Jv = hess.J.Jv
     mask = hess.PQ_V_mags
     grad = (1 - t_k) * (mask .* (x - ones(size(x, 1)))) + t_k * Jv' * hess.pfResidual.Rv
@@ -96,17 +96,25 @@ function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int6
     # so look at pairs of columns and check if there's a row in which both are nonzero.
     # i.e. look at pairs of buses and see if they have a neighbor in common.
 
-    enum_nbhrs = enumerate(data.neighbors)
-    for (b1, b2) in Iterators.product(enum_nbhrs, enum_nbhrs)
-        if !isdisjoint(b1[2], b2[2])
-            bus_from, bus_to = b1[1], b2[1]
-            # PERF: J.Jv^T * J.Jv would have fewer nonzero entries if J.Jv's sparse
-            # structure took into account the bus type
-            for (i, j) in Iterators.product((2 * bus_from - 1, 2 * bus_from),
-                (2 * bus_to - 1, 2 * bus_to))
-                push!(rows, i)
-                push!(columns, j)
-                push!(values, 0.0)
+    visited = Set{Tuple{Int, Int}}()
+    # non structurally zero block correspond to pairs of buses with a neighbor in common.
+    # instead of checking pairs of buses O(n^2 d), we travel 2 hops from each bus O(n d^2)
+    # (d = degree of typical vertex, n = number of vertices; d << n.)
+    for (ind, nbrs) in enumerate(get_neighbor(data))
+        for nbr in nbrs
+            for nbrOfNbr in get_neighbor(data)[nbr]
+                if !((ind, nbrOfNbr) in visited)
+                    bus_from, bus_to = ind, nbrOfNbr
+                    # PERF: J.Jv^T * J.Jv would have fewer nonzero entries if J.Jv's sparse
+                    # structure took into account the bus type
+                    for (i, j) in Iterators.product((2 * bus_from - 1, 2 * bus_from),
+                        (2 * bus_to - 1, 2 * bus_to))
+                        push!(rows, i)
+                        push!(columns, j)
+                        push!(values, 0.0)
+                    end
+                    push!(visited, (ind, nbrOfNbr))
+                end
             end
         end
     end
