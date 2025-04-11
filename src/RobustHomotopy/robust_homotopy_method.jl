@@ -116,6 +116,8 @@ function _second_order_newton_step(homHess::HomotopyHessian,
     δ .*= -1
     mumps_job!(mumps, FACTOR_CLEANUP)
 
+    # PERF: the line search is taking up 80%+ of the time in _second_order_newton_step
+    # evidently I need a better (or better optimized) line search.
     α_star = line_search(x, time_step, homHess, δ)
     if !last_step && norm(δ * α_star) < INSUFFICIENT_CHANGE_IN_X
         # stop case 2: slow progress.

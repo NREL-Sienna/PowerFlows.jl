@@ -50,7 +50,9 @@ end
 function gradient_value(hess::HomotopyHessian, x::Vector{Float64}, time_step::Int)
     t_k = hess.t_k_ref[]
     hess.pfResidual(x, time_step)
-    hess.J(time_step)
+    hess.J(time_step) # PERF bottleneck. Look into a different line search strategy?
+    # or otherwise reduce the number of gradient computations?
+    # for a 10k bus system, computing J takes over 10x longer than computing F.
     Jv = hess.J.Jv
     mask = hess.PQ_V_mags
     grad = (1 - t_k) * (mask .* (x - ones(size(x, 1)))) + t_k * Jv' * hess.pfResidual.Rv
