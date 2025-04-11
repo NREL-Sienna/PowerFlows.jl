@@ -72,12 +72,14 @@ function _second_order_newton(homHess::HomotopyHessian,
     i, converged, stop = 0, false, false
     F_val = F_value(homHess, x, time_step)
     last_tk = homHess.t_k_ref[] == 1.0
+    δ = zeros(size(x, 1))
     while i < maxIterations && !converged && !stop
         stop = _second_order_newton_step(
             homHess,
             time_step,
             x,
             mumps,
+            δ,
         )
         F_val = F_value(homHess, x, time_step)
         # TODO jump in tolerance. F_val ~ sum of squares, so...
@@ -95,7 +97,8 @@ end
 function _second_order_newton_step(homHess::HomotopyHessian,
     time_step::Int,
     x::Vector{Float64},
-    mumps::Mumps{Float64})
+    mumps::Mumps{Float64},
+    δ::Vector{Float64})
     t_k = homHess.t_k_ref[]
     F_val = F_value(homHess, x, time_step)
     last_step = t_k == 1.0
@@ -109,12 +112,8 @@ function _second_order_newton_step(homHess::HomotopyHessian,
     MUMPS.associate_rhs!(mumps, homHess.grad)
     mumps_job!(mumps, SOLVE)
 
-    δ = -1 * MUMPS.get_solution(mumps)[:, 1]
-    err = homHess.Hv * δ + homHess.grad
-    if dot(err, err) > 100 * eps()
-        c = LinearAlgebra.cond(Matrix(homHess.Hv))
-        @warn "Bad accuracy on hessian solution. Condition number of H is $c"
-    end
+    MUMPS.mumps_solve!(δ, mumps)
+    δ .*= -1
     mumps_job!(mumps, FACTOR_CLEANUP)
 
     α_star = line_search(x, time_step, homHess, δ)
