@@ -359,8 +359,8 @@ function _find_subnetworks_for_reference_buses(
     for (bus_key, subnetwork_buses) in subnetworks
         ref_bus = intersect(ref_buses, subnetwork_buses)
         if length(ref_bus) >= 1
-            bus_groups[first(ref_bus)] = collect(pop!(subnetworks, bus_key))
-        elseif length(ref_bus) == 0
+            bus_groups[first(ref_bus)] = collect(subnetwork_buses)
+        else
             throw(
                 ArgumentError(
                     "No REF bus found in the subnetwork with $(length(subnetwork_buses)) buses defined by bus key $bus_key",

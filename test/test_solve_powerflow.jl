@@ -619,7 +619,7 @@ end
     reset_p()
 end
 
-@testset "AC PF DS with two connected components" for (mode, gen_mode) in (
+@testset "AC PF DS with two connected components" for mode in (:same, :random), gen_mode in (:gen, :source)
     (:same, :gen),
     (:random, :gen),
     (:same, :source),
