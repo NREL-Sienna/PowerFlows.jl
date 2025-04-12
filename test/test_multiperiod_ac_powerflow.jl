@@ -166,8 +166,13 @@ end
     solve_powerflow!(data; pf = pf)
 
     # check results
+    subnetworks = PowerFlows._find_subnetworks_for_reference_buses(
+        data.power_network_matrix.data,
+        data.bus_type[:, 1],
+    )
     for time_step in 1:time_steps
         _check_distributed_slack_consistency(
+            subnetworks,
             data.bus_activepower_injection[:, time_step],
             collect(data.bus_slack_participation_factors[:, time_step]),
             init_p_injections[:, time_step],

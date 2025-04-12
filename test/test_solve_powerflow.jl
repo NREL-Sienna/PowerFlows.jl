@@ -619,12 +619,8 @@ end
     reset_p()
 end
 
-@testset "AC PF DS with two connected components" for mode in (:same, :random), gen_mode in (:gen, :source)
-    (:same, :gen),
-    (:random, :gen),
-    (:same, :source),
-    (:random, :source),
-)
+@testset "AC PF DS with two connected components" for mode in (:same, :random),
+    gen_mode in (:gen, :source)
     # here we build two identical grids in one system
     sys = System(100.0)
     b1 = _add_simple_bus!(sys, 8, ACBusTypes.REF, 230, 1.1, 0.0)
@@ -757,6 +753,52 @@ end
         original_bus_power,
         original_gen_power,
         data_original_bus_power;
+        check_connectivity = false,
+    )
+end
+
+@testset "AC PF DS with several REF buses" begin
+    sys = System(100.0)
+
+    n = 4
+
+    buses_ref = [_add_simple_bus!(sys, i, ACBusTypes.REF, 230, 1.1, 0.0) for i in 1:n]
+    buses_pv =
+        [_add_simple_bus!(sys, i, ACBusTypes.PV, 230, 1.1, 0.0) for i in (n + 1):(2n)]
+    buses_pq =
+        [_add_simple_bus!(sys, i, ACBusTypes.PQ, 230, 1.1, 0.0) for i in (2n + 1):(3n)]
+
+    loads = [_add_simple_load!(sys, b, 6, 2) for b in buses_pq]
+    sources = [_add_simple_source!(sys, b, 0.0, 0.0) for b in buses_ref]
+    gens = [_add_simple_thermal_standard!(sys, b, 0.0, 0.0) for b in buses_pv]
+    all_buses = vcat(buses_ref, buses_pv, buses_pq)
+    lines = [
+        _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0) for
+        (b1, b2) in zip(all_buses[1:(end - 1)], all_buses[2:end])
+    ]
+    generator_slack_participation_factors =
+        Dict((typeof(x), get_name(x)) => 1.0 for x in vcat(sources, gens))
+
+    pf = ACPowerFlow(;
+        generator_slack_participation_factors = generator_slack_participation_factors,
+    )
+    solve_powerflow!(pf, sys)
+
+    # equal slack participation
+    for (s, g) in zip(sources, gens)
+        @test isapprox(get_active_power(s), get_active_power(g), rtol = 0, atol = 1e-6)
+    end
+
+    for (g1, g2) in zip(gens[1:(end - 1)], gens[2:end])
+        @test isapprox(get_active_power(g1), get_active_power(g2), rtol = 0, atol = 1e-6)
+    end
+
+    # test that isolated islands raise error
+    b = _add_simple_bus!(sys, 100, ACBusTypes.PQ, 230, 1.1, 0.0)
+
+    @test_throws "No REF bus found in the subnetwork" solve_powerflow!(
+        pf,
+        sys;
         check_connectivity = false,
     )
 end

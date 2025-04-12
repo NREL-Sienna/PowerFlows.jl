@@ -144,7 +144,7 @@ end
 function _check_ds_pf(
     pf::ACPowerFlow,
     sys::System,
-    slack_participation_factors::Vector{Float64},
+    bus_slack_participation_factors::Vector{Float64},
     bus_numbers::Vector{Int},
     original_bus_power::Vector{Float64},
     original_gen_power::Vector{Float64},
@@ -162,7 +162,7 @@ function _check_ds_pf(
     _check_distributed_slack_consistency(
         subnetworks,
         res["bus_results"][:, :P_gen],
-        slack_participation_factors,
+        bus_slack_participation_factors,
         original_bus_power,
     )
 
@@ -177,13 +177,13 @@ function _check_ds_pf(
     @test original_bus_power == p_bus_reset
     @test original_gen_power == p_gen_reset
 
-    @test data.bus_slack_participation_factors[:, 1] == slack_participation_factors
+    @test data.bus_slack_participation_factors[:, 1] == bus_slack_participation_factors
     solve_powerflow!(data; pf = pf)
     # now check the slack power distribution logic
     _check_distributed_slack_consistency(
         subnetworks,
         data.bus_activepower_injection[:, 1],
-        slack_participation_factors,
+        bus_slack_participation_factors,
         data_original_bus_power,
     )
     return
@@ -200,8 +200,7 @@ function _check_name(sys::System, name::String, component_type::DataType)
     check = true
     i = 1
     while check
-        existing_components_with_name = get_component(component_type, sys, name)
-        if !isnothing(existing_components_with_name)
+        if has_component(sys, component_type, name)
             i += 1
             name = name * "_$i"
         else

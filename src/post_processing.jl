@@ -167,8 +167,7 @@ function _power_redistribution_ref(
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
-    },
-)
+    } = nothing)
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
     all_devices = devices_
