@@ -22,6 +22,12 @@ const HALVE_TRUST_REGION = 0.1
 const MAX_DOUBLE_TRUST_REGION = 0.5
 const DOUBLE_TRUST_REGION = 0.9
 
+# only used for Levenberg-Maquardt method
+const DAMPING_INCR = 2.0 # no improvement => increasing damping by this factor.
+const DAMPING_DECR = 3.0 # yes improvement => decrease damping by this factor.
+const DEFAULT_λ_0 = 1.0 # starting damping factor.
+const DEFAULT_MAX_TEST_λs = 20 # give up after increasing damping factor 20 times.
+
 const AC_PF_KW = []
 
 const PSSE_DEFAULT_EXPORT_NAME = "export"
