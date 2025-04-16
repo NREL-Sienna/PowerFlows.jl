@@ -8,6 +8,7 @@ function testSameStructure(A1::SparseMatrixCSC, A2::SparseMatrixCSC)
 end
 
 @testset "A_plus_eq_BT_B!" begin
+    Random.seed!(19873)
     # test basic numeric behavior.
     B = sprand(100, 100, 0.01)
     A = B' * B
@@ -112,14 +113,14 @@ end
     append!(complex_graph_edges, [(3, 9), (1, 4), (3, 5), (6, 8)])
     complex_graph = (9, complex_graph_edges)
 
-    graphs = [chain_graph, dense_graph, multi_component, complex_graph]
+    graphs = [chain_graph, dense_graph, multi_component, complex_graph, loop_graph]
     for graph in graphs
         sys = createSystemWithTopology(graph...)
         pf = ACPowerFlow()
         data = PF.PowerFlowData(pf, sys; check_connectivity = false)
         # no need to actually initialize J.Jv: we only care about the structure.
         J = PF.ACPowerFlowJacobian(data, 1)
-        JTJ_structure = PF._create_JT_J_sparse_structure(data, 1)
+        JTJ_structure = PF._create_JT_J_sparse_structure(data)
         M = J.Jv' * J.Jv
         testSameStructure(M, JTJ_structure)
     end
