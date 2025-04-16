@@ -8,13 +8,10 @@ function _newton_powerflow(
     residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
-    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
-    if norm(residual.Rv, Inf) < tol
+    if norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
         return true # starting point is already a solution.
     end
-    J = PowerFlows.ACPowerFlowJacobian(data, time_step)
-    J(time_step)  # we need to fill J with values because at this point it was just initialized
-
+    # usually would define J here, but we'll store J inside LevenbergMaquardtData.
     if sum(abs, residual.Rv) > WARN_LARGE_RESIDUAL * length(residual.Rv)
         lg_res, ix = findmax(residual.Rv)
         lg_res_rounded = round(lg_res; sigdigits = 3)
@@ -42,7 +39,9 @@ function _newton_powerflow(
     if converged
         @info("The LevenbergMaquardtACPowerFlow solver converged after $i iterations.")
         if data.calculate_loss_factors
-            calculate_loss_factors(data, J.Jv, time_step)
+            residual(x0, time_step)
+            lmd.J(time_step)
+            calculate_loss_factors(data, lmd.J.Jv, time_step)
         end
         return true
     end
@@ -96,7 +95,7 @@ false for failure. Current procedure for adjusting λ:
 Here, "improvement with λ" means: if let `Δx` be solution to
 `(J' * J + λ I) Δx = J'*F(x)`, then `norm(F(x+Δx), 2) < norm(F(x), 2)`.
 """
-function update!(lm::LevenbergMaquardtData,
+function update!(lmd::LevenbergMaquardtData,
     linSolveCache::KLULinSolveCache,
     x::Vector{Float64},
     residual::ACPowerFlowResidual,
@@ -104,30 +103,33 @@ function update!(lm::LevenbergMaquardtData,
     time_step::Int,
     maxTestλs::Int,
 )
-    # set lm.A to J' * J
-    lm.A.nzval .= 0.0
+    # set lmd.A to J' * J
+    lmd.A.nzval .= 0.0
     residual(x, time_step)
-    lm.J(time_step)
-    A_plus_eq_BT_B!(lm.A, lm.J.Jv)
+    lmd.J(time_step)
+    A_plus_eq_BT_B!(lmd.A, lmd.J.Jv)
 
     # initialize stuff.
     j = 0
     λ_prev = 0.0
-    lm.b .= lm.J.Jv' * residual.Rv
-    @assert !all(lm.b .== 0.0) "Levenberg-Maquardt is solving `A * Δx = 0`: " *
-                               "F(x) is exactly in the kernel of J'(x). Highly degenerate system or a bug."
+    lmd.b .= lmd.J.Jv' * residual.Rv
+    @assert !all(lmd.b .== 0.0) "Levenberg-Maquardt is solving `A * Δx = 0`: " *
+                                "F(x) is exactly in the kernel of J'(x). Highly degenerate system or a bug."
+    # PERF: normalize or re-scale, else the numerically big (power) components
+    # will dominate.
     residualSize = LinearAlgebra.dot(residual.Rv, residual.Rv)
     while j < maxTestλs
-        # set lm.A to J' * J + λ * I
-        for i in axes(lm.A, 1)
-            lm.A[i, i] += λ - λ_prev
+        # set lmd.A to J' * J + λ * I
+        for i in axes(lmd.A, 1)
+            lmd.A[i, i] += λ - λ_prev
         end
-        numeric_refactor!(linSolveCache, lm.A)
+        numeric_refactor!(linSolveCache, lmd.A)
 
-        Δx = deepcopy(lm.b)
+        Δx = deepcopy(lmd.b)
         solve!(linSolveCache, Δx)
         Δx *= -1
         residual(x + Δx, time_step)
+        # PERF: normalize or re-scale
         newResidualSize = LinearAlgebra.dot(residual.Rv, residual.Rv)
         if newResidualSize < residualSize
             x .+= Δx
