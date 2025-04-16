@@ -209,6 +209,125 @@ function make_dc_powerflowdata(
     )
 end
 
+function _add_gspf_to_ijv!(
+    I::Vector{Int},
+    J::Vector{Int},
+    V::Vector{Float64},
+    sys::System,
+    gsp_factors::Dict{Tuple{DataType, String}, Float64},
+    bus_lookup::Dict{Int, Int},
+    time_steps_iter::AbstractVector{<:Integer},
+)
+    for ((gen_type, gen_name), val) in gsp_factors
+        val == 0.0 && continue
+        gen = PSY.get_component(gen_type, sys, gen_name)
+        isnothing(gen) && throw(ArgumentError("$gen_type $gen_name not found"))
+        PSY.get_available(gen) || continue
+        bus = PSY.get_bus(gen)
+        bus_idx = bus_lookup[PSY.get_number(bus)]
+        for time_step in time_steps_iter
+            push!(I, bus_idx)
+            push!(J, time_step)
+            push!(V, val)
+        end
+    end
+    return
+end
+
+function make_bus_slack_participation_factors(
+    sys::System,
+    generator_slack_participation_factors::Dict{Tuple{DataType, String}, Float64},
+    bus_lookup::Dict{Int, Int},
+    time_steps::Int,
+    n_buses::Int,
+    ::Matrix{PSY.ACBusTypes},
+)
+    I = Int[]
+    J = Int[]
+    V = Float64[]
+
+    _add_gspf_to_ijv!(
+        I,
+        J,
+        V,
+        sys,
+        generator_slack_participation_factors,
+        bus_lookup,
+        1:time_steps,
+    )
+
+    bus_slack_participation_factors = sparse(I, J, V, n_buses, time_steps)
+    return bus_slack_participation_factors,
+    repeat([generator_slack_participation_factors], time_steps)
+end
+
+function make_bus_slack_participation_factors(
+    sys::System,
+    generator_slack_participation_factors::Vector{Dict{Tuple{DataType, String}, Float64}},
+    bus_lookup::Dict{Int, Int},
+    time_steps::Int,
+    n_buses::Int,
+    bus_types::Matrix{PSY.ACBusTypes},
+)
+    if length(generator_slack_participation_factors) == 1
+        return make_bus_slack_participation_factors(
+            sys,
+            generator_slack_participation_factors[1],
+            bus_lookup,
+            time_steps,
+            n_buses,
+            bus_types,
+        )
+    end
+
+    if length(generator_slack_participation_factors) < time_steps
+        throw(
+            ArgumentError(
+                "slack_participation_factors must have at least the same length as time_steps",
+            ),
+        )
+    end
+
+    # A sparse matrix constructor is used here, and the duplicates at the same locations are summed by default.
+    # This way, the generator slack participation factors are aggregated per bus.
+    I = Int[]
+    J = Int[]
+    V = Float64[]
+
+    for (time_step, factors) in enumerate(generator_slack_participation_factors)
+        _add_gspf_to_ijv!(I, J, V, sys, factors, bus_lookup, time_step:time_step)
+    end
+
+    bus_slack_participation_factors = sparse(I, J, V, n_buses, time_steps)
+    return bus_slack_participation_factors, generator_slack_participation_factors
+end
+
+function make_bus_slack_participation_factors(
+    ::System,
+    ::Nothing,
+    ::Dict{Int, Int},
+    time_steps::Int,
+    n_buses::Int,
+    bus_types::Matrix{PSY.ACBusTypes},
+)
+    I = Int[]
+    J = Int[]
+    V = Float64[]
+
+    for time_step in 1:time_steps
+        for (ix, bt) in enumerate(bus_types[:, time_step])
+            bt == PSY.ACBusTypes.REF || continue
+            push!(I, ix)
+            push!(J, time_step)
+            push!(V, 1.0)
+        end
+    end
+
+    bus_slack_participation_factors = sparse(I, J, V, n_buses, time_steps)
+
+    return bus_slack_participation_factors, nothing
+end
+
 function make_powerflowdata(
     sys,
     time_steps,
@@ -226,6 +345,7 @@ function make_powerflowdata(
     converged,
     loss_factors,
     calculate_loss_factors,
+    generator_slack_participation_factors = nothing,
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
@@ -287,6 +407,17 @@ function make_powerflowdata(
     bus_type_1 = repeat(bus_type; outer = [1, time_steps])
     @assert size(bus_type_1) == (n_buses, time_steps)
 
+    # Initial slack participation factors are same for every time period
+    bus_slack_participation_factors, generator_slack_participation_factors =
+        make_bus_slack_participation_factors(
+            sys,
+            generator_slack_participation_factors,
+            bus_lookup,
+            time_steps,
+            n_buses,
+            bus_type_1,
+        )
+
     # Initial flows are all zero
     branch_activepower_flow_from_to = zeros(Float64, n_branches, time_steps)
     branch_reactivepower_flow_from_to = zeros(Float64, n_branches, time_steps)
@@ -301,6 +432,8 @@ function make_powerflowdata(
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
         bus_reactivepower_bounds_1,
+        generator_slack_participation_factors,
+        bus_slack_participation_factors,
         bus_type_1,
         branch_type,
         bus_magnitude_1,
