@@ -27,7 +27,7 @@ end
     # test that zeros aren't dropped.
     # find a column of B with some nonzero values, and make them all zero.
     firstCol = 1
-    while A[firstCol] == 1
+    while all(A[:, firstCol] .== 0.0)
         firstCol += 1
     end
     vals = SparseArrays.nonzeros(B)

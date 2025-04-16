@@ -22,10 +22,11 @@ const HALVE_TRUST_REGION = 0.1
 const MAX_DOUBLE_TRUST_REGION = 0.5
 const DOUBLE_TRUST_REGION = 0.9
 
-# only used for Levenberg-Maquardt method
+# only used for Levenberg-Maquardt 
 const DAMPING_INCR = 2.0 # no improvement => increasing damping by this factor.
 const DAMPING_DECR = 3.0 # yes improvement => decrease damping by this factor.
-const DEFAULT_λ_0 = 1.0 # starting damping factor.
+const DEFAULT_λ_0 = 1.0 # starting damping factor. TODO could start smaller. Not well-scaled:
+# input is mix of powers (100 MW), voltages (0.8-1.2), and angles (-π/4 to π/4).
 const DEFAULT_MAX_TEST_λs = 20 # give up after increasing damping factor 20 times.
 
 const AC_PF_KW = []
