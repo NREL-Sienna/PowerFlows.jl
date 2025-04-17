@@ -6,24 +6,15 @@ function _newton_powerflow(
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
-    # TODO: find way to reduce code repetition. Mostly copy-pasted from powerflow_method.jl
     residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
-    residual(x0, time_step)
-    if norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
-        return true # starting point is already a solution.
+    # check if we need to iterate at all: maybe x0 is a solution.
+    if _initial_residual!(residual, x0, pf, data, time_step; kwargs...)
+        @info("The LevenbergMaquardtACPowerFlow solver converged after 0 iterations.")
+        J = ACPowerFlowJacobian(data, time_step)
+        loss_factors_helper!(data, x0, residual, J, time_step)
+        return true
     end
-    # usually would define J here, but we'll store J inside LevenbergMaquardtData.
-    if sum(abs, residual.Rv) > WARN_LARGE_RESIDUAL * length(residual.Rv)
-        lg_res, ix = findmax(residual.Rv)
-        lg_res_rounded = round(lg_res; sigdigits = 3)
-        pow_type = ix % 2 == 1 ? "active" : "reactive"
-        bus_ix = div(ix + 1, 2)
-        bus_no = axes(data.power_network_matrix, 1)[bus_ix]
-        @warn "Initial guess provided results in a large initial residual of $lg_res_rounded. " *
-              "Largest residual at bus $bus_no ($bus_ix by matrix indexing; $pow_type power)"
-    end
-
     lmd = LevenbergMaquardtData(data, time_step)
     linSolveCache = KLULinSolveCache(lmd.A)
     symbolic_factor!(linSolveCache, lmd.A)
@@ -39,11 +30,7 @@ function _newton_powerflow(
 
     if converged
         @info("The LevenbergMaquardtACPowerFlow solver converged after $i iterations.")
-        if data.calculate_loss_factors
-            residual(x0, time_step)
-            lmd.J(time_step)
-            calculate_loss_factors(data, lmd.J.Jv, time_step)
-        end
+        loss_factors_helper!(data, x0, residual, lmd.J, time_step)
         return true
     end
     @error("The LevenbergMaquardtACPowerFlow solver failed to converge.")
