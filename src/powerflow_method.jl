@@ -325,24 +325,25 @@ function _run_powerflow_method(time_step::Int,
     return converged, i
 end
 
-function _newton_powerflow(
+function _initial_residual!(residual::ACPowerFlowResidual,
+    x0::Vector{Float64},
     pf::ACPowerFlow{T},
     data::ACPowerFlowData,
     time_step::Int64;
-    kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
-    residual = ACPowerFlowResidual(data, time_step)
-    x0 = calculate_x0(data, time_step)
+    kwargs...) where {T <: ACPowerFlowSolverType}
+    @assert nameof(typeof(T)) != :LUACPowerFlow
     residual(x0, time_step)
-    if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
+    if norm(residual.Rv, 1) > WARN_LARGE_RESIDUAL * length(residual.Rv) &&
        get_robust_power_flow(pf)
         improve_x0!(x0, data, time_step, residual)
     else
         @debug "skipping DC powerflow fallback"
     end
-    J = PowerFlows.ACPowerFlowJacobian(data, time_step)
-    J(time_step)  # we need to fill J with values because at this point it was just initialized
+    if norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
+        return true # starting point is already a solution.
+    end
 
-    if sum(abs, residual.Rv) > LARGE_RESIDUAL * length(residual.Rv)
+    if sum(abs, residual.Rv) > WARN_LARGE_RESIDUAL * length(residual.Rv)
         lg_res, ix = findmax(residual.Rv)
         lg_res_rounded = round(lg_res; sigdigits = 3)
         pow_type = ix % 2 == 1 ? "active" : "reactive"
@@ -350,6 +351,42 @@ function _newton_powerflow(
         bus_no = axes(data.power_network_matrix, 1)[bus_ix]
         @warn "Initial guess provided results in a large initial residual of $lg_res_rounded. " *
               "Largest residual at bus $bus_no ($bus_ix by matrix indexing; $pow_type power)"
+    end
+    return false
+end
+
+"""Calculate the loss factors (if requested) and store them to data."""
+function loss_factors_helper!(
+    data::ACPowerFlowData,
+    x0::Vector{Float64},
+    residual::ACPowerFlowResidual,
+    J::ACPowerFlowJacobian,
+    time_step::Int,
+)
+    if data.calculate_loss_factors
+        residual(x0, time_step)
+        J(time_step)
+        calculate_loss_factors(data, J.Jv, time_step)
+    end
+    return
+end
+
+function _newton_powerflow(
+    pf::ACPowerFlow{T},
+    data::ACPowerFlowData,
+    time_step::Int64;
+    kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
+    residual = ACPowerFlowResidual(data, time_step)
+    x0 = calculate_x0(data, time_step)
+
+    J = PowerFlows.ACPowerFlowJacobian(data, time_step)
+    J(time_step)  # we need to fill J with values because at this point it was just initialized
+
+    # check if we need to iterate at all: maybe x0 is a solution.
+    if _initial_residual!(residual, x0, pf, data, time_step; kwargs...)
+        @info("The $T solver converged after 0 iterations.")
+        loss_factors_helper!(data, x0, residual, J, time_step)
+        return true
     end
 
     linSolveCache = KLULinSolveCache(J.Jv)
@@ -367,9 +404,7 @@ function _newton_powerflow(
     )
     if converged
         @info("The $T solver converged after $i iterations.")
-        if data.calculate_loss_factors
-            calculate_loss_factors(data, J.Jv, time_step)
-        end
+        loss_factors_helper!(data, stateVector.x, residual, J, time_step)
         return true
     end
     @error("The $T solver failed to converge.")

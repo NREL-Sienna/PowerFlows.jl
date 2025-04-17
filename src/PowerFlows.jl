@@ -6,6 +6,7 @@ export PowerFlowData
 export DCPowerFlow
 export NewtonRaphsonACPowerFlow
 export TrustRegionACPowerFlow
+export LevenbergMaquardtACPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow
@@ -49,5 +50,6 @@ include("ac_power_flow_residual.jl")
 include("ac_power_flow_jacobian.jl")
 include("solve_ac_powerflow.jl")
 include("powerflow_method.jl")
+include("levenberg-marquardt.jl")
 include("post_processing.jl")
 end
