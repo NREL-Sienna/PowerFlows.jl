@@ -182,12 +182,13 @@ function _create_JT_J_sparse_structure(data::ACPowerFlowData)
 
     # an over-estimate: this counts directed paths of 2 edges. Might be many 
     # paths of length 2 between the same pair of points that share a neighbor.
-    numEdgePairs = sum(x -> length(x)^2, get_branch_lookup(data); init = 0)
+    numEdgePairs = sum(x -> (length(x) - 1)^2, get_neighbor(data); init = 0)
     sizehint!(rows, 4 * numEdgePairs)
     sizehint!(columns, 4 * numEdgePairs)
     sizehint!(values, 4 * numEdgePairs)
 
     visited = Set{Tuple{Int, Int}}()
+    sizehint!(visited, numEdgePairs)
     # instead of checking pairs of buses O(n^2 d), we travel 2 hops from each bus O(n d^2)
     # (d = degree of typical vertex, n = number of vertices; d << n.)
     for (ind, nbrs) in enumerate(get_neighbor(data))
