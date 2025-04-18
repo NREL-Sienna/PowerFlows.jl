@@ -19,7 +19,7 @@ function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
 end
 
 # work in progress
-@testset "MULTI-PERIOD power flows evaluation: NR" for ACSolver in AC_SOLVERS_TO_TEST
+@testset "MULTI-PERIOD power flows evaluation" for ACSolver in AC_SOLVERS_TO_TEST
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 

@@ -140,7 +140,7 @@ function _dogleg!(Δx_proposed::Vector{Float64},
             Δx_nr .-= Δx_cauchy
             Δx_diff = Δx_nr
 
-            b = LinearAlgebra.dot(Δx_cauchy, Δx_diff)
+            b = dot(Δx_cauchy, Δx_diff)
             a = norm(Δx_diff)^2
             tau = (-b + sqrt(b^2 - 4a * (norm(Δx_cauchy)^2 - delta^2))) / (2a)
             Δx_cauchy .+= tau .* Δx_diff
