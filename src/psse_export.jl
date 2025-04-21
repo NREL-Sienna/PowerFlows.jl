@@ -746,18 +746,6 @@ function write_to_buffers!(
                     component_name = PSY.get_name(generator),
                 )
             end
-        # QT = reactive_power_limits.max
-        # QT = _warn_finite_default(
-        #     QT;
-        #     field_name = "QT",
-        #     component_name = PSY.get_name(generator),
-        # )
-        # QB = reactive_power_limits.min
-        # QB = _warn_finite_default(
-        #     QB;
-        #     field_name = "QB",
-        #     component_name = PSY.get_name(generator),
-        # )
         VS = PSY.get_magnitude(PSY.get_bus(generator))
         IREG = get(PSY.get_ext(generator), "IREG", PSSE_DEFAULT)
         MBASE = PSY.get_base_power(generator)
@@ -1045,7 +1033,11 @@ function write_to_buffers!(
     for zone in zones
         name = PSY.get_name(zone)
         I = zone_mapping[name]
-        @assert _is_valid_psse_name(name) name
+        # @assert _is_valid_psse_name(name) name
+        if !_is_valid_psse_name(name)
+            @warn "Invalid PSS/E name, truncating" name
+            name = name[1:12]
+        end
         ZONAME = _psse_quote_string(name)
 
         @fastprintdelim_unroll(io, true, I, ZONAME)
