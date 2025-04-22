@@ -134,28 +134,26 @@ function _get_load_data(sys::PSY.System, b::PSY.ACBus)
     return active_power, reactive_power
 end
 
-function _get_fixed_admittance_power(
-    sys::PSY.System,
-    b::PSY.ACBus,
-    data::PowerFlowData,
-    ix::Int,
-)
-    active_power = 0.0
-    reactive_power = 0.0
+"""Returns a dictionary of bus index to power contribution at that bus from FixedAdmittance 
+components, as a tuple of (active power, reactive power)."""
+function _calculate_fixed_admittance_powers(sys::PSY.System, data::PowerFlowData)
+    busIxToFAPower = Dict{Int64, Tuple{Float64, Float64}}()
     for l in PSY.get_components(PSY.FixedAdmittance, sys)
         !PSY.get_available(l) && continue
-        if (l.bus == b)
-            Vm_squared =
-                if b.bustype == PSY.ACBusTypes.PQ
-                    data.bus_magnitude[ix]^2
-                else
-                    PSY.get_magnitude(b)^2
-                end
-            active_power += Vm_squared * real(PSY.get_Y(l))
-            reactive_power -= Vm_squared * imag(PSY.get_Y(l))
-        end
+        b = PSY.get_bus(l)
+        bus_ix = get_bus_lookup(data)[PSY.get_number(b)]
+        Vm_squared =
+            if PSY.get_bustype(b) == PSY.ACBusTypes.PQ
+                get_bus_magnitude(data)[bus_ix]^2
+            else
+                PSY.get_magnitude(b)^2
+            end
+        sumSoFar = get(busIxToFAPower, bus_ix, (0.0, 0.0))
+        y1, y2 = real(PSY.get_Y(l)), imag(PSY.get_Y(l))
+        busIxToFAPower[bus_ix] =
+            (sumSoFar[1] + y1 * Vm_squared, sumSoFar[2] - y2 * Vm_squared)
     end
-    return active_power, reactive_power
+    return busIxToFAPower
 end
 
 function _power_redistribution_ref(
@@ -667,10 +665,11 @@ function write_results(
     Q_load_vect = fill(0.0, N_BUS)
     bus_types = view(data.bus_type, :, time_step)
 
+    busIxToFAPower = _calculate_fixed_admittance_powers(sys, data)
     for (ix, bt) in enumerate(bus_types)
         P_load_vect[ix] = data.bus_activepower_withdrawals[ix, time_step] * sys_basepower
         Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix, time_step] * sys_basepower
-        P_admittance, Q_admittance = _get_fixed_admittance_power(sys, buses[ix], data, ix)
+        (P_admittance, Q_admittance) = get(busIxToFAPower, ix, (0.0, 0.0))
         P_load_vect[ix] += P_admittance * sys_basepower
         Q_load_vect[ix] += Q_admittance * sys_basepower
         if bt == PSY.ACBusTypes.REF
