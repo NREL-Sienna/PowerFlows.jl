@@ -148,7 +148,7 @@ function _calculate_fixed_admittance_powers(sys::PSY.System, data::PowerFlowData
             else
                 PSY.get_magnitude(b)^2
             end
-        sumSoFar = get(busIxToFAPower, bus_ix, (0, 0))
+        sumSoFar = get(busIxToFAPower, bus_ix, (0.0, 0.0))
         y1, y2 = real(PSY.get_Y(l)), imag(PSY.get_Y(l))
         busIxToFAPower[bus_ix] =
             (sumSoFar[1] + y1 * Vm_squared, sumSoFar[2] - y2 * Vm_squared)
@@ -625,7 +625,7 @@ function write_results(
     for (ix, bt) in enumerate(bus_types)
         P_load_vect[ix] = data.bus_activepower_withdrawals[ix, time_step] * sys_basepower
         Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix, time_step] * sys_basepower
-        (P_admittance, Q_admittance) = get(busIxToFAPower, ix, (0, 0))
+        (P_admittance, Q_admittance) = get(busIxToFAPower, ix, (0.0, 0.0))
         P_load_vect[ix] += P_admittance * sys_basepower
         Q_load_vect[ix] += Q_admittance * sys_basepower
         if bt == PSY.ACBusTypes.REF
