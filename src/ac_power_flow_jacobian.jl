@@ -295,7 +295,6 @@ function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32
     ∂P∂V_from::Base.RefValue{Float64},
     ∂Q∂V_from::Base.RefValue{Float64},
     ::Val{PSY.ACBusTypes.REF})
-
     g_ij, b_ij = real(Y_from_to), imag(Y_from_to)
     # still need to do diagonal terms: those are based off
     # the bus type of from_bus, when we're dispatching on bustype of to_bus.
@@ -336,7 +335,7 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     Jv[row_from_q, col_to_va] = q_va_common_term
     ∂Q∂θ_from[] -= q_va_common_term
 
-    # still need to do diagonal terms: those are based off
+    # still need to do all diagonal terms: those are based off
     # the bus type of from_bus, when we're dispatching on bustype of to_bus.
     ∂P∂V_from[] += Vm_to * (g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to))
     ∂Q∂V_from[] += Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
@@ -388,6 +387,11 @@ function _update_jacobian_matrix_values!(
     Vm = view(data.bus_magnitude, :, time_step)
     θ = view(data.bus_angles, :, time_step)
     num_buses = first(size(data.bus_type))
+
+    # PERF: iterate over CSC structure directly instead of passing J.Jv to _set_entries.
+    #       requires swapping the inner/output loops: columns (bus_to) then rows (bus_from)
+    #       diagonal entries will be tough part: there's a close relationship between terms 
+    #       in diagonal entries and entries in same row, but what about entries in same column...
     for bus_from in 1:num_buses
         row_from_p = 2 * bus_from - 1
         row_from_q = 2 * bus_from
