@@ -220,6 +220,7 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = Dict{String, Int}()
+    sizehint!(branch_lookup, n_branches)
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
