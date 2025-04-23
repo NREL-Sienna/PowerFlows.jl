@@ -410,20 +410,53 @@ function _update_jacobian_matrix_values!(
                 θ_from_to = θ[bus_from] - θ[bus_to]
                 Vm_to = Vm[bus_to]
                 Y_from_to = Yb[bus_from, bus_to]
-                _set_entries_for_neighbor(Jv,
-                    Y_from_to,
-                    Vm_from,
-                    Vm_to,
-                    θ_from_to,
-                    row_from_p,
-                    row_from_q,
-                    col_to_vm,
-                    col_to_va,
-                    ∂P∂θ_from,
-                    ∂Q∂θ_from,
-                    ∂P∂V_from,
-                    ∂Q∂V_from,
-                    Val(bus_type))
+                # 3 case if-else with Val(constant) is faster than 1 case with Val(bus_type)
+                if bus_type == PSY.ACBusTypes.PQ
+                    _set_entries_for_neighbor(Jv,
+                        Y_from_to,
+                        Vm_from,
+                        Vm_to,
+                        θ_from_to,
+                        row_from_p,
+                        row_from_q,
+                        col_to_vm,
+                        col_to_va,
+                        ∂P∂θ_from,
+                        ∂Q∂θ_from,
+                        ∂P∂V_from,
+                        ∂Q∂V_from,
+                        Val(PSY.ACBusTypes.PQ))
+                elseif bus_type == PSY.ACBusTypes.PV
+                    _set_entries_for_neighbor(Jv,
+                        Y_from_to,
+                        Vm_from,
+                        Vm_to,
+                        θ_from_to,
+                        row_from_p,
+                        row_from_q,
+                        col_to_vm,
+                        col_to_va,
+                        ∂P∂θ_from,
+                        ∂Q∂θ_from,
+                        ∂P∂V_from,
+                        ∂Q∂V_from,
+                        Val(PSY.ACBusTypes.PV))
+                elseif bus_type == PSY.ACBusTypes.REF
+                    _set_entries_for_neighbor(Jv,
+                        Y_from_to,
+                        Vm_from,
+                        Vm_to,
+                        θ_from_to,
+                        row_from_p,
+                        row_from_q,
+                        col_to_vm,
+                        col_to_va,
+                        ∂P∂θ_from,
+                        ∂Q∂θ_from,
+                        ∂P∂V_from,
+                        ∂Q∂V_from,
+                        Val(PSY.ACBusTypes.REF))
+                end
             end
         end
         col_from_vm = 2 * bus_from - 1

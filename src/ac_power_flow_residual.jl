@@ -187,8 +187,41 @@ function _update_residual_values!(
     # update P_net, Q_net, data.bus_angles, data.bus_magnitude based on X
     Yb = data.power_network_matrix.data
     bus_types = view(data.bus_type, :, time_step)
+    # PERF: try indexing outside of the call and passing references, instead of indexing
+    #       inside the call and passing index + vectors.
+    # 3 case if-else with Val(constant) is faster than 1 case with Val(bt)
     for (ix, bt) in enumerate(bus_types)
-        _set_state_vars_at_bus(ix, P_net, Q_net, x, data, time_step, Val(bt))
+        if bt == PSY.ACBusTypes.PV
+            _set_state_vars_at_bus(
+                ix,
+                P_net,
+                Q_net,
+                x,
+                data,
+                time_step,
+                Val(PSY.ACBusTypes.PV),
+            )
+        elseif bt == PSY.ACBusTypes.PQ
+            _set_state_vars_at_bus(
+                ix,
+                P_net,
+                Q_net,
+                x,
+                data,
+                time_step,
+                Val(PSY.ACBusTypes.PQ),
+            )
+        elseif bt == PSY.ACBusTypes.REF
+            _set_state_vars_at_bus(
+                ix,
+                P_net,
+                Q_net,
+                x,
+                data,
+                time_step,
+                Val(PSY.ACBusTypes.REF),
+            )
+        end
     end
 
     # compute active, reactive power balances using the just updated values.
