@@ -295,6 +295,10 @@ function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32
     ∂P∂V_from::Base.RefValue{Float64},
     ∂Q∂V_from::Base.RefValue{Float64},
     ::Val{PSY.ACBusTypes.REF})
+    # State variables are Active and Reactive Power Generated
+    # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - x[2*i-1]
+    # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
+    # x does not appear in p_flow and q_flow
     g_ij, b_ij = real(Y_from_to), imag(Y_from_to)
     # still need to do diagonal terms: those are based off
     # the bus type of from_bus, when we're dispatching on bustype of to_bus.
@@ -357,6 +361,8 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     ∂Q∂V_from::Base.RefValue{Float64},
     ::Val{PSY.ACBusTypes.PQ},
 )
+    # State variables are Voltage Magnitude and Voltage Angle
+    # both state variables appear in both outputs.
     g_ij, b_ij = real(Y_from_to), imag(Y_from_to)
     # Active PF w/r to different voltage magnitude Vm[bus_to]
     p_vm_common_term = g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to)
@@ -388,10 +394,6 @@ function _update_jacobian_matrix_values!(
     θ = view(data.bus_angles, :, time_step)
     num_buses = first(size(data.bus_type))
 
-    # PERF: iterate over CSC structure directly instead of passing J.Jv to _set_entries.
-    #       requires swapping the inner/output loops: columns (bus_to) then rows (bus_from)
-    #       diagonal entries will be tough part: there's a close relationship between terms 
-    #       in diagonal entries and entries in same row, but what about entries in same column...
     for bus_from in 1:num_buses
         row_from_p = 2 * bus_from - 1
         row_from_q = 2 * bus_from
@@ -461,6 +463,7 @@ function _update_jacobian_matrix_values!(
         end
         col_from_vm = 2 * bus_from - 1
         col_from_va = 2 * bus_from
+        # set entries in diagonal blocks
         if data.bus_type[bus_from, time_step] == PSY.ACBusTypes.PQ
             Jv[row_from_p, col_from_va] = ∂P∂θ_from[]
             Jv[row_from_q, col_from_va] = ∂Q∂θ_from[]
