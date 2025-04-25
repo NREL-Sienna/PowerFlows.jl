@@ -16,7 +16,10 @@ struct ACPowerFlowJacobian
     data::ACPowerFlowData
     Jf!::Function   # This is the function that calculates the Jacobian matrix and updates Jv inplace
     Jv::SparseArrays.SparseMatrixCSC{Float64, Int32}  # This is the Jacobian matrix, that is updated by the function Jf
-    diag_elements::MVector{4, Float64}  # Temporary storage for diagonal elements during Jacobian update
+    # temp buffers for updating the Jacobian
+    U::Vector{ComplexF64}
+    V::Vector{ComplexF64}
+    Ibus::Vector{ComplexF64}
 end
 
 """
@@ -36,7 +39,7 @@ J(time_step)  # Updates the Jacobian matrix Jv
 ```
 """
 function (J::ACPowerFlowJacobian)(time_step::Int64)
-    J.Jf!(J.Jv, J.data, time_step, J.diag_elements)
+    J.Jf!(J.Jv, J.data, time_step, J.U, J.V, J.Ibus)
     return
 end
 
@@ -64,7 +67,7 @@ function (J::ACPowerFlowJacobian)(
     Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     time_step::Int64,
 )
-    J.Jf!(J.Jv, J.data, time_step, J.diag_elements)
+    J.Jf!(J.Jv, J.data, time_step, J.U, J.V, J.Ibus)
     copyto!(Jv, J.Jv)
     return
 end
@@ -97,11 +100,15 @@ function ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64)
     # Jacobian matrix.
     Jv0 = _create_jacobian_matrix_structure(data, time_step)
     # We just initialize the structure here, evaluation must happen later
+    f = _update_jacobian_matrix_values!
+    num_buses = size(get_bus_type(data), 1)
     return ACPowerFlowJacobian(
         data,
-        _update_jacobian_matrix_values!,
+        f,
         Jv0,
-        MVector{4, Float64}(undef),
+        zeros(ComplexF64, num_buses),
+        zeros(ComplexF64, num_buses),
+        zeros(ComplexF64, num_buses),
     )
 end
 
@@ -287,184 +294,106 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
     return Jv0
 end
 
-function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32},
-    Y_from_to::ComplexF32,
-    Vm_from::Float64,
-    Vm_to::Float64,
-    θ_from_to::Float64,
-    ::Int,
-    ::Int,
-    ::Int,
-    ::Int,
-    diag_elements::MVector{4, Float64},
-    ::Val{PSY.ACBusTypes.REF})
-    # State variables are Active and Reactive Power Generated
-    # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - x[2*i-1]
-    # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
-    # x does not appear in p_flow and q_flow
-    g_ij, b_ij = real(Y_from_to), imag(Y_from_to)
-    # still need to do diagonal terms: those are based off
-    # the bus type of from_bus, when we're dispatching on bustype of to_bus.
-    diag_elements[1] -= Vm_from * Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))  # ∂P∂θ_from
-    diag_elements[2] -= Vm_from * Vm_to * (-g_ij * cos(θ_from_to) - b_ij * sin(θ_from_to))  # ∂Q∂θ_from
-    diag_elements[3] += Vm_to * (g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to))  # ∂P∂V_from
-    diag_elements[4] += Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))  # ∂Q∂V_from
-    return
-end
-
-function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
-    Y_from_to::ComplexF32,
-    Vm_from::Float64,
-    Vm_to::Float64,
-    θ_from_to::Float64,
-    row_from_p::Int,
-    row_from_q::Int,
-    ::Int,
-    col_to_va::Int,
-    diag_elements::MVector{4, Float64},
-    ::Val{PSY.ACBusTypes.PV},
-)
-    # State variables are Reactive Power Generated and Voltage Angle
-    # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - p_gen[i]
-    # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
-    # x[2*i] (associated with q_gen) does not appear in q_flow
-    # x[2*i] (associated with q_gen) does not appear in the active power balance
-    g_ij, b_ij = real(Y_from_to), imag(Y_from_to)
-    # Jac: Active PF against other angles θ[bus_to]
-    p_va_common_term = Vm_from * Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
-    Jv[row_from_p, col_to_va] = p_va_common_term
-    diag_elements[1] -= p_va_common_term # ∂P∂θ_from
-    # Jac: Reactive PF w/r to different angle θ[bus_to]
-    q_va_common_term = Vm_from * Vm_to * (-g_ij * cos(θ_from_to) - b_ij * sin(θ_from_to))
-    Jv[row_from_q, col_to_va] = q_va_common_term
-    diag_elements[2] -= q_va_common_term # ∂Q∂θ_from
-
-    # still need to do all diagonal terms: those are based off
-    # the bus type of from_bus, when we're dispatching on bustype of to_bus.
-    diag_elements[3] += Vm_to * (g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to))  # ∂P∂V_from
-    diag_elements[4] += Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))  # ∂Q∂V_from
-    return
-end
-
-function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
-    Y_from_to::ComplexF32,
-    Vm_from::Float64,
-    Vm_to::Float64,
-    θ_from_to::Float64,
-    row_from_p::Int,
-    row_from_q::Int,
-    col_to_vm::Int,
-    col_to_va::Int,
-    diag_elements::MVector{4, Float64},
-    ::Val{PSY.ACBusTypes.PQ},
-)
-    # State variables are Voltage Magnitude and Voltage Angle
-    # both state variables appear in both outputs.
-    g_ij, b_ij = real(Y_from_to), imag(Y_from_to)
-    # Active PF w/r to different voltage magnitude Vm[bus_to]
-    p_vm_common_term = g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to)
-    Jv[row_from_p, col_to_vm] = Vm_from * p_vm_common_term
-    diag_elements[3] += Vm_to * p_vm_common_term # ∂P∂V_from
-    # Active PF w/r to different angle θ[bus_to]
-    p_va_common_term = Vm_from * Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
-    Jv[row_from_p, col_to_va] = p_va_common_term
-    diag_elements[1] -= p_va_common_term # ∂P∂θ_from
-    # Reactive PF w/r to different voltage magnitude Vm[bus_to]
-    q_vm_common_term = g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to)
-    Jv[row_from_q, col_to_vm] = Vm_from * q_vm_common_term
-    diag_elements[4] += Vm_to * q_vm_common_term # ∂Q∂V_from
-    # Jac: Reactive PF w/r to different angle θ[bus_to]
-    q_va_common_term = Vm_from * Vm_to * (-g_ij * cos(θ_from_to) - b_ij * sin(θ_from_to))
-    Jv[row_from_q, col_to_va] = q_va_common_term
-    diag_elements[2] -= q_va_common_term # ∂Q∂θ_from
-    return
-end
-
-"""Used to update Jv based on the bus voltages, angles, etc. in data."""
+"""Based on Algorithm 1 of \"Bus Admittance Matrix Revisited: Performance Challenges
+on Modern Computers\"."""
 function _update_jacobian_matrix_values!(
     Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     data::ACPowerFlowData,
     time_step::Int64,
-    diag_elements::MVector{4, Float64},
+    U::Vector{ComplexF64},
+    V::Vector{ComplexF64},
+    Ibus::Vector{ComplexF64},
 )
     Yb = data.power_network_matrix.data
     Vm = view(data.bus_magnitude, :, time_step)
     θ = view(data.bus_angles, :, time_step)
-    num_buses = first(size(data.bus_type))
 
-    for bus_from in 1:num_buses
-        row_from_p = 2 * bus_from - 1
-        row_from_q = 2 * bus_from
+    copyto!(V, θ)
+    V .*= im
+    U .= exp.(V)
+    copyto!(V, U)
+    V .*= Vm
+    Ibus .= zero(ComplexF64)
+    # U = exp.(im .* θ)
+    # V = Vm .* U
+    # Ibus = zeros(ComplexF64, num_buses)
 
-        # Reset diagonal elements for this bus
-        fill!(diag_elements, 0.0)
-
-        Vm_from = Vm[bus_from]
-        for bus_to in data.neighbors[bus_from]
-            if bus_to != bus_from
-                col_to_vm = 2 * bus_to - 1
-                col_to_va = 2 * bus_to
-                bus_type = data.bus_type[bus_to, time_step]
-                θ_from_to = θ[bus_from] - θ[bus_to]
-                Vm_to = Vm[bus_to]
-                Y_from_to = Yb[bus_from, bus_to]
-                # 3 case if-else with Val(constant) is faster than 1 case with Val(bus_type)
-                if bus_type == PSY.ACBusTypes.PQ
-                    _set_entries_for_neighbor(Jv,
-                        Y_from_to,
-                        Vm_from,
-                        Vm_to,
-                        θ_from_to,
-                        row_from_p,
-                        row_from_q,
-                        col_to_vm,
-                        col_to_va,
-                        diag_elements,
-                        Val(PSY.ACBusTypes.PQ))
-                elseif bus_type == PSY.ACBusTypes.PV
-                    _set_entries_for_neighbor(Jv,
-                        Y_from_to,
-                        Vm_from,
-                        Vm_to,
-                        θ_from_to,
-                        row_from_p,
-                        row_from_q,
-                        col_to_vm,
-                        col_to_va,
-                        diag_elements,
-                        Val(PSY.ACBusTypes.PV))
-                elseif bus_type == PSY.ACBusTypes.REF
-                    _set_entries_for_neighbor(Jv,
-                        Y_from_to,
-                        Vm_from,
-                        Vm_to,
-                        θ_from_to,
-                        row_from_p,
-                        row_from_q,
-                        col_to_vm,
-                        col_to_va,
-                        diag_elements,
-                        Val(PSY.ACBusTypes.REF))
-                end
-            end
+    num_buses = size(data.bus_type, 1)
+    # WARNING: this reinterpret means indices from Jv.colptr or Jv.rowval are 2x too big!
+    J_nonzeros = reinterpret(ComplexF64, SparseArrays.nonzeros(Jv))
+    Yb_nonzeros = SparseArrays.nonzeros(Yb)
+    # step 0: do equivalent of ∂S/∂θ .= Ybus, ∂S/∂V .= Ybus.
+    J_colptr = Jv.colptr
+    Yb_colptr = Yb.colptr
+    Yb_rows = SparseArrays.rowvals(Yb)
+    for col in 1:num_buses
+        Yb_val_range = Yb.colptr[col]:(Yb_colptr[col + 1] - 1)
+        J_Vm_start = div(J_colptr[2 * col - 1] + 1, 2)
+        J_Vm_val_range = Yb_val_range .+ (J_Vm_start - Yb_val_range.start)
+        Yb_col_view = @view Yb_nonzeros[Yb_val_range]
+        J_Vm_view = @view J_nonzeros[J_Vm_val_range]
+        copy!(J_Vm_view, Yb_col_view)
+        J_Va_start = div(J_colptr[2 * col] + 1, 2)
+        J_Va_val_range = Yb_val_range .+ (J_Va_start - Yb_val_range.start)
+        J_Va_view = @view J_nonzeros[J_Va_val_range]
+        copy!(J_Va_view, Yb_col_view)
+    end
+    # step 1: their "pass 1"
+    for col in 1:num_buses
+        Yb_val_range = Yb_colptr[col]:(Yb_colptr[col + 1] - 1)
+        # Ibus[Yb_rows[Yb_val_range]] .+= Yb_nonzeros[Yb_val_range] .* V[col]
+        for k in Yb_val_range
+            Ibus[Yb_rows[k]] += Yb_nonzeros[k] * V[col]
         end
-        col_from_vm = 2 * bus_from - 1
-        col_from_va = 2 * bus_from
-        # set entries in diagonal blocks
-        if data.bus_type[bus_from, time_step] == PSY.ACBusTypes.PQ
-            Jv[row_from_p, col_from_va] = diag_elements[1]  # ∂P∂θ_from
-            Jv[row_from_q, col_from_va] = diag_elements[2]  # ∂Q∂θ_from
-            diag_elements[3] += 2 * real(Yb[bus_from, bus_from]) * Vm[bus_from]  # ∂P∂V_from
-            diag_elements[4] -= 2 * imag(Yb[bus_from, bus_from]) * Vm[bus_from]  # ∂Q∂V_from
-            Jv[row_from_p, col_from_vm] = diag_elements[3]  # ∂P∂V_from
-            Jv[row_from_q, col_from_vm] = diag_elements[4]  # ∂Q∂V_from
-        elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.PV
-            Jv[row_from_q, col_from_vm] = -1.0
-            Jv[row_from_p, col_from_va] = diag_elements[1]  # ∂P∂θ_from
-            Jv[row_from_q, col_from_va] = diag_elements[2]  # ∂Q∂θ_from
-        elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.REF
-            Jv[row_from_p, col_from_vm] = -1.0
-            Jv[row_from_q, col_from_va] = -1.0
+
+        J_Vm_start = div(J_colptr[2 * col - 1] + 1, 2)
+        J_Vm_val_range = Yb_val_range .+ (J_Vm_start - Yb_val_range.start)
+        J_nonzeros[J_Vm_val_range] .*= U[col]
+        J_Va_start = div(J_colptr[2 * col] + 1, 2)
+        J_Va_val_range = Yb_val_range .+ (J_Va_start - Yb_val_range.start)
+        J_nonzeros[J_Va_val_range] .*= V[col]
+    end
+    # step 2: their "pass 2," with a little extra for the cols where input is power.
+    for col in 1:num_buses
+        bus_type = get_bus_type(data)[col, time_step]
+        Yb_val_range = Yb_colptr[col]:(Yb_colptr[col + 1] - 1)
+        bus_inds = @view Yb_rows[Yb_val_range]
+        ind = searchsortedfirst(bus_inds, col)
+        J_Vm_start = div(J_colptr[2 * col - 1] + 1, 2)
+        J_Vm_val_range = Yb_val_range .+ (J_Vm_start - Yb_val_range.start)
+        J_Vm_vals = @view J_nonzeros[J_Vm_val_range]
+        if bus_type == PSY.ACBusTypes.PQ
+            conj!(J_Vm_vals)
+            # non-allocating version of J_Vm_vals .*= V[bus_inds]
+            for i in Yb_val_range
+                J_Vm_vals[i - Yb_val_range.start + 1] *= V[Yb_rows[i]]
+            end
+            J_nonzeros[(J_Vm_start - 1) + ind] += conj(Ibus[col]) * U[col]
+        else
+            J_Vm_vals .= zero(ComplexF64)
+        end
+
+        J_Va_start = div(J_colptr[2 * col] + 1, 2)
+        J_Va_val_range = Yb_val_range .+ (J_Va_start - Yb_val_range.start)
+        J_Va_vals = @view J_nonzeros[J_Va_val_range]
+        if bus_type == PSY.ACBusTypes.PV || bus_type == PSY.ACBusTypes.PQ
+            J_Va_vals .*= ComplexF64(-1)
+            J_nonzeros[(J_Va_start - 1) + ind] += Ibus[col]
+            conj!(J_Va_vals)
+            # non-allocating version of J_Va_vals .*= im * V[bus_inds]
+            for i in Yb_val_range
+                J_Va_vals[i - Yb_val_range.start + 1] *= im * V[Yb_rows[i]]
+            end
+        else
+            J_Va_vals .= zero(ComplexF64)
+        end
+
+        # correct for our power terms.
+        if bus_type == PSY.ACBusTypes.REF
+            J_nonzeros[(J_Vm_start - 1) + ind] = ComplexF64(-1)
+            J_nonzeros[(J_Va_start - 1) + ind] = -im
+        elseif bus_type == PSY.ACBusTypes.PV
+            J_nonzeros[(J_Vm_start - 1) + ind] = -im
         end
     end
     return
