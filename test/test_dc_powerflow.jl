@@ -3,7 +3,7 @@
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
     # get indices
-    buses = collect(PSY.get_components(PSY.Bus, sys))
+    buses = collect(PSY.get_components(PSY.ACBus, sys))
     idx = sortperm(buses; by = x -> PSY.get_number(x))
 
     # get sorted indices for branches

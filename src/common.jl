@@ -118,8 +118,7 @@ function _initialize_bus_data!(
 )
     for (bus_no, ix) in bus_lookup
         bus_name = temp_bus_map[bus_no]
-        bus = PSY.get_component(PSY.Bus, sys, bus_name)
-        bus isa PSY.DCBus && continue
+        bus = PSY.get_component(PSY.ACBus, sys, bus_name)
         bt = PSY.get_bustype(bus)
         bus_type[ix] = bt
         if bus_type[ix] == PSY.ACBusTypes.REF

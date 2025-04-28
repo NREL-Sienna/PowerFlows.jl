@@ -113,7 +113,7 @@ function _set_state_vars_at_bus(
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.REF})
-    # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
+    # When bustype == REFERENCE PSY.ACBus, state variables are Active and Reactive Power Generated
     P_net[ix] = StateVector[2 * ix - 1]
     Q_net[ix] = StateVector[2 * ix]
     data.bus_activepower_injection[ix, time_step] =
@@ -130,7 +130,7 @@ function _set_state_vars_at_bus(
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.PV})
-    # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
+    # When bustype == PV PSY.ACBus, state variables are Reactive Power Generated and Voltage Angle
     Q_net[ix] = StateVector[2 * ix - 1]
     data.bus_reactivepower_injection[ix, time_step] =
         StateVector[2 * ix - 1] + data.bus_reactivepower_withdrawals[ix, time_step]
@@ -145,7 +145,7 @@ function _set_state_vars_at_bus(
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.PQ})
-    # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
+    # When bustype == PQ PSY.ACBus, state variables are Voltage Magnitude and Voltage Angle
     data.bus_magnitude[ix, time_step] = StateVector[2 * ix - 1]
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
 end
