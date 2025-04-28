@@ -1,4 +1,4 @@
-function _is_available_source(x, bus::PSY.Bus)
+function _is_available_source(x, bus::PSY.ACBus)
     return PSY.get_available(x) && x.bus == bus && !isa(x, PSY.ElectricLoad)
 end
 
@@ -121,7 +121,7 @@ end
 """
 Obtain total load on bus b
 """
-function _get_load_data(sys::PSY.System, b::PSY.Bus)
+function _get_load_data(sys::PSY.System, b::PSY.ACBus)
     active_power = 0.0
     reactive_power = 0.0
     for l in PSY.get_components(x -> !isa(x, PSY.FixedAdmittance), PSY.ElectricLoad, sys)
@@ -134,7 +134,7 @@ function _get_load_data(sys::PSY.System, b::PSY.Bus)
     return active_power, reactive_power
 end
 
-"""Returns a dictionary of bus index to power contribution at that bus from FixedAdmittance 
+"""Returns a dictionary of bus index to power contribution at that bus from FixedAdmittance
 components, as a tuple of (active power, reactive power)."""
 function _calculate_fixed_admittance_powers(sys::PSY.System, data::PowerFlowData)
     busIxToFAPower = Dict{Int64, Tuple{Float64, Float64}}()
@@ -160,7 +160,7 @@ function _power_redistribution_ref(
     sys::PSY.System,
     P_gen::Float64,
     Q_gen::Float64,
-    bus::PSY.Bus,
+    bus::PSY.ACBus,
     max_iterations::Int,
 )
     devices_ =
@@ -270,7 +270,7 @@ end
 function _reactive_power_redistribution_pv(
     sys::PSY.System,
     Q_gen::Float64,
-    bus::PSY.Bus,
+    bus::PSY.ACBus,
     max_iterations::Int,
 )
     @debug "Reactive Power Distribution $(PSY.get_name(bus))"
@@ -438,7 +438,7 @@ function write_powerflow_solution!(
     time_step::Int = 1,
 )
     buses = enumerate(
-        sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x)),
+        sort!(collect(PSY.get_components(PSY.ACBus, sys)); by = x -> PSY.get_number(x)),
     )
 
     # Handle any changes made manually to the PowerFlowData, not necessarily reflected in the solver result
@@ -609,7 +609,7 @@ function write_results(
     time_step::Int64,
 )
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
-    buses = sort!(collect(PSY.get_components(PSY.Bus, sys)); by = x -> PSY.get_number(x))
+    buses = sort!(collect(PSY.get_components(PSY.ACBus, sys)); by = x -> PSY.get_number(x))
     N_BUS = length(buses)
     bus_map = Dict(buses .=> 1:N_BUS)
     sys_basepower = PSY.get_base_power(sys)
@@ -697,7 +697,7 @@ See also `write_powerflow_solution!`. NOTE that this assumes that `data` was ini
 from `sys` and then solved with no further modifications.
 """
 function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
-    for bus in PSY.get_components(PSY.Bus, sys)
+    for bus in PSY.get_components(PSY.ACBus, sys)
         bus_number = data.bus_lookup[PSY.get_number(bus)]
         bus_type = data.bus_type[bus_number, time_step]  # use this instead of bus.bustype to account for PV -> PQ
         if bus_type == PSY.ACBusTypes.REF

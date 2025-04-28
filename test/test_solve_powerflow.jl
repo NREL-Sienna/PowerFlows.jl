@@ -85,7 +85,7 @@ end
     PSY.set_available!(line, false)
     solve_powerflow!(pf, sys)
     @test PSY.get_active_power_flow(line) == 0.0
-    test_bus = get_component(PSY.Bus, sys, "Bus 4")
+    test_bus = get_component(PSY.ACBus, sys, "Bus 4")
     @test isapprox(PSY.get_magnitude(test_bus), 1.002; atol = 1e-3, rtol = 0)
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
@@ -101,7 +101,7 @@ end
     p_gen_matpower_3bus = [20.3512373930753, 100.0, 100.0]
     q_gen_matpower_3bus = [45.516916781567232, 10.453799727283879, -31.992561631394636]
     sys_3bus = PSB.build_system(PSB.PSYTestSystems, "psse_3bus_gen_cls_sys")
-    bus_103 = get_component(PSY.Bus, sys_3bus, "BUS 3")
+    bus_103 = get_component(PSY.ACBus, sys_3bus, "BUS 3")
     fix_shunt = PSY.FixedAdmittance("FixAdmBus3", true, bus_103, 0.0 + 0.2im)
     add_component!(sys_3bus, fix_shunt)
     pf = ACPowerFlow{ACSolver}()

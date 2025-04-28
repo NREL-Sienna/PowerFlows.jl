@@ -28,7 +28,7 @@ Create an instance of `ACPowerFlowResidual` for a given time step.
 - `time_step::Int64`: The time step for which the power flow calculation is executed.
 
 # Returns
-- `ACPowerFlowResidual`: An instance containing the residual values, net bus active power injections, 
+- `ACPowerFlowResidual`: An instance containing the residual values, net bus active power injections,
 and net bus reactive power injections.
 """
 function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
@@ -56,10 +56,10 @@ end
 """
     (Residual::ACPowerFlowResidual)(Rv::Vector{Float64}, x::Vector{Float64}, time_step::Int64)
 
-Evaluate the AC power flow residuals and store the result in `Rv` using the provided 
+Evaluate the AC power flow residuals and store the result in `Rv` using the provided
 state vector `x` and the current time step `time_step`.
-The residuals are updated inplace in the struct and additionally copied to the provided array. 
-This function implements the functor approach for the `ACPowerFlowResidual` struct. 
+The residuals are updated inplace in the struct and additionally copied to the provided array.
+This function implements the functor approach for the `ACPowerFlowResidual` struct.
 This makes the struct callable.
 Calling the `ACPowerFlowResidual` will also update the values of P, Q, V, Θ in the `data` struct.
 
@@ -83,7 +83,7 @@ end
 
 Update the AC power flow residuals inplace and store the result in the attribute `Rv` of the struct.
 The inputs are the values of state vector `x` and the current time step `time_step`.
-This function implements the functor approach for the `ACPowerFlowResidual` struct. 
+This function implements the functor approach for the `ACPowerFlowResidual` struct.
 This makes the struct callable.
 Calling the `ACPowerFlowResidual` will also update the values of P, Q, V, Θ in the `data` struct.
 
