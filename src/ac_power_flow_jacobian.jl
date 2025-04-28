@@ -90,7 +90,7 @@ J(time_step)  # Updates the Jacobian matrix stored internally in J (J.Jv) with t
 J.Jv  # Access the Jacobian matrix stored internally in J.
 ```
 """
-function ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64, old = false)
+function ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64)
     # Create the initial Jacobian matrix structure - a sparse matrix with structural zeros
     # that will be updated by the function Jf! It has the same structure as the expected
     # Jacobian matrix.
