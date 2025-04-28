@@ -221,7 +221,7 @@ function PowerFlowData(
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = Dict{String, Int}()
     temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
     branch_types = Vector{DataType}(undef, n_branches)
     for (ix, b) in enumerate(branches)
@@ -385,7 +385,7 @@ function PowerFlowData(
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
     temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
@@ -459,7 +459,7 @@ function PowerFlowData(
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
     temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)

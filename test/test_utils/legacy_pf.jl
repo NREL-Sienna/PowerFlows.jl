@@ -14,7 +14,7 @@ function _calc_x(
     bus_types = view(data.bus_type, :, time_step)
     for (ix, bt) in enumerate(bus_types)
         if bt == PSY.ACBusTypes.REF
-            # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
+            # When bustype == REFERENCE PSY.ACBus, state variables are Active and Reactive Power Generated
             x[2 * ix - 1] =
                 data.bus_activepower_injection[ix, time_step] -
                 data.bus_activepower_withdrawals[ix, time_step]
@@ -22,13 +22,13 @@ function _calc_x(
                 data.bus_reactivepower_injection[ix, time_step] -
                 data.bus_reactivepower_withdrawals[ix, time_step]
         elseif bt == PSY.ACBusTypes.PV
-            # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
+            # When bustype == PV PSY.ACBus, state variables are Reactive Power Generated and Voltage Angle
             x[2 * ix - 1] =
                 data.bus_reactivepower_injection[ix, time_step] -
                 data.bus_reactivepower_withdrawals[ix, time_step]
             x[2 * ix] = data.bus_angles[ix, time_step]
         elseif bt == PSY.ACBusTypes.PQ
-            # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
+            # When bustype == PQ PSY.ACBus, state variables are Voltage Magnitude and Voltage Angle
             x[2 * ix - 1] = data.bus_magnitude[ix, time_step]
             x[2 * ix] = data.bus_angles[ix, time_step]
         end
