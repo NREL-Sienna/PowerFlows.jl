@@ -52,7 +52,6 @@ function LevenbergMaquardtData(data::ACPowerFlowData, time_step::Int)
     b = zeros(size(A, 1))
     return LevenbergMaquardtData(J, A, b)
 end
-
 # could add DAMPING_INCR and DAMPING_DECR too.
 """Runs the full `LevenbergMaquardtACPowerFlow`.
 # Keyword arguments:
@@ -80,12 +79,61 @@ function _run_powerflow_method(
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
     maxTestλs::Int = get(kwargs, :maxTestλs, DEFAULT_MAX_TEST_λs)
     i, converged = 0, false
+    residual(x, time_step)
+    resSize = LinearAlgebra.dot(residual.Rv, residual.Rv)
+    @info "initial step length ???, residual λ = $resSize"
     while i < maxIterations && !converged && !isnan(λ)
         λ = update!(lmd, linSolveCache, x, residual, λ, time_step, maxTestλs)
         converged = !isnan(λ) && norm(residual.Rv, Inf) < tol
         i += 1
     end
+    if isnan(λ)
+        @error "λ is NaN"
+    elseif i == maxIterations
+        @error "The LevenbergMaquardtACPowerFlow solver didn't coverge in $maxIterations iterations."
+    end
     return converged, i
+end
+
+siground(x::Float64) = round(x; sigdigits = 3)
+
+function betterResidual(lmd::LevenbergMaquardtData,
+    linSolveCache::KLULinSolveCache,
+    x::Vector{Float64},
+    residual::ACPowerFlowResidual,
+    λ::Float64,
+    time_step::Int,
+    residualSize::Float64,
+)
+    # lmd.A is J' * J
+    for i in axes(lmd.A, 1)
+        lmd.A[i, i] += λ
+    end
+    # solve (J' * J + λ * I) Δx = - J' * f
+    
+    # Jt_J_norm = norm(lmd.A)
+    #=if size(lmd.A, 1) * λ < BIG_λ_THRESHOLD * Jt_J_norm
+        @info "big λ"
+        #λ is big enough that lmd.A ≈ λ * I, so Δx ≈ 1/λ * (-J' * f)
+        Δx = lmd.b / λ
+    else =#
+    numeric_refactor!(linSolveCache, lmd.A)
+    Δx = deepcopy(lmd.b)
+    solve!(linSolveCache, Δx)
+    # end
+
+    for i in axes(lmd.A, 1)
+        lmd.A[i, i] -= λ
+    end
+
+    residual(x + Δx, time_step)
+    newResidualSize = LinearAlgebra.dot(residual.Rv, residual.Rv)
+    if newResidualSize < residualSize
+        step_size = norm(Δx)
+        @info "new smaller residual $(siground(newResidualSize)), λ = $(siground(λ)), ||Δx|| = $(siground(step_size))"
+        x .+= Δx
+    end
+    return newResidualSize < residualSize
 end
 
 """Updates x following to Levenberg-Maquardt, returning the new value of λ.
@@ -109,39 +157,23 @@ function update!(lmd::LevenbergMaquardtData,
     lmd.A.nzval .= 0.0
     residual(x, time_step)
     lmd.J(time_step)
+    lmd.A.nzval .= 0.0
     A_plus_eq_BT_B!(lmd.A, lmd.J.Jv)
 
     # initialize stuff.
-    λ_prev = 0.0
     lmd.b .= lmd.J.Jv' * residual.Rv
+    lmd.b .*= -1
     @assert !all(lmd.b .== 0.0) "Levenberg-Maquardt is solving `A * Δx = 0`: F(x) is " *
                                 "exactly in the kernel of J'(x). Highly degenerate system or a bug."
-    # PERF: normalize or re-scale, else the numerically big (power) components
-    # will dominate.
     residualSize = LinearAlgebra.dot(residual.Rv, residual.Rv)
-    for j in 1:maxTestλs
-        # set lmd.A to J' * J + λ * I
-        for i in axes(lmd.A, 1)
-            lmd.A[i, i] += λ - λ_prev
-        end
-        numeric_refactor!(linSolveCache, lmd.A)
-
-        Δx = deepcopy(lmd.b)
-        solve!(linSolveCache, Δx)
-        Δx *= -1
-        residual(x + Δx, time_step)
-        # PERF: normalize or re-scale
-        newResidualSize = LinearAlgebra.dot(residual.Rv, residual.Rv)
-        if newResidualSize < residualSize
-            x .+= Δx
-            if j == 1
-                λ /= DAMPING_DECR
-            end
+    λ /= DAMPING_DECR
+    for _ in 1:maxTestλs
+        if betterResidual(lmd, linSolveCache, x, residual, λ, time_step, residualSize)
             return λ
         end
-        λ_prev = λ
         λ *= DAMPING_INCR
     end
+    
     @error "Unable to improve: gave up after increasing damping factor $maxTestλs times."
     return NaN
 end
