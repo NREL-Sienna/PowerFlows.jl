@@ -173,7 +173,6 @@ function update!(lmd::LevenbergMaquardtData,
         end
         λ *= DAMPING_INCR
     end
-    
     @error "Unable to improve: gave up after increasing damping factor $maxTestλs times."
     return NaN
 end
