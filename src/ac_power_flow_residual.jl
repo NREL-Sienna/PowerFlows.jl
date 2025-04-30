@@ -1,16 +1,3 @@
-const ACPowerFlowData = PowerFlowData{
-    PNM.Ybus{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-    },
-    <:Union{
-        PNM.ABA_Matrix{Tuple{Vector{Int64}, Vector{Int64}},
-            Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-            Nothing},
-        Nothing,
-    },
-}
-
 """
     struct ACPowerFlowResidual
 
@@ -185,82 +172,6 @@ function (Residual::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
     return
 end
 
-function _setpq(
-    ix::Int,
-    P_net::Vector{Float64},
-    Q_net::Vector{Float64},
-    data::ACPowerFlowData,
-    time_step::Int64,
-)
-    # Set the active and reactive power injections at the bus
-    data.bus_activepower_injection[ix, time_step] =
-        P_net[ix] + data.bus_activepower_withdrawals[ix, time_step]
-    data.bus_reactivepower_injection[ix, time_step] =
-        Q_net[ix] + data.bus_reactivepower_withdrawals[ix, time_step]
-end
-
-# dispatching on Val for performance reasons.
-function _set_state_vars_at_bus!(
-    ix::Int,
-    P_net::Vector{Float64},
-    Q_net::Vector{Float64},
-    P_net_set::Vector{Float64},
-    P_slack::Float64,
-    StateVector::Vector{Float64},
-    data::ACPowerFlowData,
-    time_step::Int64,
-    ::Val{PSY.ACBusTypes.REF})
-    # When bustype == REFERENCE PSY.ACACBus, state variables are Active and Reactive Power Generated
-    P_net[ix] = P_net_set[ix] + P_slack
-    Q_net[ix] = StateVector[2 * ix]
-    _setpq(
-        ix,
-        P_net,
-        Q_net,
-        data,
-        time_step,
-    )
-end
-
-function _set_state_vars_at_bus!(
-    ix::Int,
-    P_net::Vector{Float64},
-    Q_net::Vector{Float64},
-    P_net_set::Vector{Float64},
-    P_slack::Float64,
-    StateVector::Vector{Float64},
-    data::ACPowerFlowData,
-    time_step::Int64,
-    ::Val{PSY.ACBusTypes.PV})
-    # When bustype == PV PSY.ACACBus, state variables are Reactive Power Generated and Voltage Angle
-    # We still update both P and Q values in case the PV bus participates in distributed slack
-    P_net[ix] = P_net_set[ix] + P_slack
-    Q_net[ix] = StateVector[2 * ix - 1]
-    _setpq(
-        ix,
-        P_net,
-        Q_net,
-        data,
-        time_step,
-    )
-    data.bus_angles[ix, time_step] = StateVector[2 * ix]
-end
-
-function _set_state_vars_at_bus!(
-    ix::Int,
-    ::Vector{Float64},
-    ::Vector{Float64},
-    ::Vector{Float64},
-    ::Float64,
-    StateVector::Vector{Float64},
-    data::ACPowerFlowData,
-    time_step::Int64,
-    ::Val{PSY.ACBusTypes.PQ})
-    # When bustype == PQ PSY.ACBus, state variables are Voltage Magnitude and Voltage Angle
-    data.bus_magnitude[ix, time_step] = StateVector[2 * ix - 1]
-    data.bus_angles[ix, time_step] = StateVector[2 * ix]
-end
-
 """
     _update_residual_values!(
         F::Vector{Float64},
@@ -299,27 +210,8 @@ function _update_residual_values!(
     # update P_net, Q_net, data.bus_angles, data.bus_magnitude based on X
     Yb = data.power_network_matrix.data
     bus_types = view(data.bus_type, :, time_step)
-
-    for (ref_bus, subnetwork_buses) in subnetworks
-        P_slack =
-            (x[2 * ref_bus - 1] - P_net_set[ref_bus]) .*
-            bus_slack_participation_factors[subnetwork_buses]
-
-        for (ix, bt, p_bus_slack) in
-            zip(subnetwork_buses, bus_types[subnetwork_buses], P_slack)
-            _set_state_vars_at_bus!(
-                ix,
-                P_net,
-                Q_net,
-                P_net_set,
-                p_bus_slack,
-                x,
-                data,
-                time_step,
-                Val(bt),
-            )
-        end
-    end
+    update_data!(data, x, time_step)
+    update_net_power!(P_net, Q_net, x, bus_types)
 
     # compute active, reactive power balances using the just updated values.
     Vm = view(data.bus_magnitude, :, time_step)
