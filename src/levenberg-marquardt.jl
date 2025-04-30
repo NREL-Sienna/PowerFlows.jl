@@ -8,6 +8,7 @@ function _newton_powerflow(
     kwargs...)
     residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
+    weighted = get(kwargs, :weighted, true)
     # check if we need to iterate at all: maybe x0 is a solution.
     if _initial_residual!(residual, x0, pf, data, time_step; kwargs...)
         @info("The LevenbergMaquardtACPowerFlow solver converged after 0 iterations.")
@@ -15,7 +16,7 @@ function _newton_powerflow(
         loss_factors_helper!(data, x0, residual, J, time_step)
         return true
     end
-    lmd = LevenbergMaquardtData(data, time_step)
+    lmd = LevenbergMaquardtData(data, time_step, weighted)
     linSolveCache = KLULinSolveCache(lmd.A)
     symbolic_factor!(linSolveCache, lmd.A)
 
@@ -40,17 +41,30 @@ end
 """Cache for the vectors/matrices we need to run Levenberg-Maquardt."""
 struct LevenbergMaquardtData
     J::ACPowerFlowJacobian
-    A::SparseMatrixCSC{Float64, Int32} # J' * J + c * I
+    A::SparseMatrixCSC{Float64, Int32} # J' spdiagm(d_weights) * J + c * I
     b::Vector{Float64}
+    weighted::Bool
+    d_weights::Vector{Float64}
+    pq_mask::BitVector
     # J is a field, but residual isn't.
     # Could add residual as a field. Or switch to passing J as an argument.
 end
 
-function LevenbergMaquardtData(data::ACPowerFlowData, time_step::Int)
+function LevenbergMaquardtData(data::ACPowerFlowData, time_step::Int, weighted::Bool = true)
     J = ACPowerFlowJacobian(data, time_step)
     A = _create_JT_J_sparse_structure(data)
     b = zeros(size(A, 1))
-    return LevenbergMaquardtData(J, A, b)
+    d_weights = Vector{Float64}(undef, size(A, 1))
+    if weighted
+        d_weights[1:2:end] .= 1.0
+        v_mags = @view get_bus_magnitude(data)[:, time_step]
+        d_weights[2:2:end] .= 2 .* 10 .^ (10 .* (v_mags .- 1.0))
+        pq_mask = get_bus_type(data)[:, time_step] .== (PSY.ACBusTypes.PQ,)
+    else
+        d_weights .= 1.0
+        pq_mask = falses(size(get_bus_type(data), 1))
+    end
+    return LevenbergMaquardtData(J, A, b, weighted, d_weights, pq_mask)
 end
 # could add DAMPING_INCR and DAMPING_DECR too.
 """Runs the full `LevenbergMaquardtACPowerFlow`.
@@ -80,8 +94,8 @@ function _run_powerflow_method(
     maxTestλs::Int = get(kwargs, :maxTestλs, DEFAULT_MAX_TEST_λs)
     i, converged = 0, false
     residual(x, time_step)
-    resSize = LinearAlgebra.dot(residual.Rv, residual.Rv)
-    @info "initial step length ???, residual λ = $resSize"
+    resSize = norm(residual.Rv, 2)
+    @info "initially: residual $(siground(resSize)), λ = $λ"
     while i < maxIterations && !converged && !isnan(λ)
         λ = update!(lmd, linSolveCache, x, residual, λ, time_step, maxTestλs)
         converged = !isnan(λ) && norm(residual.Rv, Inf) < tol
@@ -104,33 +118,35 @@ function betterResidual(lmd::LevenbergMaquardtData,
     λ::Float64,
     time_step::Int,
     residualSize::Float64,
+    i::Int,
 )
+    Jt_J_norm = norm(lmd.A)
     # lmd.A is J' * J
     for i in axes(lmd.A, 1)
         lmd.A[i, i] += λ
     end
     # solve (J' * J + λ * I) Δx = - J' * f
-    
-    # Jt_J_norm = norm(lmd.A)
-    #=if size(lmd.A, 1) * λ < BIG_λ_THRESHOLD * Jt_J_norm
-        @info "big λ"
+
+    # what's the proper normalization here?
+    if sqrt(size(lmd.A, 1)) * λ > BIG_λ_THRESHOLD * Jt_J_norm
         #λ is big enough that lmd.A ≈ λ * I, so Δx ≈ 1/λ * (-J' * f)
         Δx = lmd.b / λ
-    else =#
-    numeric_refactor!(linSolveCache, lmd.A)
-    Δx = deepcopy(lmd.b)
-    solve!(linSolveCache, Δx)
-    # end
+    else
+        numeric_refactor!(linSolveCache, lmd.A)
+        Δx = deepcopy(lmd.b)
+        solve!(linSolveCache, Δx)
+    end
 
     for i in axes(lmd.A, 1)
         lmd.A[i, i] -= λ
     end
 
     residual(x + Δx, time_step)
-    newResidualSize = LinearAlgebra.dot(residual.Rv, residual.Rv)
+    newResidualSize = norm(residual.Rv)
+
     if newResidualSize < residualSize
         step_size = norm(Δx)
-        @info "new smaller residual $(siground(newResidualSize)), λ = $(siground(λ)), ||Δx|| = $(siground(step_size))"
+        @info "after $i tries, smaller residual of $(siground(newResidualSize)), λ = $(siground(λ)), ||Δx|| = $(siground(step_size))"
         x .+= Δx
     end
     return newResidualSize < residualSize
@@ -156,19 +172,36 @@ function update!(lmd::LevenbergMaquardtData,
     # set lmd.A to J' * J
     lmd.A.nzval .= 0.0
     residual(x, time_step)
+    residualSize = norm(residual.Rv)
     lmd.J(time_step)
     lmd.A.nzval .= 0.0
-    A_plus_eq_BT_B!(lmd.A, lmd.J.Jv)
+    if lmd.weighted
+        # update d_weights for reactive powers at PQ buses to 2 * 10^(10 * (V_mag - 1))
+        q_d_weights = @view lmd.d_weights[2:2:end]
+        x_odd = @view x[1:2:end]
+        # println(minimum(x_odd[lmd.pq_mask]))
+        # println(minimum(2 .* 10 .^ (10 .* (x_odd[lmd.pq_mask] .- 1.0))))
+        q_d_weights[lmd.pq_mask] .= 2 .* 10 .^ (10 .* (x_odd[lmd.pq_mask] .- 1.0))
+        q_d_weights[lmd.pq_mask] .= max.(q_d_weights[lmd.pq_mask], 0.02)
+        @assert all(lmd.d_weights[1:2:end] .== 1.0)
+        @assert all(lmd.d_weights[1:1:end] .>= 100 * eps())
+        A_plus_eq_BT_D_B!(lmd.A, lmd.d_weights, lmd.J.Jv)
+    else
+        A_plus_eq_BT_D_B!(lmd.A, ones(size(lmd.A, 1)), lmd.J.Jv)
+    end
 
     # initialize stuff.
-    lmd.b .= lmd.J.Jv' * residual.Rv
+    if lmd.weighted
+        lmd.b .= lmd.J.Jv' * SparseArrays.spdiagm(lmd.d_weights) * residual.Rv
+    else
+        lmd.b .= lmd.J.Jv' * residual.Rv
+    end
     lmd.b .*= -1
     @assert !all(lmd.b .== 0.0) "Levenberg-Maquardt is solving `A * Δx = 0`: F(x) is " *
                                 "exactly in the kernel of J'(x). Highly degenerate system or a bug."
-    residualSize = LinearAlgebra.dot(residual.Rv, residual.Rv)
     λ /= DAMPING_DECR
-    for _ in 1:maxTestλs
-        if betterResidual(lmd, linSolveCache, x, residual, λ, time_step, residualSize)
+    for i in 1:maxTestλs
+        if betterResidual(lmd, linSolveCache, x, residual, λ, time_step, residualSize, i)
             return λ
         end
         λ *= DAMPING_INCR
@@ -180,8 +213,8 @@ end
 """Does `A += B' * B`, in a way that preserves the sparse structure of `A`, if possible.
 A workaround for the fact that Julia seems to run `dropzeros!(A)` automatically if I just 
 do `A .+= B' * B`."""
-function A_plus_eq_BT_B!(A::SparseMatrixCSC, B::SparseMatrixCSC)
-    M = B' * B
+function A_plus_eq_BT_D_B!(A::SparseMatrixCSC, D::Vector{Float64}, B::SparseMatrixCSC)
+    M = B' * SparseArrays.spdiagm(D) * B
     @assert M.colptr == A.colptr && M.rowval == A.rowval
     A.nzval .+= M.nzval
     return
