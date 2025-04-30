@@ -1,16 +1,3 @@
-const ACPowerFlowData = PowerFlowData{
-    PNM.Ybus{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-    },
-    <:Union{
-        PNM.ABA_Matrix{Tuple{Vector{Int64}, Vector{Int64}},
-            Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-            Nothing},
-        Nothing,
-    },
-}
-
 """Partitions the state vector's variables based on what physical quantity each represents. 
 Returns a `NamedTuple`, with the 4 keys `Va`, `Vm`, `P`, and `Q`. The 4 values are vectors 
 of length equal to the number of buses, with `NaN`s in the positions where that physical 
