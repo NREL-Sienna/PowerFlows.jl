@@ -14,7 +14,7 @@ end
     A = B' * B
     A.nzval .= rand(size(A.nzval, 1))
     A_old = deepcopy(A)
-    diag_weights = ones(size(A,1))
+    diag_weights = ones(size(A, 1))
     PF.A_plus_eq_BT_D_B!(A, diag_weights, B)
     @test isapprox(A_old + B' * B, A)
     testSameStructure(A_old, A)
