@@ -8,7 +8,7 @@ function partition_state(x::Vector{Float64},
 )
     # usually, bus_types will be data.bus_type[:, time_step]
     nbuses = div(size(x, 1), 2)
-    (Vms, Vas, Ps, Qs) = (Vector{Float64}(nbuses, NaN) for _ in 1:4)
+    (Vms, Vas, Ps, Qs) = (fill(NaN, nbuses) for _ in 1:4)
     for i in 1:nbuses
         if bus_types[i] == PSY.ACBusTypes.REF
             Ps[i] = x[2 * i - 1]
