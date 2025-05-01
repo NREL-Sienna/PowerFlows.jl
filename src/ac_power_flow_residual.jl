@@ -1,16 +1,3 @@
-const ACPowerFlowData = PowerFlowData{
-    PNM.Ybus{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-    },
-    <:Union{
-        PNM.ABA_Matrix{Tuple{Vector{Int64}, Vector{Int64}},
-            Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-            Nothing},
-        Nothing,
-    },
-}
-
 """
     struct ACPowerFlowResidual
 
@@ -109,52 +96,6 @@ function (Residual::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
     return
 end
 
-# dispatching on Val for performance reasons.
-function _set_state_vars_at_bus(
-    ix::Int,
-    P_net::Vector{Float64},
-    Q_net::Vector{Float64},
-    StateVector::Vector{Float64},
-    data::ACPowerFlowData,
-    time_step::Int64,
-    ::Val{PSY.ACBusTypes.REF})
-    # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
-    P_net[ix] = StateVector[2 * ix - 1]
-    Q_net[ix] = StateVector[2 * ix]
-    data.bus_activepower_injection[ix, time_step] =
-        StateVector[2 * ix - 1] + data.bus_activepower_withdrawals[ix, time_step]
-    data.bus_reactivepower_injection[ix, time_step] =
-        StateVector[2 * ix] + data.bus_reactivepower_withdrawals[ix, time_step]
-end
-
-function _set_state_vars_at_bus(
-    ix::Int,
-    P_net::Vector{Float64},
-    Q_net::Vector{Float64},
-    StateVector::Vector{Float64},
-    data::ACPowerFlowData,
-    time_step::Int64,
-    ::Val{PSY.ACBusTypes.PV})
-    # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
-    Q_net[ix] = StateVector[2 * ix - 1]
-    data.bus_reactivepower_injection[ix, time_step] =
-        StateVector[2 * ix - 1] + data.bus_reactivepower_withdrawals[ix, time_step]
-    data.bus_angles[ix, time_step] = StateVector[2 * ix]
-end
-
-function _set_state_vars_at_bus(
-    ix::Int,
-    P_net::Vector{Float64},
-    Q_net::Vector{Float64},
-    StateVector::Vector{Float64},
-    data::ACPowerFlowData,
-    time_step::Int64,
-    ::Val{PSY.ACBusTypes.PQ})
-    # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
-    data.bus_magnitude[ix, time_step] = StateVector[2 * ix - 1]
-    data.bus_angles[ix, time_step] = StateVector[2 * ix]
-end
-
 """
     _update_residual_values!(
         F::Vector{Float64},
@@ -187,69 +128,34 @@ function _update_residual_values!(
     # update P_net, Q_net, data.bus_angles, data.bus_magnitude based on X
     Yb = data.power_network_matrix.data
     bus_types = view(data.bus_type, :, time_step)
-    # PERF: try indexing outside of the call and passing references, instead of indexing
-    #       inside the call and passing index + vectors.
-    # 3 case if-else with Val(constant) is faster than 1 case with Val(bt)
-    for (ix, bt) in enumerate(bus_types)
-        if bt == PSY.ACBusTypes.PV
-            _set_state_vars_at_bus(
-                ix,
-                P_net,
-                Q_net,
-                x,
-                data,
-                time_step,
-                Val(PSY.ACBusTypes.PV),
-            )
-        elseif bt == PSY.ACBusTypes.PQ
-            _set_state_vars_at_bus(
-                ix,
-                P_net,
-                Q_net,
-                x,
-                data,
-                time_step,
-                Val(PSY.ACBusTypes.PQ),
-            )
-        elseif bt == PSY.ACBusTypes.REF
-            _set_state_vars_at_bus(
-                ix,
-                P_net,
-                Q_net,
-                x,
-                data,
-                time_step,
-                Val(PSY.ACBusTypes.REF),
-            )
-        end
-    end
+    update_data!(data, x, time_step)
+    update_net_power!(P_net, Q_net, x, bus_types)
 
     # compute active, reactive power balances using the just updated values.
     Vm = view(data.bus_magnitude, :, time_step)
     θ = view(data.bus_angles, :, time_step)
     # F is active and reactive power balance equations at all buses
-    for bus_from in eachindex(P_net)
-        S_re = 0.0
-        S_im = 0.0
-        for bus_to in data.neighbors[bus_from]
-            gb = real(Yb[bus_from, bus_to])
-            bb = imag(Yb[bus_from, bus_to])
+    Yb_vals = SparseArrays.nonzeros(Yb)
+    Yb_rowvals = SparseArrays.rowvals(Yb)
+    F .= 0.0
+    for bus_to in axes(Yb, 1)
+        for j in Yb.colptr[bus_to]:(Yb.colptr[bus_to + 1] - 1)
+            yb = Yb_vals[j]
+            bus_from = Yb_rowvals[j]
+            gb = real(yb)
+            bb = imag(yb)
+            Δθ = θ[bus_from] - θ[bus_to]
             if bus_from == bus_to
-                S_re += Vm[bus_from] * Vm[bus_to] * gb
-                S_im += -Vm[bus_from] * Vm[bus_to] * bb
+                F[2 * bus_from - 1] += Vm[bus_from] * Vm[bus_to] * gb
+                F[2 * bus_from] += -Vm[bus_from] * Vm[bus_to] * bb
             else
-                S_re +=
-                    Vm[bus_from] *
-                    Vm[bus_to] *
-                    (gb * cos(θ[bus_from] - θ[bus_to]) + bb * sin(θ[bus_from] - θ[bus_to]))
-                S_im +=
-                    Vm[bus_from] *
-                    Vm[bus_to] *
-                    (gb * sin(θ[bus_from] - θ[bus_to]) - bb * cos(θ[bus_from] - θ[bus_to]))
+                F[2 * bus_from - 1] +=
+                    Vm[bus_from] * Vm[bus_to] * (gb * cos(Δθ) + bb * sin(Δθ))
+                F[2 * bus_from] += Vm[bus_from] * Vm[bus_to] * (gb * sin(Δθ) - bb * cos(Δθ))
             end
         end
-        F[2 * bus_from - 1] = S_re - P_net[bus_from]
-        F[2 * bus_from] = S_im - Q_net[bus_from]
     end
+    F[1:2:end] .-= P_net
+    F[2:2:end] .-= Q_net
     return
 end

@@ -27,13 +27,13 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 # Examples
 
 ```julia
-solve_ac_powerflow!(pf, sys)
+solve_powerflow!(pf, sys)
 
 # Passing kwargs
-solve_ac_powerflow!(pf, sys; check_connectivity=false)
+solve_powerflow!(pf, sys; check_connectivity=false)
 
 # Passing keyword arguments
-solve_ac_powerflow!(pf, sys; maxIterations=100)
+solve_powerflow!(pf, sys; maxIterations=100)
 ```
 """
 function solve_powerflow!(
