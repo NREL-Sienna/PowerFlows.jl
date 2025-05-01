@@ -7,14 +7,15 @@ function testSameStructure(A1::SparseMatrixCSC, A2::SparseMatrixCSC)
     @test A1.rowval == A2.rowval && A1.colptr == A2.colptr
 end
 
-@testset "A_plus_eq_BT_B!" begin
+@testset "A_plus_eq_BT_D_B!" begin
     Random.seed!(19873)
     # test basic numeric behavior.
     B = sprand(100, 100, 0.01)
     A = B' * B
     A.nzval .= rand(size(A.nzval, 1))
     A_old = deepcopy(A)
-    PF.A_plus_eq_BT_B!(A, B)
+    diag_weights = ones(size(A,1))
+    PF.A_plus_eq_BT_D_B!(A, diag_weights, B)
     @test isapprox(A_old + B' * B, A)
     testSameStructure(A_old, A)
     # change the sparse structure of A and check it throws an error.
@@ -24,7 +25,7 @@ end
         i, j = rand(1:100), rand(1:100)
     end
     A_old[i, j] = 1.0
-    @test_throws AssertionError PF.A_plus_eq_BT_B!(A_old, B)
+    @test_throws AssertionError PF.A_plus_eq_BT_D_B!(A_old, diag_weights, B)
     # test that zeros aren't dropped.
     # find a column of B with some nonzero values, and make them all zero.
     firstCol = 1
@@ -42,7 +43,7 @@ end
     A[firstCol, firstCol] = 0.0
     @assert (firstCol, firstCol) in coordSet(A)
     A_old = deepcopy(A)
-    PF.A_plus_eq_BT_B!(A, B)
+    PF.A_plus_eq_BT_D_B!(A, diag_weights, B)
     @test (firstCol, firstCol) in coordSet(A)
     testSameStructure(A_old, A)
 end
