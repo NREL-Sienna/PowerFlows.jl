@@ -441,31 +441,7 @@ function calculate_x0(data::ACPowerFlowData,
     time_step::Int64)
     n_buses = length(data.bus_type[:, 1])
     x0 = Vector{Float64}(undef, 2 * n_buses)
-    state_variable_count = 1
-    for (ix, b) in enumerate(data.bus_type[:, time_step])
-        if b == PSY.ACBusTypes.REF
-            x0[state_variable_count] =
-                data.bus_activepower_injection[ix, time_step] -
-                data.bus_activepower_withdrawals[ix, time_step]
-            x0[state_variable_count + 1] =
-                data.bus_reactivepower_injection[ix, time_step] -
-                data.bus_reactivepower_withdrawals[ix, time_step]
-            state_variable_count += 2
-        elseif b == PSY.ACBusTypes.PV
-            x0[state_variable_count] =
-                data.bus_reactivepower_injection[ix, time_step] -
-                data.bus_reactivepower_withdrawals[ix, time_step]
-            x0[state_variable_count + 1] = data.bus_angles[ix, time_step]
-            state_variable_count += 2
-        elseif b == PSY.ACBusTypes.PQ
-            x0[state_variable_count] = data.bus_magnitude[ix, time_step]
-            x0[state_variable_count + 1] = data.bus_angles[ix, time_step]
-            state_variable_count += 2
-        else
-            throw(ArgumentError("$b not recognized as a bustype"))
-        end
-    end
-    @assert state_variable_count - 1 == n_buses * 2
+    update_state!(x0, data, time_step)
     return x0
 end
 
