@@ -68,7 +68,16 @@ function update_data!(data::ACPowerFlowData,
     # bus types, bus power contributions [inj/widthdrawal], and bus voltage [angle/mag]
     bus_types = view(data.bus_type, :, time_step)
     for (ix, bt) in enumerate(bus_types)
-        _set_state_vars_at_bus(ix, x, data, time_step, Val(bt))
+        # PERF: try indexing outside of the call and passing references, instead of indexing
+        #       inside the call and passing index + vectors.
+        # 3 case if-else with Val(constant) is faster than 1 case with Val(bt)
+        if bt == PSY.ACBusTypes.REF
+            _set_state_vars_at_bus(ix, x, data, time_step, Val(PSY.ACBusTypes.REF))
+        elseif bt == PSY.ACBusTypes.PV
+            _set_state_vars_at_bus(ix, x, data, time_step, Val(PSY.ACBusTypes.PV))
+        elseif bt == PSY.ACBusTypes.PQ
+            _set_state_vars_at_bus(ix, x, data, time_step, Val(PSY.ACBusTypes.PQ))
+        end
     end
 end
 
