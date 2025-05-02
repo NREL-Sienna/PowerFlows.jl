@@ -86,7 +86,8 @@ end
     end
 end
 
-# well, it happened: the Jacobian is no longer singular on this system.
+# It happened: our more efficient "update J" means this test no longer finds 
+# a point where J is singular.
 #=
 @testset "singular Jacobian trust region" begin
     # NewtonRaphsonACPowerFlow fails to converge on this system.
@@ -96,8 +97,8 @@ end
     pf = ACPowerFlow{TrustRegionACPowerFlow}()
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg10k_sys")
     data = PowerFlowData(pf, sys)
-    # @test_logs (:warn, Regex(".*Jacobian is singular.*")
-    # ) match_mode = :any for _ in 1:30
-    #    solve_powerflow!(data; pf = pf)
-    # end
+    @test_logs (:warn, Regex(".*Jacobian is singular.*")
+    ) match_mode = :any for _ in 1:20
+        solve_powerflow!(data; pf = pf)
+    end
 end=#
