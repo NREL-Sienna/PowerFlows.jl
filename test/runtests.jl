@@ -9,6 +9,7 @@ using LinearAlgebra
 using CSV
 using DataFrames
 using JSON3
+using Random
 using DataStructures
 import SparseArrays
 import SparseArrays: SparseMatrixCSC, sparse, sprandn, sprand
@@ -42,7 +43,9 @@ include("test_utils/legacy_pf.jl")
 const AC_SOLVERS_TO_TEST = (
     LUACPowerFlow,
     NewtonRaphsonACPowerFlow,
-    TrustRegionACPowerFlow)
+    TrustRegionACPowerFlow,
+    LevenbergMaquardtACPowerFlow,
+)
 
 LOG_FILE = "power-flows.log"
 
@@ -50,6 +53,7 @@ const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl
 # "test_dc_powerflow.jl",
 # "test_iterative_methods.jl",
 # "test_klu_linear_solver_cache.jl",
+# "test_levenburg_marquardt.jl",
 # "test_multiperiod_ac_powerflow.jl",
 # "test_multiperiod_dc_powerflow.jl",
 # "test_powerflow_data.jl",
