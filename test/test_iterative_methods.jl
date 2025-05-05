@@ -86,7 +86,7 @@ end
     end
 end
 
-# It happened: our more efficient "update J" means this test no longer finds 
+# It happened: our more efficient "update J" means this test no longer finds
 # a point where J is singular.
 #=
 @testset "singular Jacobian trust region" begin
