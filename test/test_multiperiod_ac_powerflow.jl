@@ -147,7 +147,9 @@ end
         :dict,
         :array_1,
         :array_24,
-    ), ACSolver in (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow)
+    ),
+    ACSolver in
+    (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow, LevenbergMaquardtACPowerFlow)
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     generators = get_components(ThermalStandard, sys)

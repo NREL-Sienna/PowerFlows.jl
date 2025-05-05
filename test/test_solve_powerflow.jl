@@ -347,7 +347,9 @@ end
 @testset "AC PF with distributed slack" for (grid_lib, grid_name) in [
         (PSB.PSITestSystems, "c_sys14"),
         (PSB.MatpowerTestSystems, "matpower_case30_sys"),
-    ], ACSolver in (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow)
+    ],
+    ACSolver in
+    (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow, LevenbergMaquardtACPowerFlow)
     function _get_spf_dict(bus_slack_participation_factors)
         generator_slack_participation_factors = Dict{Tuple{DataType, String}, Float64}()
         for (b, spf) in enumerate(bus_slack_participation_factors)
@@ -531,6 +533,7 @@ end
 @testset "AC PF DS power redistribution" for ACSolver in (
     NewtonRaphsonACPowerFlow,
     TrustRegionACPowerFlow,
+    LevenbergMaquardtACPowerFlow,
 )
     sys = System(100.0)
     b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
@@ -624,7 +627,8 @@ end
 
 @testset "AC PF DS with two connected components" for mode in (:same, :random),
     gen_mode in (:gen, :source),
-    ACSolver in (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow)
+    ACSolver in
+    (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow, LevenbergMaquardtACPowerFlow)
     # here we build two identical grids in one system
     sys = System(100.0)
     b1 = _add_simple_bus!(sys, 8, ACBusTypes.REF, 230, 1.1, 0.0)
@@ -764,6 +768,7 @@ end
 @testset "AC PF DS with several REF buses" for ACSolver in (
     NewtonRaphsonACPowerFlow,
     TrustRegionACPowerFlow,
+    LevenbergMaquardtACPowerFlow,
 )
     sys = System(100.0)
 
