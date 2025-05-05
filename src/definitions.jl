@@ -22,6 +22,8 @@ const HALVE_TRUST_REGION = 0.1
 const MAX_DOUBLE_TRUST_REGION = 0.5
 const DOUBLE_TRUST_REGION = 0.9
 
+const DEFAULT_Δt_k = 0.2
+
 const AC_PF_KW = []
 
 const PSSE_DEFAULT_EXPORT_NAME = "export"
