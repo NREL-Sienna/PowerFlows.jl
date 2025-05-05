@@ -22,7 +22,7 @@ end
 Calculates the From - To complex power flow (Flow injected at the bus) of branch of type
 Line
 """
-function flow_val(b::PSY.ACBranch)
+function flow_val(b::PSY.ACTransmission)
     !PSY.get_available(b) && return 0.0
     Y_t = PSY.get_series_admittance(b)
     arc = PSY.get_arc(b)
@@ -78,7 +78,7 @@ end
 Calculates the From - To complex power flow using external data of voltages of branch of type
 Line
 """
-function flow_func(b::PSY.ACBranch, V_from::Complex{Float64}, V_to::Complex{Float64})
+function flow_func(b::PSY.ACTransmission, V_from::Complex{Float64}, V_to::Complex{Float64})
     !PSY.get_available(b) && return (0.0, 0.0)
     Y_t = PSY.get_series_admittance(b)
     I = V_from * (Y_t + (1im * PSY.get_b(b).from)) - V_to * Y_t
@@ -111,7 +111,7 @@ end
 Updates the flow on the branches
 """
 function _update_branch_flow!(sys::PSY.System)
-    for b in PSY.get_components(PSY.ACBranch, sys)
+    for b in PSY.get_components(PSY.ACTransmission, sys)
         S_flow = PSY.get_available(b) ? flow_val(b) : 0.0 + 0.0im
         PSY.set_active_power_flow!(b, real(S_flow))
         PSY.set_reactive_power_flow!(b, imag(S_flow))
@@ -164,10 +164,15 @@ function _power_redistribution_ref(
     Q_gen::Float64,
     bus::PSY.ACBus,
     max_iterations::Int,
-)
+    generator_slack_participation_factors::Union{
+        Nothing,
+        Dict{Tuple{DataType, String}, Float64},
+    } = nothing)
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
-    sources = filter(x -> typeof(x) == PSY.Source, collect(devices_))
+    all_devices = devices_
+
+    sources = filter(x -> x isa PSY.Source, collect(devices_))
     non_source_devices = filter(x -> typeof(x) !== PSY.Source, collect(devices_))
     if length(sources) > 0 && length(non_source_devices) > 0
         P_gen -= sum(PSY.get_active_power.(sources))
@@ -195,6 +200,30 @@ function _power_redistribution_ref(
             sort(collect(devices_); by = x -> get_active_power_limits_for_power_flow(x).max)
     else
         error("No devices in bus $(PSY.get_name(bus))")
+    end
+
+    if !isnothing(generator_slack_participation_factors)
+        devices_gspf = Dict()
+        for ((t, n), f) in generator_slack_participation_factors
+            c = PSY.get_component(t, sys, n)
+            PSY.get_bus(c) == bus && c ∈ all_devices && (devices_gspf[c] = f)
+        end
+
+        if isempty(devices_gspf)
+            @debug "No devices with slack factors for bus $(PSY.get_name(bus))"
+        else
+            to_redistribute = P_gen - sum(PSY.get_active_power.(all_devices))
+            sum_bus_gspf = sum(values(devices_gspf))
+
+            for (device, factor) in devices_gspf
+                PSY.set_active_power!(
+                    device,
+                    PSY.get_active_power(device) + to_redistribute * factor / sum_bus_gspf,
+                )
+            end
+            _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+            return
+        end
     end
 
     sum_basepower = sum([g.max for g in get_active_power_limits_for_power_flow.(devices)])
@@ -457,15 +486,30 @@ function write_powerflow_solution!(
         PSY.set_bustype!(bus, data_bustype)
     end
 
+    gspf = if isnothing(data.generator_slack_participation_factors)
+        nothing
+    else
+        data.generator_slack_participation_factors[time_step]
+    end
+
     for (ix, bus) in buses
         if bus.bustype == PSY.ACBusTypes.REF
             P_gen = data.bus_activepower_injection[ix, time_step]
             Q_gen = data.bus_reactivepower_injection[ix, time_step]
-            _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations)
+            _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations, gspf)
         elseif bus.bustype == PSY.ACBusTypes.PV
             Q_gen = data.bus_reactivepower_injection[ix, time_step]
             bus.angle = data.bus_angles[ix, time_step]
-            _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+            # If the PV bus has a nonzero slack participation factor, 
+            # then not only reactive power but also active power could have been changed 
+            # in the power flow calculation. This requires the same 
+            # active and reactive power redistribution step as for the REF bus.
+            if data.bus_slack_participation_factors[ix, time_step] != 0.0
+                P_gen = data.bus_activepower_injection[ix, time_step]
+                _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations, gspf)
+            else
+                _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+            end
         elseif bus.bustype == PSY.ACBusTypes.PQ
             Vm = data.bus_magnitude[ix, time_step]
             θ = data.bus_angles[ix, time_step]
@@ -561,7 +605,7 @@ function write_results(
     from_bus = Vector{Int}(undef, length(branches))
     to_bus = Vector{Int}(undef, length(branches))
     for (i, branch) in enumerate(branches)
-        br = PSY.get_component(PSY.ACBranch, sys, branch)
+        br = PSY.get_component(PSY.ACTransmission, sys, branch)
         from_bus[i] = PSY.get_number(PSY.get_arc(br).from)
         to_bus[i] = PSY.get_number(PSY.get_arc(br).to)
     end
@@ -647,7 +691,7 @@ function write_results(
         end
     end
 
-    branches = PSY.get_components(PSY.ACBranch, sys)
+    branches = PSY.get_components(PSY.ACTransmission, sys)
     N_BRANCH = length(branches)
     P_from_to_vect = fill(0.0, N_BRANCH)
     Q_from_to_vect = fill(0.0, N_BRANCH)
