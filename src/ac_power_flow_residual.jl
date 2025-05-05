@@ -19,7 +19,7 @@ A struct to keep track of the residuals in the Newton-Raphson AC power flow calc
 - `Q_net::Vector{Float64}`: A vector of net reactive power injections.
 - `P_net_set::Vector{Float64}`: A vector of the set-points for active power injections (their initial values before power flow calculation).
 - `bus_slack_participation_factors::SparseVector{Float64, Int}`: A sparse vector of the slack participation factors aggregated at the bus level.
-- `slack_bus::Int`: The index of the slack bus to be used for the total slack power.
+- `subnetworks::Dict{Int64, Vector{Int64}}`: The dictionary that identifies subnetworks (connected components), with the key defining the REF bus, values defining the corresponding buses in the subnetwork.
 """
 struct ACPowerFlowResidual
     data::ACPowerFlowData
@@ -57,10 +57,7 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     spf_val = Float64[]
     sum_sl_weights = 0.0  # for scope
 
-    # slack_bus is set to the first REF bus found - will be used for the total slack power
-    # TODO: check if there are multiple REF buses and treat the remaining ones as if they were PV buses
-    # TODO: enable multiple slack buses, multiple disconnected zones
-
+    # ref_bus is set to the first REF bus found - will be used for the total slack power    
     subnetworks =
         _find_subnetworks_for_reference_buses(data.power_network_matrix.data, bus_type)
 
@@ -279,7 +276,7 @@ Update the residual values for the Newton-Raphson AC power flow calculation. Thi
 - `Q_net::Vector{Float64}`: Vector of net reactive power injections at each bus.
 - `P_net_set::Vector{Float64}`: Vector of the set-points for active power injections (their initial values before power flow calculation).
 - `bus_slack_participation_factors::SparseVector{Float64, Int}`: Sparse vector of the slack participation factors aggregated at the bus level.
-- `slack_bus::Int`: The index of the slack bus to be used for the total slack power.
+- `ref_bus::Int`: The index of the reference bus to be used for the total slack power.
 - `data::ACPowerFlowData`: Data structure representing the grid model for the AC power flow calculation.
 - `time_step::Int64`: The current time step for which the residual values are being updated.
 """
@@ -298,9 +295,9 @@ function _update_residual_values!(
     Yb = data.power_network_matrix.data
     bus_types = view(data.bus_type, :, time_step)
 
-    for (slack_bus, subnetwork_buses) in subnetworks
+    for (ref_bus, subnetwork_buses) in subnetworks
         P_slack =
-            (x[2 * slack_bus - 1] - P_net_set[slack_bus]) .*
+            (x[2 * ref_bus - 1] - P_net_set[ref_bus]) .*
             bus_slack_participation_factors[subnetwork_buses]
 
         for (ix, bt, p_bus_slack) in
