@@ -121,12 +121,12 @@ end
 end
 
 @testset failfast = true "MULTI-PERIOD power flows evaluation with DS" for mode in (
-    :nothing,
-    :equal,
-    :dict,
-    :array_1,
-    :array_24,
-)
+        :nothing,
+        :equal,
+        :dict,
+        :array_1,
+        :array_24,
+    ), ACSolver in (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow)
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     generators = get_components(ThermalStandard, sys)

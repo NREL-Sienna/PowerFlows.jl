@@ -345,9 +345,9 @@ end
 end
 
 @testset "AC PF with distributed slack" for (grid_lib, grid_name) in [
-    (PSB.PSITestSystems, "c_sys14"),
-    (PSB.MatpowerTestSystems, "matpower_case30_sys"),
-]
+        (PSB.PSITestSystems, "c_sys14"),
+        (PSB.MatpowerTestSystems, "matpower_case30_sys"),
+    ], ACSolver in (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow)
     function _get_spf_dict(bus_slack_participation_factors)
         generator_slack_participation_factors = Dict{Tuple{DataType, String}, Float64}()
         for (b, spf) in enumerate(bus_slack_participation_factors)
@@ -528,7 +528,10 @@ end
     )
 end
 
-@testset "AC PF DS power redistribution" begin
+@testset "AC PF DS power redistribution" for ACSolver in (
+    NewtonRaphsonACPowerFlow,
+    TrustRegionACPowerFlow,
+)
     sys = System(100.0)
     b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
     b2 = _add_simple_bus!(sys, 2, ACBusTypes.PV, 230, 1.1, 0.0)
@@ -620,7 +623,8 @@ end
 end
 
 @testset "AC PF DS with two connected components" for mode in (:same, :random),
-    gen_mode in (:gen, :source)
+    gen_mode in (:gen, :source),
+    ACSolver in (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow)
     # here we build two identical grids in one system
     sys = System(100.0)
     b1 = _add_simple_bus!(sys, 8, ACBusTypes.REF, 230, 1.1, 0.0)
@@ -668,7 +672,7 @@ end
     generator_slack_participation_factors =
         Dict((typeof(x), get_name(x)) => f for (x, f) in zip(devices, factors))
 
-    pf = ACPowerFlow(;
+    pf = ACPowerFlow(ACSolver;
         generator_slack_participation_factors = generator_slack_participation_factors,
     )
 
@@ -741,7 +745,7 @@ end
         (typeof(x), get_name(x)) => f for
         (x, f) in zip(devices, factors) if get_bustype(get_bus(x)) != ACBusTypes.PQ
     )
-    pf2 = ACPowerFlow(;
+    pf2 = ACPowerFlow(ACSolver;
         generator_slack_participation_factors = generator_slack_participation_factors2,
     )
 
@@ -757,7 +761,10 @@ end
     )
 end
 
-@testset "AC PF DS with several REF buses" begin
+@testset "AC PF DS with several REF buses" for ACSolver in (
+    NewtonRaphsonACPowerFlow,
+    TrustRegionACPowerFlow,
+)
     sys = System(100.0)
 
     n = 4
@@ -779,7 +786,7 @@ end
     generator_slack_participation_factors =
         Dict((typeof(x), get_name(x)) => 1.0 for x in vcat(sources, gens))
 
-    pf = ACPowerFlow(;
+    pf = ACPowerFlow(ACSolver;
         generator_slack_participation_factors = generator_slack_participation_factors,
     )
     solve_powerflow!(pf, sys)
