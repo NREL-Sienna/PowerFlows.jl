@@ -432,7 +432,7 @@ function write_to_buffers!(
     check_33(exporter)
 
     buses = get!(exporter.components_cache, "buses") do
-        sort!(collect(PSY.get_components(PSY.Bus, exporter.system)); by = PSY.get_number)
+        sort!(collect(PSY.get_components(PSY.ACBus, exporter.system)); by = PSY.get_number)
     end
     old_bus_numbers = PSY.get_number.(buses)
 

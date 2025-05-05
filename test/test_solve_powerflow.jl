@@ -85,7 +85,7 @@ end
     PSY.set_available!(line, false)
     solve_powerflow!(pf, sys)
     @test PSY.get_active_power_flow(line) == 0.0
-    test_bus = get_component(PSY.Bus, sys, "Bus 4")
+    test_bus = get_component(PSY.ACBus, sys, "Bus 4")
     @test isapprox(PSY.get_magnitude(test_bus), 1.002; atol = 1e-3, rtol = 0)
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
@@ -101,7 +101,7 @@ end
     p_gen_matpower_3bus = [20.3512373930753, 100.0, 100.0]
     q_gen_matpower_3bus = [45.516916781567232, 10.453799727283879, -31.992561631394636]
     sys_3bus = PSB.build_system(PSB.PSYTestSystems, "psse_3bus_gen_cls_sys")
-    bus_103 = get_component(PSY.Bus, sys_3bus, "BUS 3")
+    bus_103 = get_component(PSY.ACBus, sys_3bus, "BUS 3")
     fix_shunt = PSY.FixedAdmittance("FixAdmBus3", true, bus_103, 0.0 + 0.2im)
     add_component!(sys_3bus, fix_shunt)
     pf = ACPowerFlow{ACSolver}()
@@ -165,43 +165,17 @@ end
 
 @testset "AC Multiple sources at ref" for ACSolver in AC_SOLVERS_TO_TEST
     sys = System(100.0)
-    b = ACBus(;
-        number = 1,
-        name = "01",
-        bustype = ACBusTypes.REF,
-        angle = 0.0,
-        magnitude = 1.1,
-        voltage_limits = (0.0, 2.0),
-        base_voltage = 230,
-    )
-    add_component!(sys, b)
+    b = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
 
     #Test two sources with equal and opposite P and Q
-    s1 = Source(;
-        name = "source_1",
-        available = true,
-        bus = b,
-        active_power = 0.5,
-        reactive_power = 0.1,
-        R_th = 1e-5,
-        X_th = 1e-5,
-    )
-    add_component!(sys, s1)
-    s2 = Source(;
-        name = "source_2",
-        available = true,
-        bus = b,
-        active_power = -0.5,
-        reactive_power = -0.1,
-        R_th = 1e-5,
-        X_th = 1e-5,
-    )
-    add_component!(sys, s2)
+    s1 = _add_simple_source!(sys, b, 0.5, 0.1)
+    s2 = _add_simple_source!(sys, b, -0.5, -0.1)
+
     pf = ACPowerFlow{ACSolver}()
     @test solve_powerflow!(pf, sys)
 
     #Create power mismatch, test for error
-    set_active_power!(get_component(Source, sys, "source_1"), -0.4)
+    set_active_power!(s1, -0.4)
     @test_throws ErrorException(
         "Sources do not match P and/or Q requirements for reference bus.",
     ) solve_powerflow!(pf, sys)
@@ -209,80 +183,22 @@ end
 
 @testset "AC PowerFlow with Multiple sources at PV" for ACSolver in AC_SOLVERS_TO_TEST
     sys = System(100.0)
-    b1 = ACBus(;
-        number = 1,
-        name = "01",
-        bustype = ACBusTypes.REF,
-        angle = 0.0,
-        magnitude = 1.1,
-        voltage_limits = (0.0, 2.0),
-        base_voltage = 230,
-    )
-    add_component!(sys, b1)
-    b2 = ACBus(;
-        number = 2,
-        name = "02",
-        bustype = ACBusTypes.PV,
-        angle = 0.0,
-        magnitude = 1.1,
-        voltage_limits = (0.0, 2.0),
-        base_voltage = 230,
-    )
-    add_component!(sys, b2)
-    a = Arc(; from = b1, to = b2)
-    add_component!(sys, a)
-    l = Line(;
-        name = "l1",
-        available = true,
-        active_power_flow = 0.0,
-        reactive_power_flow = 0.0,
-        arc = a,
-        r = 1e-3,
-        x = 1e-3,
-        b = (from = 0.0, to = 0.0),
-        rating = 0.0,
-        angle_limits = (min = -pi / 2, max = pi / 2),
-    )
-    add_component!(sys, l)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PV, 230, 1.1, 0.0)
+
+    l = _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0)
 
     #Test two sources with equal and opposite P and Q
-    s1 = Source(;
-        name = "source_1",
-        available = true,
-        bus = b1,
-        active_power = 0.5,
-        reactive_power = 0.1,
-        R_th = 1e-5,
-        X_th = 1e-5,
-    )
-    add_component!(sys, s1)
-    s2 = Source(;
-        name = "source_2",
-        available = true,
-        bus = b2,
-        active_power = 0.5,
-        reactive_power = 1.1,
-        R_th = 1e-5,
-        X_th = 1e-5,
-    )
-    add_component!(sys, s2)
-    s3 = Source(;
-        name = "source_3",
-        available = true,
-        bus = b2,
-        active_power = -0.5,
-        reactive_power = -1.1,
-        R_th = 1e-5,
-        X_th = 1e-5,
-    )
-    add_component!(sys, s3)
+    s1 = _add_simple_source!(sys, b1, 0.5, 0.1)
+    s2 = _add_simple_source!(sys, b2, 0.5, 1.1)
+    s3 = _add_simple_source!(sys, b2, -0.5, -1.1)
 
     pf = ACPowerFlow{ACSolver}()
 
     @test solve_powerflow!(pf, sys)
 
     #Create power mismatch, test for error
-    set_reactive_power!(get_component(Source, sys, "source_3"), -0.5)
+    set_reactive_power!(s3, -0.5)
     @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_powerflow!(
         pf,
         sys,
@@ -291,159 +207,37 @@ end
 
 @testset "AC PowerFlow Source + non-source at Ref" for ACSolver in AC_SOLVERS_TO_TEST
     sys = System(100.0)
-    b = ACBus(;
-        number = 1,
-        name = "01",
-        bustype = ACBusTypes.REF,
-        angle = 0.0,
-        magnitude = 1.1,
-        voltage_limits = (0.0, 2.0),
-        base_voltage = 230,
-    )
-    add_component!(sys, b)
+
+    b = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
 
     #Test two sources with equal and opposite P and Q
-    s1 = Source(;
-        name = "source_1",
-        available = true,
-        bus = b,
-        active_power = 0.5,
-        reactive_power = 0.1,
-        R_th = 1e-5,
-        X_th = 1e-5,
-    )
-    add_component!(sys, s1)
-    g1 = ThermalStandard(;
-        name = "init",
-        available = true,
-        status = false,
-        bus = b,
-        active_power = 0.1,
-        reactive_power = 0.1,
-        rating = 0.0,
-        active_power_limits = (min = 0.0, max = 0.0),
-        reactive_power_limits = nothing,
-        ramp_limits = nothing,
-        operation_cost = ThermalGenerationCost(nothing),
-        base_power = 100.0,
-        time_limits = nothing,
-        prime_mover_type = PrimeMovers.OT,
-        fuel = ThermalFuels.OTHER,
-        services = Device[],
-        dynamic_injector = nothing,
-        ext = Dict{String, Any}(),
-    )
-    add_component!(sys, g1)
+    s1 = _add_simple_source!(sys, b, 0.5, 0.1)
+    g1 = _add_simple_thermal_standard!(sys, b, 0.1, 0.1)
 
     pf = ACPowerFlow{ACSolver}()
 
     @test solve_powerflow!(pf, sys)
-    @test isapprox(
-        get_active_power(get_component(Source, sys, "source_1")),
-        0.5;
-        atol = 0.001,
-    )
-    @test isapprox(
-        get_reactive_power(get_component(Source, sys, "source_1")),
-        0.1;
-        atol = 0.001,
-    )
+    @test isapprox(get_active_power(s1), 0.5; atol = 0.001)
+    @test isapprox(get_reactive_power(s1), 0.1; atol = 0.001)
 end
 
 @testset "AC PowerFlow Source + non-source at PV" for ACSolver in AC_SOLVERS_TO_TEST
     sys = System(100.0)
-    b1 = ACBus(;
-        number = 1,
-        name = "01",
-        bustype = ACBusTypes.REF,
-        angle = 0.0,
-        magnitude = 1.1,
-        voltage_limits = (0.0, 2.0),
-        base_voltage = 230,
-    )
-    add_component!(sys, b1)
-    b2 = ACBus(;
-        number = 2,
-        name = "02",
-        bustype = ACBusTypes.PV,
-        angle = 0.0,
-        magnitude = 1.1,
-        voltage_limits = (0.0, 2.0),
-        base_voltage = 230,
-    )
-    add_component!(sys, b2)
-    a = Arc(; from = b1, to = b2)
-    add_component!(sys, a)
-    l = Line(;
-        name = "l1",
-        available = true,
-        active_power_flow = 0.0,
-        reactive_power_flow = 0.0,
-        arc = a,
-        r = 1e-3,
-        x = 1e-3,
-        b = (from = 0.0, to = 0.0),
-        rating = 0.0,
-        angle_limits = (min = -pi / 2, max = pi / 2),
-    )
-    add_component!(sys, l)
+
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PV, 230, 1.1, 0.0)
+    l = _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0)
 
     #Test two sources with equal and opposite P and Q
-    s1 = Source(;
-        name = "source_1",
-        available = true,
-        bus = b1,
-        active_power = 0.5,
-        reactive_power = 0.1,
-        R_th = 1e-5,
-        X_th = 1e-5,
-    )
-    add_component!(sys, s1)
-    s2 = Source(;
-        name = "source_2",
-        available = true,
-        bus = b2,
-        active_power = 0.5,
-        reactive_power = 1.1,
-        R_th = 1e-5,
-        X_th = 1e-5,
-    )
-    add_component!(sys, s2)
-    g1 = ThermalStandard(;
-        name = "init",
-        available = true,
-        status = false,
-        bus = b2,
-        active_power = 0.1,
-        reactive_power = 0.1,
-        rating = 0.0,
-        active_power_limits = (min = 0.0, max = 0.0),
-        reactive_power_limits = nothing,
-        ramp_limits = nothing,
-        operation_cost = ThermalGenerationCost(nothing),
-        base_power = 100.0,
-        time_limits = nothing,
-        prime_mover_type = PrimeMovers.OT,
-        fuel = ThermalFuels.OTHER,
-        services = Device[],
-        dynamic_injector = nothing,
-        ext = Dict{String, Any}(),
-    )
-    add_component!(sys, g1)
+    s1 = _add_simple_source!(sys, b1, 0.5, 0.1)
+    s2 = _add_simple_source!(sys, b2, 0.5, 1.1)
+    g1 = _add_simple_thermal_standard!(sys, b2, 0.1, 0.1)
 
     pf = ACPowerFlow{ACSolver}()
 
     @test solve_powerflow!(pf, sys)
-    @test isapprox(
-        get_active_power(get_component(Source, sys, "source_2")),
-        0.5;
-        atol = 0.001,
-    )
-    @test isapprox(
-        get_reactive_power(get_component(Source, sys, "source_2")),
-        1.1;
-        atol = 0.001,
-    )
+    @test isapprox(get_active_power(s2), 0.5; atol = 0.001)
+    @test isapprox(get_reactive_power(s2), 1.1; atol = 0.001)
 end
 
 # in this test, the following aspects are checked:
@@ -551,9 +345,9 @@ end
 end
 
 @testset "AC PF with distributed slack" for (grid_lib, grid_name) in [
-    (PSB.PSITestSystems, "c_sys14"),
-    (PSB.MatpowerTestSystems, "matpower_case30_sys"),
-]
+        (PSB.PSITestSystems, "c_sys14"),
+        (PSB.MatpowerTestSystems, "matpower_case30_sys"),
+    ], ACSolver in (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow)
     function _get_spf_dict(bus_slack_participation_factors)
         generator_slack_participation_factors = Dict{Tuple{DataType, String}, Float64}()
         for (b, spf) in enumerate(bus_slack_participation_factors)
@@ -734,104 +528,23 @@ end
     )
 end
 
-@testset "DS power redistribution" begin
+@testset "AC PF DS power redistribution" for ACSolver in (
+    NewtonRaphsonACPowerFlow,
+    TrustRegionACPowerFlow,
+)
     sys = System(100.0)
-    b1 = ACBus(;
-        number = 1,
-        name = "01",
-        bustype = ACBusTypes.REF,
-        angle = 0.0,
-        magnitude = 1.1,
-        voltage_limits = (0.0, 2.0),
-        base_voltage = 230,
-    )
-    add_component!(sys, b1)
-    b2 = ACBus(;
-        number = 2,
-        name = "02",
-        bustype = ACBusTypes.PV,
-        angle = 0.0,
-        magnitude = 1.1,
-        voltage_limits = (0.0, 2.0),
-        base_voltage = 230,
-    )
-    add_component!(sys, b2)
-    a = Arc(; from = b1, to = b2)
-    add_component!(sys, a)
-    l = Line(;
-        name = "l1",
-        available = true,
-        active_power_flow = 0.0,
-        reactive_power_flow = 0.0,
-        arc = a,
-        r = 1e-3,
-        x = 1e-3,
-        b = (from = 0.0, to = 0.0),
-        rating = 1.0,
-        angle_limits = (min = -pi / 2, max = pi / 2),
-    )
-    add_component!(sys, l)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PV, 230, 1.1, 0.0)
+    l = _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0)
 
     ps = -0.5
-
-    s1 = Source(;
-        name = "source_1",
-        available = true,
-        bus = b1,
-        active_power = ps,
-        reactive_power = 0.1,
-        R_th = 1e-5,
-        X_th = 1e-5,
-    )
-    add_component!(sys, s1)
+    s1 = _add_simple_source!(sys, b1, ps, 0.1)
 
     p1 = 0.1
-
-    g1 = ThermalStandard(;
-        name = "G1",
-        available = true,
-        status = true,
-        bus = b2,
-        active_power = p1,
-        reactive_power = 0.1,
-        rating = 1.0,
-        active_power_limits = (min = 0, max = 1),
-        reactive_power_limits = (min = -1, max = 1),
-        ramp_limits = nothing,
-        operation_cost = ThermalGenerationCost(nothing),
-        base_power = 100.0,
-        time_limits = nothing,
-        prime_mover_type = PrimeMovers.OT,
-        fuel = ThermalFuels.OTHER,
-        services = Device[],
-        dynamic_injector = nothing,
-        ext = Dict{String, Any}(),
-    )
-    add_component!(sys, g1)
+    g1 = _add_simple_thermal_standard!(sys, b2, p1, 0.1)
 
     p2 = 0.2
-
-    g2 = ThermalStandard(;
-        name = "G2",
-        available = true,
-        status = true,
-        bus = b2,
-        active_power = p2,
-        reactive_power = 0.1,
-        rating = 1.0,
-        active_power_limits = (min = 0, max = 1),
-        reactive_power_limits = (min = -1, max = 1),
-        ramp_limits = nothing,
-        operation_cost = ThermalGenerationCost(nothing),
-        base_power = 100.0,
-        time_limits = nothing,
-        prime_mover_type = PrimeMovers.OT,
-        fuel = ThermalFuels.OTHER,
-        services = Device[],
-        dynamic_injector = nothing,
-        ext = Dict{String, Any}(),
-    )
-    add_component!(sys, g2)
+    g2 = _add_simple_thermal_standard!(sys, b2, p2, 0.1)
 
     reset_p() =
         for (c, p) in zip((s1, g1, g2), (ps, p1, p2))
@@ -839,9 +552,9 @@ end
         end
 
     gspf = Dict(
-        (Source, "source_1") => 1.0,
-        (ThermalStandard, "G1") => 0.0,
-        (ThermalStandard, "G2") => 0.0,
+        (Source, get_name(s1)) => 1.0,
+        (ThermalStandard, get_name(g1)) => 0.0,
+        (ThermalStandard, get_name(g2)) => 0.0,
     )
     pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
     solve_powerflow!(pf, sys)
@@ -850,9 +563,9 @@ end
     reset_p()
 
     gspf = Dict(
-        (Source, "source_1") => 0.0,
-        (ThermalStandard, "G1") => 0.5,
-        (ThermalStandard, "G2") => 0.5,
+        (Source, get_name(s1)) => 0.0,
+        (ThermalStandard, get_name(g1)) => 0.5,
+        (ThermalStandard, get_name(g2)) => 0.5,
     )
     pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
     solve_powerflow!(pf, sys)
@@ -865,7 +578,8 @@ end
     )
     reset_p()
 
-    gspf = Dict((ThermalStandard, "G1") => 0.0, (ThermalStandard, "G2") => 1.0)
+    gspf =
+        Dict((ThermalStandard, get_name(g1)) => 0.0, (ThermalStandard, get_name(g2)) => 1.0)
     pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
     solve_powerflow!(pf, sys)
     @test isapprox(get_active_power(s1), ps; atol = 1e-6, rtol = 0)
@@ -873,15 +587,15 @@ end
     @test isapprox(
         -get_active_power(g2),
         get_active_power(g1) + get_active_power(s1);
-        atol = 1e-3,
+        atol = 1e-3,  # losses don't allow lower tolerance
         rtol = 0,
     )
     reset_p()
 
     gspf = Dict(
-        (Source, "source_1") => 0.1,
-        (ThermalStandard, "G1") => 0.2,
-        (ThermalStandard, "G2") => 0.4,
+        (Source, get_name(s1)) => 0.1,
+        (ThermalStandard, get_name(g1)) => 0.2,
+        (ThermalStandard, get_name(g2)) => 0.4,
     )
     pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
     solve_powerflow!(pf, sys)
@@ -906,4 +620,192 @@ end
         rtol = 0,
     )
     reset_p()
+end
+
+@testset "AC PF DS with two connected components" for mode in (:same, :random),
+    gen_mode in (:gen, :source),
+    ACSolver in (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow)
+    # here we build two identical grids in one system
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 8, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 4, ACBusTypes.PV, 230, 1.1, 0.0)
+    b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.1, 0.0)
+
+    b4 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b5 = _add_simple_bus!(sys, 5, ACBusTypes.PV, 230, 1.1, 0.0)
+    b6 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+
+    s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
+    s2 = _add_simple_source!(sys, b4, 0.0, 0.0)
+
+    g1 = if gen_mode == :gen
+        _add_simple_thermal_standard!(sys, b2, 0.0, 0.0)
+    else
+        _add_simple_source!(sys, b2, 0.0, 0.0)
+    end
+    g2 = if gen_mode == :gen
+        _add_simple_thermal_standard!(sys, b5, 0.0, 0.0)
+    else
+        _add_simple_source!(sys, b5, 0.0, 0.0)
+    end
+
+    ld1 = _add_simple_load!(sys, b3, 6, 2)
+    ld2 = _add_simple_load!(sys, b6, 6, 2)
+
+    l1 = _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0)
+    l2 = _add_simple_line!(sys, b2, b3, 1e-3, 1e-3, 0.0)
+
+    l3 = _add_simple_line!(sys, b4, b5, 1e-3, 1e-3, 0.0)
+    l4 = _add_simple_line!(sys, b5, b6, 1e-3, 1e-3, 0.0)
+
+    devices = collect(get_components(StaticInjection, sys))
+
+    if mode == :same
+        factors = ones(Float64, length(devices))
+    elseif mode == :random
+        Random.seed!(0)
+        factors = abs.(randn(Float64, length(devices)))
+    else
+        error("Unknown mode: $mode")
+    end
+
+    generator_slack_participation_factors =
+        Dict((typeof(x), get_name(x)) => f for (x, f) in zip(devices, factors))
+
+    pf = ACPowerFlow(ACSolver;
+        generator_slack_participation_factors = generator_slack_participation_factors,
+    )
+
+    data = PowerFlowData(pf, sys; check_connectivity = false)
+    data_original_bus_power = copy(data.bus_activepower_injection[:, 1])
+    bus_numbers = get_bus_numbers(sys)
+    original_bus_power, original_gen_power = _system_generation_power(sys, bus_numbers)
+
+    solve_powerflow!(pf, sys; check_connectivity = false)
+
+    if mode == :same
+        @test isapprox(get_active_power(s1), get_active_power(g1), rtol = 0, atol = 1e-6)
+        @test isapprox(get_active_power(s2), get_active_power(g2), rtol = 0, atol = 1e-6)
+
+        @test isapprox(get_active_power(s1), get_active_power(s2), rtol = 0, atol = 1e-6)
+        @test isapprox(get_active_power(g1), get_active_power(g2), rtol = 0, atol = 1e-6)
+    end
+
+    # tol of 1e-3 due to losses
+    @test isapprox(
+        get_active_power(ld1),
+        get_active_power(s1) + get_active_power(g1),
+        rtol = 0,
+        atol = 1e-3,
+    )
+    @test isapprox(
+        get_active_power(ld2),
+        get_active_power(s2) + get_active_power(g2),
+        rtol = 0,
+        atol = 1e-3,
+    )
+
+    solve_powerflow!(data; pf = pf)
+
+    @test isapprox(
+        data.bus_activepower_injection[data.bus_lookup[get_number(b1)], 1],
+        get_active_power(s1),
+        rtol = 0,
+        atol = 1e-6,
+    )
+    @test isapprox(
+        data.bus_activepower_injection[data.bus_lookup[get_number(b2)], 1],
+        get_active_power(g1),
+        rtol = 0,
+        atol = 1e-6,
+    )
+    @test isapprox(
+        data.bus_activepower_injection[data.bus_lookup[get_number(b4)], 1],
+        get_active_power(s2),
+        rtol = 0,
+        atol = 1e-6,
+    )
+    @test isapprox(
+        data.bus_activepower_injection[data.bus_lookup[get_number(b5)], 1],
+        get_active_power(g2),
+        rtol = 0,
+        atol = 1e-6,
+    )
+
+    bus_slack_participation_factors = zeros(Float64, length(bus_numbers))
+    for bn in bus_numbers
+        bus = get_bus(sys, bn)
+        idx = data.bus_lookup[bn]
+        data.bus_type[idx, 1] == ACBusTypes.PQ && continue
+        bus_slack_participation_factors[idx] = data.bus_slack_participation_factors[idx, 1]
+    end
+
+    # needed for the test implementation when data.bus_slack_participation_factors is compared to bus_slack_participation_factors
+    generator_slack_participation_factors2 = Dict(
+        (typeof(x), get_name(x)) => f for
+        (x, f) in zip(devices, factors) if get_bustype(get_bus(x)) != ACBusTypes.PQ
+    )
+    pf2 = ACPowerFlow(ACSolver;
+        generator_slack_participation_factors = generator_slack_participation_factors2,
+    )
+
+    _check_ds_pf(
+        pf2,
+        sys,
+        bus_slack_participation_factors,
+        bus_numbers,
+        original_bus_power,
+        original_gen_power,
+        data_original_bus_power;
+        check_connectivity = false,
+    )
+end
+
+@testset "AC PF DS with several REF buses" for ACSolver in (
+    NewtonRaphsonACPowerFlow,
+    TrustRegionACPowerFlow,
+)
+    sys = System(100.0)
+
+    n = 4
+
+    buses_ref = [_add_simple_bus!(sys, i, ACBusTypes.REF, 230, 1.1, 0.0) for i in 1:n]
+    buses_pv =
+        [_add_simple_bus!(sys, i, ACBusTypes.PV, 230, 1.1, 0.0) for i in (n + 1):(2n)]
+    buses_pq =
+        [_add_simple_bus!(sys, i, ACBusTypes.PQ, 230, 1.1, 0.0) for i in (2n + 1):(3n)]
+
+    loads = [_add_simple_load!(sys, b, 6, 2) for b in buses_pq]
+    sources = [_add_simple_source!(sys, b, 0.0, 0.0) for b in buses_ref]
+    gens = [_add_simple_thermal_standard!(sys, b, 0.0, 0.0) for b in buses_pv]
+    all_buses = vcat(buses_ref, buses_pv, buses_pq)
+    lines = [
+        _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0) for
+        (b1, b2) in zip(all_buses[1:(end - 1)], all_buses[2:end])
+    ]
+    generator_slack_participation_factors =
+        Dict((typeof(x), get_name(x)) => 1.0 for x in vcat(sources, gens))
+
+    pf = ACPowerFlow(ACSolver;
+        generator_slack_participation_factors = generator_slack_participation_factors,
+    )
+    solve_powerflow!(pf, sys)
+
+    # equal slack participation
+    for (s, g) in zip(sources, gens)
+        @test isapprox(get_active_power(s), get_active_power(g), rtol = 0, atol = 1e-6)
+    end
+
+    for (g1, g2) in zip(gens[1:(end - 1)], gens[2:end])
+        @test isapprox(get_active_power(g1), get_active_power(g2), rtol = 0, atol = 1e-6)
+    end
+
+    # test that isolated islands raise error
+    b = _add_simple_bus!(sys, 100, ACBusTypes.PQ, 230, 1.1, 0.0)
+
+    @test_throws "No REF bus found in the subnetwork" solve_powerflow!(
+        pf,
+        sys;
+        check_connectivity = false,
+    )
 end

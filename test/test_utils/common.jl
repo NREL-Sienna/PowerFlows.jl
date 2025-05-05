@@ -87,12 +87,16 @@ function _system_generation_power(
     bus_numbers::Vector{Int},
 )
     bus_power = zeros(Float64, length(bus_numbers))
-    generators = collect(get_components(Generator, sys))
+    generators = collect(get_components(Union{Generator, Source}, sys))
     gen_power = zeros(Float64, length(generators))
     with_units_base(sys, UnitSystem.NATURAL_UNITS) do
         bus_power .= [
             isempty(g) ? 0 : sum([get_active_power(gg) for gg in g]) for g in [
-                get_components(x -> get_number(get_bus(x)) == i, Generator, sys)
+                get_components(
+                    x -> get_number(get_bus(x)) == i,
+                    Union{Generator, Source},
+                    sys,
+                )
                 for i in bus_numbers
             ]
         ]
@@ -106,48 +110,63 @@ function _reset_gen_power!(
     original_gen_power::Vector{Float64},
 )
     with_units_base(sys, UnitSystem.NATURAL_UNITS) do
-        for (g, og) in zip(get_components(Generator, sys), original_gen_power)
+        for (g, og) in
+            zip(get_components(Union{Generator, Source}, sys), original_gen_power)
             set_active_power!(g, og)
         end
     end
 end
 
 function _check_distributed_slack_consistency(
-    gen_power::Vector{Float64},
+    subnetworks::Dict{Int, Vector{Int}},
+    result_bus_power::Vector{Float64},
     slack_participation_factors::Vector{Float64},
     original_bus_power::Vector{Float64},
 )
-    slack_provided = gen_power .- original_bus_power
-    nnz = slack_participation_factors .!= 0.0
-    @test all(isapprox.(slack_provided[.!nnz], 0.0, atol = 1e-6, rtol = 0))
-    @test !any(isapprox.(slack_provided[nnz], 0.0, atol = 1e-6, rtol = 0))
-    @test isapprox(
-        slack_provided[nnz] ./ sum(slack_provided),
-        slack_participation_factors[nnz] ./ sum(slack_participation_factors);
-        atol = 1e-6,
-        rtol = 0,
-    )
+    for (_, subnetwork_buses) in subnetworks
+        subnetwork_factors = slack_participation_factors[subnetwork_buses]
+        slack_provided =
+            result_bus_power[subnetwork_buses] .- original_bus_power[subnetwork_buses]
+        nnz = subnetwork_factors .!= 0.0
+
+        @test all(isapprox.(slack_provided[.!nnz], 0.0, atol = 1e-6, rtol = 0))
+        @test !any(isapprox.(slack_provided[nnz], 0.0, atol = 1e-6, rtol = 0))
+        @test isapprox(
+            slack_provided[nnz] ./ sum(slack_provided),
+            subnetwork_factors[nnz] ./ sum(subnetwork_factors);
+            atol = 1e-6,
+            rtol = 0,
+        )
+    end
     return
 end
 
 function _check_ds_pf(
     pf::ACPowerFlow,
     sys::System,
-    slack_participation_factors::Vector{Float64},
+    bus_slack_participation_factors::Vector{Float64},
     bus_numbers::Vector{Int},
     original_bus_power::Vector{Float64},
     original_gen_power::Vector{Float64},
-    data_original_bus_power::Vector{Float64},
+    data_original_bus_power::Vector{Float64};
+    kwargs...,
 )
-    res = solve_powerflow(pf, sys)
+    res = solve_powerflow(pf, sys; kwargs...)
+
+    data = PowerFlowData(pf, sys; kwargs...)
+    subnetworks = PowerFlows._find_subnetworks_for_reference_buses(
+        data.power_network_matrix.data,
+        data.bus_type[:, 1],
+    )
 
     _check_distributed_slack_consistency(
+        subnetworks,
         res["bus_results"][:, :P_gen],
-        slack_participation_factors,
+        bus_slack_participation_factors,
         original_bus_power,
     )
 
-    solve_powerflow!(pf, sys)
+    solve_powerflow!(pf, sys; kwargs...)
     p_solve, _ = _system_generation_power(sys, bus_numbers)
 
     @test isapprox(p_solve, res["bus_results"][:, :P_gen]; atol = 1e-6, rtol = 0)
@@ -158,14 +177,170 @@ function _check_ds_pf(
     @test original_bus_power == p_bus_reset
     @test original_gen_power == p_gen_reset
 
-    data = PowerFlowData(pf, sys)
-    @test data.bus_slack_participation_factors[:, 1] == slack_participation_factors
+    @test data.bus_slack_participation_factors[:, 1] == bus_slack_participation_factors
     solve_powerflow!(data; pf = pf)
     # now check the slack power distribution logic
     _check_distributed_slack_consistency(
+        subnetworks,
         data.bus_activepower_injection[:, 1],
-        slack_participation_factors,
+        bus_slack_participation_factors,
         data_original_bus_power,
     )
     return
+end
+
+"""These functions are used to create simple components for the tests to have more compact code"""
+
+"""
+    _check_name(sys::System, name::String, component_type::DataType)
+    Check if the name is unique in the system. If not, append a number to the name.
+"""
+function _check_name(sys::System, name::String, component_type::DataType)
+    # Check if the name is unique
+    check = true
+    i = 1
+    while check
+        if has_component(sys, component_type, name)
+            i += 1
+            name = name * "_$i"
+        else
+            check = false
+        end
+    end
+    return name
+end
+
+"""    
+    _add_simple_bus!(sys::System, number::Int, bus_type::ACBusTypes, base_voltage::Number, voltage_magnitude::Float64=1.0, voltage_angle::Float64=0.0)
+    Simplified function to create and add a bus to the system with the given parameters.
+"""
+function _add_simple_bus!(
+    sys::System,
+    number::Int,
+    bus_type::ACBusTypes,
+    base_voltage::Number,
+    voltage_magnitude::Float64 = 1.0,
+    voltage_angle::Float64 = 0.0,
+)
+    bus = ACBus(;
+        number = number,
+        name = _check_name(sys, "bus_$number", ACBus),
+        bustype = bus_type,
+        angle = voltage_angle,
+        magnitude = voltage_magnitude,
+        voltage_limits = (0.0, 2.0),
+        base_voltage = Float64(base_voltage),
+    )
+    add_component!(sys, bus)
+    return bus
+end
+
+"""    
+    _add_simple_load!(sys::System, bus::ACBus, active_power::Number, reactive_power::Number)
+    Simplified function to create and add a load to the system with the given parameters.
+"""
+function _add_simple_load!(
+    sys::System,
+    bus::ACBus,
+    active_power::Number,
+    reactive_power::Number,
+)
+    load = PowerLoad(;
+        name = _check_name(sys, "load_$(get_number(bus))", PowerLoad),
+        available = true,
+        bus = bus,
+        active_power = Float64(active_power), # Per-unitized by device base_power
+        reactive_power = Float64(reactive_power), # Per-unitized by device base_power
+        base_power = 1.0, # MVA
+        max_active_power = 100.0, # 10 MW per-unitized by device base_power
+        max_reactive_power = 100.0,
+    )
+
+    add_component!(sys, load)
+    return load
+end
+
+"""    
+    _add_simple_source!(sys::System, bus::ACBus, active_power::Number=0.0, reactive_power::Number=0.0)
+    Simplified function to create and add a source to the system with the given parameters.
+"""
+function _add_simple_source!(
+    sys::System,
+    bus::ACBus,
+    active_power::Number = 0.0,
+    reactive_power::Number = 0.0,
+)
+    source = Source(;
+        name = _check_name(sys, "source_$(get_number(bus))", Source),
+        available = true,
+        bus = bus,
+        active_power = Float64(active_power),
+        reactive_power = Float64(reactive_power),
+        R_th = 1e-5,
+        X_th = 1e-5,
+    )
+    add_component!(sys, source)
+    return source
+end
+
+"""    
+    _add_simple_thermal_standard!(sys::System, bus::ACBus, active_power::Number=0.0, reactive_power::Number=0.0)
+    Simplified function to create and add a thermal standard generator to the system with the given parameters.
+"""
+function _add_simple_thermal_standard!(
+    sys::System,
+    bus::ACBus,
+    active_power::Number,
+    reactive_power::Number,
+)
+    gen = ThermalStandard(;
+        name = _check_name(sys, "thermal_standard_$(get_number(bus))", ThermalStandard),
+        available = true,
+        status = true,
+        bus = bus,
+        active_power = Float64(active_power),
+        reactive_power = Float64(reactive_power),
+        rating = 1.0,
+        active_power_limits = (min = 0, max = 1),
+        reactive_power_limits = (min = -1, max = 1),
+        ramp_limits = nothing,
+        operation_cost = ThermalGenerationCost(nothing),
+        base_power = 100.0,
+        time_limits = nothing,
+        prime_mover_type = PrimeMovers.OT,
+        fuel = ThermalFuels.OTHER,
+        services = Device[],
+        dynamic_injector = nothing,
+        ext = Dict{String, Any}(),
+    )
+    add_component!(sys, gen)
+    return gen
+end
+
+"""    
+    _add_simple_line!(sys::System, bus1::ACBus, bus2::ACBus, r::Float64=1e-3, x::Float64=1e-3, b::Float64=0.0)
+    Simplified function to create and add a line to the system with the given parameters.
+"""
+function _add_simple_line!(
+    sys::System,
+    bus1::ACBus,
+    bus2::ACBus,
+    r::Float64 = 1e-3,
+    x::Float64 = 1e-3,
+    b::Float64 = 0.0,
+)
+    line = Line(;
+        name = _check_name(sys, "line_$(get_number(bus1))_$(get_number(bus2))", Line),
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = Arc(; from = bus1, to = bus2),
+        r = r,
+        x = x,
+        b = (from = b / 2, to = b / 2),
+        rating = 1.0,
+        angle_limits = (min = -pi / 2, max = pi / 2),
+    )
+    add_component!(sys, line)
+    return line
 end
