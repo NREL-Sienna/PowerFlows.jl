@@ -232,8 +232,8 @@ function _power_redistribution_ref(
         part_factor = p_limits.max / sum_basepower
         p_frac = P_gen * part_factor
         p_set_point = clamp(p_frac, p_limits.min, p_limits.max)
-        if (p_frac >= p_limits.max + BOUNDS_TOLERANCE) ||
-           (p_frac <= p_limits.min - BOUNDS_TOLERANCE)
+        if (p_frac >= p_limits.max - BOUNDS_TOLERANCE) ||
+           (p_frac <= p_limits.min + BOUNDS_TOLERANCE)
             push!(units_at_limit, ix)
             @warn "Unit $(PSY.get_name(d)) set at the limit $(p_set_point). P_max = $(p_limits.max) P_min = $(p_limits.min)"
         end
@@ -260,8 +260,8 @@ function _power_redistribution_ref(
                 p_frac = p_residual * part_factor
                 current_p = PSY.get_active_power(d)
                 p_set_point = p_frac + current_p
-                if (p_set_point >= p_limits.max + BOUNDS_TOLERANCE) ||
-                   (p_set_point <= p_limits.min - BOUNDS_TOLERANCE)
+                if (p_set_point >= p_limits.max - BOUNDS_TOLERANCE) ||
+                   (p_set_point <= p_limits.min + BOUNDS_TOLERANCE)
                     push!(units_at_limit, ix)
                     @warn "Unit $(PSY.get_name(d)) set at the limit $(p_set_point). P_max = $(p_limits.max) P_min = $(p_limits.min)"
                 end
@@ -286,8 +286,8 @@ function _power_redistribution_ref(
             p_set_point = PSY.get_active_power(device) + p_residual
             PSY.set_active_power!(device, p_set_point)
             p_limits = get_active_power_limits_for_power_flow(device)
-            if (p_set_point >= p_limits.max + BOUNDS_TOLERANCE) ||
-               (p_set_point <= p_limits.min - BOUNDS_TOLERANCE)
+            if (p_set_point >= p_limits.max - BOUNDS_TOLERANCE) ||
+               (p_set_point <= p_limits.min + BOUNDS_TOLERANCE)
                 @error "Unit $(PSY.get_name(device)) P=$(p_set_point) above limits. P_max = $(p_limits.max) P_min = $(p_limits.min)"
             end
         end
@@ -367,8 +367,8 @@ function _reactive_power_redistribution_pv(
         q_frac = Q_gen * fraction
         q_set_point = clamp(q_frac, q_limits.min, q_limits.max)
 
-        if (q_frac >= q_limits.max + BOUNDS_TOLERANCE) ||
-           (q_frac <= q_limits.min - BOUNDS_TOLERANCE)
+        if (q_frac >= q_limits.max - BOUNDS_TOLERANCE) ||
+           (q_frac <= q_limits.min + BOUNDS_TOLERANCE)
             push!(units_at_limit, ix)
             @warn "Unit $(PSY.get_name(d)) set at the limit $(q_set_point). Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
         end
@@ -413,8 +413,8 @@ function _reactive_power_redistribution_pv(
                 q_set_point = clamp(q_frac + current_q, q_limits.min, q_limits.max)
                 # Assign new capacity based on the limits and the fraction
                 reallocated_q += q_set_point - current_q
-                if ((q_frac + current_q) >= q_limits.max + BOUNDS_TOLERANCE) ||
-                   ((q_frac + current_q) <= q_limits.min - BOUNDS_TOLERANCE)
+                if ((q_frac + current_q) >= q_limits.max - BOUNDS_TOLERANCE) ||
+                   ((q_frac + current_q) <= q_limits.min + BOUNDS_TOLERANCE)
                     push!(units_at_limit, ix)
                     @warn "Unit $(PSY.get_name(d)) set at the limit $(q_set_point). Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
                 end
@@ -442,8 +442,8 @@ function _reactive_power_redistribution_pv(
         q_set_point = PSY.get_reactive_power(device) + q_residual
         PSY.set_reactive_power!(device, q_set_point)
         q_limits = get_reactive_power_limits_for_power_flow(device)
-        if (q_set_point >= q_limits.max + BOUNDS_TOLERANCE) ||
-           (q_set_point <= q_limits.min - BOUNDS_TOLERANCE)
+        if (q_set_point >= q_limits.max - BOUNDS_TOLERANCE) ||
+           (q_set_point <= q_limits.min + BOUNDS_TOLERANCE)
             @error "Unit $(PSY.get_name(device)) Q=$(q_set_point) above limits. Q_max = $(q_limits.max) Q_min = $(q_limits.min)"
         end
     end
