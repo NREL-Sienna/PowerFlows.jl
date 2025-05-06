@@ -333,6 +333,10 @@ function _newton_powerflow(
     residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
+    if pf.calculate_initial_residual
+        get_initial_residual_p(data)[:, time_step] .= residual.Rv[1:2:end]
+        get_initial_residual_q(data)[:, time_step] .= residual.Rv[2:2:end]
+    end
     if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
        get_robust_power_flow(pf)
         improve_x0!(x0, data, time_step, residual)

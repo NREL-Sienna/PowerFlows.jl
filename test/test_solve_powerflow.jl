@@ -549,3 +549,18 @@ end
         atol = 1e-4,
     ))
 end
+
+@testset "Test initial residual" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
+    pf = ACPowerFlow(calculate_initial_residual = true)
+    data_test = PowerFlowData(pf, sys)
+    data_control = PowerFlowData(pf, sys)
+    x0 = PF.calculate_x0(data_control, 1)
+    residual = PF.ACPowerFlowResidual(data_control, 1)
+    residual(x0, 1)
+    expected_p, expected_q = residual.Rv[1:2:end], residual.Rv[2:2:end]
+    solve_powerflow!(data_test; pf = pf)
+
+    @test PF.get_initial_residual_p(data_test)[:, 1] == expected_p
+    @test PF.get_initial_residual_q(data_test)[:, 1] == expected_q
+end

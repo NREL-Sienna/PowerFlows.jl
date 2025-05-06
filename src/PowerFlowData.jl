@@ -105,6 +105,9 @@ struct PowerFlowData{
     converged::Vector{Bool}
     loss_factors::Union{Matrix{Float64}, Nothing}
     calculate_loss_factors::Bool
+    initial_residual_p::Union{Matrix{Float64}, Nothing}
+    initial_residual_q::Union{Matrix{Float64}, Nothing}
+    calculate_initial_residual::Bool
 end
 
 # aliases for specific type parameter combinations.
@@ -184,6 +187,8 @@ get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 supports_multi_period(::PowerFlowData) = true
 get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
+get_initial_residual_p(pfd::PowerFlowData) = pfd.initial_residual_p
+get_initial_residual_q(pfd::PowerFlowData) = pfd.initial_residual_q
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
@@ -290,6 +295,13 @@ function PowerFlowData(
     else
         loss_factors = nothing
     end
+    if pf.calculate_initial_residual
+        initial_residual_p = Matrix{Float64}(undef, (n_buses, length(timestep_names)))
+        initial_residual_q = Matrix{Float64}(undef, (n_buses, length(timestep_names)))
+    else
+        initial_residual_p = nothing
+        initial_residual_q = nothing
+    end
     if get_robust_power_flow(pf)
         aux_network_matrix = PNM.ABA_Matrix(sys)
     else
@@ -312,6 +324,9 @@ function PowerFlowData(
         converged,
         loss_factors,
         calculate_loss_factors,
+        initial_residual_p,
+        initial_residual_q,
+        pf.calculate_initial_residual
     )
 end
 
@@ -369,8 +384,6 @@ function PowerFlowData(
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
-    loss_factors = nothing
-    calculate_loss_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -384,8 +397,6 @@ function PowerFlowData(
         temp_bus_map,
         valid_ix,
         converged,
-        loss_factors,
-        calculate_loss_factors,
     )
 end
 
@@ -444,8 +455,6 @@ function PowerFlowData(
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
-    loss_factors = nothing
-    calculate_loss_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -459,8 +468,6 @@ function PowerFlowData(
         temp_bus_map,
         valid_ix,
         converged,
-        loss_factors,
-        calculate_loss_factors,
     )
 end
 
@@ -518,8 +525,6 @@ function PowerFlowData(
     )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
-    loss_factors = nothing
-    calculate_loss_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -533,8 +538,6 @@ function PowerFlowData(
         temp_bus_map,
         valid_ix,
         converged,
-        loss_factors,
-        calculate_loss_factors,
     )
 end
 
