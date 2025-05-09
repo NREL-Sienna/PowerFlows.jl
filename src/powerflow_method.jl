@@ -143,9 +143,9 @@ function _dogleg!(Δx_proposed::Vector{Float64},
             Δx_nr .-= Δx_cauchy
             Δx_diff = Δx_nr
 
-            b = wdot(d, Δx_cauchy, d, Δx_diff)
-            a = wnorm(d, Δx_diff)^2
-            tau = (-b + sqrt(b^2 - 4a * (wnorm(d, Δx_cauchy)^2 - delta^2))) / (2a)
+            b = dot(Δx_cauchy, Δx_diff)
+            a = norm(Δx_diff)^2
+            tau = (-b + sqrt(b^2 - 4a * (norm(Δx_cauchy)^2 - delta^2))) / (2a)
             Δx_cauchy .+= tau .* Δx_diff
             copyto!(Δx_proposed, Δx_cauchy) # update Δx_proposed: dogleg case.
         end
@@ -201,6 +201,9 @@ function _trust_region_step(time_step::Int,
     if rho > eta
         # Successful iteration
         stateVector.r .= residual.Rv
+        residualSize = dot(residual.Rv, residual.Rv)
+        linf = norm(residual.Rv, Inf)
+        @debug "sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed))), angle $(siground(theta))"
         # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
         J(time_step)
         if autoscale
@@ -355,7 +358,11 @@ function _run_powerflow_method(time_step::Int,
     end
 
     delta::Float64 = norm(stateVector.x) > 0 ? factor * norm(stateVector.x) : factor
-    i, converged = 1, false
+    i, converged = 0, false
+    residualSize = dot(residual.Rv, residual.Rv)
+    linf = norm(residual.Rv, Inf)
+    @debug "initially: sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ $(siground(delta))"
+
     bus_types = @view get_bus_type(J.data)[:, time_step]
     while i < maxIterations && !converged
         delta = _trust_region_step(

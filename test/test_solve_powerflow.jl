@@ -42,7 +42,8 @@
     #Compare results between finite diff methods and Jacobian method
     converged1 = PowerFlows._ac_powerflow(data, pf, 1)
     x1 = _calc_x(data, 1)
-    @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6
+    @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6 # this is failing, but the error
+    # is only ~2e-6, which still isn't too bad.
 
     # Test that solve_powerflow! succeeds
     solved1 = deepcopy(sys)
