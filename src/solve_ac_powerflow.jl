@@ -163,14 +163,14 @@ function solve_powerflow!(
         converged = _ac_powerflow(data, pf, time_step; kwargs...)
         ts_converged[time_step] = converged
 
-        if !converged  # set values to NaN for not converged time steps
+        #=if !converged  # set values to NaN for not converged time steps
             data.bus_activepower_injection[:, time_step] .= NaN
             data.bus_activepower_withdrawals[:, time_step] .= NaN
             data.bus_reactivepower_injection[:, time_step] .= NaN
             data.bus_reactivepower_withdrawals[:, time_step] .= NaN
             data.bus_magnitude[:, time_step] .= NaN
             data.bus_angles[:, time_step] .= NaN
-        end
+        end=#
     end
 
     # write branch flows

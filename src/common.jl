@@ -155,7 +155,7 @@ function my_mul_mt(
     y = zeros(length(A.axes[1]))
     for i in 1:length(A.axes[1])
         name_ = A.axes[1][i]
-        y[i] = LinearAlgebra.dot(A[name_, :], x)
+        y[i] = dot(A[name_, :], x)
     end
     return y
 end
@@ -319,3 +319,6 @@ function make_powerflowdata(
         calculate_loss_factors,
     )
 end
+
+"""For pretty printing floats in debugging messages."""
+siground(x::Float64) = round(x; sigdigits = 3)
