@@ -30,7 +30,7 @@ function update_state!(x::Vector{Float64},
     time_step::Int64,
 )
     # I really only need access to 3 classes of fields of data:
-    # bus types, bus power contributions [inj/widthdrawal], and bus voltages
+    # bus types, bus power contributions [inj/withdrawal], and bus voltages
     @assert length(x) == 2 * length(data.bus_type[:, 1])
     state_variable_count = 1
     for (ix, b) in enumerate(data.bus_type[:, time_step])
@@ -65,7 +65,7 @@ function update_data!(data::ACPowerFlowData,
     time_step::Int64,
 )
     # same as above. I really only need access to 3 classes of fields of data:
-    # bus types, bus power contributions [inj/widthdrawal], and bus voltage [angle/mag]
+    # bus types, bus power contributions [inj/withdrawal], and bus voltage [angle/mag]
     bus_types = view(data.bus_type, :, time_step)
     for (ix, bt) in enumerate(bus_types)
         # PERF: try indexing outside of the call and passing references, instead of indexing
