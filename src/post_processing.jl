@@ -538,9 +538,9 @@ results.
 
 # Arguments:
 - `data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}`:
-        PowerFlowData strcuture containing power flows and bus angles.
+        PowerFlowData structure containing power flows and bus angles.
 - `sys::PSY.System`:
-        container storing the systam information.
+        container storing the system information.
 """
 function write_results(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
@@ -596,9 +596,9 @@ dictionary will therefore feature just one key linked to one DataFrame.
 - `::ACPowerFlow`:
         use ACPowerFlow() storing AC power flow results.
 - `sys::PSY.System`:
-        container storing the systam information.
+        container storing the system information.
 - `result::Vector{Float64}`:
-        vector containing the reults for one single time-period.
+        vector containing the results for one single time-period.
 """
 function write_results(
     ::ACPowerFlow{<:ACPowerFlowSolverType},

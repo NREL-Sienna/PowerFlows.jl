@@ -83,7 +83,7 @@ function solve_powerflow(
     system::PSY.System;
     kwargs...,
 )
-    # df_results must be defined in the oueter scope first to be visible for return
+    # df_results must be defined in the outer scope first to be visible for return
     df_results = Dict{String, DataFrames.DataFrame}()
     converged = false
     time_step = 1
@@ -116,7 +116,7 @@ Solve the multiperiod AC power flow problem for the given power flow data.
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- `data::ACPowerFlowData`: The power flow data containing netwthe grid information and initial conditions.
+- `data::ACPowerFlowData`: The power flow data containing the grid information and initial conditions.
 - `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver type. Defaults to `NewtonRaphsonACPowerFlow`.
 - `kwargs...`: Additional keyword arguments.
 
