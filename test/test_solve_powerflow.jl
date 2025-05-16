@@ -761,6 +761,7 @@ end
     )
 end
 
+# FIXME this test fails.
 @testset "AC PF DS with several REF buses" for ACSolver in (
     NewtonRaphsonACPowerFlow,
     TrustRegionACPowerFlow,
