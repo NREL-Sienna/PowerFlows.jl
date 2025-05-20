@@ -107,6 +107,56 @@ struct PowerFlowData{
     calculate_loss_factors::Bool
 end
 
+# aliases for specific type parameter combinations.
+const ACPowerFlowData = PowerFlowData{
+    PNM.Ybus{
+        Tuple{Vector{Int64}, Vector{Int64}},
+        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
+    },
+    <:Union{
+        PNM.ABA_Matrix{Tuple{Vector{Int64}, Vector{Int64}},
+            Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
+            Nothing},
+        Nothing,
+    },
+}
+
+const PTDFPowerFlowData = PowerFlowData{
+    PNM.PTDF{
+        Tuple{Vector{Int64}, Vector{String}},
+        Tuple{Dict{Int64, Int64}, Dict{String, Int64}},
+        Matrix{Float64},
+    },
+    PNM.ABA_Matrix{
+        Tuple{Vector{Int64}, Vector{Int64}},
+        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
+        PNM.KLU.KLUFactorization{Float64, Int64},
+    },
+}
+
+const vPTDFPowerFlowData = PowerFlowData{
+    PNM.VirtualPTDF{
+        Tuple{Vector{String}, Vector{Int64}},
+        Tuple{Dict{String, Int64}, Dict{Int64, Int64}},
+    },
+    PNM.ABA_Matrix{
+        Tuple{Vector{Int64}, Vector{Int64}},
+        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
+        PNM.KLU.KLUFactorization{Float64, Int64},
+    },
+}
+
+const ABAPowerFlowData = PowerFlowData{
+    PNM.ABA_Matrix{
+        Tuple{Vector{Int64}, Vector{Int64}},
+        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
+        PNM.KLU.KLUFactorization{Float64, Int64},
+    },
+    PNM.BA_Matrix{
+        Tuple{Vector{Int64}, Vector{String}},
+        Tuple{Dict{Int64, Int64}, Dict{String, Int64}}},
+}
+
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
 get_branch_lookup(pfd::PowerFlowData) = pfd.branch_lookup
 get_bus_activepower_injection(pfd::PowerFlowData) = pfd.bus_activepower_injection
@@ -220,6 +270,7 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = Dict{String, Int}()
+    sizehint!(branch_lookup, n_branches)
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
     )
@@ -231,15 +282,19 @@ function PowerFlowData(
 
     valid_ix = setdiff(1:n_buses, ref_bus_positions)
     neighbors = _calculate_neighbors(power_network_matrix)
-    aux_network_matrix = nothing
     converged = fill(false, time_steps)
+    # PERF: type instability.
     # loss factors order matches the order of buses in the grid model, and is calculated for all buses including ref buses (equals 0 for ref buses)
     if calculate_loss_factors
         loss_factors = Matrix{Float64}(undef, (n_buses, length(timestep_names)))
     else
         loss_factors = nothing
     end
-
+    if get_robust_power_flow(pf)
+        aux_network_matrix = PNM.ABA_Matrix(sys)
+    else
+        aux_network_matrix = nothing
+    end
     return make_powerflowdata(
         sys,
         time_steps,
