@@ -138,17 +138,17 @@ Bus 3 - Magnitude 1.01 - Angle (rad) -0.22200588085367873
 Bus 1 - Magnitude 1.06 - Angle (rad) 0.0
 Bus 5 - Magnitude 1.02 - Angle (rad) -0.15323990832510212</code></pre><p><a href="../../api/public/#PowerFlows.solve_powerflow!-Tuple{ACPowerFlow, System}"><code>solve_powerflow!</code></a> return true or false to signal the successful result of the power flow. This enables the integration of a power flow into functions and use the return as check.</p><pre><code class="language-julia hljs">solve_powerflow!(pf, system_data; method = :newton)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">true</code></pre><p>After running the power flow command this are the values of the voltages:</p><pre><code class="language-julia hljs">for b in get_components(Bus, system_data)
     println(&quot;$(get_name(b)) - Magnitude $(get_magnitude(b)) - Angle (rad) $(get_angle(b))&quot;)
-end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Bus 6 - Magnitude 1.07 - Angle (rad) -0.2516366411330645
-Bus 9 - Magnitude 1.0337109552890464 - Angle (rad) -0.25887201004568505
-Bus 12 - Magnitude 1.0535012072934002 - Angle (rad) -0.26648433793563975
-Bus 11 - Magnitude 1.0474837090281968 - Angle (rad) -0.2591425488889482
-Bus 7 - Magnitude 1.050343876104934 - Angle (rad) -0.23128945395825593
-Bus 4 - Magnitude 1.014232467422514 - Angle (rad) -0.17900878100582823
-Bus 13 - Magnitude 1.0471069158440356 - Angle (rad) -0.267176902466206
-Bus 2 - Magnitude 1.045 - Angle (rad) -0.08704571860678867
-Bus 14 - Magnitude 1.0213119628726428 - Angle (rad) -0.2803812119374239
-Bus 8 - Magnitude 1.09 - Angle (rad) -0.23128945395825587
-Bus 10 - Magnitude 1.0325606430799599 - Angle (rad) -0.26251860149671874
-Bus 3 - Magnitude 1.01 - Angle (rad) -0.22239752522709733
+end</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Bus 6 - Magnitude 1.07 - Angle (rad) -0.2516366411330646
+Bus 9 - Magnitude 1.0337109552890458 - Angle (rad) -0.258872010045685
+Bus 12 - Magnitude 1.0535012072934002 - Angle (rad) -0.2664843379356399
+Bus 11 - Magnitude 1.0474837090281965 - Angle (rad) -0.2591425488889482
+Bus 7 - Magnitude 1.0503438761049337 - Angle (rad) -0.23128945395825587
+Bus 4 - Magnitude 1.014232467422514 - Angle (rad) -0.1790087810058283
+Bus 13 - Magnitude 1.0471069158440356 - Angle (rad) -0.26717690246620607
+Bus 2 - Magnitude 1.045 - Angle (rad) -0.08704571860678871
+Bus 14 - Magnitude 1.0213119628726424 - Angle (rad) -0.2803812119374238
+Bus 8 - Magnitude 1.09 - Angle (rad) -0.23128945395825584
+Bus 10 - Magnitude 1.0325606430799592 - Angle (rad) -0.2625186014967187
+Bus 3 - Magnitude 1.01 - Angle (rad) -0.2223975252270974
 Bus 1 - Magnitude 1.06 - Angle (rad) 0.0
-Bus 5 - Magnitude 1.0172382900002028 - Angle (rad) -0.1529719737698667</code></pre></article><nav class="docs-footer"><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.10.1 on <span class="colophon-date" title="Tuesday 8 April 2025 15:33">Tuesday 8 April 2025</span>. Using Julia version 1.11.4.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+Bus 5 - Magnitude 1.0172382900002028 - Angle (rad) -0.15297197376986674</code></pre></article><nav class="docs-footer"><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.11.4 on <span class="colophon-date" title="Tuesday 20 May 2025 23:34">Tuesday 20 May 2025</span>. Using Julia version 1.11.5.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
