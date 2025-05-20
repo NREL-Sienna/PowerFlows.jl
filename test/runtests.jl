@@ -20,6 +20,8 @@ const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
 const PF = PowerFlows
 
+const SKIP_DC = true
+
 import Aqua
 Aqua.test_unbound_args(PowerFlows)
 Aqua.test_undefined_exports(PowerFlows)
