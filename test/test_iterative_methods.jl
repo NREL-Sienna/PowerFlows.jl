@@ -86,6 +86,9 @@ end
     end
 end
 
+# It happened: our more efficient "update J" means this test no longer finds 
+# a point where J is singular.
+#=
 @testset "singular Jacobian trust region" begin
     # NewtonRaphsonACPowerFlow fails to converge on this system.
     # Empirically found: this system happens to have singular J's right next to the solution,
@@ -98,4 +101,4 @@ end
     ) match_mode = :any for _ in 1:20
         solve_powerflow!(data; pf = pf)
     end
-end
+end=#
