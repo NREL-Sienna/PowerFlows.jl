@@ -281,153 +281,105 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
     return Jv0
 end
 
-function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
-    Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
-    Vm::AbstractArray{Float64},
-    θ::AbstractArray{Float64},
-    bus_from::Int,
-    bus_to::Int,
-    row_from_p::Int,
-    row_from_q::Int,
-    col_to_vm::Int,
-    col_to_va::Int,
-    bus_from_neighbors::Set{Int},
+function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Y_from_to::ComplexF64,
+    Vm_from::Float64,
+    Vm_to::Float64,
+    θ_from_to::Float64,
+    ::Int,
+    ::Int,
+    ::Int,
+    ::Int,
+    ∂P∂θ_from::Base.RefValue{Float64},
+    ∂Q∂θ_from::Base.RefValue{Float64},
+    ∂P∂V_from::Base.RefValue{Float64},
+    ∂Q∂V_from::Base.RefValue{Float64},
     ::Val{PSY.ACBusTypes.REF})
     # State variables are Active and Reactive Power Generated
     # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - x[2*i-1]
     # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
     # x does not appear in p_flow and q_flow
-    if bus_from == bus_to
-        Jv[row_from_p, col_to_vm] = -1.0
-        Jv[row_from_q, col_to_va] = -1.0
-    end
+    g_ij, b_ij = real(Y_from_to), imag(Y_from_to)
+    # still need to do diagonal terms: those are based off
+    # the bus type of from_bus, when we're dispatching on bustype of to_bus.
+    ∂P∂θ_from[] -= Vm_from * Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
+    ∂Q∂θ_from[] -= Vm_from * Vm_to * (-g_ij * cos(θ_from_to) - b_ij * sin(θ_from_to))
+    ∂P∂V_from[] += Vm_to * (g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to))
+    ∂Q∂V_from[] += Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
     return
 end
 
 function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
-    Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
-    Vm::AbstractArray{Float64},
-    θ::AbstractArray{Float64},
-    bus_from::Int,
-    bus_to::Int,
+    Y_from_to::ComplexF64,
+    Vm_from::Float64,
+    Vm_to::Float64,
+    θ_from_to::Float64,
     row_from_p::Int,
     row_from_q::Int,
-    col_to_vm::Int,
+    ::Int,
     col_to_va::Int,
-    bus_from_neighbors::Set{Int},
-    ::Val{PSY.ACBusTypes.PV})
+    ∂P∂θ_from::Base.RefValue{Float64},
+    ∂Q∂θ_from::Base.RefValue{Float64},
+    ∂P∂V_from::Base.RefValue{Float64},
+    ∂Q∂V_from::Base.RefValue{Float64},
+    ::Val{PSY.ACBusTypes.PV},
+)
     # State variables are Reactive Power Generated and Voltage Angle
     # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - p_gen[i]
     # F[2*i] := q[i] = q_flow[i] + q_load[i] - x[2*i]
     # x[2*i] (associated with q_gen) does not appear in q_flow
     # x[2*i] (associated with q_gen) does not appear in the active power balance
-    if bus_from == bus_to
-        # Jac: Reactive PF against local active power
-        Jv[row_from_q, col_to_vm] = -1.0
-        # Jac: Active PF against same Angle: θ[bus_from] =  θ[bus_to]
-        Jv[row_from_p, col_to_va] =
-            Vm[bus_from] * sum(
-                Vm[k] * (
-                    real(Yb[bus_from, k]) * -sin(θ[bus_from] - θ[k]) +
-                    imag(Yb[bus_from, k]) * cos(θ[bus_from] - θ[k])
-                ) for k in bus_from_neighbors if k != bus_from
-            )
-        # Jac: Reactive PF against same Angle: θ[bus_from] = θ[bus_to]
-        Jv[row_from_q, col_to_va] =
-            Vm[bus_from] * sum(
-                Vm[k] * (
-                    real(Yb[bus_from, k]) * cos(θ[bus_from] - θ[k]) -
-                    imag(Yb[bus_from, k]) * -sin(θ[bus_from] - θ[k])
-                ) for k in bus_from_neighbors if k != bus_from
-            )
-    else
-        g_ij = real(Yb[bus_from, bus_to])
-        b_ij = imag(Yb[bus_from, bus_to])
-        # Jac: Active PF against other angles θ[bus_to]
-        Jv[row_from_p, col_to_va] =
-            Vm[bus_from] *
-            Vm[bus_to] *
-            (g_ij * sin(θ[bus_from] - θ[bus_to]) + b_ij * -cos(θ[bus_from] - θ[bus_to]))
-        # Jac: Reactive PF against other angles θ[bus_to]
-        Jv[row_from_q, col_to_va] =
-            Vm[bus_from] *
-            Vm[bus_to] *
-            (g_ij * -cos(θ[bus_from] - θ[bus_to]) - b_ij * sin(θ[bus_from] - θ[bus_to]))
-    end
+    g_ij, b_ij = real(Y_from_to), imag(Y_from_to)
+    # Jac: Active PF against other angles θ[bus_to]
+    p_va_common_term = Vm_from * Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
+    Jv[row_from_p, col_to_va] = p_va_common_term
+    ∂P∂θ_from[] -= p_va_common_term
+    # Jac: Reactive PF w/r to different angle θ[bus_to]
+    q_va_common_term = Vm_from * Vm_to * (-g_ij * cos(θ_from_to) - b_ij * sin(θ_from_to))
+    Jv[row_from_q, col_to_va] = q_va_common_term
+    ∂Q∂θ_from[] -= q_va_common_term
+
+    # still need to do all diagonal terms: those are based off
+    # the bus type of from_bus, when we're dispatching on bustype of to_bus.
+    ∂P∂V_from[] += Vm_to * (g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to))
+    ∂Q∂V_from[] += Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
     return
 end
 
 function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
-    Yb::SparseArrays.SparseMatrixCSC{ComplexF64, Int},
-    Vm::AbstractArray{Float64},
-    θ::AbstractArray{Float64},
-    bus_from::Int,
-    bus_to::Int,
+    Y_from_to::ComplexF64,
+    Vm_from::Float64,
+    Vm_to::Float64,
+    θ_from_to::Float64,
     row_from_p::Int,
     row_from_q::Int,
     col_to_vm::Int,
     col_to_va::Int,
-    bus_neighbors::Set{Int},
-    ::Val{PSY.ACBusTypes.PQ})
+    ∂P∂θ_from::Base.RefValue{Float64},
+    ∂Q∂θ_from::Base.RefValue{Float64},
+    ∂P∂V_from::Base.RefValue{Float64},
+    ∂Q∂V_from::Base.RefValue{Float64},
+    ::Val{PSY.ACBusTypes.PQ},
+)
     # State variables are Voltage Magnitude and Voltage Angle
     # both state variables appear in both outputs.
-    if bus_from == bus_to
-        # Jac: Active PF against same voltage magnitude Vm[bus_from]
-        Jv[row_from_p, col_to_vm] =
-            2 * real(Yb[bus_from, bus_to]) * Vm[bus_from] + sum(
-                Vm[k] * (
-                    real(Yb[bus_from, k]) * cos(θ[bus_from] - θ[k]) +
-                    imag(Yb[bus_from, k]) * sin(θ[bus_from] - θ[k])
-                ) for k in bus_neighbors if k != bus_from
-            )
-        # Jac: Active PF against same angle θ[bus_from]
-        Jv[row_from_p, col_to_va] =
-            Vm[bus_from] * sum(
-                Vm[k] * (
-                    real(Yb[bus_from, k]) * -sin(θ[bus_from] - θ[k]) +
-                    imag(Yb[bus_from, k]) * cos(θ[bus_from] - θ[k])
-                ) for k in bus_neighbors if k != bus_from
-            )
-
-        # Jac: Reactive PF against same voltage magnitude Vm[bus_from]
-        Jv[row_from_q, col_to_vm] =
-            -2 * imag(Yb[bus_from, bus_to]) * Vm[bus_from] + sum(
-                Vm[k] * (
-                    real(Yb[bus_from, k]) * sin(θ[bus_from] - θ[k]) -
-                    imag(Yb[bus_from, k]) * cos(θ[bus_from] - θ[k])
-                ) for k in bus_neighbors if k != bus_from
-            )
-        # Jac: Reactive PF against same angle θ[bus_from]
-        Jv[row_from_q, col_to_va] =
-            Vm[bus_from] * sum(
-                Vm[k] * (
-                    real(Yb[bus_from, k]) * cos(θ[bus_from] - θ[k]) -
-                    imag(Yb[bus_from, k]) * -sin(θ[bus_from] - θ[k])
-                ) for k in bus_neighbors if k != bus_from
-            )
-    else
-        g_ij = real(Yb[bus_from, bus_to])
-        b_ij = imag(Yb[bus_from, bus_to])
-        # Jac: Active PF w/r to different voltage magnitude Vm[bus_to]
-        Jv[row_from_p, col_to_vm] =
-            Vm[bus_from] *
-            (g_ij * cos(θ[bus_from] - θ[bus_to]) + b_ij * sin(θ[bus_from] - θ[bus_to]))
-        # Jac: Active PF w/r to different angle θ[bus_to]
-        Jv[row_from_p, col_to_va] =
-            Vm[bus_from] *
-            Vm[bus_to] *
-            (g_ij * sin(θ[bus_from] - θ[bus_to]) + b_ij * -cos(θ[bus_from] - θ[bus_to]))
-
-        # Jac: Reactive PF w/r to different voltage magnitude Vm[bus_to]
-        Jv[row_from_q, col_to_vm] =
-            Vm[bus_from] *
-            (g_ij * sin(θ[bus_from] - θ[bus_to]) - b_ij * cos(θ[bus_from] - θ[bus_to]))
-        # Jac: Reactive PF w/r to different angle θ[bus_to]
-        Jv[row_from_q, col_to_va] =
-            Vm[bus_from] *
-            Vm[bus_to] *
-            (g_ij * -cos(θ[bus_from] - θ[bus_to]) - b_ij * sin(θ[bus_from] - θ[bus_to]))
-    end
+    g_ij, b_ij = real(Y_from_to), imag(Y_from_to)
+    # Active PF w/r to different voltage magnitude Vm[bus_to]
+    p_vm_common_term = g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to)
+    Jv[row_from_p, col_to_vm] = Vm_from * p_vm_common_term
+    ∂P∂V_from[] += Vm_to * p_vm_common_term
+    # Active PF w/r to different angle θ[bus_to]
+    p_va_common_term = Vm_from * Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
+    Jv[row_from_p, col_to_va] = p_va_common_term
+    ∂P∂θ_from[] -= p_va_common_term
+    # Reactive PF w/r to different voltage magnitude Vm[bus_to]
+    q_vm_common_term = g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to)
+    Jv[row_from_q, col_to_vm] = Vm_from * q_vm_common_term
+    ∂Q∂V_from[] += Vm_to * q_vm_common_term
+    # Jac: Reactive PF w/r to different angle θ[bus_to]
+    q_va_common_term = Vm_from * Vm_to * (-g_ij * cos(θ_from_to) - b_ij * sin(θ_from_to))
+    Jv[row_from_q, col_to_va] = q_va_common_term
+    ∂Q∂θ_from[] -= q_va_common_term
     return
 end
 
@@ -441,19 +393,91 @@ function _update_jacobian_matrix_values!(
     Vm = view(data.bus_magnitude, :, time_step)
     θ = view(data.bus_angles, :, time_step)
     num_buses = first(size(data.bus_type))
+
     for bus_from in 1:num_buses
         row_from_p = 2 * bus_from - 1
         row_from_q = 2 * bus_from
 
+        # the diagonal terms: e.g. ∂P_from/∂θ_from
+        ∂P∂θ_from = Base.RefValue{Float64}(0.0)
+        ∂Q∂θ_from = Base.RefValue{Float64}(0.0)
+        ∂P∂V_from = Base.RefValue{Float64}(0.0)
+        ∂Q∂V_from = Base.RefValue{Float64}(0.0)
+        Vm_from = Vm[bus_from]
         for bus_to in data.neighbors[bus_from]
-            col_to_vm = 2 * bus_to - 1
-            col_to_va = 2 * bus_to
-            bus_type = data.bus_type[bus_to, time_step]
-            _set_entries_for_neighbor(Jv, Yb, Vm, θ,
-                bus_from, bus_to,
-                row_from_p, row_from_q,
-                col_to_vm, col_to_va,
-                data.neighbors[bus_from], Val(bus_type))
+            if bus_to != bus_from
+                col_to_vm = 2 * bus_to - 1
+                col_to_va = 2 * bus_to
+                bus_type = data.bus_type[bus_to, time_step]
+                θ_from_to = θ[bus_from] - θ[bus_to]
+                Vm_to = Vm[bus_to]
+                Y_from_to = Yb[bus_from, bus_to]
+                # 3 case if-else with Val(constant) is faster than 1 case with Val(bus_type)
+                if bus_type == PSY.ACBusTypes.PQ
+                    _set_entries_for_neighbor(Jv,
+                        Y_from_to,
+                        Vm_from,
+                        Vm_to,
+                        θ_from_to,
+                        row_from_p,
+                        row_from_q,
+                        col_to_vm,
+                        col_to_va,
+                        ∂P∂θ_from,
+                        ∂Q∂θ_from,
+                        ∂P∂V_from,
+                        ∂Q∂V_from,
+                        Val(PSY.ACBusTypes.PQ))
+                elseif bus_type == PSY.ACBusTypes.PV
+                    _set_entries_for_neighbor(Jv,
+                        Y_from_to,
+                        Vm_from,
+                        Vm_to,
+                        θ_from_to,
+                        row_from_p,
+                        row_from_q,
+                        col_to_vm,
+                        col_to_va,
+                        ∂P∂θ_from,
+                        ∂Q∂θ_from,
+                        ∂P∂V_from,
+                        ∂Q∂V_from,
+                        Val(PSY.ACBusTypes.PV))
+                elseif bus_type == PSY.ACBusTypes.REF
+                    _set_entries_for_neighbor(Jv,
+                        Y_from_to,
+                        Vm_from,
+                        Vm_to,
+                        θ_from_to,
+                        row_from_p,
+                        row_from_q,
+                        col_to_vm,
+                        col_to_va,
+                        ∂P∂θ_from,
+                        ∂Q∂θ_from,
+                        ∂P∂V_from,
+                        ∂Q∂V_from,
+                        Val(PSY.ACBusTypes.REF))
+                end
+            end
+        end
+        col_from_vm = 2 * bus_from - 1
+        col_from_va = 2 * bus_from
+        # set entries in diagonal blocks
+        if data.bus_type[bus_from, time_step] == PSY.ACBusTypes.PQ
+            Jv[row_from_p, col_from_va] = ∂P∂θ_from[]
+            Jv[row_from_q, col_from_va] = ∂Q∂θ_from[]
+            ∂P∂V_from[] += 2 * real(Yb[bus_from, bus_from]) * Vm[bus_from]
+            ∂Q∂V_from[] -= 2 * imag(Yb[bus_from, bus_from]) * Vm[bus_from]
+            Jv[row_from_p, col_from_vm] = ∂P∂V_from[]
+            Jv[row_from_q, col_from_vm] = ∂Q∂V_from[]
+        elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.PV
+            Jv[row_from_q, col_from_vm] = -1.0
+            Jv[row_from_p, col_from_va] = ∂P∂θ_from[]
+            Jv[row_from_q, col_from_va] = ∂Q∂θ_from[]
+        elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.REF
+            Jv[row_from_p, col_from_vm] = -1.0
+            Jv[row_from_q, col_from_va] = -1.0
         end
     end
     return
