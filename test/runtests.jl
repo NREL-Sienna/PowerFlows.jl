@@ -13,6 +13,7 @@ using DataStructures
 import SparseArrays
 import SparseArrays: SparseMatrixCSC, sparse, sprandn, sprand
 import Random
+import PROPACK
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder

@@ -497,3 +497,148 @@ function calculate_loss_factors(
     data.loss_factors[pvpq_mask, time_step] .= lf[idx]
     data.loss_factors[ref_mask, time_step] .= 1.0
 end
+
+"""
+    calculate_voltage_stability_factors(data::ACPowerFlowData, J::ACPowerFlowJacobian, time_step::Integer)
+
+Calculate and store the voltage stability factors in the `voltage_stability_factors` matrix of the `ACPowerFlowData` structure for a given time step.
+The voltage stability factors are computed using the Jacobian matrix `J` in block format after a converged power flow calculation. 
+The results are stored in the `voltage_stability_factors` matrix in the `data` instance.
+The factor for the grid as a whole (σ) is stored in the position of the REF bus.
+The values of the singular vector `v` indicate the sensitivity of the buses and are stored in the positions of the PQ buses.
+The values of `v` for PV buses are set to zero. 
+The function uses the method described in the following publication:
+
+    P.-A. Lof, T. Smed, G. Andersson, and D. J. Hill, "Fast calculation of a voltage stability index," in IEEE Transactions on Power Systems, vol. 7, no. 1, pp. 54-64, Feb. 1992, doi: 10.1109/59.141687.
+
+# Arguments
+- `data::ACPowerFlowData`: The instance containing the grid model data.
+- `J::ACPowerFlowJacobian`: The Jacobian matrix cache.
+- `time_step::Integer`: The calculated time step.
+"""
+function calculate_voltage_stability_factors(
+    data::ACPowerFlowData,
+    J::ACPowerFlowJacobian,
+    time_step::Integer,
+)
+    ref, pv, pq = PowerFlows.bus_type_idx(data, time_step)
+    pvpq = [pv; pq]
+    npvpq = length(pvpq)
+    rows, cols = PowerFlows.block_J_indices(pvpq, pq)
+    σ, u, v = PowerFlows.find_sigma_uv(J.Jv[rows, cols], npvpq)
+    data.voltage_stability_factors[ref, time_step] .= 0.0
+    data.voltage_stability_factors[first(ref), time_step] = σ
+    data.voltage_stability_factors[pv, time_step] .= 0.0
+    data.voltage_stability_factors[pq, time_step] .= v
+end
+
+"""
+    block_J_indices(data::ACPowerFlowData, time_step::Int) -> (Vector{Int32}, Vector{Int32})
+    
+Get the indices to reindex the Jacobian matrix from the interleaved form to the block form:
+
+| dP_dθ | dP_dV |
+| dQ_dθ | dQ_dV |
+
+# Arguments
+- `pvpq::Vector{Int32}`: Indices of the buses that are PV or PQ buses.
+- `pq::Vector{Int32}`: Indices of the buses that are PQ buses.
+
+# Returns
+- `rows::Vector{Int32}`: Row indices for the block Jacobian matrix.
+- `cols::Vector{Int32}`: Column indices for the block Jacobian matrix.
+"""
+function block_J_indices(pvpq::Vector{<:Integer}, pq::Vector{<:Integer})
+    rows = Int32[]
+    cols = Int32[]
+
+    for i in pvpq
+        push!(rows, 2 * i - 1)
+        push!(cols, 2 * i)
+    end
+    for i in pq
+        push!(rows, 2 * i)
+        push!(cols, 2 * i - 1)
+    end
+    return rows, cols
+end
+
+"""
+    find_sigma_uv(J::SparseMatrixCSC{Float64, Int32}, v_ix::Vector{Integer}, d_ix::Vector{Integer}; tol::Float64=1e-6, max_iter::Integer=100)
+
+Estimate the smallest singular value `σ` and corresponding left and right singular vectors `u` and `v` of a sparse matrix `G_s` (a sub-matrix of `J`).
+This function uses an iterative method involving LU factorization of the Jacobian matrix to estimate the smallest singular value of `G_s`. 
+The algorithm alternates between updating `u` and `v`, normalizing, and checking for convergence based on the change in the estimated singular value `σ`.
+The function uses the method described in the following publication:
+
+    P.-A. Lof, T. Smed, G. Andersson, and D. J. Hill, "Fast calculation of a voltage stability index," in IEEE Transactions on Power Systems, vol. 7, no. 1, pp. 54-64, Feb. 1992, doi: 10.1109/59.141687.
+
+# Arguments
+- `J::SparseMatrixCSC{Float64, Int32}`: The sparse Jacobian matrix.
+- `v_ix::Vector{Integer}`: Indices in the right singular vector `v` to be set to zero - corresponding to bus angles.
+- `d_ix::Vector{Integer}`: Indices in the left singular vector `u` to be set to zero - corresponfing to active power equations.
+
+# Keyword Arguments
+- `tol::Float64=1e-6`: Convergence tolerance for the iterative algorithm.
+- `max_iter::Integer=100`: Maximum number of iterations.
+
+# Returns
+- `σ::Float64`: The estimated smallest singular value.
+- `u::Vector{Float64}`: The estimated left singular vector.
+- `v::Vector{Float64}`: The estimated right singular vector.
+"""
+function find_sigma_uv(
+    Jv::SparseMatrixCSC{Float64, Int32},
+    npvpq::Integer;
+    tol::Float64 = 1e-9,
+    max_iter::Integer = 100,
+)
+    f = KLU.klu(Jv)
+    ft = KLU.klu(sparse(transpose(Jv)))
+
+    n = size(Jv, 1)
+    d_ix = 1:npvpq
+
+    v = ones(n)
+    v[d_ix] .= 0.0
+    v ./= norm(v, 2)
+
+    u = ones(n)
+    u[d_ix] .= 0.0
+
+    σ = 1e6
+    k = 1
+
+    while k <= max_iter
+        u .= ft \ v
+        u[d_ix] .= 0.0
+        n_u = norm(u, 2)
+
+        σ_1 = 1 / n_u
+        d_σ = σ_1 - σ
+        σ = σ_1
+
+        u ./= n_u
+
+        if abs(d_σ) < tol
+            break
+        end
+
+        v .= f \ u
+        v[d_ix] .= 0.0
+        n_v = norm(v, 2)
+
+        σ_2 = 1 / n_v
+        d_σ = σ_2 - σ
+        σ = σ_2
+
+        v ./= n_v
+
+        if abs(d_σ) < tol
+            break
+        end
+
+        k += 1
+    end
+    return σ, u[(npvpq + 1):end], v[(npvpq + 1):end]
+end

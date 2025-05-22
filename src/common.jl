@@ -181,6 +181,8 @@ function make_dc_powerflowdata(
     converged,
     loss_factors,
     calculate_loss_factors,
+    voltage_stability_factors = nothing,
+    calculate_voltage_stability_factors = false,
 )
     branch_type = Vector{DataType}(undef, length(branch_lookup))
     for (ix, b) in enumerate(PNM.get_ac_branches(sys))
@@ -206,6 +208,8 @@ function make_dc_powerflowdata(
         converged,
         loss_factors,
         calculate_loss_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end
 
@@ -346,6 +350,8 @@ function make_powerflowdata(
     loss_factors,
     calculate_loss_factors,
     generator_slack_participation_factors = nothing,
+    voltage_stability_factors = nothing,
+    calculate_voltage_stability_factors = false,
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
@@ -450,5 +456,7 @@ function make_powerflowdata(
         converged,
         loss_factors,
         calculate_loss_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end

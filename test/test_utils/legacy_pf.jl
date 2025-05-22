@@ -224,6 +224,25 @@ function PowerFlows._newton_powerflow(
             data.loss_factors[pvpq, time_step] .= lf[1:npvpq]
             data.loss_factors[ref, time_step] .= 1.0
         end
+        if data.calculate_voltage_stability_factors
+            LinearAlgebra.__init__()  # to remove warnings
+            Gs =
+                J[(npvpq + 1):end, (npvpq + 1):end] -
+                J[(npvpq + 1):end, 1:npvpq] * inv(collect(J[1:npvpq, 1:npvpq])) *
+                J[1:npvpq, (npvpq + 1):end]
+            u_1, (σ_1,), v_1, _ = PROPACK.tsvd_irl(Gs; smallest = true, k = 1)
+            σ, u, v = PowerFlows.find_sigma_uv(J, npvpq)
+
+            @assert isapprox(σ_1, σ, atol = 1e-6)
+            # the sign does not matter
+            @assert isapprox(sign(first(u_1)) * u_1, u, atol = 1e-4)
+            @assert isapprox(sign(first(v_1)) * v_1, v, atol = 1e-4)
+
+            data.voltage_stability_factors[ref, time_step] .= 0.0
+            data.voltage_stability_factors[first(ref), time_step] = σ
+            data.voltage_stability_factors[pv, time_step] .= 0.0
+            data.voltage_stability_factors[pq, time_step] .= v
+        end
         @info("The legacy powerflow solver with LU converged after $i iterations")
     end
     return converged

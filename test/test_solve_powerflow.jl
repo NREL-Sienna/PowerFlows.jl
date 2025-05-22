@@ -302,8 +302,16 @@ end
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
     pf_lu = ACPowerFlow(LUACPowerFlow)
-    pf_lu_lf = ACPowerFlow(LUACPowerFlow; calculate_loss_factors = true)
-    pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow; calculate_loss_factors = true)
+    pf_lu_lf = ACPowerFlow(
+        LUACPowerFlow;
+        calculate_loss_factors = true,
+        calculate_voltage_stability_factors = true,
+    )
+    pf_newton = ACPowerFlow(
+        NewtonRaphsonACPowerFlow;
+        calculate_loss_factors = true,
+        calculate_voltage_stability_factors = true,
+    )
 
     data_lu = PowerFlowData(
         pf_lu_lf,
@@ -329,6 +337,15 @@ end
         isapprox.(
             data_lu.loss_factors,
             data_newton.loss_factors,
+            rtol = 0,
+            atol = 1e-9,
+        ),
+    )
+
+    @test all(
+        isapprox.(
+            data_lu.voltage_stability_factors,
+            data_newton.voltage_stability_factors,
             rtol = 0,
             atol = 1e-9,
         ),

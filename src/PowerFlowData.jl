@@ -110,6 +110,8 @@ struct PowerFlowData{
     converged::Vector{Bool}
     loss_factors::Union{Matrix{Float64}, Nothing}
     calculate_loss_factors::Bool
+    voltage_stability_factors::Union{Matrix{Float64}, Nothing}
+    calculate_voltage_stability_factors::Bool
 end
 
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
@@ -201,6 +203,7 @@ function PowerFlowData(
     check_connectivity::Bool = true)
     calculate_loss_factors = pf.calculate_loss_factors
     generator_slack_participation_factors = pf.generator_slack_participation_factors
+    calculate_voltage_stability_factors = pf.calculate_voltage_stability_factors
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
     if time_steps != 0
@@ -249,6 +252,12 @@ function PowerFlowData(
     else
         loss_factors = nothing
     end
+    if calculate_voltage_stability_factors
+        voltage_stability_factors =
+            Matrix{Float64}(undef, (n_buses, length(timestep_names)))
+    else
+        voltage_stability_factors = nothing
+    end
 
     return make_powerflowdata(
         sys,
@@ -268,6 +277,8 @@ function PowerFlowData(
         loss_factors,
         calculate_loss_factors,
         generator_slack_participation_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end
 
