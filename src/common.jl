@@ -452,3 +452,30 @@ function make_powerflowdata(
         calculate_loss_factors,
     )
 end
+
+function validate_voltages(x::Vector{Float64},
+    bus_types::AbstractArray{PSY.ACBusTypes},
+    range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = VM_VALIDATION_RANGE,
+    i::Int64 = 1,
+)
+    outside_range = Vector{Int64}()
+    MAX_INDS_TO_PRINT = 10
+    for (i, bt) in enumerate(bus_types)
+        if bt == PSY.ACBusTypes.PQ
+            if (x[2 * i - 1] < range.min || x[2 * i - 1] > range.max) &&
+               size(outside_range, 1) <= MAX_INDS_TO_PRINT
+                push!(outside_range, i)
+            end
+        end
+    end
+    if size(outside_range, 1) > MAX_INDS_TO_PRINT
+        @warn "Iteration $i: voltage magnitudes outside of range $range at over $MAX_INDS_TO_PRINT buses." maxlog =
+            PF_MAX_LOG
+    elseif size(outside_range, 1) > 0
+        @warn "Iteration $i: voltage magnitudes outside of range $range at $(size(outside_range, 1)) buses: $(outside_range)" maxlog =
+            PF_MAX_LOG
+    end
+end
+
+wdot(wx, x, wy, y) = LinearAlgebra.dot(wx .* x, wy .* y)
+wnorm(w, x) = norm(w .* x)
