@@ -530,6 +530,7 @@ function calculate_voltage_stability_factors(
     data.voltage_stability_factors[first(ref), time_step] = σ
     data.voltage_stability_factors[pv, time_step] .= 0.0
     data.voltage_stability_factors[pq, time_step] .= v
+    return
 end
 
 """
