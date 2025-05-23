@@ -549,17 +549,9 @@ Get the indices to reindex the Jacobian matrix from the interleaved form to the 
 - `cols::Vector{Int32}`: Column indices for the block Jacobian matrix.
 """
 function block_J_indices(pvpq::Vector{<:Integer}, pq::Vector{<:Integer})
-    rows = Int32[]
-    cols = Int32[]
+    rows = vcat(2 .* pvpq .- 1, 2 .* pq)
+    cols = vcat(2 .* pvpq, 2 .* pq .- 1)
 
-    for i in pvpq
-        push!(rows, 2 * i - 1)
-        push!(cols, 2 * i)
-    end
-    for i in pq
-        push!(rows, 2 * i)
-        push!(cols, 2 * i - 1)
-    end
     return rows, cols
 end
 
@@ -594,8 +586,7 @@ function find_sigma_uv(
     max_iter::Integer = 100,
 )
     f = KLU.klu(Jv)
-    ft = KLU.klu(sparse(transpose(Jv)))
-
+    
     n = size(Jv, 1)
     d_ix = 1:npvpq
 
@@ -610,7 +601,7 @@ function find_sigma_uv(
     k = 1
 
     while k <= max_iter
-        u .= ft \ v
+        u .= transpose(f) \ v
         u[d_ix] .= 0.0
         n_u = norm(u, 2)
 
