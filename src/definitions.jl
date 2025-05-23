@@ -21,7 +21,8 @@ const DEFAULT_TRUST_REGION_FACTOR::Float64 = 1.0 # controls starting size of tru
 const HALVE_TRUST_REGION = 0.1
 const MAX_DOUBLE_TRUST_REGION = 0.5
 const DOUBLE_TRUST_REGION = 0.9
-const DEFAULT_AUTOSCALE = true
+const DEFAULT_AUTOSCALE = false # correct for scaling of the system
+# typically converges in fewer iteration without autoscaling.
 
 const AC_PF_KW = []
 

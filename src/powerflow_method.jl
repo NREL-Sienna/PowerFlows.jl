@@ -207,11 +207,6 @@ function _trust_region_step(time_step::Int,
             for i in 1:length(stateVector.x)
                 stateVector.d[i] = max(0.1 * stateVector.d[i], norm(view(J.Jv, :, i)))
             end
-            # TODO this is a hack to make sure that the d's are not too small.
-            # more rigorous way? Ideally we'd have our scaling be directional, such that
-            # components that correspond to voltage magnitudes are dissuaded from straying
-            # too far from 1.0: if x[i] is 0.7, then reward positive Δx[i] and punish negative Δx[i].
-            stateVector.d .+= 10 * minimum(stateVector.d)
         else
             @assert all(stateVector.d .== 1.0)
         end

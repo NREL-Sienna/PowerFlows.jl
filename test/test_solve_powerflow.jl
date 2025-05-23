@@ -809,3 +809,24 @@ end
         check_connectivity = false,
     )
 end
+
+@testset "AC PF 10k bus system: voltage magnitudes" begin
+    sys = PSB.build_system(
+        PSB.MatpowerTestSystems,
+        "matpower_ACTIVSg10k_sys";
+        force_build = false,
+    )
+    @assert !isempty(get_components(PhaseShiftingTransformer, sys)) "System should have " *
+                                                                    "phase shifting transformers: " *
+                                                                    "change `force_build` to `true` in the test."
+    pf_tr = ACPowerFlow{TrustRegionACPowerFlow}()
+    data_tr = PowerFlowData(pf_tr, sys)
+    solve_powerflow!(
+        data_tr;
+        pf = pf_tr,
+        maxIterations = 200,
+        factor = 0.1
+    )
+    @test all(data_tr.bus_magnitude[:, 1] .<= 1.1)
+    @test all(data_tr.bus_magnitude[:, 1] .>= 0.9)
+end
