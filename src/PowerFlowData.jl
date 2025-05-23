@@ -145,6 +145,7 @@ get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 supports_multi_period(::PowerFlowData) = true
 get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
+get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
@@ -338,6 +339,9 @@ function PowerFlowData(
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -353,6 +357,9 @@ function PowerFlowData(
         converged,
         loss_factors,
         calculate_loss_factors,
+        generator_slack_participation_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end
 
@@ -413,6 +420,9 @@ function PowerFlowData(
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -428,6 +438,9 @@ function PowerFlowData(
         converged,
         loss_factors,
         calculate_loss_factors,
+        generator_slack_participation_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end
 
@@ -487,6 +500,9 @@ function PowerFlowData(
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -502,6 +518,9 @@ function PowerFlowData(
         converged,
         loss_factors,
         calculate_loss_factors,
+        generator_slack_participation_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end
 
