@@ -586,7 +586,6 @@ function find_sigma_uv(
     max_iter::Integer = 100,
 )
     f = KLU.klu(Jv)
-    
     n = size(Jv, 1)
     d_ix = 1:npvpq
 
