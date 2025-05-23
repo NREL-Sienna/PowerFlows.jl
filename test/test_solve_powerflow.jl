@@ -825,7 +825,7 @@ end
         data_tr;
         pf = pf_tr,
         maxIterations = 200,
-        factor = 0.1
+        factor = 0.1,
     )
     @test all(data_tr.bus_magnitude[:, 1] .<= 1.1)
     @test all(data_tr.bus_magnitude[:, 1] .>= 0.9)
