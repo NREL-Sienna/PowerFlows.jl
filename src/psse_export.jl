@@ -1,6 +1,8 @@
 """
 Structure to perform an export from a Sienna System, plus optional updates from
-`PowerFlowData`, to the PSS/E format. Construct from a `System` and a PSS/E version, update
+`PowerFlowData`, to the PSS/E format.
+
+Construct this object from a `System` and a PSS/E version, update
 using `update_exporter` with any new data as relevant, and perform the export with
 `write_export`. Writes a `<name>.raw` file and a `<name>_export_metadata.json` file with
 transformations that had to be made to conform to PSS/E naming rules, which can be parsed by

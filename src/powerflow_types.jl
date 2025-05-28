@@ -1,8 +1,10 @@
 """An abstract supertype for all types of power flows.
+
 Subtypes: [`ACPowerFlow`](@ref), [`DCPowerFlow`](@ref), [`PTDFDCPowerFlow`](@ref), and [`vPTDFDCPowerFlow`](@ref)."""
 abstract type PowerFlowEvaluationModel end
 
 """An abstract supertype for all iterative methods.
+
 See [`NewtonRaphsonACPowerFlow`](@ref) and [`TrustRegionACPowerFlow`](@ref) for subtypes."""
 abstract type ACPowerFlowSolverType end
 
@@ -18,6 +20,8 @@ An [`ACPowerFlowSolverType`](@ref) corresponding to the Powell dogleg iterative 
 struct TrustRegionACPowerFlow <: ACPowerFlowSolverType end
 
 """A struct for evaluating power flow solutions in AC systems.
+
+
 This struct is parameterized by the type of AC power flow solver to use, which must be a
 subtype of [`ACPowerFlowSolverType`](@ref). It also contains a few 
 fields that control whether to compute certain additional data, like loss factors: 
@@ -45,7 +49,9 @@ end
         } = nothing,
     ) where {ACSolver <: ACPowerFlowSolverType}
 
-Create an `ACPowerFlow` evaluation model with the specified solver type.
+An evaluation model for a standard 
+[AC powerflow](https://en.wikipedia.org/wiki/Power-flow_study#Power-flow_problem_formulation) 
+with the specified solver type.
 
 
 # Arguments
@@ -102,7 +108,14 @@ ACPowerFlow(
         exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     )
 
-Create a `DCPowerFlow` evaluation model. If not `nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
+An evaluation model for a standard DC powerflow.
+
+This provides a fast approximate solution to the AC powerflow problem, by solving for the 
+bus voltage angles under some simplifying assumptions (lossless lines, constant voltage 
+magnitudes, etc.). For details, see 
+[Wikipedia](https://en.wikipedia.org/wiki/Power-flow_study#DC_power_flow)
+or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.1.pdf). If 
+not `nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
 """
 @kwdef struct DCPowerFlow <: PowerFlowEvaluationModel
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
@@ -113,7 +126,13 @@ end
         exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     )
 
-Create a `PTDFDCPowerFlow` evaluation model. If not `nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
+An evaluation model that calculates line flows using the Power Transfer Distribution Factor 
+Matrix.
+
+This approximates the branch flows in the power grid, under some simplifying
+assumptions (lossless lines, constant voltage magnitudes, etc.). See section 4 of the 
+[MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.1.pdf) for details. If not 
+`nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
 """
 @kwdef struct PTDFDCPowerFlow <: PowerFlowEvaluationModel
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
@@ -124,7 +143,13 @@ end
         exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     )
 
-Create a `vPTDFDCPowerFlow` evaluation model. If not `nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
+An evaluation model that calculates line flows using a virtual Power Transfer Distribution 
+Factor Matrix.
+
+This is a replacement for the [PTDFDCPowerFlow](@ref) for large grids, 
+where creating and storing the full PTDF matrix would be infeasible or slow. See the 
+[PowerNetworkMatrices.jl docs](https://nrel-sienna.github.io/PowerNetworkMatrices.jl/stable/) for details. 
+If not `nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
 """
 @kwdef struct vPTDFDCPowerFlow <: PowerFlowEvaluationModel
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
@@ -141,7 +166,7 @@ end
 """
     PSSEExportPowerFlow(psse_version::Symbol, export_dir::AbstractString; kwargs...)
 
-Create a `PSSEExportPowerFlow` evaluation model for exporting power flow results to PSSE format.
+An evaluation model for exporting power flow results to PSSE format.
 
 Arguments:
 - `psse_version::Symbol`: The version of PSSE to export to. Must be among `$PSSE_EXPORT_SUPPORTED_VERSIONS`.

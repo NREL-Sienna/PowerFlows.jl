@@ -1,5 +1,5 @@
 """A type alias for a [`PowerFlowData`](@ref) struct whose type parameters
-are configured for computing a AC powerflow."""
+are configured for the [`ACPowerFlow`](@ref) method."""
 const ACPowerFlowData = PowerFlowData{
     PNM.Ybus{
         Tuple{Vector{Int64}, Vector{Int64}},
@@ -9,7 +9,7 @@ const ACPowerFlowData = PowerFlowData{
 }
 
 """A type alias for a [`PowerFlowData`](@ref) struct whose type parameters
-are configured for computing a PTDF powerflow."""
+are configured for the [`PTDFDCPowerFlow`](@ref) method ."""
 const PTDFPowerFlowData = PowerFlowData{
     PNM.PTDF{
         Tuple{Vector{Int64}, Vector{String}},
@@ -24,7 +24,7 @@ const PTDFPowerFlowData = PowerFlowData{
 }
 
 """A type alias for a [`PowerFlowData`](@ref)  struct whose type parameters
-are configured for computing a vPTDF powerflow."""
+are configured for the [`vPTDFDCPowerFlow`](@ref) method."""
 const vPTDFPowerFlowData = PowerFlowData{
     PNM.VirtualPTDF{
         Tuple{Vector{String}, Vector{Int64}},
@@ -38,7 +38,7 @@ const vPTDFPowerFlowData = PowerFlowData{
 }
 
 """A type alias for a [`PowerFlowData`](@ref)  struct whose type parameters
-are configured for computing a ABA (i.e. DC) powerflow."""
+are configured for the [`DCPowerFlow`](@ref) method."""
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
         Tuple{Vector{Int64}, Vector{Int64}},
