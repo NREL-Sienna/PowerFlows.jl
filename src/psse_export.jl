@@ -1,4 +1,3 @@
-const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33, :v35]
 const PSSE_DEFAULT = ""  # Used below in cases where we want to insert an empty field to signify the PSSE default
 const PSSE_INFINITY = 9999.0
 const PSSE_BUS_TYPE_MAP = Dict(
@@ -103,14 +102,14 @@ PowerSystems.jl to perform a round trip with the names restored.
   - `base_system::PSY.System`: the system to be exported. Later updates may change power
     flow-related values but may not fundamentally alter the system
   - `psse_version::Symbol`: the version of PSS/E to target, must be one of
-    `PSSE_EXPORT_SUPPORTED_VERSIONS`
-  - `write_comments::Bool` = false: whether to add the customary-but-not-in-spec-annotations
+    `$PSSE_EXPORT_SUPPORTED_VERSIONS`
+  - `write_comments::Bool = false`: whether to add the customary-but-not-in-spec-annotations
     after a slash on the first line and at group boundaries
   - `name::AbstractString = "export"`: the base name of the export
   - `step::Any = nothing`: optional step data to append to the base export name. User is
     responsible for updating the step data. If the step data is `nothing`, it is not used;
-    if it is a tuple or vector, it is joined with '_' and concatted; else it is concatted
-    after '_'.
+    if it is a tuple or vector, it is joined with \\_ and concatted; else it is concatted
+    after \\_.
   - `overwrite::Bool = false`: `true` to silently overwrite existing exports, `false` to
     throw an error if existing results are encountered
 """

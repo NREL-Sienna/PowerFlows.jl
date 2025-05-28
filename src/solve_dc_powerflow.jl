@@ -20,11 +20,13 @@ function adjust_power_injection_for_lccs!(power_injection::Matrix{Float64},
 end
 
 """
+    solve_powerflow!(data::PTDFPowerFlowData)
+
 Evaluates the power flows on each system's branch and updates the PowerFlowData structure.
 
 # Arguments:
 - `data::PTDFPowerFlowData`:
-        PTDFPowerFlowData structure containing all the information related to the system's power flow.
+        [PTDFPowerFlowData](@ref) structure containing all the information related to the system's power flow.
 """
 function solve_powerflow!(
     data::PTDFPowerFlowData,
@@ -51,11 +53,13 @@ function solve_powerflow!(
 end
 
 """
+    solve_powerflow!(data::vPTDFPowerFlowData)
+
 Evaluates the power flows on each system's branch and updates the PowerFlowData structure.
 
 # Arguments:
-- `data::vPTDFPowerFlowData`:
-        vPTDFPowerFlowData structure containing all the information related to the system's power flow.
+- [`data::vPTDFPowerFlowData`](@ref vPTDFPowerFlowData):
+        a structure containing all the information related to the system's power flow.
 """
 function solve_powerflow!(
     data::vPTDFPowerFlowData,
@@ -81,10 +85,12 @@ end
 # TODO: solve just for some lines with vPTDF
 
 """
+    solve_powerflow!(data::ABAPowerFlowData)
+
 Evaluates the power flows on each system's branch and updates the PowerFlowData structure.
 
 # Arguments:
-- `data::ABAPowerFlowData`:
+- [`data::ABAPowerFlowData`](@ref ABAPowerFlowData):
         ABAPowerFlowData structure containing all the information related to the system's power flow.
 """
 # DC flow: ABA and BA case

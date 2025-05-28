@@ -73,9 +73,11 @@ end
     ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64) -> ACPowerFlowJacobian
 
 This is the constructor for ACPowerFlowJacobian.
-Create an `ACPowerFlowJacobian` instance. As soon as the instance is created, it already has the Jacobian matrix structure initialized and its values updated, stored internally as Jv.
-The data instance is stored internally and used to update the Jacobian matrix because the structure of the Jacobian matrix is tied to the data.
-Changing the data requires creating a new instance of `ACPowerFlowJacobian`.
+Create an `ACPowerFlowJacobian` instance. As soon as the instance is created, it already has 
+the Jacobian matrix structure initialized and its values updated, stored internally as `Jv`.
+The data instance is stored internally and used to update the Jacobian matrix because the 
+structure of the Jacobian matrix is tied to the data. Changing the data requires creating a 
+new instance of `ACPowerFlowJacobian`.
 
 # Arguments
 - `data::ACPowerFlowData`: The data used for power flow calculations.
@@ -84,7 +86,7 @@ Changing the data requires creating a new instance of `ACPowerFlowJacobian`.
 # Returns
 - `ACPowerFlowJacobian`: An instance of `ACPowerFlowJacobian`.
 
-#Example
+# Example
 ```julia
 J = ACPowerFlowJacobian(data, time_step)  # Creates an instance J of ACPowerFlowJacobian, with the Jacobian matrix stored internally as J.Jv initialized and updated.
 J(time_step)  # Updates the Jacobian matrix stored internally in J (J.Jv) with the latest state of the `data` (`ACPowerFlowData` instance) and the provided time step.
@@ -106,8 +108,8 @@ function ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64)
 end
 
 """
-Create the Jacobian matrix structure for a reference bus (REF). Ignoring this because we fill all four values even for PV buses with 
-    structural zeros using the same function as for PQ buses.
+Create the Jacobian matrix structure for a reference bus (REF). Currently unused: we \
+fill all four values even for PV buses with structiural zeros using the same function as for PQ buses.
 """
 function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
     columns::Vector{Int32},
@@ -133,8 +135,8 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
 end
 
 """
-Create the Jacobian matrix structure for a PV bus. Ignoring this because we fill all four values even for PV buses with 
-    structural zeros using the same function as for PQ buses.
+Create the Jacobian matrix structure for a PV bus. Currently unused: we \
+fill all four values even for PV buses with structural zeros using the same function as for PQ buses.
 """
 function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
     columns::Vector{Int32},
