@@ -40,8 +40,8 @@ const PNM = PowerNetworkMatrices
 
 include("common.jl")
 include("definitions.jl")
-include("powerflow_types.jl")
 include("psse_exporter_definitions.jl")
+include("powerflow_types.jl")
 include("PowerFlowData.jl")
 include("powerflow_data_type_aliases.jl")
 include("psse_export.jl")
