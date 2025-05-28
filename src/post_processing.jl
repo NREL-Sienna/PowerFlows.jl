@@ -580,8 +580,8 @@ function _allocate_results_data(
 end
 
 """
-Returns a dictionary containing the DC power flow results. Each key conresponds
-to the name of the considered time periods, storing a DataFrame with the PF
+Returns a dictionary containing the DC power flow results. Each key corresponds
+to the name of the considered time periods, storing a DataFrame with the powerflow
 results.
 
 # Arguments:
@@ -637,8 +637,8 @@ end
 """
 Returns a dictionary containing the AC power flow results.
 
-Only single-period evaluation is supported at the moment for AC Power flows. Resulting
-dictionary will therefore feature just one key linked to one DataFrame.
+Only single-period evaluation is supported at the moment for AC Power flows. The resulting
+dictionary will therefore feature just one key linked to one `DataFrame`.
 
 # Arguments:
 - `::ACPowerFlow`:

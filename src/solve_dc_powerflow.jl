@@ -1,45 +1,11 @@
-const PTDFPowerFlowData = PowerFlowData{
-    PNM.PTDF{
-        Tuple{Vector{Int64}, Vector{String}},
-        Tuple{Dict{Int64, Int64}, Dict{String, Int64}},
-        Matrix{Float64},
-    },
-    PNM.ABA_Matrix{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64},
-    },
-}
-
-const vPTDFPowerFlowData = PowerFlowData{
-    PNM.VirtualPTDF{
-        Tuple{Vector{String}, Vector{Int64}},
-        Tuple{Dict{String, Int64}, Dict{Int64, Int64}},
-    },
-    PNM.ABA_Matrix{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64},
-    },
-}
-
-const ABAPowerFlowData = PowerFlowData{
-    PNM.ABA_Matrix{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64},
-    },
-    PNM.BA_Matrix{
-        Tuple{Vector{Int64}, Vector{String}},
-        Tuple{Dict{Int64, Int64}, Dict{String, Int64}}},
-}
-
 """
+    solve_powerflow!(data::PTDFPowerFlowData)
+
 Evaluates the power flows on each system's branch and updates the PowerFlowData structure.
 
 # Arguments:
 - `data::PTDFPowerFlowData`:
-        PTDFPowerFlowData structure containing all the information related to the system's power flow.
+        [PTDFPowerFlowData](@ref) structure containing all the information related to the system's power flow.
 """
 function solve_powerflow!(
     data::PTDFPowerFlowData,
@@ -61,11 +27,13 @@ function solve_powerflow!(
 end
 
 """
+    solve_powerflow!(data::vPTDFPowerFlowData)
+
 Evaluates the power flows on each system's branch and updates the PowerFlowData structure.
 
 # Arguments:
-- `data::vPTDFPowerFlowData`:
-        vPTDFPowerFlowData structure containing all the information related to the system's power flow.
+- [`data::vPTDFPowerFlowData`](@ref vPTDFPowerFlowData):
+        a structure containing all the information related to the system's power flow.
 """
 function solve_powerflow!(
     data::vPTDFPowerFlowData,
@@ -86,10 +54,12 @@ end
 # TODO: solve just for some lines with vPTDF
 
 """
+    solve_powerflow!(data::ABAPowerFlowData)
+
 Evaluates the power flows on each system's branch and updates the PowerFlowData structure.
 
 # Arguments:
-- `data::ABAPowerFlowData`:
+- [`data::ABAPowerFlowData`](@ref ABAPowerFlowData):
         ABAPowerFlowData structure containing all the information related to the system's power flow.
 """
 # DC flow: ABA and BA case
@@ -120,7 +90,7 @@ The DataFrame containts the flows and angles related to the information stored
 in the PSY.System considered as input.
 
 # Arguments:
-- `::PTDFDCPowerFlow`:
+- [`::PTDFDCPowerFlow`](@ref PTDFDCPowerFlow):
         use PTDFDCPowerFlow() to evaluate the power flows according to the
         method based on the PTDF matrix
 - `sys::PSY.System`:
@@ -170,7 +140,7 @@ The DataFrame containts the flows and angles related to the information stored
 in the PSY.System considered as input.
 
 # Arguments:
-- `::vPTDFDCPowerFlow`:
+- [`::vPTDFDCPowerFlow`](@ref vPTDFDCPowerFlow):
         use vPTDFDCPowerFlow() to evaluate the power flows according to the
         method based on the Virtual PTDF matrix
 - `sys::PSY.System`:

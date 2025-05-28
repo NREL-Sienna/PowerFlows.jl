@@ -1,11 +1,3 @@
-const ACPowerFlowData = PowerFlowData{
-    PNM.Ybus{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-    },
-    Nothing,
-}
-
 """
     struct ACPowerFlowResidual
 
@@ -43,7 +35,7 @@ Create an instance of `ACPowerFlowResidual` for a given time step.
 
 # Returns
 - `ACPowerFlowResidual`: An instance containing the residual values, net bus active power injections, 
-and net bus reactive power injections.
+    and net bus reactive power injections.
 """
 function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     n_buses = first(size(data.bus_type))
