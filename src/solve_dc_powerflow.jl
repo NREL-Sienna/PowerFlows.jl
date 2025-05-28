@@ -22,11 +22,15 @@ end
 """
     solve_powerflow!(data::PTDFPowerFlowData)
 
-Evaluates the power flows on each system's branch and updates the PowerFlowData structure.
+Evaluates the PTDF power flow and writes the result to the fields of the 
+[`PTDFPowerFlowData`](@ref) structure.
 
-# Arguments:
-- `data::PTDFPowerFlowData`:
-        [PTDFPowerFlowData](@ref) structure containing all the information related to the system's power flow.
+This function modifies the following fields of `data`, setting them to the computed values:
+- `data.bus_angles`: the bus angles for each bus in the system.
+- `data.branch_activepower_flow_from_to`: the active power flow from the "from" bus to the "to" bus of each branch
+- `data.branch_activepower_flow_to_from`: the active power flow from the "to" bus to the "from" bus of each branch
+
+Additionally, it sets `data.converged` to `true`, indicating that the power flow calculation was successful.
 """
 function solve_powerflow!(
     data::PTDFPowerFlowData,
@@ -55,11 +59,16 @@ end
 """
     solve_powerflow!(data::vPTDFPowerFlowData)
 
-Evaluates the power flows on each system's branch and updates the PowerFlowData structure.
+Evaluates the virtual PTDF power flow and writes the results to the fields 
+of the [`vPTDFPowerFlowData`](@ref) structure.
 
-# Arguments:
-- [`data::vPTDFPowerFlowData`](@ref vPTDFPowerFlowData):
-        a structure containing all the information related to the system's power flow.
+
+This function modifies the following fields of `data`, setting them to the computed values:
+- `data.bus_angles`: the bus angles for each bus in the system.
+- `data.branch_activepower_flow_from_to`: the active power flow from the "from" bus to the "to" bus of each branch
+- `data.branch_activepower_flow_to_from`: the active power flow from the "to" bus to the "from" bus of each branch
+
+Additionally, it sets `data.converged` to `true`, indicating that the power flow calculation was successful.
 """
 function solve_powerflow!(
     data::vPTDFPowerFlowData,
@@ -87,11 +96,16 @@ end
 """
     solve_powerflow!(data::ABAPowerFlowData)
 
-Evaluates the power flows on each system's branch and updates the PowerFlowData structure.
+Evaluates the DC power flow and writes the results (branch flows) to the fields 
+of the [`ABAPowerFlowData`](@ref) structure.
 
-# Arguments:
-- [`data::ABAPowerFlowData`](@ref ABAPowerFlowData):
-        ABAPowerFlowData structure containing all the information related to the system's power flow.
+
+This function modifies the following fields of `data`, setting them to the computed values:
+- `data.bus_angles`: the bus angles for each bus in the system.
+- `data.branch_activepower_flow_from_to`: the active power flow from the "from" bus to the "to" bus of each branch
+- `data.branch_activepower_flow_to_from`: the active power flow from the "to" bus to the "from" bus of each branch
+
+Additionally, it sets `data.converged` to `true`, indicating that the power flow calculation was successful.
 """
 # DC flow: ABA and BA case
 function solve_powerflow!(
@@ -119,18 +133,26 @@ end
 # SINGLE PERIOD ##############################################################
 
 """
-Evaluates the power flows on the system's branches by means of the PTDF, virtual PTDF,
-or DC power flow method: the type first parameter (a `PTDFDCPowerFlow`, `vPTDFDCPowerFlow`, 
-or `DCPowerFlow`) selects the method to be used. Returns a dictionary containing a 
-`DataFrame` for the single timestep considered, storing the branch flows and bus 
-voltages for the input `PSY.System`.
+    solve_powerflow(
+        ::T,
+        sys::PSY.System;
+    ) where T <: Union{PTDFDCPowerFlow, vPTDFDCPowerFlow, DCPowerFlow}
 
-# Arguments:
-- `::Union{PTDFDCPowerFlow, vPTDFDCPowerFlow, DCPowerFlow}`:
-        the method of power flow evaluation to be used.
-- `sys::PSY.System`:
-        container gathering the system data used for the evaluation of flows
-        and angles.
+
+Evaluates the provided DC power flow method `T` on the `system`, returning a dictionary of 
+`DataFrame`s containing the calculated branch flows and bus angles.
+
+Provided for convenience: this interface bypasses the need to create a `PowerFlowData` 
+struct, but that's still what's happening under the hood.
+
+# Example
+```julia
+using PowerFlows, PowerSystemCaseBuilder
+sys = PowerSystemCaseBuilder.build_system(PSB.PSITestSystems, "c_sys5")
+d = solve_powerflow(DCPowerFlow(), sys)
+display(d["1"]["flow_results"])
+display(d["1"]["bus_results"])
+```
 """
 function solve_powerflow(
     ::T,
@@ -159,6 +181,14 @@ the input `PSY.System` at that timestep.
         considered, as well as the associated matrix for the power flow.
 - `sys::PSY.System`:
         container gathering the system data.
+
+```julia
+using PowerFlows, PowerSystemCaseBuilder
+sys = PowerSystemCaseBuilder.build_system(PSITestSystems, "c_sys14")
+data = PowerFlowData(PTDFDCPowerFlow(), sys, time_steps = 2)
+d = solve_powerflow(data, sys)
+display(d["2"]["flow_results"])
+```
 """
 function solve_powerflow(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},

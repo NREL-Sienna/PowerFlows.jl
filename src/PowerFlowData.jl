@@ -25,6 +25,14 @@ one column per time period. Here, buses should be understood as \"buses remainin
 the network reduction.\" Similarly, we use \"arcs\" instead of \"branches\" to distinguish 
 between network elements (post-reduction) and system objects (pre-reduction).
 
+Generally, do not construct this directly. Instead, use one of the later constructors to 
+pass in a [`PowerFlowEvaluationModel`](@ref) and a [`PowerSystems.System`](@extref). 
+`aux_network_matrix` and `power_network_matrix` will then be set to the appropriate 
+matrices that are needed for computing that type of powerflow. See also [`ACPowerFlowData`](@ref),
+[`ABAPowerFlowData`](@ref), [`PTDFPowerFlowData`](@ref), and [`vPTDFPowerFlowData`](@ref): 
+these are all aliases for `PowerFlowData{N, M}` with specific `N`,`M`, that are used for 
+the respective type of power flow evaluations.
+
 # Fields:
 - `bus_activepower_injection::Matrix{Float64}`:
         matrix containing the bus active power injection.
@@ -443,18 +451,19 @@ end
         check_connectivity::Bool = true
     ) -> ACPowerFlowData{<:ACPowerFlowSolverType} 
 
-Function for the definition of the PowerFlowData strucure given the System
-data, number of time periods to consider and their names.
+Creates the structure for an AC power flow calculation, given the power grid `sys`, 
+the number of time periods to consider, and their names.
+
 Calling this function will not evaluate the power flows and angles.
-Note that first input is of type `ACPowerFlow`: this version is used to solve AC powerflows, 
-and returns an [`ACPowerFlowData`](@ref) object.
+Note that first input is of type [`ACPowerFlow`](@ref): this version is used to solve 
+AC powerflows, and returns an [`ACPowerFlowData`](@ref) object.
 
 # Arguments:
-- [`pf::ACPowerFlow`](@ref ACPowerFlow)
+- [`pf::ACPowerFlow`](@ref ACPowerFlow):
         the settings for the AC power flow solver.
 - `sys::PSY.System`:
-        container storing the system data to consider in the `PowerFlowData`
-        structure.
+        A [`System`](@extref PowerSystems.System) object that represents the power 
+        grid under consideration.
 - `time_steps::Int`:
         number of time periods to consider in the `PowerFlowData` structure. It
         defines the number of columns of the matrices used to store data.
@@ -512,20 +521,20 @@ end
         check_connectivity::Bool = true
     ) -> ABAPowerFlowData
 
+Creates a `PowerFlowData` structure configured for a stnadard DC power flow calculation, 
+given the power grid `sys`, the number of time periods to consider, and their names.
 
-Function for the definition of the PowerFlowData strucure given the System
-data, number of time periods to consider and their names.
 Calling this function will not evaluate the power flows and angles.
-Note that first input is of type `DCPowerFlow`: this version is used to solve DC powerflows, 
-and returns an [`ABAPowerFlowData`](@ref) object.
+Note that first input is of type [`DCPowerFlow`](@ref): this version is 
+used to solve DC powerflows, and returns an [`ABAPowerFlowData`](@ref) object.
 
 # Arguments:
 - [`::DCPowerFlow`](@ref PowerFlows.DCPowerFlow):
         Run a DC powerflow: internally, store the ABA matrix as `power_network_matrix` and
         the BA matrix as `aux_network_matrix`.
 - `sys::PSY.System`:
-        container storing the system data to consider in the `PowerFlowData`
-        structure.
+        A [`System`](@extref PowerSystems.System) object that represents the power 
+        grid under consideration.
 - `time_steps::Int`:
         number of time periods to consider in the `PowerFlowData` structure. It
         defines the number of columns of the matrices used to store data.
@@ -569,19 +578,22 @@ end
         timestep_names::Vector{String} = String[]
     ) -> PTDFPowerFlowData
 
-Function for the definition of the PowerFlowData strucure given the System
-data, number of time periods to consider and their names.
+Creates a `PowerFlowData` structure configured for a Partial Transfer 
+Distribution Factor Matrix DC power flow calculation, given the power grid `sys`, 
+the number of time periods to consider, and their names.
+
 Calling this function will not evaluate the power flows and angles.
-Note that first input is of type `PTDFDCPowerFlow`: this version is used to solve PTDF powerflows, 
-and returns an [`PTDFPowerFlowData`](@ref) object.
+Note that first input is of type [`PTDFDCPowerFlow`](@ref): this version is used to solve 
+DC powerflows via the Power Transfer Distribution Factor (PTDF) matrix. This function 
+returns an [`PTDFPowerFlowData`](@ref) object.
 
 # Arguments:
 - [`::PTDFDCPowerFlow`](@ref PowerFlows.PTDFDCPowerFlow):
         Run a DC powerflow with PTDF matrix: internally, store the PTDF matrix
         as `power_network_matrix` and the ABA matrix as `aux_network_matrix`.
 - `sys::PSY.System`:
-        container storing the system data to consider in the `PowerFlowData`
-        structure.
+        A [`System`](@extref PowerSystems.System) object that represents the power 
+        grid under consideration.
 - `time_steps::Int`:
         number of time periods to consider in the `PowerFlowData` structure. It
         defines the number of columns of the matrices used to store data.
@@ -624,19 +636,22 @@ end
         timestep_names::Vector{String} = String[]
     ) -> vPTDFPowerFlowData
 
-Function for the definition of the PowerFlowData strucure given the System
-data, number of time periods to consider and their names.
+Creates a `PowerFlowData` structure configured for a virtual Partial Transfer 
+Distribution Factor Matrix DC power flow calculation, given the power grid `sys`, 
+the number of time periods to consider, and their names.
+
 Calling this function will not evaluate the power flows and angles.
-Note that first input is of type `vPTDFDCPowerFlow`: this version is used to solve virtual 
-PTDF powerflows, and returns a [`vPTDFPowerFlowData`](@ref) object.
+Note that first input is of type [`vPTDFDCPowerFlow`](@ref): this version is used to solve 
+DC powerflows using a virtual Power Transfer Distribution Factor (PTDF) matrix. This 
+function returns a [`vPTDFPowerFlowData`](@ref) object.
 
 # Arguments:
 - [`::PTDFDCPowerFlow`](@ref PTDFDCPowerFlow):
         Run a virtual PTDF powerflow: internally, store the virtual PTDF matrix
         `power_network_matrix` and the ABA matrix as `aux_network_matrix`.
 - `sys::PSY.System`:
-        container storing the system data to consider in the PowerFlowData
-        structure.
+        A [`System`](@extref PowerSystems.System) object that represents the power 
+        grid under consideration.
 - `time_steps::Int`:
         number of time periods to consider in the PowerFlowData structure. It
         defines the number of columns of the matrices used to store data.
