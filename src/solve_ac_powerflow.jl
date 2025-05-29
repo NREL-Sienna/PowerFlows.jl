@@ -11,7 +11,7 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 
 # Arguments
 - [`pf::ACPowerFlow{<:ACPowerFlowSolverType}`](@ref ACPowerFlow): The power flow solver instance.
-- `system::PSY.System`: The power system model.
+- `system::PSY.System`: The power system model, a [`PowerSystems.System`](@extref) struct.
 - `kwargs...`: Additional keyword arguments.
 
 ## Keyword Arguments

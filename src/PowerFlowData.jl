@@ -186,8 +186,9 @@ end
         check_connectivity::Bool = true
     ) -> ACPowerFlowData{<:ACPowerFlowSolverType} 
 
-Creates the structure for an AC power flow calculation, given the power grid `sys`, 
-the number of time periods to consider, and their names.
+Creates the structure for an AC power flow calculation, given the 
+[`System`](@extref PowerSystems.System) `sys`, the number of time periods to 
+consider, and their names.
 
 Calling this function will not evaluate the power flows and angles.
 Note that first input is of type [`ACPowerFlow`](@ref): this version is used to solve 
@@ -300,7 +301,8 @@ end
     ) -> ABAPowerFlowData
 
 Creates a `PowerFlowData` structure configured for a stnadard DC power flow calculation, 
-given the power grid `sys`, the number of time periods to consider, and their names.
+given the [`System`](@extref PowerSystems.System) `sys`, the number of time periods to 
+consider, and their names.
 
 Calling this function will not evaluate the power flows and angles.
 Note that first input is of type [`DCPowerFlow`](@ref): this version is 
@@ -383,8 +385,9 @@ end
     ) -> PTDFPowerFlowData
 
 Creates a `PowerFlowData` structure configured for a Partial Transfer 
-Distribution Factor Matrix DC power flow calculation, given the power grid `sys`, 
-the number of time periods to consider, and their names.
+Distribution Factor Matrix DC power flow calculation, given the 
+[`System`](@extref PowerSystems.System) `sys`, the number of time periods to 
+consider, and their names.
 
 Calling this function will not evaluate the power flows and angles.
 Note that first input is of type [`PTDFDCPowerFlow`](@ref): this version is used to solve 
@@ -469,8 +472,9 @@ end
     ) -> vPTDFPowerFlowData
 
 Creates a `PowerFlowData` structure configured for a virtual Partial Transfer 
-Distribution Factor Matrix DC power flow calculation, given the power grid `sys`, 
-the number of time periods to consider, and their names.
+Distribution Factor Matrix DC power flow calculation, given the 
+[`System`](@extref PowerSystems.System) `sys`, the number of time periods to consider, and 
+their names.
 
 Calling this function will not evaluate the power flows and angles.
 Note that first input is of type [`vPTDFDCPowerFlow`](@ref): this version is used to solve 
@@ -549,7 +553,8 @@ Create an appropriate `PowerFlowContainer` for the given `PowerFlowEvaluationMod
 
 # Arguments:
 - `pfem::PowerFlowEvaluationModel`: power flow model to construct a container for (e.g., `DCPowerFlow()`)
-- `sys::PSY.System`: the system from which to initialize the power flow container
+- `sys::PSY.System`: the [System](@extref PowerSystems.System) from which to initialize the 
+    power flow container
 - `time_steps::Int`: number of time periods to consider (default is `1`)
 - `timestep_names::Vector{String}`: names of the time periods defined by the argument `time_steps`. Default value is `String[]`.
 - `check_connectivity::Bool`: Perform connectivity check on the network matrix. Default value is `true`.
