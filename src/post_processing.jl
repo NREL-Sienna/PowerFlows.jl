@@ -818,15 +818,20 @@ function get_lcc_names(data::PowerFlowData, sys::PSY.System)
 end
 
 """
+    write_results(
+        data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
+        sys::PSY.System,
+    )
+
 Returns a dictionary containing the DC power flow results. Each key corresponds
-to the name of the considered time periods, storing a DataFrame with the powerflow
+to the name of the considered time periods, storing a `DataFrame` with the powerflow
 results.
 
 # Arguments:
 - `data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}`:
         PowerFlowData structure containing power flows and bus angles.
 - `sys::PSY.System`:
-        container storing the system information.
+        A [`PowerSystems.System`](@extref) object storing the system information.
 """
 function write_results(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
@@ -879,6 +884,13 @@ function write_results(
 end
 
 """
+    write_results(
+        ::ACPowerFlow{<:ACPowerFlowSolverType},
+        sys::PSY.System,
+        data::ACPowerFlowData,
+        time_step::Int64,
+    ) -> Dict{String, DataFrames.DataFrame}
+
 Returns a dictionary containing the AC power flow results.
 
 Only single-period evaluation is supported at the moment for AC Power flows. The resulting
@@ -951,10 +963,13 @@ function write_results(
 end
 
 """
-Modify the values in the given `System` to correspond to the given `PowerFlowData` such that
-if a new `PowerFlowData` is constructed from the resulting system it is the same as `data`.
-See also `write_powerflow_solution!`. NOTE that this assumes that `data` was initialized
-from `sys` and then solved with no further modifications.
+     update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
+
+Modify the values in the given [`System`](@extref PowerSystems.System) to correspond to the 
+given `PowerFlowData` such that if a new `PowerFlowData` is constructed from the resulting 
+system it is the same as `data`. See also [`write_powerflow_solution!`](@ref). NOTE this 
+assumes that `data` was initialized from `sys` and then solved with no further 
+modifications.
 """
 function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
     check_unit_setting(sys)

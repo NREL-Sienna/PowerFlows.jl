@@ -139,8 +139,8 @@ end
     ) where T <: Union{PTDFDCPowerFlow, vPTDFDCPowerFlow, DCPowerFlow}
 
 
-Evaluates the provided DC power flow method `T` on the `system`, returning a dictionary of 
-`DataFrame`s containing the calculated branch flows and bus angles.
+Evaluates the provided DC power flow method `T` on the [PowerSystems.System](@extref) `sys`, 
+returning a dictionary of `DataFrame`s containing the calculated branch flows and bus angles.
 
 Provided for convenience: this interface bypasses the need to create a `PowerFlowData` 
 struct, but that's still what's happening under the hood.
@@ -148,7 +148,7 @@ struct, but that's still what's happening under the hood.
 # Example
 ```julia
 using PowerFlows, PowerSystemCaseBuilder
-sys = PowerSystemCaseBuilder.build_system(PSB.PSITestSystems, "c_sys5")
+sys = build_system(PSITestSystems, "c_sys5")
 d = solve_powerflow(DCPowerFlow(), sys)
 display(d["1"]["flow_results"])
 display(d["1"]["bus_results"])
@@ -182,9 +182,14 @@ the input `PSY.System` at that timestep.
 - `sys::PSY.System`:
         container gathering the system data.
 
+Note that `data` must have been created from the [System](@extref PowerSystems.System) 
+`sys` using one of the [`PowerFlowData`](@ref) constructors, such as 
+`PTDFPowerFlowData(sys)` or `vPTDFPowerFlowData(sys)`.
+
+# Example
 ```julia
 using PowerFlows, PowerSystemCaseBuilder
-sys = PowerSystemCaseBuilder.build_system(PSITestSystems, "c_sys14")
+sys = build_system(PSITestSystems, "c_sys14")
 data = PowerFlowData(PTDFDCPowerFlow(), sys, time_steps = 2)
 d = solve_powerflow(data, sys)
 display(d["2"]["flow_results"])

@@ -16,7 +16,6 @@ Private = false
 Pages = [
     "powerflow_types.jl",
     "psse_export.jl",
-    "psse_exporter_definitions.jl"
 ]
 ```
 
