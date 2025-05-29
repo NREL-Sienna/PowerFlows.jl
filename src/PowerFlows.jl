@@ -16,6 +16,7 @@ export PSSEExporter
 export update_exporter!
 export write_export
 export get_psse_export_paths
+export ACPowerFlowData, ABAPowerFlowData, PTDFPowerFlowData, vPTDFPowerFlowData
 
 import Base: @kwdef
 import Logging
@@ -41,6 +42,7 @@ include("common.jl")
 include("definitions.jl")
 include("powerflow_types.jl")
 include("PowerFlowData.jl")
+include("powerflow_data_type_aliases.jl")
 include("psse_export.jl")
 include("LinearSolverCache/linear_solver_cache.jl")
 include("LinearSolverCache/klu_linear_solver.jl")

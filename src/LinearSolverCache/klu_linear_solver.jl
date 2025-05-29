@@ -23,13 +23,15 @@ __numType(::Type{Int32}) = KLU.klu_numeric
 __numType(::Type{Int64}) = KLU.klu_l_numeric
 
 """A cached linear solver using KLU. Carefully written so as to minimize
-allocations: solve! and numeric_refactor! are completely non-allocating.
+allocations: `solve!` and `numeric_refactor!` are completely non-allocating.
+
+
 # Fields:
 - `K`: the underlying KLU object.
-- `reuse_symbolic::Bool`: reuse the symbolic factorization. Defaults to true.
+- `reuse_symbolic::Bool`: reuse the symbolic factorization. Defaults to `true`.
 - `check_pattern::Bool`: if true, `numeric_refactor!` verifies that the new
-matrix has the same sparsity structure. Defaults to true.
--`rf_common`, `rf_symbolic`, `rf_numeric`: internal usage. Stored to avoid allocations."""
+    matrix has the same sparsity structure. Defaults to `true`.
+- `rf_common`, `rf_symbolic`, `rf_numeric`: internal usage. Stored to avoid allocations."""
 mutable struct KLULinSolveCache{T} <: LinearSolverCache{T}
     K::KLU.KLUFactorization{Float64, T}
     reuse_symbolic::Bool
@@ -64,7 +66,10 @@ end
 
 get_reuse_symbolic(cache::KLULinSolveCache) = cache.reuse_symbolic
 
-"""Frees up the current symbolic and numeric factorizations stored by `cache`, if non-null.
+"""
+    symbolic_factor!(cache::KLULinSolveCache{T},  A::SparseMatrixCSC{Float64, T})
+
+Frees up the current symbolic and numeric factorizations stored by `cache`, if non-null.
 Then computes the symbolic factorization of `A` and stores that to `cache`."""
 function symbolic_factor!(
     cache::KLULinSolveCache{T},
