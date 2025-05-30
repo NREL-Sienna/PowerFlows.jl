@@ -59,12 +59,34 @@ function _get_injections!(
     sys::PSY.System,
 )
     sources = PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, sys)
+    has_generator = falses(length(bus_lookup))
     for source in sources
         !PSY.get_available(source) && continue
         bus = PSY.get_bus(source)
+        # Throw an error if we see an available source at a PQ bus.
+        if PSY.get_bustype(bus) == PSY.ACBusTypes.PQ
+            throw(
+                ArgumentError(
+                    "Source $(PSY.get_name(source)) at PQ bus $(PSY.get_name(bus)). Please change the bus type to PV or REF.",
+                ),
+            )
+        end
         bus_ix = bus_lookup[PSY.get_number(bus)]
+        has_generator[bus_ix] = true
         bus_activepower_injection[bus_ix] += PSY.get_active_power(source)
         bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power(source)
+    end
+    # Throw an error if there's a PV/REF bus without an available source.
+    for bus in PSY.get_components(PSY.ACBus, sys)
+        bus_ix = bus_lookup[PSY.get_number(bus)]
+        if PSY.get_bustype(bus) != PSY.ACBusTypes.PQ && !has_generator[bus_ix]
+            throw(
+                ArgumentError(
+                    "No available generator at bus $(PSY.get_name(bus)) with number $(PSY.get_number(bus))." *
+                    " Please change the bus type to PQ.",
+                ),
+            )
+        end
     end
     return
 end

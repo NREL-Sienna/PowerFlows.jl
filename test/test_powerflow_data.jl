@@ -63,3 +63,46 @@ end
     )
     @test IS.compare_values(powerflow_match_fn, sys_modify_updated, sys_mod_redist)
 end
+
+"""Helper function that sets availability of all sources at a given bus."""
+function set_availability_at_bus(
+    sys::PSY.System,
+    bus::PSY.ACBus,
+    availability::Bool,
+)
+    for source in
+        PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, sys)
+        if get_number(get_bus(source)) == get_number(bus)
+            set_available!(source, availability)
+        end
+    end
+    return nothing
+end
+
+@testset "Wrong bus type" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    buses = collect(PSY.get_components(PSY.ACBus, sys))
+    first_pv = findfirst(bus -> PSY.get_bustype(bus) == PSY.ACBusTypes.PV, buses)
+    pv_bus = buses[first_pv]
+    @assert PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
+    # PV with no available generators => error.
+    set_availability_at_bus(sys, pv_bus, false)
+    @assert PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
+    @test_throws ArgumentError PF.PowerFlowData(
+        PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(),
+        sys,
+    )
+    @assert PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
+    # change it to PQ: should work now.
+    set_bustype!(pv_bus, PSY.ACBusTypes.PQ)
+    @test PF.PowerFlowData(PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(), sys) isa Any
+    # Change generators to available. PQ with available generators => error.
+    set_availability_at_bus(sys, pv_bus, true)
+    @test_throws ArgumentError PF.PowerFlowData(
+        PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(),
+        sys,
+    )
+    # Change back to PV: should work again.
+    set_bustype!(pv_bus, PSY.ACBusTypes.PV)
+    @test PF.PowerFlowData(PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(), sys) isa Any
+end
