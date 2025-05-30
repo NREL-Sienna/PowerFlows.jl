@@ -70,13 +70,14 @@ function set_availability_at_bus(
     bus::PSY.ACBus,
     availability::Bool,
 )
-    for source in
-        PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, sys)
-        if get_number(get_bus(source)) == get_number(bus)
-            set_available!(source, availability)
-        end
-    end
-    return nothing
+    set_available!.(
+        PSY.get_components(
+            d -> !isa(d, PSY.ElectricLoad) && get_number(get_bus(d)) == get_number(bus),
+            PSY.StaticInjection,
+            sys,
+        ),
+        (availability,),
+    )
 end
 
 @testset "Wrong bus type" begin

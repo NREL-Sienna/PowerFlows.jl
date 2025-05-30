@@ -79,7 +79,8 @@ function _get_injections!(
     # Throw an error if there's a PV/REF bus without an available source.
     for bus in PSY.get_components(PSY.ACBus, sys)
         bus_ix = bus_lookup[PSY.get_number(bus)]
-        if PSY.get_bustype(bus) != PSY.ACBusTypes.PQ && !has_generator[bus_ix]
+        if PSY.get_bustype(bus) in [PSY.ACBusTypes.PV, PSY.ACBusTypes.REF] &&
+           !has_generator[bus_ix]
             throw(
                 ArgumentError(
                     "No available generator at bus $(PSY.get_name(bus)) with number $(PSY.get_number(bus))." *
