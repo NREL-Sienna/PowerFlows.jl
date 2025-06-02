@@ -33,6 +33,9 @@ const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX = 1.2
 
 const TIs = Union{Int32, Int64}
 
+# voltage validation
+const DEFAULT_VALIDATE_VOLTAGES = false
 const MinMax = NamedTuple{(:min, :max), Tuple{Float64, Float64}}
 const DEFAULT_VALIDATION_RANGE = (min = 0.5, max = 1.5)
+const MAX_INDS_TO_PRINT = 10
 const PF_MAX_LOG = 10

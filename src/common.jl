@@ -458,8 +458,7 @@ function validate_voltages(x::Vector{Float64},
     range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = VM_VALIDATION_RANGE,
     i::Int64 = 1,
 )
-    outside_range = Vector{Int64}()
-    MAX_INDS_TO_PRINT = 10
+    outside_range = sizehint!(Vector{Int64}(), MAX_INDS_TO_PRINT)
     for (i, bt) in enumerate(bus_types)
         if bt == PSY.ACBusTypes.PQ
             if (x[2 * i - 1] < range.min || x[2 * i - 1] > range.max) &&
@@ -475,7 +474,12 @@ function validate_voltages(x::Vector{Float64},
         @warn "Iteration $i: voltage magnitudes outside of range $range at $(size(outside_range, 1)) buses: $(outside_range)" maxlog =
             PF_MAX_LOG
     end
+    return
 end
 
-wdot(wx, x, wy, y) = LinearAlgebra.dot(wx .* x, wy .* y)
-wnorm(w, x) = norm(w .* x)
+"""Weighted dot product of two vectors."""
+wdot(wx::Vector{Float64}, x::Vector{Float64}, wy::Vector{Float64}, y::Vector{Float64}) =
+    LinearAlgebra.dot(wx .* x, wy .* y)
+
+"""Weighted norm of two vectors."""
+wnorm(w::Vector{Float64}, x::Vector{Float64}) = norm(w .* x)

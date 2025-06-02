@@ -280,6 +280,11 @@ function _run_powerflow_method(time_step::Int,
         :refinement_eps,
         DEFAULT_REFINEMENT_THRESHOLD)
     refinement_eps::Float64 = get(kwargs, :refinement_eps, DEFAULT_REFINEMENT_EPS)
+    validate_vms::Bool = get(
+        kwargs,
+        :validate_voltages,
+        DEFAULT_VALIDATE_VOLTAGES,
+    )
     validation_range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = get(
         kwargs,
         :vm_validation_range,
@@ -297,7 +302,7 @@ function _run_powerflow_method(time_step::Int,
             refinement_threshold,
             refinement_eps,
         )
-        validate_voltages(stateVector.x, bus_types, validation_range, i)
+        validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -329,6 +334,11 @@ function _run_powerflow_method(time_step::Int,
     eta::Float64 = get(kwargs, :eta, DEFAULT_TRUST_REGION_ETA)
     autoscale::Bool = get(kwargs, :autoscale, DEFAULT_AUTOSCALE)
 
+    validate_vms::Bool = get(
+        kwargs,
+        :validate_voltages,
+        DEFAULT_VALIDATE_VOLTAGES,
+    )
     validation_range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = get(
         kwargs,
         :vm_validation_range,
@@ -358,7 +368,7 @@ function _run_powerflow_method(time_step::Int,
             eta,
             autoscale,
         )
-        validate_voltages(stateVector.x, bus_types, validation_range, i)
+        validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -389,12 +399,17 @@ function _newton_powerflow(
     end
 
     bus_types = @view get_bus_type(J.data)[:, time_step]
+    validate_vms::Bool = get(
+        kwargs,
+        :validate_voltages,
+        DEFAULT_VALIDATE_VOLTAGES,
+    )
     validation_range::MinMax = get(
         kwargs,
         :vm_validation_range,
         DEFAULT_VALIDATION_RANGE,
     )
-    validate_voltages(x0, bus_types, validation_range, 0)
+    validate_vms && validate_voltages(x0, bus_types, validation_range, 0)
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
     stateVector = StateVectorCache(x0, residual.Rv)
