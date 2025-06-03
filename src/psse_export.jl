@@ -1070,7 +1070,7 @@ _step_to_string(::Nothing) = ""
 _step_to_string(iterable_step::Union{Tuple, AbstractArray}) = "_" * join(iterable_step, "_")
 _step_to_string(scalar_step::Any) = "_$scalar_step"
 
-"Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
+"Perform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
 function write_export(
     exporter::PSSEExporter,
     name::AbstractString;
