@@ -75,7 +75,12 @@ function _get_withdrawals!(
     bus_lookup::Dict{Int, Int},
     sys::PSY.System,
 )
-    loads = PSY.get_components(x -> !isa(x, PSY.FixedAdmittance), PSY.ElectricLoad, sys)
+    # FIXME properly handle SwitchedAdmittance components
+    loads = PSY.get_components(
+        x -> !isa(x, PSY.FixedAdmittance) && !isa(x, PSY.SwitchedAdmittance),
+        PSY.ElectricLoad,
+        sys,
+    )
     for l in loads
         !PSY.get_available(l) && continue
         bus = PSY.get_bus(l)
@@ -180,6 +185,7 @@ function make_dc_powerflowdata(
     valid_ix,
     converged,
     loss_factors,
+    fix_bustypes,
     calculate_loss_factors,
 )
     branch_type = Vector{DataType}(undef, length(branch_lookup))
@@ -205,6 +211,7 @@ function make_dc_powerflowdata(
         neighbors,
         converged,
         loss_factors,
+        fix_bustypes,
         calculate_loss_factors,
     )
 end
@@ -328,6 +335,34 @@ function make_bus_slack_participation_factors(
     return bus_slack_participation_factors, nothing
 end
 
+"""Return set of all bus numbers that should be PV: i.e. have an available generator, 
+or certain voltage regulation devices."""
+function buses_with_generators(sys::System)
+    gen_buses = Set{Int}()
+    for gen in PSY.get_components(PSY.Generator, sys)
+        if PSY.get_available(gen)
+            push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
+        end
+    end
+    return gen_buses
+end
+
+"""Change PV buses with no available generators to PQ. Assumes that generator 
+availability does not change between time steps."""
+function fix_bustypes!(
+    bustypes::Vector{PSY.ACBusTypes},
+    bus_lookup::Dict{Int, Int},
+    sys::System,
+)
+    has_available_gens = buses_with_generators(sys)
+    for (bus_no, row_no) in bus_lookup
+        if bustypes[row_no] == PSY.ACBusTypes.PV && !(bus_no in has_available_gens)
+            bustypes[row_no] = PSY.ACBusTypes.PQ
+        end
+    end
+    return
+end
+
 function make_powerflowdata(
     sys,
     time_steps,
@@ -345,6 +380,7 @@ function make_powerflowdata(
     converged,
     loss_factors,
     calculate_loss_factors,
+    fix_bustypes::Bool = false,
     generator_slack_participation_factors = nothing,
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
@@ -359,6 +395,8 @@ function make_powerflowdata(
         bus_lookup,
         sys,
     )
+
+    fix_bustypes && fix_bustypes!(bus_type, bus_lookup, sys)
 
     # define injection vectors related to the first timestep
     bus_activepower_injection = zeros(Float64, n_buses)
