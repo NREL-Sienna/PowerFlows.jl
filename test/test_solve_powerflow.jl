@@ -815,3 +815,27 @@ end
         check_connectivity = false,
     )
 end
+
+@testset "ACTIVSg2000 matches matpower's solution" begin
+    # here I'm using the PowerFlowData constructor as a convenient way to compute
+    # total power injections at each bus.
+    sys_matpower = System("$TEST_FILES_DIR/test_data/ACTIVSg2000_solved.m")
+    pf_matpower = ACPowerFlow()
+    data_matpower = PowerFlowData(pf_matpower, sys_matpower)
+
+    sys_sienna = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
+    pf_sienna = ACPowerFlow()
+    data_sienna = PowerFlowData(pf_sienna, sys_sienna; fix_bustypes = true)
+    solve_powerflow!(data_sienna; pf = pf_sienna, tol = 1e-11)
+    @test norm(data_matpower.bus_magnitude .- data_sienna.bus_magnitude, Inf) < 1e-3
+    @test norm(data_matpower.bus_angles .- data_sienna.bus_angles, Inf) < 1e-3
+    @test norm(
+        data_matpower.bus_activepower_injection .- data_sienna.bus_activepower_injection,
+        Inf,
+    ) < 1e-3
+    @test norm(
+        data_matpower.bus_reactivepower_injection .-
+        data_sienna.bus_reactivepower_injection,
+        Inf,
+    ) < 1e-3
+end
