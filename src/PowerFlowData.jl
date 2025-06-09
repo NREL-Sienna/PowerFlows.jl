@@ -66,10 +66,10 @@ flows and angles, as well as these ones.
         ordered according to "branch_lookup". br: number of branches, t: number of time
         period.
 - `timestep_map::Dict{Int, S}`:
-        dictonary mapping the number of the time periods (corresponding to the
-        column number of the previosly mentioned matrices) and their names.
+        dictionary mapping the number of the time periods (corresponding to the
+        column number of the previously mentioned matrices) and their names.
 - `valid_ix::Vector{Int}`:
-        vector containing the indeces of not slack buses
+        vector containing the indices of not slack buses
 - `power_network_matrix::M`:
         matrix used for the evaluation of either the power flows or bus angles,
         depending on the method considered.
@@ -220,7 +220,7 @@ function _calculate_neighbors(
 end
 
 """
-Function for the definition of the PowerFlowData strucure given the System
+Function for the definition of the PowerFlowData structure given the System
 data, number of time periods to consider and their names.
 Calling this function will not evaluate the power flows and angles.
 NOTE: use it for AC power flow computations.
@@ -236,7 +236,7 @@ NOTE: use it for AC power flow computations.
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "time_steps". Default
+        names of the time periods defines by the argument "time_steps". Default
         value = String[].
 - `check_connectivity::Bool`:
         Perform connectivity check on the network matrix. Default value = true.
@@ -328,7 +328,7 @@ end
 
 # DC Power Flow Data based on ABA and BA matrices
 """
-Function for the definition of the PowerFlowData strucure given the System
+Function for the definition of the PowerFlowData structure given the System
 data, number of time periods to consider and their names.
 Calling this function will not evaluate the power flows and angles.
 NOTE: use it for DC power flow computations.
@@ -345,7 +345,7 @@ NOTE: use it for DC power flow computations.
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "time_steps". Default
+        names of the time periods defines by the argument "time_steps". Default
         value = String[].
 - `check_connectivity::Bool`:
         Perform connectivity check on the network matrix. Default value = true.
@@ -402,7 +402,7 @@ end
 
 # DC Power Flow Data with PTDF matrix
 """
-Function for the definition of the PowerFlowData strucure given the System
+Function for the definition of the PowerFlowData structure given the System
 data, number of time periods to consider and their names.
 Calling this function will not evaluate the power flows and angles.
 NOTE: use it for DC power flow computations.
@@ -419,7 +419,7 @@ NOTE: use it for DC power flow computations.
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "time_steps". Default
+        names of the time periods defines by the argument "time_steps". Default
         value = String[].
 """
 
@@ -477,7 +477,7 @@ end
 
 # DC Power Flow Data with virtual PTDF matrix
 """
-Function for the definition of the PowerFlowData strucure given the System
+Function for the definition of the PowerFlowData structure given the System
 data, number of time periods to consider and their names.
 Calling this function will not evaluate the power flows and angles.
 NOTE: use it for DC power flow computations.
@@ -494,7 +494,7 @@ NOTE: use it for DC power flow computations.
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "time_steps". Default
+        names of the time periods defines by the argument "time_steps". Default
         value = String[].
 """
 function PowerFlowData(
