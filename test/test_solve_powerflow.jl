@@ -816,26 +816,43 @@ end
     )
 end
 
+function PowerFlowData_to_DataFrame(data::PowerFlowData)
+    nbuses = size(data.bus_magnitude, 1)
+    # Convert the PowerFlowData to a DataFrame
+    bus_rev_lookup = fill(-1, nbuses)
+    for (bus_no, row_no) in data.bus_lookup
+        bus_rev_lookup[row_no] = bus_no
+    end
+    @assert !(-1 in bus_rev_lookup)
+    df = DataFrame(;
+        bus_number = bus_rev_lookup,
+        Vm = data.bus_magnitude[:, 1],
+        bus_type = data.bus_type[:, 1],
+        angle = data.bus_angles[:, 1],
+        generator_p = data.bus_activepower_injection[:, 1],
+        generator_q = data.bus_reactivepower_injection[:, 1],
+        load_p = data.bus_activepower_withdrawals[:, 1],
+        load_q = data.bus_reactivepower_withdrawals[:, 1],
+    )
+    sort!(df, :bus_number)
+    return df
+end
+
 @testset "ACTIVSg2000 matches matpower's solution" begin
-    # here I'm using the PowerFlowData constructor as a convenient way to compute
-    # total power injections at each bus.
-    sys_matpower = System("$TEST_FILES_DIR/test_data/ACTIVSg2000_solved.m")
-    pf_matpower = ACPowerFlow()
-    data_matpower = PowerFlowData(pf_matpower, sys_matpower)
+    MATPOWER_CSV = joinpath(TEST_FILES_DIR, "test_data", "ACTIVSg2000_solved.csv")
+    matpower_df = DataFrame(CSV.File(MATPOWER_CSV))
 
     sys_sienna = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
     pf_sienna = ACPowerFlow()
     data_sienna = PowerFlowData(pf_sienna, sys_sienna; fix_bustypes = true)
     solve_powerflow!(data_sienna; pf = pf_sienna, tol = 1e-11)
-    @test norm(data_matpower.bus_magnitude .- data_sienna.bus_magnitude, Inf) < 1e-3
-    @test norm(data_matpower.bus_angles .- data_sienna.bus_angles, Inf) < 1e-3
-    @test norm(
-        data_matpower.bus_activepower_injection .- data_sienna.bus_activepower_injection,
-        Inf,
-    ) < 1e-3
-    @test norm(
-        data_matpower.bus_reactivepower_injection .-
-        data_sienna.bus_reactivepower_injection,
-        Inf,
-    ) < 1e-3
+    sienna_df = PowerFlowData_to_DataFrame(data_sienna)
+    @assert all(sienna_df[!, "bus_number"] .== matpower_df[!, "bus_number"])
+    # The bus types don't match, so we don't compare them here. (We changed PQ with 
+    # generators to PV. Matpower doesn't do this, though it treats them as PV internally.)
+    @test norm(sienna_df[!, "Vm"] .- matpower_df[!, "Vm"], Inf) < 1e-4
+    @test norm(sienna_df[!, "angle"] .- matpower_df[!, "angle"], Inf) < 1e-4
+    @test norm(sienna_df[!, "generator_p"] .- matpower_df[!, "generator_p"], Inf) < 1e-4
+    # this fails with 1e-4.
+    @test norm(sienna_df[!, "generator_q"] .- matpower_df[!, "generator_q"], Inf) < 1e-3
 end
