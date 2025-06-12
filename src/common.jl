@@ -58,7 +58,12 @@ function _get_injections!(
     bus_lookup::Dict{Int, Int},
     sys::PSY.System,
 )
-    sources = PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, sys)
+    # PSS/E counts buses with switched shunts as voltage-controlled, PV, so we do the same.
+    sources = PSY.get_components(
+        d -> !isa(d, PSY.ElectricLoad) || isa(d, PSY.SwitchedAdmittance),
+        PSY.StaticInjection,
+        sys,
+    )
     has_generator = falses(length(bus_lookup))
     for source in sources
         !PSY.get_available(source) && continue
