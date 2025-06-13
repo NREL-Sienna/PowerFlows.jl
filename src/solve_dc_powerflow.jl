@@ -130,9 +130,9 @@ in the PSY.System considered as input.
 function solve_powerflow(
     ::PTDFDCPowerFlow,
     sys::PSY.System;
-    fix_bustypes = false,
+    correct_bustypes = false,
 )
-    data = PowerFlowData(PTDFDCPowerFlow(), sys; fix_bustypes = fix_bustypes)
+    data = PowerFlowData(PTDFDCPowerFlow(), sys; correct_bustypes = correct_bustypes)
     solve_powerflow!(data)
     return write_results(data, sys)
 end
@@ -156,9 +156,9 @@ in the PSY.System considered as input.
 function solve_powerflow(
     ::DCPowerFlow,
     sys::PSY.System;
-    fix_bustypes = false,
+    correct_bustypes = false,
 )
-    data = PowerFlowData(DCPowerFlow(), sys; fix_bustypes = fix_bustypes)
+    data = PowerFlowData(DCPowerFlow(), sys; correct_bustypes = correct_bustypes)
     solve_powerflow!(data)
     return write_results(data, sys)
 end
@@ -182,9 +182,9 @@ in the PSY.System considered as input.
 function solve_powerflow(
     ::vPTDFDCPowerFlow,
     sys::PSY.System;
-    fix_bustypes = false,
+    correct_bustypes = false,
 )
-    data = PowerFlowData(vPTDFDCPowerFlow(), sys; fix_bustypes = fix_bustypes)
+    data = PowerFlowData(vPTDFDCPowerFlow(), sys; correct_bustypes = correct_bustypes)
     solve_powerflow!(data)
     return write_results(data, sys)
 end

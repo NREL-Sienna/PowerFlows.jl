@@ -1,16 +1,16 @@
 @testset "PowerFlowData" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    @test PowerFlowData(ACPowerFlow{LUACPowerFlow}(), sys; fix_bustypes = true) isa
+    @test PowerFlowData(ACPowerFlow{LUACPowerFlow}(), sys; correct_bustypes = true) isa
           PF.ACPowerFlowData
     @test PowerFlowData(
         ACPowerFlow{NewtonRaphsonACPowerFlow}(),
         sys;
-        fix_bustypes = true,
+        correct_bustypes = true,
     ) isa PF.ACPowerFlowData
-    @test PowerFlowData(DCPowerFlow(), sys; fix_bustypes = true) isa PF.ABAPowerFlowData
-    @test PowerFlowData(PTDFDCPowerFlow(), sys; fix_bustypes = true) isa
+    @test PowerFlowData(DCPowerFlow(), sys; correct_bustypes = true) isa PF.ABAPowerFlowData
+    @test PowerFlowData(PTDFDCPowerFlow(), sys; correct_bustypes = true) isa
           PF.PTDFPowerFlowData
-    @test PowerFlowData(vPTDFDCPowerFlow(), sys; fix_bustypes = true) isa
+    @test PowerFlowData(vPTDFDCPowerFlow(), sys; correct_bustypes = true) isa
           PF.vPTDFPowerFlowData
 end
 
@@ -22,20 +22,20 @@ end
         DCPowerFlow(),
         sys;
         time_steps = time_steps,
-        fix_bustypes = true,
+        correct_bustypes = true,
     ) isa PF.ABAPowerFlowData
     @test PowerFlowData(
         PTDFDCPowerFlow(),
         sys;
         time_steps = time_steps,
-        fix_bustypes = true,
+        correct_bustypes = true,
     ) isa
           PF.PTDFPowerFlowData
     @test PowerFlowData(
         vPTDFDCPowerFlow(),
         sys;
         time_steps = time_steps,
-        fix_bustypes = true,
+        correct_bustypes = true,
     ) isa
           PF.vPTDFPowerFlowData
 end
@@ -46,12 +46,12 @@ end
 
     sys_original = build_system(PSISystems, "RTS_GMLC_DA_sys")
     data_original =
-        PowerFlowData(ACPowerFlow{ACSolver}(), sys_original; fix_bustypes = true)
+        PowerFlowData(ACPowerFlow{ACSolver}(), sys_original; correct_bustypes = true)
 
     sys_modified = deepcopy(sys_original)
     modify_rts_system!(sys_modified)
     data_modified =
-        PowerFlowData(ACPowerFlow{ACSolver}(), sys_original; fix_bustypes = true)
+        PowerFlowData(ACPowerFlow{ACSolver}(), sys_original; correct_bustypes = true)
     modify_rts_powerflow!(data_modified)
 
     # update_system! with unmodified PowerFlowData should result in system that yields unmodified PowerFlowData
@@ -59,7 +59,7 @@ end
     sys_null_updated = deepcopy(sys_original)
     PF.update_system!(sys_null_updated, data_original)
     data_null_updated =
-        PowerFlowData(ACPowerFlow{ACSolver}(), sys_null_updated; fix_bustypes = true)
+        PowerFlowData(ACPowerFlow{ACSolver}(), sys_null_updated; correct_bustypes = true)
     @test IS.compare_values(powerflow_match_fn, data_null_updated, data_original)
 
     # Modified versions should not be the same as unmodified versions
@@ -73,7 +73,7 @@ end
     # Constructing PowerFlowData from modified system should result in data_modified
     @test IS.compare_values(
         powerflow_match_fn,
-        PowerFlowData(ACPowerFlow{ACSolver}(), sys_modified; fix_bustypes = true),
+        PowerFlowData(ACPowerFlow{ACSolver}(), sys_modified; correct_bustypes = true),
         data_modified,
     )
 
@@ -84,7 +84,7 @@ end
     sys_mod_redist = deepcopy(sys_modified)
     PF.update_system!(
         sys_mod_redist,
-        PowerFlowData(ACPowerFlow{ACSolver}(), sys_mod_redist; fix_bustypes = true),
+        PowerFlowData(ACPowerFlow{ACSolver}(), sys_mod_redist; correct_bustypes = true),
     )
     @test IS.compare_values(powerflow_match_fn, sys_modify_updated, sys_mod_redist)
 end
@@ -105,7 +105,7 @@ function set_availability_at_bus(
     )
 end
 
-@testset "test fix_bustypes" begin
+@testset "test correct_bustypes" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     buses = collect(PSY.get_components(PSY.ACBus, sys))
     # prevent against unknowningly having a PV bus with no available generators.
@@ -120,7 +120,7 @@ end
     pv_bus_row = PF.get_bus_lookup(data)[PSY.get_number(pv_bus)]
     @test PF.get_bus_type(data)[pv_bus_row, 1] == PSY.ACBusTypes.PV
 
-    data_fixed = PF.PowerFlowData(PF.ACPowerFlow(), sys; fix_bustypes = true)
+    data_fixed = PF.PowerFlowData(PF.ACPowerFlow(), sys; correct_bustypes = true)
     pv_bus_row_fixed = PF.get_bus_lookup(data_fixed)[PSY.get_number(pv_bus)]
     @test PF.get_bus_type(data_fixed)[pv_bus_row_fixed, 1] == PSY.ACBusTypes.PQ
 

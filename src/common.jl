@@ -58,8 +58,8 @@ function _get_injections!(
     bus_lookup::Dict{Int, Int},
     sys::PSY.System,
 )
-    sources = PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, sys)
-    for source in sources
+    for source in PSY.get_components(PSY.StaticInjection, sys)
+        isa(source, PSY.ElectricLoad) && continue
         !PSY.get_available(source) && continue
         bus = PSY.get_bus(source)
         bus_ix = bus_lookup[PSY.get_number(bus)]
@@ -76,12 +76,8 @@ function _get_withdrawals!(
     sys::PSY.System,
 )
     # FIXME properly handle SwitchedAdmittance components
-    loads = PSY.get_components(
-        x -> !isa(x, PSY.FixedAdmittance) && !isa(x, PSY.SwitchedAdmittance),
-        PSY.ElectricLoad,
-        sys,
-    )
-    for l in loads
+    for l in PSY.get_components(PSY.ElectricLoad, sys)
+        (isa(l, PSY.FixedAdmittance) || isa(l, PSY.SwitchedAdmittance)) && continue
         !PSY.get_available(l) && continue
         bus = PSY.get_bus(l)
         bus_ix = bus_lookup[PSY.get_number(bus)]
@@ -96,8 +92,8 @@ function _get_reactive_power_bound!(
     bus_reactivepower_bounds::Vector{Vector{Float64}},
     bus_lookup::Dict{Int, Int},
     sys::PSY.System)
-    sources = PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, sys)
-    for source in sources
+    for source in PSY.get_components(PSY.StaticInjection, sys)
+        isa(source, PSY.ElectricLoad) && continue
         !PSY.get_available(source) && continue
         bus = PSY.get_bus(source)
         bus_ix = bus_lookup[PSY.get_number(bus)]
@@ -185,7 +181,7 @@ function make_dc_powerflowdata(
     valid_ix,
     converged,
     loss_factors,
-    fix_bustypes,
+    correct_bustypes,
     calculate_loss_factors,
 )
     branch_type = Vector{DataType}(undef, length(branch_lookup))
@@ -211,7 +207,7 @@ function make_dc_powerflowdata(
         neighbors,
         converged,
         loss_factors,
-        fix_bustypes,
+        correct_bustypes,
         calculate_loss_factors,
     )
 end
@@ -349,7 +345,7 @@ end
 
 """Change PV buses with no available generators to PQ. Assumes that generator 
 availability does not change between time steps."""
-function fix_bustypes!(
+function correct_bustypes!(
     bustypes::Vector{PSY.ACBusTypes},
     bus_lookup::Dict{Int, Int},
     sys::System,
@@ -380,7 +376,7 @@ function make_powerflowdata(
     converged,
     loss_factors,
     calculate_loss_factors,
-    fix_bustypes::Bool = false,
+    correct_bustypes::Bool = false,
     generator_slack_participation_factors = nothing,
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
@@ -396,7 +392,7 @@ function make_powerflowdata(
         sys,
     )
 
-    fix_bustypes && fix_bustypes!(bus_type, bus_lookup, sys)
+    correct_bustypes && correct_bustypes!(bus_type, bus_lookup, sys)
 
     # define injection vectors related to the first timestep
     bus_activepower_injection = zeros(Float64, n_buses)

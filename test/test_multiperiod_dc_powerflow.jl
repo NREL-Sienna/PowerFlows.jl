@@ -26,11 +26,22 @@
 
     # create structure for multi-period case
     time_steps = 24
-    data_1 = PowerFlowData(DCPowerFlow(), sys; time_steps = time_steps, fix_bustypes = true)
+    data_1 =
+        PowerFlowData(DCPowerFlow(), sys; time_steps = time_steps, correct_bustypes = true)
     data_2 =
-        PowerFlowData(PTDFDCPowerFlow(), sys; time_steps = time_steps, fix_bustypes = true)
+        PowerFlowData(
+            PTDFDCPowerFlow(),
+            sys;
+            time_steps = time_steps,
+            correct_bustypes = true,
+        )
     data_3 =
-        PowerFlowData(vPTDFDCPowerFlow(), sys; time_steps = time_steps, fix_bustypes = true)
+        PowerFlowData(
+            vPTDFDCPowerFlow(),
+            sys;
+            time_steps = time_steps,
+            correct_bustypes = true,
+        )
 
     # allocate data from csv
     injs = Matrix(injections)
