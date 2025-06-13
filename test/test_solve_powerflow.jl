@@ -33,7 +33,12 @@
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
     pf = ACPowerFlow{ACSolver}()
-    data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
+    data = PowerFlows.PowerFlowData(
+        pf,
+        sys;
+        check_connectivity = true,
+        correct_bustypes = true,
+    )
     #Compare results between finite diff methods and Jacobian method
     converged1 = PowerFlows._ac_powerflow(data, pf, 1)
     x1 = _calc_x(data, 1)
@@ -61,7 +66,12 @@
 
     # Test enforcing the reactive power limits in closer detail
     set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
-    data = PowerFlows.PowerFlowData(pf, sys; check_connectivity = true)
+    data = PowerFlows.PowerFlowData(
+        pf,
+        sys;
+        check_connectivity = true,
+        correct_bustypes = true,
+    )
     converged2 = PowerFlows._ac_powerflow(data, pf, 1; check_reactive_power_limits = true)
     x2 = _calc_x(data, 1)
     @test LinearAlgebra.norm(result_14 - x2, Inf) >= 1e-6
@@ -71,19 +81,19 @@ end
 @testset "AC Power Flow 14-Bus Line Configurations" for ACSolver in AC_SOLVERS_TO_TEST
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     pf = ACPowerFlow{ACSolver}()
-    base_res = solve_powerflow(pf, sys)
+    base_res = solve_powerflow(pf, sys; correct_bustypes = true)
     branch = first(PSY.get_components(Line, sys))
     dyn_branch = DynamicBranch(branch)
     add_component!(sys, dyn_branch)
-    @test dyn_pf = solve_powerflow!(pf, sys)
-    dyn_pf = solve_powerflow(pf, sys)
+    @test dyn_pf = solve_powerflow!(pf, sys; correct_bustypes = true)
+    dyn_pf = solve_powerflow(pf, sys; correct_bustypes = true)
     @test LinearAlgebra.norm(dyn_pf["bus_results"].Vm - base_res["bus_results"].Vm, Inf) <=
           1e-6
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
     PSY.set_available!(line, false)
-    solve_powerflow!(pf, sys)
+    solve_powerflow!(pf, sys; correct_bustypes = true)
     @test PSY.get_active_power_flow(line) == 0.0
     test_bus = get_component(PSY.ACBus, sys, "Bus 4")
     @test isapprox(PSY.get_magnitude(test_bus), 1.002; atol = 1e-3, rtol = 0)
@@ -91,7 +101,7 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
     PSY.set_available!(line, false)
-    res = solve_powerflow(pf, sys)
+    res = solve_powerflow(pf, sys; correct_bustypes = true)
     @test res["flow_results"].P_from_to[4] == 0.0
     @test res["flow_results"].P_to_from[4] == 0.0
 end
@@ -128,6 +138,8 @@ end
     )
 end
 
+# FIXME currently errors: write_powerflow_solution! relies on all PV buses in
+# the system having available generators.
 @testset "AC Test 240 Case PSS/e results" for ACSolver in AC_SOLVERS_TO_TEST
     file = joinpath(
         TEST_FILES_DIR,
@@ -145,9 +157,9 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
-    pf1 = solve_powerflow!(pf, system)
+    pf1 = solve_powerflow!(pf, system; correct_bustypes = true)
     @test pf1
-    pf_result_df = solve_powerflow(pf, system)
+    pf_result_df = solve_powerflow(pf, system; correct_bustypes = true)
 
     v_diff, angle_diff, number = psse_bus_results_compare(pf_bus_result_file, pf_result_df)
     p_diff, q_diff, names = psse_gen_results_compare(pf_gen_result_file, system)
@@ -255,13 +267,14 @@ end
     data = PowerFlowData(
         pf_default,
         sys;
-        check_connectivity = true)
+        check_connectivity = true,
+        correct_bustypes = true)
 
     time_step = 1
 
-    res_default = solve_powerflow(pf_default, sys)  # must be the same as KLU
-    res_lu = solve_powerflow(pf_lu, sys)
-    res_newton = solve_powerflow(pf_newton, sys)
+    res_default = solve_powerflow(pf_default, sys; correct_bustypes = true)  # must be the same as KLU
+    res_lu = solve_powerflow(pf_lu, sys; correct_bustypes = true)
+    res_newton = solve_powerflow(pf_newton, sys; correct_bustypes = true)
 
     @test all(
         isapprox.(
@@ -308,17 +321,20 @@ end
     data_lu = PowerFlowData(
         pf_lu_lf,
         sys;
-        check_connectivity = true)
+        check_connectivity = true,
+        correct_bustypes = true)
 
     data_newton = PowerFlowData(
         pf_newton,
         sys;
-        check_connectivity = true)
+        check_connectivity = true,
+        correct_bustypes = true)
 
     data_brute_force = PowerFlowData(
         pf_newton,
         sys;
-        check_connectivity = true)
+        check_connectivity = true,
+        correct_bustypes = true)
 
     time_step = 1
 
@@ -422,10 +438,10 @@ end
     end
 
     pf = ACPowerFlow()
-    data = PowerFlowData(pf, sys)
+    data = PowerFlowData(pf, sys; correct_bustypes = true)
     original_bus_power, original_gen_power = _system_generation_power(sys, bus_numbers)
     data_original_bus_power = copy(data.bus_activepower_injection[:, 1])
-    res1 = solve_powerflow(pf, sys)
+    res1 = solve_powerflow(pf, sys; correct_bustypes = true)
 
     bus_slack_participation_factors = zeros(Float64, length(bus_numbers))
     bus_slack_participation_factors[ref_n] .= 1.0
@@ -435,7 +451,7 @@ end
             bus_slack_participation_factors,
         ),
     )
-    res2 = solve_powerflow(pf2, sys)
+    res2 = solve_powerflow(pf2, sys; correct_bustypes = true)
 
     # basic test: if we pass the same slack participation factors as the default ones, the results
     # should be the same
@@ -808,4 +824,45 @@ end
         sys;
         check_connectivity = false,
     )
+end
+
+function PowerFlowData_to_DataFrame(data::PowerFlowData)
+    nbuses = size(data.bus_magnitude, 1)
+    # Convert the PowerFlowData to a DataFrame
+    bus_rev_lookup = fill(-1, nbuses)
+    for (bus_no, row_no) in data.bus_lookup
+        bus_rev_lookup[row_no] = bus_no
+    end
+    @assert !(-1 in bus_rev_lookup)
+    df = DataFrame(;
+        bus_number = bus_rev_lookup,
+        Vm = data.bus_magnitude[:, 1],
+        bus_type = data.bus_type[:, 1],
+        angle = data.bus_angles[:, 1],
+        generator_p = data.bus_activepower_injection[:, 1],
+        generator_q = data.bus_reactivepower_injection[:, 1],
+        load_p = data.bus_activepower_withdrawals[:, 1],
+        load_q = data.bus_reactivepower_withdrawals[:, 1],
+    )
+    sort!(df, :bus_number)
+    return df
+end
+
+@testset "ACTIVSg2000 matches matpower's solution" begin
+    MATPOWER_CSV = joinpath(TEST_FILES_DIR, "test_data", "ACTIVSg2000_solved.csv")
+    matpower_df = DataFrame(CSV.File(MATPOWER_CSV))
+
+    sys_sienna = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
+    pf_sienna = ACPowerFlow()
+    data_sienna = PowerFlowData(pf_sienna, sys_sienna; correct_bustypes = true)
+    solve_powerflow!(data_sienna; pf = pf_sienna, tol = 1e-11)
+    sienna_df = PowerFlowData_to_DataFrame(data_sienna)
+    @assert all(sienna_df[!, "bus_number"] .== matpower_df[!, "bus_number"])
+    # The bus types don't match, so we don't compare them here. (We changed PQ with 
+    # generators to PV. Matpower doesn't do this, though it treats them as PV internally.)
+    @test norm(sienna_df[!, "Vm"] .- matpower_df[!, "Vm"], Inf) < 1e-3
+    @test norm(sienna_df[!, "angle"] .- matpower_df[!, "angle"], Inf) < 1e-3
+    @test norm(sienna_df[!, "generator_p"] .- matpower_df[!, "generator_p"], Inf) < 1e-3
+    # this fails with 1e-4.
+    @test norm(sienna_df[!, "generator_q"] .- matpower_df[!, "generator_q"], Inf) < 1e-3
 end
