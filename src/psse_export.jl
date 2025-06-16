@@ -950,8 +950,8 @@ function write_to_buffers!(
         CM = 1  # NOTE on parsing we do the transformation to this unit system
         MAG1 = real(PSY.get_primary_shunt(transformer))
         MAG2 = imag(PSY.get_primary_shunt(transformer))
-        (MAG2 < 0) &&
-            @warn "Detected negative MAG2 for transformer $(PSY.get_name(transformer)) due to negative imaginary part of `get_primary_shunt`; exporting anyway"
+        (MAG2 > 0) &&
+            @warn "Detected positive MAG2 for transformer $(PSY.get_name(transformer)) due to positive imaginary part of `get_primary_shunt`; exporting anyway"
         NMETR = PSSE_DEFAULT
         NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
         STAT = PSY.get_available(transformer) ? 1 : 0
