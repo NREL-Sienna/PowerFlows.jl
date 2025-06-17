@@ -353,6 +353,7 @@ function correct_bustypes!(
     has_available_gens = buses_with_generators(sys)
     for (bus_no, row_no) in bus_lookup
         if bustypes[row_no] == PSY.ACBusTypes.PV && !(bus_no in has_available_gens)
+            @info "Bus $bus_no changed from PV to PQ: no available generators at that bus."
             bustypes[row_no] = PSY.ACBusTypes.PQ
         end
     end
