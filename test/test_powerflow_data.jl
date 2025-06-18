@@ -116,14 +116,38 @@ end
     pv_bus = buses[first_pv]
     set_availability_at_bus(sys, pv_bus, false)
 
-    data = PF.PowerFlowData(PF.ACPowerFlow(), sys)
-    pv_bus_row = PF.get_bus_lookup(data)[PSY.get_number(pv_bus)]
-    @test PF.get_bus_type(data)[pv_bus_row, 1] == PSY.ACBusTypes.PV
-
     data_fixed = PF.PowerFlowData(PF.ACPowerFlow(), sys; correct_bustypes = true)
     pv_bus_row_fixed = PF.get_bus_lookup(data_fixed)[PSY.get_number(pv_bus)]
+    # bus type in power flow data struct changes, but bus type in system shouldn't change.
     @test PF.get_bus_type(data_fixed)[pv_bus_row_fixed, 1] == PSY.ACBusTypes.PQ
+    @test PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
 
-    @test PF.get_bus_type(data_fixed)[begin:end .!= pv_bus_row_fixed, 1] ==
-          PF.get_bus_type(data)[begin:end .!= pv_bus_row, 1]
+    for bus in buses
+        if get_number(bus) != get_number(pv_bus)
+            @test get_bustype(bus) == PF.get_bus_type(data_fixed)[
+                PF.get_bus_lookup(data_fixed)[get_number(bus)],
+                1,
+            ]
+        end
+    end
+end
+
+@testset "Wrong bus type" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    buses = collect(PSY.get_components(PSY.ACBus, sys))
+    first_pv = findfirst(bus -> PSY.get_bustype(bus) == PSY.ACBusTypes.PV, buses)
+    pv_bus = buses[first_pv]
+    set_availability_at_bus(sys, pv_bus, true)
+    @assert PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
+    # PV with no available generators => error.
+    set_availability_at_bus(sys, pv_bus, false)
+    @assert PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
+    @test_throws ArgumentError PF.PowerFlowData(
+        PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(),
+        sys,
+    )
+    @assert PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
+    # change it to PQ: should work now.
+    set_bustype!(pv_bus, PSY.ACBusTypes.PQ)
+    @test PF.PowerFlowData(PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(), sys) isa Any
 end

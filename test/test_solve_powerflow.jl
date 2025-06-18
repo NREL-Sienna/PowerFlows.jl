@@ -115,7 +115,7 @@ end
     fix_shunt = PSY.FixedAdmittance("FixAdmBus3", true, bus_103, 0.0 + 0.2im)
     add_component!(sys_3bus, fix_shunt)
     pf = ACPowerFlow{ACSolver}()
-    df = solve_powerflow(pf, sys_3bus)
+    df = solve_powerflow(pf, sys_3bus; correct_bustypes = true)
     @test isapprox(df["bus_results"].P_gen, p_gen_matpower_3bus, atol = 1e-4)
     @test isapprox(df["bus_results"].Q_gen, q_gen_matpower_3bus, atol = 1e-4)
 end
@@ -184,7 +184,7 @@ end
     s2 = _add_simple_source!(sys, b, -0.5, -0.1)
 
     pf = ACPowerFlow{ACSolver}()
-    @test solve_powerflow!(pf, sys)
+    @test solve_powerflow!(pf, sys; correct_bustypes = true)
 
     #Create power mismatch, test for error
     set_active_power!(s1, -0.4)
@@ -207,13 +207,14 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
-    @test solve_powerflow!(pf, sys)
+    @test solve_powerflow!(pf, sys; correct_bustypes = true)
 
     #Create power mismatch, test for error
     set_reactive_power!(s3, -0.5)
     @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_powerflow!(
         pf,
         sys,
+        correct_bustypes = true,
     )
 end
 
@@ -247,7 +248,7 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
-    @test solve_powerflow!(pf, sys)
+    @test solve_powerflow!(pf, sys; correct_bustypes = true)
     @test isapprox(get_active_power(s2), 0.5; atol = 0.001)
     @test isapprox(get_reactive_power(s2), 1.1; atol = 0.001)
 end
@@ -573,7 +574,7 @@ end
         (ThermalStandard, get_name(g2)) => 0.0,
     )
     pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
-    solve_powerflow!(pf, sys)
+    solve_powerflow!(pf, sys; correct_bustypes = true)
     @test isapprox(get_active_power(g1), p1; atol = 1e-6, rtol = 0)
     @test isapprox(get_active_power(g2), p2; atol = 1e-6, rtol = 0)
     reset_p()
@@ -584,7 +585,7 @@ end
         (ThermalStandard, get_name(g2)) => 0.5,
     )
     pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
-    solve_powerflow!(pf, sys)
+    solve_powerflow!(pf, sys; correct_bustypes = true)
     @test isapprox(get_active_power(s1), ps; atol = 1e-6, rtol = 0)
     @test isapprox(
         get_active_power(g1) - p1,
@@ -692,12 +693,12 @@ end
         generator_slack_participation_factors = generator_slack_participation_factors,
     )
 
-    data = PowerFlowData(pf, sys; check_connectivity = false)
+    data = PowerFlowData(pf, sys; check_connectivity = false, correct_bustypes = true)
     data_original_bus_power = copy(data.bus_activepower_injection[:, 1])
     bus_numbers = get_bus_numbers(sys)
     original_bus_power, original_gen_power = _system_generation_power(sys, bus_numbers)
 
-    solve_powerflow!(pf, sys; check_connectivity = false)
+    solve_powerflow!(pf, sys; check_connectivity = false, correct_bustypes = true)
 
     if mode == :same
         @test isapprox(get_active_power(s1), get_active_power(g1), rtol = 0, atol = 1e-6)
@@ -805,7 +806,7 @@ end
     pf = ACPowerFlow(ACSolver;
         generator_slack_participation_factors = generator_slack_participation_factors,
     )
-    solve_powerflow!(pf, sys)
+    solve_powerflow!(pf, sys; correct_bustypes = true)
 
     # equal slack participation
     for (s, g) in zip(sources, gens)
@@ -823,6 +824,7 @@ end
         pf,
         sys;
         check_connectivity = false,
+        correct_bustypes = true,
     )
 end
 
