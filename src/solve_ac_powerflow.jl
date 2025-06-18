@@ -49,6 +49,7 @@ function solve_powerflow!(
             pf,
             system;
             check_connectivity = get(kwargs, :check_connectivity, true),
+            correct_bustypes = get(kwargs, :correct_bustypes, false),
         )
 
         converged = _ac_powerflow(data, pf, time_step; kwargs...)
@@ -92,6 +93,7 @@ function solve_powerflow(
             pf,
             system;
             check_connectivity = get(kwargs, :check_connectivity, true),
+            correct_bustypes = get(kwargs, :correct_bustypes, false),
         )
 
         converged = _ac_powerflow(data, pf, time_step; kwargs...)
