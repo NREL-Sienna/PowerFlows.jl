@@ -101,7 +101,7 @@ end
 
 """
 Create the Jacobian matrix structure for a reference bus (REF). Ignoring this because we fill all four values even for PV buses with 
-    structiural zeros using the same function as for PQ buses.
+    structural zeros using the same function as for PQ buses.
 """
 function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
     columns::Vector{Int32},
@@ -118,7 +118,7 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
         push!(rows, row_from_p)
         push!(columns, col_to_vm)
         push!(values, 0.0)
-        # Rective PF w/r Local Reactive Power
+        # Reactive PF w/r Local Reactive Power
         push!(rows, row_from_q)
         push!(columns, col_to_va)
         push!(values, 0.0)
@@ -249,10 +249,10 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
 
     num_buses = first(size(data.bus_type))
 
-    numlines = length(get_branch_lookup(data))
-    sizehint!(rows, 4 * numlines)
-    sizehint!(columns, 4 * numlines)
-    sizehint!(values, 4 * numlines)
+    num_lines = length(get_branch_lookup(data))
+    sizehint!(rows, 4 * num_lines)
+    sizehint!(columns, 4 * num_lines)
+    sizehint!(values, 4 * num_lines)
 
     for bus_from in 1:num_buses
         row_from_p = 2 * bus_from - 1  # Row index for the value that is related to active power
