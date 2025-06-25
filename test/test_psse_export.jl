@@ -228,8 +228,8 @@ function test_power_flow(
     sys2::System;
     exclude_reactive_flow = false,
 )
-    result1 = solve_powerflow(pf, sys1)
-    result2 = solve_powerflow(pf, sys2)
+    result1 = solve_powerflow(pf, sys1; correct_bustypes = true)
+    result2 = solve_powerflow(pf, sys2; correct_bustypes = true)
     reactive_power_tol =
         exclude_reactive_flow ? nothing : POWERFLOW_COMPARISON_TOLERANCE
     @test compare_df_within_tolerance("bus_results", result1["bus_results"],
