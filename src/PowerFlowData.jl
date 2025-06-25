@@ -248,7 +248,8 @@ function PowerFlowData(
     sys::PSY.System;
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true)
+    check_connectivity::Bool = true,
+    correct_bustypes = false)
     calculate_loss_factors = pf.calculate_loss_factors
     generator_slack_participation_factors = pf.generator_slack_participation_factors
     # assign timestep_names
@@ -322,6 +323,7 @@ function PowerFlowData(
         converged,
         loss_factors,
         calculate_loss_factors,
+        correct_bustypes,
         generator_slack_participation_factors,
     )
 end
@@ -355,7 +357,8 @@ function PowerFlowData(
     sys::PSY.System;
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true)
+    check_connectivity::Bool = true,
+    correct_bustypes = false)
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
@@ -396,6 +399,7 @@ function PowerFlowData(
         valid_ix,
         converged,
         loss_factors,
+        correct_bustypes,
         calculate_loss_factors,
     )
 end
@@ -428,7 +432,8 @@ function PowerFlowData(
     sys::PSY.System;
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true)
+    check_connectivity::Bool = true,
+    correct_bustypes = false)
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
@@ -471,6 +476,7 @@ function PowerFlowData(
         valid_ix,
         converged,
         loss_factors,
+        correct_bustypes,
         calculate_loss_factors,
     )
 end
@@ -502,7 +508,8 @@ function PowerFlowData(
     sys::PSY.System;
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true)
+    check_connectivity::Bool = true,
+    correct_bustypes = false)
 
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
@@ -545,6 +552,7 @@ function PowerFlowData(
         valid_ix,
         converged,
         loss_factors,
+        correct_bustypes,
         calculate_loss_factors,
     )
 end

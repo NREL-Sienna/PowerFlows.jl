@@ -73,7 +73,7 @@ end
     # a system where bus numbers aren't 1, 2,...is there a smaller one with this property?
     sys = PSB.build_system(PSB.PSISystems, "RTS_GMLC_DA_sys")
     for i in [1, 35, 52, 57, 43, 66, 49, 68, 71, 25, 69, 58, 3, 73]
-        data = PowerFlowData(ACPowerFlow(), sys)
+        data = PowerFlowData(ACPowerFlow(), sys; correct_bustypes = true)
         # First, write solution to data. Then set magnitude of a random-ish bus to a huge number
         # and try to solve again: the "large residual warning" should be about that bus.
         solve_powerflow!(data)
@@ -96,7 +96,7 @@ end
     # (May break if trust region is changed. TODO eventually: find a better test case.)
     pf = ACPowerFlow{TrustRegionACPowerFlow}()
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg10k_sys")
-    data = PowerFlowData(pf, sys)
+    data = PowerFlowData(pf, sys, correct_bustypes = true)
     @test_logs (:warn, Regex(".*Jacobian is singular.*")
     ) match_mode = :any for _ in 1:20
         solve_powerflow!(data; pf = pf)
