@@ -274,6 +274,10 @@ function PowerFlowData(
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 1))
     buses = PNM.get_buses(sys)
+    if n_buses != length(buses)
+        @error "Number of buses in the system ($(length(buses) )) does not match the number of buses in the power network matrix ($(n_buses)), " *
+                "perhaps due to the reduction map. This functionality is still under development."
+    end
     ref_bus_positions = PNM.find_slack_positions(buses)
 
     branches = PNM.get_ac_branches(sys)
@@ -282,9 +286,6 @@ function PowerFlowData(
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = Dict{String, Int}()
     sizehint!(branch_lookup, n_branches)
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
-    )
     branch_types = Vector{DataType}(undef, n_branches)
     for (ix, b) in enumerate(branches)
         branch_lookup[PSY.get_name(b)] = ix
@@ -315,7 +316,6 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
-        temp_bus_map,
         branch_types,
         timestep_map,
         valid_ix,
@@ -378,9 +378,6 @@ function PowerFlowData(
 
     bus_lookup = aux_network_matrix.lookup[1]
     branch_lookup = aux_network_matrix.lookup[2]
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
-    )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
     loss_factors = nothing
@@ -395,7 +392,6 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
-        temp_bus_map,
         valid_ix,
         converged,
         loss_factors,
@@ -455,9 +451,6 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
-    )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
     loss_factors = nothing
@@ -472,7 +465,6 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
-        temp_bus_map,
         valid_ix,
         converged,
         loss_factors,
@@ -531,9 +523,6 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
-    )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
     loss_factors = nothing
@@ -548,7 +537,6 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
-        temp_bus_map,
         valid_ix,
         converged,
         loss_factors,
