@@ -226,7 +226,7 @@ function PowerFlowData(
     buses = PNM.get_buses(sys)
     if n_buses != length(buses)
         @error "Number of buses in the system ($(length(buses) )) does not match the number of buses in the power network matrix ($(n_buses)), " *
-                "perhaps due to the reduction map. This functionality is still under development."
+               "perhaps due to the reduction map. This functionality is still under development."
     end
     ref_bus_positions = PNM.find_slack_positions(buses)
 
