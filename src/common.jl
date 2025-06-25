@@ -144,7 +144,11 @@ function _initialize_bus_data!(
     )
     for (red_bus_no, ix) in bus_lookup
         buses_reduced = bus_reduction_map[red_bus_no]
-        has_type = Dict(PSY.ACBusTypes.PQ => false, PSY.ACBusTypes.PV => false, PSY.ACBusTypes.REF => false)
+        has_type = Dict(
+            PSY.ACBusTypes.PQ => false,
+            PSY.ACBusTypes.PV => false,
+            PSY.ACBusTypes.REF => false,
+        )
         bus_type_map = Dict{Int, PSY.ACBusTypes}()
         # bus type of the reduced bus: priorities are REF > PV > PQ.
         # if merging multiple types, take the highest priority type.
@@ -152,10 +156,11 @@ function _initialize_bus_data!(
             bus_name = temp_bus_map[bus_no]
             bus = PSY.get_component(PSY.ACBus, sys, bus_name)
             bt = PSY.get_bustype(bus)
-            if (bt == PSY.ACBusTypes.PV || bt == PSY.ACBusTypes.REF) && !(bus_no in possible_PV)
+            if (bt == PSY.ACBusTypes.PV || bt == PSY.ACBusTypes.REF) &&
+               !(bus_no in possible_PV)
                 if correct_bustypes
                     @info "Bus $bus_name (number $bus_no) changed from PV to PQ: no available " *
-                        "sources at that bus." maxlog = PF_MAX_LOG
+                          "sources at that bus." maxlog = PF_MAX_LOG
                     bt = PSY.ACBusTypes.PQ
                 else
                     throw(
@@ -167,7 +172,7 @@ function _initialize_bus_data!(
                 end
             elseif bt == PSY.ACBusTypes.PQ && bus_no in forced_PV
                 @warn "Active generators found at bus $bus_name of bus type 1 (PQ), i.e. " *
-                    "different than 2 (PV). Consider checking your data inputs." maxlog =
+                      "different than 2 (PV). Consider checking your data inputs." maxlog =
                     PF_MAX_LOG
             end
             bus_type_map[bus_no] = bt
@@ -181,7 +186,7 @@ function _initialize_bus_data!(
                 combined_bt = PSY.ACBusTypes.PV
             end
             @warn(
-                "Reduced bus $reduced_bus_no combines buses of multiple types."*
+                "Reduced bus $reduced_bus_no combines buses of multiple types." *
                 " Assigning type $combined_bt to reduced bus.",
                 maxlog = PF_MAX_LOG,
             )
@@ -199,21 +204,21 @@ function _initialize_bus_data!(
             bus_vm = PSY.get_magnitude(bus)
             # prevent unfeasible starting values for voltage magnitude at PQ buses
             # (if combined bus type is PQ, individual buses must be PQ as well)
-            if combined_bt  == PSY.ACBusTypes.PQ
+            if combined_bt == PSY.ACBusTypes.PQ
                 if bus_vm < BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
                     @warn(
-                        "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name"*
-                        " is below the plausible minimum cut-off value of "*
-                        "$BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u. and has been set to"*
+                        "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name" *
+                        " is below the plausible minimum cut-off value of " *
+                        "$BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u. and has been set to" *
                         " $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u.",
                         maxlog = PF_MAX_LOG,
                     )
                     bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
                 elseif bus_vm > BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
                     @warn(
-                        "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name"*
-                        " is above the plausible maximum cut-off value of "*
-                        "$BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u. and has been set to"*
+                        "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name" *
+                        " is above the plausible maximum cut-off value of " *
+                        "$BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u. and has been set to" *
                         " $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u.",
                         maxlog = PF_MAX_LOG,
                     )
@@ -224,10 +229,10 @@ function _initialize_bus_data!(
                 avg_complex_power += bus_vm * exp(1im * PSY.get_angle(bus))
             end
         end
-        avg_complex_power /= count(values(bus_type_map) .== (combined_bt, ))
+        avg_complex_power /= count(values(bus_type_map) .== (combined_bt,))
         if combined_bt == PSY.ACBusTypes.REF && angle(avg_complex_power) != 0.0
             @warn(
-                "Initial angle of (possibly reduced) reference bus $red_bus_no is nonzero."*
+                "Initial angle of (possibly reduced) reference bus $red_bus_no is nonzero." *
                 " Setting angle to zero.",
                 maxlog = PF_MAX_LOG,
             )
