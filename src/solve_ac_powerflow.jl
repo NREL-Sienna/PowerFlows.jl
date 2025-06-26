@@ -227,18 +227,18 @@ function _check_q_limit_bounds!(
             continue
         end
 
-        if Q_gen <= data.bus_reactivepower_bounds[ix, time_step][1]
+        if Q_gen <= data.bus_reactivepower_bounds[ix, time_step].min
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
             data.bus_reactivepower_injection[ix, time_step] =
-                data.bus_reactivepower_bounds[ix, time_step][1]
-        elseif Q_gen >= data.bus_reactivepower_bounds[ix, time_step][2]
+                data.bus_reactivepower_bounds[ix, time_step].min
+        elseif Q_gen >= data.bus_reactivepower_bounds[ix, time_step].max
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
             data.bus_reactivepower_injection[ix, time_step] =
-                data.bus_reactivepower_bounds[ix, time_step][2]
+                data.bus_reactivepower_bounds[ix, time_step].max
         else
             @debug "Within Limits"
         end

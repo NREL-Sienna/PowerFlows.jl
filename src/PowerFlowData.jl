@@ -88,7 +88,7 @@ struct PowerFlowData{
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
     bus_reactivepower_withdrawals::Matrix{Float64}
-    bus_reactivepower_bounds::Matrix{Vector{Float64}}
+    bus_reactivepower_bounds::Matrix{MinMax}
     generator_slack_participation_factors::Union{
         Vector{Dict{Tuple{DataType, String}, Float64}},
         Nothing,
