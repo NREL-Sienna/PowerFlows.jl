@@ -32,3 +32,5 @@ const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN = 0.8
 const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX = 1.2
 
 const TIs = Union{Int32, Int64}
+
+const MinMax = NamedTuple{(:min, :max), Tuple{Float64, Float64}}

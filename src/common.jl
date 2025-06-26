@@ -52,17 +52,29 @@ get_active_power_limits_for_power_flow(gen::PSY.RenewableDispatch) =
 get_active_power_limits_for_power_flow(gen::PSY.Storage) =
     (min = 0.0, max = PSY.get_output_active_power_limits(gen).max)
 
+function get_bus_ix(
+    bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
+    bus::PSY.ACBus,
+)
+    bus_no = PSY.get_number(bus)
+    if bus_no in keys(reverse_bus_search_map)
+        return bus_lookup[reverse_bus_search_map[bus_no]]
+    end
+    return bus_lookup[bus_no]
+end
+
 function _get_injections!(
     bus_activepower_injection::Vector{Float64},
     bus_reactivepower_injection::Vector{Float64},
     bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
 )
     for source in PSY.get_components(PSY.StaticInjection, sys)
         isa(source, PSY.ElectricLoad) && continue
         !PSY.get_available(source) && continue
-        bus = PSY.get_bus(source)
-        bus_ix = bus_lookup[PSY.get_number(bus)]
+        bus_ix = get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_bus(source))
         bus_activepower_injection[bus_ix] += PSY.get_active_power(source)
         bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power(source)
     end
@@ -73,14 +85,14 @@ function _get_withdrawals!(
     bus_activepower_withdrawals::Vector{Float64},
     bus_reactivepower_withdrawals::Vector{Float64},
     bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
 )
     # FIXME properly handle SwitchedAdmittance components
     for l in PSY.get_components(PSY.ElectricLoad, sys)
         (isa(l, PSY.FixedAdmittance) || isa(l, PSY.SwitchedAdmittance)) && continue
         !PSY.get_available(l) && continue
-        bus = PSY.get_bus(l)
-        bus_ix = bus_lookup[PSY.get_number(bus)]
+        bus_ix = get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_bus(l))
         bus_activepower_withdrawals[bus_ix] += get_total_p(l)
         bus_reactivepower_withdrawals[bus_ix] += get_total_q(l)
     end
@@ -88,82 +100,151 @@ function _get_withdrawals!(
 end
 
 # TODO: Might need changes if we have SwitchedAdmittances
+# TODO: is this still the correct behavior when there's a network reduction?
 function _get_reactive_power_bound!(
-    bus_reactivepower_bounds::Vector{Vector{Float64}},
+    bus_reactivepower_bounds::Vector{MinMax},
     bus_lookup::Dict{Int, Int},
-    sys::PSY.System)
+    reverse_bus_search_map::Dict{Int, Int},
+    sys::PSY.System,
+)
     for source in PSY.get_components(PSY.StaticInjection, sys)
         isa(source, PSY.ElectricLoad) && continue
         !PSY.get_available(source) && continue
-        bus = PSY.get_bus(source)
-        bus_ix = bus_lookup[PSY.get_number(bus)]
+        bus_ix = get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_bus(source))
         reactive_power_limits = get_reactive_power_limits_for_power_flow(source)
         if reactive_power_limits !== nothing
-            bus_reactivepower_bounds[bus_ix][1] += min(0, reactive_power_limits.min)
-            bus_reactivepower_bounds[bus_ix][2] += max(0, reactive_power_limits.max)
+            (current_min, current_max) = bus_reactivepower_bounds[bus_ix]
+            bus_reactivepower_bounds[bus_ix] = MinMax(
+                (current_min + reactive_power_limits.min,
+                current_max + reactive_power_limits.max,
+            )
+            )
         else
             @warn("Reactive Power Bounds at Bus $(PSY.get_name(bus)) set to (-Inf, Inf)")
-            bus_reactivepower_bounds[bus_ix][1] = -Inf
-            bus_reactivepower_bounds[bus_ix][2] = Inf
+            bus_reactivepower_bounds[bus_ix] = MinMax((-Inf, Inf))
         end
     end
 end
 
+"""Initialize bus data for power flow calculations, including bus types, angles, and magnitudes.
+
+Also does some data validation on the bus types and voltage magnitudes, but only on the 
+PowerFlow data structures: this function does not and should not alter the system."""
 function _initialize_bus_data!(
     bus_type::Vector{PSY.ACBusTypes},
     bus_angles::Vector{Float64},
     bus_magnitude::Vector{Float64},
-    temp_bus_map::Dict{Int, String},
     bus_lookup::Dict{Int, Int},
     sys::PSY.System,
+    bus_reduction_map::Dict{Int, Set{Int}},
     correct_bustypes::Bool = false,
 )
     forced_PV = must_be_PV(sys)
     possible_PV = can_be_PV(sys)
-    for (bus_no, ix) in bus_lookup
-        bus_name = temp_bus_map[bus_no]
-        bus = PSY.get_component(PSY.ACBus, sys, bus_name)
-        bt = PSY.get_bustype(bus)
-        if (bt == PSY.ACBusTypes.PV || bt == PSY.ACBusTypes.REF) && !(bus_no in possible_PV)
-            if correct_bustypes
-                @info "Bus $bus_name (number $bus_no) changed from PV to PQ: no available " *
-                      "sources at that bus." maxlog = PF_MAX_LOG
-                bt = PSY.ACBusTypes.PQ
-            else
-                throw(
-                    ArgumentError(
-                        "No available sources at bus $bus_name of bus type 2 (PV)." *
-                        " Please change the bus type to PQ.",
-                    ),
-                )
+    temp_bus_map = Dict{Int, String}(
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
+    )
+    for (red_bus_no, ix) in bus_lookup
+        buses_reduced = bus_reduction_map[red_bus_no]
+        has_type = Dict(
+            PSY.ACBusTypes.PQ => false,
+            PSY.ACBusTypes.PV => false,
+            PSY.ACBusTypes.REF => false,
+        )
+        bus_type_map = Dict{Int, PSY.ACBusTypes}()
+        # bus type of the reduced bus: priorities are REF > PV > PQ.
+        # if merging multiple types, take the highest priority type.
+        for bus_no in union(buses_reduced, red_bus_no)
+            bus_name = temp_bus_map[bus_no]
+            bus = PSY.get_component(PSY.ACBus, sys, bus_name)
+            bt = PSY.get_bustype(bus)
+            if (bt == PSY.ACBusTypes.PV || bt == PSY.ACBusTypes.REF) &&
+               !(bus_no in possible_PV)
+                if correct_bustypes
+                    @info "Bus $bus_name (number $bus_no) changed from PV to PQ: no available " *
+                          "sources at that bus." maxlog = PF_MAX_LOG
+                    bt = PSY.ACBusTypes.PQ
+                else
+                    throw(
+                        ArgumentError(
+                            "No available sources at bus $bus_name of bus type 2 (PV)." *
+                            " Please change the bus type to PQ.",
+                        ),
+                    )
+                end
+            elseif bt == PSY.ACBusTypes.PQ && bus_no in forced_PV
+                @warn "Active generators found at bus $bus_name of bus type 1 (PQ), i.e. " *
+                      "different than 2 (PV). Consider checking your data inputs." maxlog =
+                    PF_MAX_LOG
             end
-        elseif bt == PSY.ACBusTypes.PQ && bus_no in forced_PV
-            @warn "Active generators found at bus $bus_name of bus type 1 (PQ), i.e. " *
-                  "different than 2 (PV). Consider checking your data inputs." maxlog =
-                PF_MAX_LOG
+            bus_type_map[bus_no] = bt
+            has_type[bt] = true
         end
-        bus_type[ix] = bt
-        if bus_type[ix] == PSY.ACBusTypes.REF
+        combined_bt = PSY.ACBusTypes.REF
+        if count(values(has_type)) > 1
+            if has_type[PSY.ACBusTypes.REF]
+                combined_bt = PSY.ACBusTypes.REF
+            elseif has_type[PSY.ACBusTypes.PV]
+                combined_bt = PSY.ACBusTypes.PV
+            end
+            @warn(
+                "Reduced bus $reduced_bus_no combines buses of multiple types." *
+                " Assigning type $combined_bt to reduced bus.",
+                maxlog = PF_MAX_LOG,
+            )
+        else
+            @assert any(values(has_type)) "no valid bus types found for reduced bus $red_bus_no"
+            combined_bt = findfirst(has_type)
+        end
+        bus_type[ix] = combined_bt
+        # initial bus voltage angles and magnitudes: use angle, magnitude of average of 
+        # complex voltages, omitting buses that don't match with the combined bus type.
+        avg_complex_power = zero(ComplexF64)
+        for bus_no in union(buses_reduced, red_bus_no)
+            bus_name = temp_bus_map[bus_no]
+            bus = PSY.get_component(PSY.ACBus, sys, bus_name)
+            bus_vm = PSY.get_magnitude(bus)
+            # prevent unfeasible starting values for voltage magnitude at PQ buses
+            # (if combined bus type is PQ, individual buses must be PQ as well)
+            if combined_bt == PSY.ACBusTypes.PQ
+                if bus_vm < BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
+                    @warn(
+                        "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name" *
+                        " is below the plausible minimum cut-off value of " *
+                        "$BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u. and has been set to" *
+                        " $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u.",
+                        maxlog = PF_MAX_LOG,
+                    )
+                    bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
+                elseif bus_vm > BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
+                    @warn(
+                        "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name" *
+                        " is above the plausible maximum cut-off value of " *
+                        "$BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u. and has been set to" *
+                        " $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u.",
+                        maxlog = PF_MAX_LOG,
+                    )
+                    bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
+                end
+            end
+            if bus_type_map[bus_no] == combined_bt
+                avg_complex_power += bus_vm * exp(1im * PSY.get_angle(bus))
+            end
+        end
+        avg_complex_power /= count(values(bus_type_map) .== (combined_bt,))
+        if combined_bt == PSY.ACBusTypes.REF && angle(avg_complex_power) != 0.0
+            @warn(
+                "Initial angle of (possibly reduced) reference bus $red_bus_no is nonzero." *
+                " Setting angle to zero.",
+                maxlog = PF_MAX_LOG,
+            )
             bus_angles[ix] = 0.0
         else
-            bus_angles[ix] = PSY.get_angle(bus)
+            bus_angles[ix] = angle(avg_complex_power)
         end
-        bus_vm = PSY.get_magnitude(bus)
-        # prevent unfeasible starting values for voltage magnitude at PQ buses (for PV and REF buses we cannot do this):
-        if bt == PSY.ACBusTypes.PQ && bus_vm < BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
-            @warn(
-                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is below the plausible minimum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u.",
-                maxlog = PF_MAX_LOG,
-            )
-            bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
-        elseif bt == PSY.ACBusTypes.PQ && bus_vm > BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
-            @warn(
-                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is above the plausible maximum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u.",
-                maxlog = PF_MAX_LOG,
-            )
-            bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
-        end
-        bus_magnitude[ix] = bus_vm
+        bus_magnitude[ix] = abs(avg_complex_power)
+        # TODO: add a sanity check here. Maybe the complex voltages all sum up to something
+        # tiny, so then your average is close to 0.0 and your starting point is bad...
     end
 end
 ##############################################################################
@@ -200,7 +281,6 @@ function make_dc_powerflowdata(
     n_branches,
     bus_lookup,
     branch_lookup,
-    temp_bus_map,
     valid_ix,
     converged,
     loss_factors,
@@ -208,10 +288,10 @@ function make_dc_powerflowdata(
     calculate_loss_factors,
 )
     branch_type = Vector{DataType}(undef, length(branch_lookup))
+    # FIXME with the branch reduction, this is not correct anymore
     for (ix, b) in enumerate(PNM.get_ac_branches(sys))
         branch_type[ix] = typeof(b)
     end
-    bus_reactivepower_bounds = Vector{Vector{Float64}}(undef, n_buses)
     timestep_map = Dict(zip([i for i in 1:time_steps], timestep_names))
     neighbors = Vector{Set{Int}}()
     return make_powerflowdata(
@@ -223,7 +303,6 @@ function make_dc_powerflowdata(
         n_branches,
         bus_lookup,
         branch_lookup,
-        temp_bus_map,
         branch_type,
         timestep_map,
         valid_ix,
@@ -242,6 +321,7 @@ function _add_gspf_to_ijv!(
     sys::System,
     gsp_factors::Dict{Tuple{DataType, String}, Float64},
     bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
     time_steps_iter::AbstractVector{<:Integer},
 )
     for ((gen_type, gen_name), val) in gsp_factors
@@ -249,10 +329,9 @@ function _add_gspf_to_ijv!(
         gen = PSY.get_component(gen_type, sys, gen_name)
         isnothing(gen) && throw(ArgumentError("$gen_type $gen_name not found"))
         PSY.get_available(gen) || continue
-        bus = PSY.get_bus(gen)
-        bus_idx = bus_lookup[PSY.get_number(bus)]
+        bus_ix = get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_bus(gen))
         for time_step in time_steps_iter
-            push!(I, bus_idx)
+            push!(I, bus_ix)
             push!(J, time_step)
             push!(V, val)
         end
@@ -260,10 +339,14 @@ function _add_gspf_to_ijv!(
     return
 end
 
+"""One set of generator participation factors provided: calculate the bus participation
+factors by summing the participation factors of all generators at each bus, 
+then apply these participation factors to all time steps."""
 function make_bus_slack_participation_factors(
     sys::System,
     generator_slack_participation_factors::Dict{Tuple{DataType, String}, Float64},
     bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
     time_steps::Int,
     n_buses::Int,
     ::Matrix{PSY.ACBusTypes},
@@ -279,6 +362,7 @@ function make_bus_slack_participation_factors(
         sys,
         generator_slack_participation_factors,
         bus_lookup,
+        reverse_bus_search_map,
         1:time_steps,
     )
 
@@ -287,10 +371,13 @@ function make_bus_slack_participation_factors(
     repeat([generator_slack_participation_factors], time_steps)
 end
 
+"""Generator participation factors provided for each time step: calculate the bus participation
+factors by summing the participation factors of all generators at each bus, at each time step."""
 function make_bus_slack_participation_factors(
     sys::System,
     generator_slack_participation_factors::Vector{Dict{Tuple{DataType, String}, Float64}},
     bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
     time_steps::Int,
     n_buses::Int,
     bus_type::Matrix{PSY.ACBusTypes},
@@ -300,6 +387,7 @@ function make_bus_slack_participation_factors(
             sys,
             generator_slack_participation_factors[1],
             bus_lookup,
+            reverse_bus_search_map,
             time_steps,
             n_buses,
             bus_type,
@@ -321,16 +409,28 @@ function make_bus_slack_participation_factors(
     V = Float64[]
 
     for (time_step, factors) in enumerate(generator_slack_participation_factors)
-        _add_gspf_to_ijv!(I, J, V, sys, factors, bus_lookup, time_step:time_step)
+        _add_gspf_to_ijv!(
+            I,
+            J,
+            V,
+            sys,
+            factors,
+            bus_lookup,
+            reverse_bus_search_map,
+            time_step:time_step,
+        )
     end
 
     bus_slack_participation_factors = sparse(I, J, V, n_buses, time_steps)
     return bus_slack_participation_factors, generator_slack_participation_factors
 end
 
+"""No bus slack participation factors provided: assign a participation factor of 1.0 to 
+the reference bus (buses?) and 0.0 to all other buses."""
 function make_bus_slack_participation_factors(
     ::System,
     ::Nothing,
+    ::Dict{Int, Int},
     ::Dict{Int, Int},
     time_steps::Int,
     n_buses::Int,
@@ -341,12 +441,10 @@ function make_bus_slack_participation_factors(
     V = Float64[]
 
     for time_step in 1:time_steps
-        for (ix, bt) in enumerate(bus_type[:, time_step])
-            bt == PSY.ACBusTypes.REF || continue
-            push!(I, ix)
-            push!(J, time_step)
-            push!(V, 1.0)
-        end
+        n = count(==(PSY.ACBusTypes.REF), bus_type[:, time_step])
+        append!(I, findall(==(PSY.ACBusTypes.REF), bus_type[:, time_step]))
+        append!(J, fill(time_step, n))
+        append!(V, fill(1.0, n))
     end
 
     bus_slack_participation_factors = sparse(I, J, V, n_buses, time_steps)
@@ -392,7 +490,6 @@ function make_powerflowdata(
     n_branches,
     bus_lookup,
     branch_lookup,
-    temp_bus_map,
     branch_type,
     timestep_map,
     valid_ix,
@@ -411,19 +508,22 @@ function make_powerflowdata(
         bus_type,
         bus_angles,
         bus_magnitude,
-        temp_bus_map,
         bus_lookup,
         sys,
+        power_network_matrix.network_reduction.bus_reduction_map,
         correct_bustypes,
     )
 
     # define injection vectors related to the first timestep
     bus_activepower_injection = zeros(Float64, n_buses)
     bus_reactivepower_injection = zeros(Float64, n_buses)
+    reverse_bus_search_map =
+        PNM.get_reverse_bus_search_map(power_network_matrix.network_reduction)
     _get_injections!(
         bus_activepower_injection,
         bus_reactivepower_injection,
         bus_lookup,
+        reverse_bus_search_map,
         sys,
     )
 
@@ -433,35 +533,20 @@ function make_powerflowdata(
         bus_activepower_withdrawals,
         bus_reactivepower_withdrawals,
         bus_lookup,
+        reverse_bus_search_map,
         sys,
     )
 
-    # Define fields as matrices whose number of columns is equal to the number of time_steps
-    bus_activepower_injection_1 = zeros(Float64, n_buses, time_steps)
-    bus_reactivepower_injection_1 = zeros(Float64, n_buses, time_steps)
-    bus_activepower_withdrawals_1 = zeros(Float64, n_buses, time_steps)
-    bus_reactivepower_withdrawals_1 = zeros(Float64, n_buses, time_steps)
-    bus_reactivepower_bounds_1 = Matrix{Vector{Float64}}(undef, n_buses, time_steps)
-    bus_magnitude_1 = ones(Float64, n_buses, time_steps)
-    bus_angles_1 = zeros(Float64, n_buses, time_steps)
-
-    # Initial values related to first timestep allocated in the first column
-    bus_activepower_injection_1[:, 1] .= bus_activepower_injection
-    bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
-    bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
-    bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
-    bus_magnitude_1[:, 1] .= bus_magnitude
-    bus_angles_1[:, 1] .= bus_angles
-
-    bus_reactivepower_bounds = Vector{Vector{Float64}}(undef, n_buses)
-    for i in 1:n_buses
-        bus_reactivepower_bounds[i] = [0.0, 0.0]
-    end
-    _get_reactive_power_bound!(bus_reactivepower_bounds, bus_lookup, sys)
-    bus_reactivepower_bounds_1[:, 1] .= bus_reactivepower_bounds
+    bus_reactivepower_bounds = fill((min = 0.0, max = 0.0), n_buses)
+    _get_reactive_power_bound!(
+        bus_reactivepower_bounds,
+        bus_lookup,
+        reverse_bus_search_map,
+        sys,
+    )
 
     # Initial bus types are same for every time period
-    bus_type_1 = repeat(bus_type; outer = [1, time_steps])
+    bus_type_1 = repeat(bus_type, 1, time_steps)
     @assert size(bus_type_1) == (n_buses, time_steps)
 
     # Initial slack participation factors are same for every time period
@@ -470,6 +555,7 @@ function make_powerflowdata(
             sys,
             generator_slack_participation_factors,
             bus_lookup,
+            reverse_bus_search_map,
             time_steps,
             n_buses,
             bus_type_1,
@@ -481,20 +567,21 @@ function make_powerflowdata(
     branch_activepower_flow_to_from = zeros(Float64, n_branches, time_steps)
     branch_reactivepower_flow_to_from = zeros(Float64, n_branches, time_steps)
 
+    # Initial bus data all matches the first time step.
     return PowerFlowData(
         bus_lookup,
         branch_lookup,
-        bus_activepower_injection_1,
-        bus_reactivepower_injection_1,
-        bus_activepower_withdrawals_1,
-        bus_reactivepower_withdrawals_1,
-        bus_reactivepower_bounds_1,
+        repeat(bus_activepower_injection, 1, time_steps),
+        repeat(bus_reactivepower_injection, 1, time_steps),
+        repeat(bus_activepower_withdrawals, 1, time_steps),
+        repeat(bus_reactivepower_withdrawals, 1, time_steps),
+        repeat(bus_reactivepower_bounds, 1, time_steps),
         generator_slack_participation_factors,
         bus_slack_participation_factors,
-        bus_type_1,
+        bus_type_1, # currently equals repeat(bus_type, 1, time_steps).
         branch_type,
-        bus_magnitude_1,
-        bus_angles_1,
+        repeat(bus_magnitude, 1, time_steps),
+        repeat(bus_angles, 1, time_steps),
         branch_activepower_flow_from_to,
         branch_reactivepower_flow_from_to,
         branch_activepower_flow_to_from,
