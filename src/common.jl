@@ -58,8 +58,8 @@ function _get_injections!(
     bus_lookup::Dict{Int, Int},
     sys::PSY.System,
 )
-    sources = PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, sys)
-    for source in sources
+    for source in PSY.get_components(PSY.StaticInjection, sys)
+        isa(source, PSY.ElectricLoad) && continue
         !PSY.get_available(source) && continue
         bus = PSY.get_bus(source)
         bus_ix = bus_lookup[PSY.get_number(bus)]
@@ -75,8 +75,9 @@ function _get_withdrawals!(
     bus_lookup::Dict{Int, Int},
     sys::PSY.System,
 )
-    loads = PSY.get_components(x -> !isa(x, PSY.FixedAdmittance), PSY.ElectricLoad, sys)
-    for l in loads
+    # FIXME properly handle SwitchedAdmittance components
+    for l in PSY.get_components(PSY.ElectricLoad, sys)
+        (isa(l, PSY.FixedAdmittance) || isa(l, PSY.SwitchedAdmittance)) && continue
         !PSY.get_available(l) && continue
         bus = PSY.get_bus(l)
         bus_ix = bus_lookup[PSY.get_number(bus)]
@@ -91,8 +92,8 @@ function _get_reactive_power_bound!(
     bus_reactivepower_bounds::Vector{Vector{Float64}},
     bus_lookup::Dict{Int, Int},
     sys::PSY.System)
-    sources = PSY.get_components(d -> !isa(d, PSY.ElectricLoad), PSY.StaticInjection, sys)
-    for source in sources
+    for source in PSY.get_components(PSY.StaticInjection, sys)
+        isa(source, PSY.ElectricLoad) && continue
         !PSY.get_available(source) && continue
         bus = PSY.get_bus(source)
         bus_ix = bus_lookup[PSY.get_number(bus)]
@@ -115,11 +116,32 @@ function _initialize_bus_data!(
     temp_bus_map::Dict{Int, String},
     bus_lookup::Dict{Int, Int},
     sys::PSY.System,
+    correct_bustypes::Bool = false,
 )
+    forced_PV = must_be_PV(sys)
+    possible_PV = can_be_PV(sys)
     for (bus_no, ix) in bus_lookup
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.ACBus, sys, bus_name)
         bt = PSY.get_bustype(bus)
+        if (bt == PSY.ACBusTypes.PV || bt == PSY.ACBusTypes.REF) && !(bus_no in possible_PV)
+            if correct_bustypes
+                @info "Bus $bus_name (number $bus_no) changed from PV to PQ: no available " *
+                      "sources at that bus." maxlog = PF_MAX_LOG
+                bt = PSY.ACBusTypes.PQ
+            else
+                throw(
+                    ArgumentError(
+                        "No available sources at bus $bus_name of bus type 2 (PV)." *
+                        " Please change the bus type to PQ.",
+                    ),
+                )
+            end
+        elseif bt == PSY.ACBusTypes.PQ && bus_no in forced_PV
+            @warn "Active generators found at bus $bus_name of bus type 1 (PQ), i.e. " *
+                  "different than 2 (PV). Consider checking your data inputs." maxlog =
+                PF_MAX_LOG
+        end
         bus_type[ix] = bt
         if bus_type[ix] == PSY.ACBusTypes.REF
             bus_angles[ix] = 0.0
@@ -130,12 +152,14 @@ function _initialize_bus_data!(
         # prevent unfeasible starting values for voltage magnitude at PQ buses (for PV and REF buses we cannot do this):
         if bt == PSY.ACBusTypes.PQ && bus_vm < BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
             @warn(
-                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is below the plausible minimum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u."
+                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is below the plausible minimum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u.",
+                maxlog = PF_MAX_LOG,
             )
             bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
         elseif bt == PSY.ACBusTypes.PQ && bus_vm > BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
             @warn(
-                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is above the plausible maximum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u."
+                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is above the plausible maximum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u.",
+                maxlog = PF_MAX_LOG,
             )
             bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
         end
@@ -180,6 +204,7 @@ function make_dc_powerflowdata(
     valid_ix,
     converged,
     loss_factors,
+    correct_bustypes,
     calculate_loss_factors,
     generator_slack_participation_factors,
     voltage_stability_factors,
@@ -208,6 +233,7 @@ function make_dc_powerflowdata(
         neighbors,
         converged,
         loss_factors,
+        correct_bustypes,
         calculate_loss_factors,
         generator_slack_participation_factors,
         voltage_stability_factors,
@@ -273,7 +299,7 @@ function make_bus_slack_participation_factors(
     bus_lookup::Dict{Int, Int},
     time_steps::Int,
     n_buses::Int,
-    bus_types::Matrix{PSY.ACBusTypes},
+    bus_type::Matrix{PSY.ACBusTypes},
 )
     if length(generator_slack_participation_factors) == 1
         return make_bus_slack_participation_factors(
@@ -282,7 +308,7 @@ function make_bus_slack_participation_factors(
             bus_lookup,
             time_steps,
             n_buses,
-            bus_types,
+            bus_type,
         )
     end
 
@@ -314,14 +340,14 @@ function make_bus_slack_participation_factors(
     ::Dict{Int, Int},
     time_steps::Int,
     n_buses::Int,
-    bus_types::Matrix{PSY.ACBusTypes},
+    bus_type::Matrix{PSY.ACBusTypes},
 )
     I = Int[]
     J = Int[]
     V = Float64[]
 
     for time_step in 1:time_steps
-        for (ix, bt) in enumerate(bus_types[:, time_step])
+        for (ix, bt) in enumerate(bus_type[:, time_step])
             bt == PSY.ACBusTypes.REF || continue
             push!(I, ix)
             push!(J, time_step)
@@ -332,6 +358,35 @@ function make_bus_slack_participation_factors(
     bus_slack_participation_factors = sparse(I, J, V, n_buses, time_steps)
 
     return bus_slack_participation_factors, nothing
+end
+
+"""Return set of all bus numbers that must be PV: i.e. have an available generator."""
+function must_be_PV(sys::System)
+    gen_buses = Set{Int}()
+    for gen in PSY.get_components(PSY.Generator, sys)
+        if PSY.get_available(gen)
+            push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
+        end
+    end
+    # PSSe counts buses with switched shunts as PV, so we do the same here.
+    for gen in PSY.get_components(PSY.SwitchedAdmittance, sys)
+        if PSY.get_available(gen)
+            push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
+        end
+    end
+    return gen_buses
+end
+
+"""Return set of all bus numbers that can be PV: i.e. have an available generator,
+or certain voltage regulation devices."""
+function can_be_PV(sys::System)
+    source_buses = must_be_PV(sys)
+    for source in PSY.get_components(PSY.Source, sys)
+        if PSY.get_available(source)
+            push!(source_buses, PSY.get_number(PSY.get_bus(source)))
+        end
+    end
+    return source_buses
 end
 
 function make_powerflowdata(
@@ -351,6 +406,7 @@ function make_powerflowdata(
     converged,
     loss_factors,
     calculate_loss_factors,
+    correct_bustypes::Bool = false,
     generator_slack_participation_factors,
     voltage_stability_factors,
     calculate_voltage_stability_factors,
@@ -366,6 +422,7 @@ function make_powerflowdata(
         temp_bus_map,
         bus_lookup,
         sys,
+        correct_bustypes,
     )
 
     # define injection vectors related to the first timestep
