@@ -1,24 +1,20 @@
 """
-    solve_powerflow!(pf::ACPowerFlow{<:ACPowerFlowSolverType}, system::PSY.System; kwargs...)
+    solve_powerflow!(system::PSY.System, ac_pf::ACPowerFlow{<:ACPowerFlowSolverType}; kwargs...)
 
 Solves the power flow in the system and writes the solution into the relevant structs.
 Updates active and reactive power setpoints for generators and active and reactive
 power flows for branches (calculated in the From - To direction and in the To - From direction).
 
-Supports passing kwargs to the PF solver.
-
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `NewtonRaphsonACPowerFlow` or `LUACPowerFlow` (to be used for testing only).
 - `system::PSY.System`: The power system model.
+- `ac_pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `NewtonRaphsonACPowerFlow` or `LUACPowerFlow` (to be used for testing only).
 - `kwargs...`: Additional keyword arguments.
 
 ## Keyword Arguments
 - `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
-- 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
-- `tol`: Infinite norm of residuals under which convergence is declared. Default is `1e-9`.
-- `maxIterations`: Maximum number of Newton-Raphson iterations. Default is `30`.
+- `correct_bustypes::Bool`: If `true`, the bus types are corrected based on the generator and load data. Default is `false`.
 
 # Returns
 - `converged::Bool`: Indicates whether the power flow solution converged.
@@ -27,18 +23,15 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 # Examples
 
 ```julia
-solve_powerflow!(pf, sys)
+solve_powerflow!(sys, ac_pf)
 
 # Passing kwargs
-solve_powerflow!(pf, sys; check_connectivity=false)
-
-# Passing keyword arguments
-solve_powerflow!(pf, sys; maxIterations=100)
+solve_powerflow!(sys, ac_pf; check_connectivity=false)
 ```
 """
 function solve_powerflow!(
-    pf::ACPowerFlow{<:ACPowerFlowSolverType},
-    system::PSY.System;
+    system::PSY.System,
+    ac_pf::ACPowerFlow{<:ACPowerFlowSolverType};
     kwargs...,
 )
     # converged must be defined in the outer scope to be visible for return
@@ -46,19 +39,20 @@ function solve_powerflow!(
     time_step = 1
     with_units_base(system, PSY.UnitSystem.SYSTEM_BASE) do
         data = PowerFlowData(
-            pf,
+            ac_pf,
             system;
             check_connectivity = get(kwargs, :check_connectivity, true),
             correct_bustypes = get(kwargs, :correct_bustypes, false),
         )
 
-        converged = _ac_powerflow(data, pf, time_step; kwargs...)
+        converged = _ac_powerflow(data, ac_pf, time_step)
 
         if converged
             write_powerflow_solution!(
                 system,
                 data,
-                get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER),
+                DEFAULT_MAX_ITER, # could add "number of retries for reactive power limits"
+                # as another kwarg.
             )
             @info("PowerFlow solve converged, the results have been stored in the system")
         else
@@ -70,19 +64,18 @@ function solve_powerflow!(
 end
 
 """
-Similar to solve_powerflow!(pf, sys) but does not update the system struct with results.
+Similar to solve_powerflow!(sys, ac_pf) but does not update the system struct with results.
 Returns the results in a dictionary of dataframes.
 
 ## Examples
 
 ```julia
-res = solve_powerflow(pf, sys)
+res = solve_powerflow(sys, ac_pf)
 ```
 """
 function solve_powerflow(
-    pf::ACPowerFlow{<:ACPowerFlowSolverType},
-    system::PSY.System;
-    kwargs...,
+    system::PSY.System,
+    ac_pf::ACPowerFlow{<:ACPowerFlowSolverType},
 )
     # df_results must be defined in the outer scope first to be visible for return
     df_results = Dict{String, DataFrames.DataFrame}()
@@ -90,17 +83,17 @@ function solve_powerflow(
     time_step = 1
     with_units_base(system, PSY.UnitSystem.SYSTEM_BASE) do
         data = PowerFlowData(
-            pf,
+            ac_pf,
             system;
             check_connectivity = get(kwargs, :check_connectivity, true),
             correct_bustypes = get(kwargs, :correct_bustypes, false),
         )
 
-        converged = _ac_powerflow(data, pf, time_step; kwargs...)
+        converged = _ac_powerflow(data, ac_pf, time_step)
 
         if converged
             @info("PowerFlow solve converged, the results are exported in DataFrames")
-            df_results = write_results(pf, system, data, time_step)
+            df_results = write_results(ac_pf, system, data, time_step)
         else
             df_results = missing
             @error("The powerflow solver returned convergence = $(converged)")
@@ -111,7 +104,7 @@ function solve_powerflow(
 end
 
 """
-    solve_powerflow!(data::ACPowerFlowData; pf::ACPowerFlow{<:ACPowerFlowSolverType} = ACPowerFlow(), kwargs...)
+    solve_powerflow!(data::ACPowerFlowData, ac_pf::ACPowerFlow{<:ACPowerFlowSolverType})
 
 Solve the multiperiod AC power flow problem for the given power flow data.
 
@@ -119,8 +112,7 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 
 # Arguments
 - `data::ACPowerFlowData`: The power flow data containing the grid information and initial conditions.
-- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver type. Defaults to `NewtonRaphsonACPowerFlow`.
-- `kwargs...`: Additional keyword arguments.
+- `ac_pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The `ACPowerFlow` instance: this provides the solver type (Newton-Raphson, Trust Region, etc.) and its specific search parameters (tolerance, max iterations, etc.).
 
 # Keyword Arguments
 - `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
@@ -145,11 +137,13 @@ solve_powerflow!(data)
 ```
 """
 function solve_powerflow!(
-    data::ACPowerFlowData;
-    pf::ACPowerFlow{<:ACPowerFlowSolverType} = ACPowerFlow(),
-    kwargs...,
+    data::ACPowerFlowData,
+    ac_pf::ACPowerFlow{<:ACPowerFlowSolverType},
 )
-    sorted_time_steps = get(kwargs, :time_steps, sort(collect(keys(data.timestep_map))))
+    # why do we need to specify time steps in 2 places like this?
+    # sorted_time_steps = get(kwargs, :time_steps, sort(collect(keys(data.timestep_map))))
+    sorted_time_steps = sort(collect(keys(data.timestep_map)))
+    
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
 
@@ -162,7 +156,7 @@ function solve_powerflow!(
     tb = data.power_network_matrix.tb
 
     for time_step in sorted_time_steps
-        converged = _ac_powerflow(data, pf, time_step; kwargs...)
+        converged = _ac_powerflow(data, ac_pf, time_step)
         ts_converged[time_step] = converged
 
         if !converged  # set values to NaN for not converged time steps
@@ -195,14 +189,13 @@ end
 
 function _ac_powerflow(
     data::ACPowerFlowData,
-    pf::ACPowerFlow{<:ACPowerFlowSolverType},
-    time_step::Int64;
-    kwargs...,
+    ac_pf::ACPowerFlow{<:ACPowerFlowSolverType},
+    time_step::Int64,
 )
-    check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
+    check_reactive_power_limits = ac_pf.check_reactive_power_limits
 
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
-        converged = _newton_powerflow(pf, data, time_step; kwargs...)
+        converged = _newton_powerflow(data, get_solver(ac_pf), time_step)
         if !converged || !check_reactive_power_limits ||
            _check_q_limit_bounds!(data, time_step)
             return converged
@@ -244,19 +237,4 @@ function _check_q_limit_bounds!(
         end
     end
     return within_limits
-end
-
-function bus_type_idx(
-    data::ACPowerFlowData,
-    time_step::Int64 = 1,
-    bus_types::Tuple{Vararg{PSY.ACBusTypes}} = (
-        PSY.ACBusTypes.REF,
-        PSY.ACBusTypes.PV,
-        PSY.ACBusTypes.PQ,
-    ),
-)
-    # Find indices for each bus type
-    return [
-        findall(==(bus_type), data.bus_type[:, time_step]) for bus_type in bus_types
-    ]
 end

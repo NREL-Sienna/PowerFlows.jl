@@ -136,8 +136,7 @@ function PowerFlows._newton_powerflow(
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    ref, pv, pq =
-        PowerFlows.bus_type_idx(data, time_step)
+    ref, pv, pq = bus_type_idx(data, time_step)
     pvpq = [pv; pq]
 
     npv = length(pv)

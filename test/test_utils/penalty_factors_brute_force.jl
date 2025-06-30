@@ -1,3 +1,19 @@
+"""Find all buses of the specified types at a given time step."""
+function bus_type_idx(
+    data::PF.ACPowerFlowData,
+    time_step::Int64 = 1,
+    bus_types::Tuple{Vararg{PSY.ACBusTypes}} = (
+        PSY.ACBusTypes.REF,
+        PSY.ACBusTypes.PV,
+        PSY.ACBusTypes.PQ,
+    ),
+)
+    # Find indices for each bus type
+    return [
+        findall(==(bus_type), data.bus_type[:, time_step]) for bus_type in bus_types
+    ]
+end
+
 """
     penalty_factors_brute_force(data::PowerFlowData; kwargs...)
 
@@ -30,7 +46,7 @@ function penalty_factors_brute_force(
               " this will re-compute the loss factors repeatedly, for no reason."
     end
     # we assume that the bus type for ref bus does not change between time steps
-    ref, = PowerFlows.bus_type_idx(data, 1, (PSY.ACBusTypes.REF,))
+    ref, = bus_type_idx(data, 1, (PSY.ACBusTypes.REF,))
 
     n_buses = first(size(data.bus_type))
     time_steps = collect(values(data.timestep_map))

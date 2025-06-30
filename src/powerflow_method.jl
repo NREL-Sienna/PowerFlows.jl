@@ -160,15 +160,17 @@ function _trust_region_step(time_step::Int,
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     delta::Float64,
-    eta::Float64 = DEFAULT_TRUST_REGION_ETA,
+    eta::Float64,
+    refinement_threshold::Float64,
+    refinement_eps::Float64,
 )
     _set_Δx_nr!(
         stateVector,
         J,
         linSolveCache,
         TrustRegionACPowerFlow(),
-        DEFAULT_REFINEMENT_THRESHOLD,
-        DEFAULT_REFINEMENT_EPS,
+        refinement_threshold,
+        refinement_eps,
     )
     _dogleg!(
         stateVector.Δx_proposed,
@@ -226,6 +228,8 @@ function _simple_step(time_step::Int,
     refinement_eps::Float64 = DEFAULT_REFINEMENT_EPS,
 )
     copyto!(stateVector.r, residual.Rv)
+    # I could change this to pass the solver instance and print the type and parameters,
+    # instead of just the type.
     _set_Δx_nr!(
         stateVector,
         J,
@@ -260,14 +264,12 @@ function _run_powerflow_method(time_step::Int,
     linSolveCache::KLULinSolveCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
-    ::Type{NewtonRaphsonACPowerFlow};
-    kwargs...)
-    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
-    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
-    refinement_threshold::Float64 = get(kwargs,
-        :refinement_eps,
-        DEFAULT_REFINEMENT_THRESHOLD)
-    refinement_eps::Float64 = get(kwargs, :refinement_eps, DEFAULT_REFINEMENT_EPS)
+    solver::NewtonRaphsonACPowerFlow,
+)
+    maxIterations::Int = solver.max_iterations
+    tol::Float64 = solver.tolerance
+    refinement_threshold::Float64 = solver.refinement_threshold
+    refinement_eps::Float64 = solver.refinement_epsilon
     i, converged = 0, false
     while i < maxIterations && !converged
         _simple_step(
@@ -300,12 +302,14 @@ function _run_powerflow_method(time_step::Int,
     linSolveCache::KLULinSolveCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
-    ::Type{TrustRegionACPowerFlow};
-    kwargs...)
-    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
-    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
-    factor::Float64 = get(kwargs, :factor, DEFAULT_TRUST_REGION_FACTOR)
-    eta::Float64 = get(kwargs, :eta, DEFAULT_TRUST_REGION_ETA)
+    solver::TrustRegionACPowerFlow,
+)
+    maxIterations::Int = solver.max_iterations
+    tol::Float64 = solver.tolerance
+    factor::Float64 = solver.factor
+    eta::Float64 = solver.eta
+    refinement_threshold::Float64 = solver.refinement_threshold
+    refinement_eps::Float64 = solver.refinement_epsilon
 
     delta::Float64 = norm(stateVector.x) > 0 ? factor * norm(stateVector.x) : factor
     i, converged = 0, false
@@ -318,6 +322,8 @@ function _run_powerflow_method(time_step::Int,
             J,
             delta,
             eta,
+            refinement_threshold,
+            refinement_eps,
         )
         converged = norm(residual.Rv, Inf) < tol
         i += 1
@@ -326,10 +332,10 @@ function _run_powerflow_method(time_step::Int,
 end
 
 function _newton_powerflow(
-    pf::ACPowerFlow{T},
     data::ACPowerFlowData,
-    time_step::Int64;
-    kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
+    solver::T,
+    time_step::Int64,
+) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
     residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
@@ -356,8 +362,7 @@ function _newton_powerflow(
         linSolveCache,
         residual,
         J,
-        T;
-        kwargs...,
+        solver
     )
     if converged
         @info("The $T solver converged after $i iterations.")
