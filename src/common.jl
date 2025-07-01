@@ -407,9 +407,9 @@ function make_powerflowdata(
     loss_factors,
     calculate_loss_factors,
     correct_bustypes::Bool = false,
-    generator_slack_participation_factors,
-    voltage_stability_factors,
-    calculate_voltage_stability_factors,
+    generator_slack_participation_factors = nothing,
+    voltage_stability_factors = nothing,
+    calculate_voltage_stability_factors = nothing,
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
