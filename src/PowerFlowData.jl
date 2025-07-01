@@ -110,6 +110,8 @@ struct PowerFlowData{
     converged::Vector{Bool}
     loss_factors::Union{Matrix{Float64}, Nothing}
     calculate_loss_factors::Bool
+    voltage_stability_factors::Union{Matrix{Float64}, Nothing}
+    calculate_voltage_stability_factors::Bool
 end
 
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
@@ -143,6 +145,7 @@ get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 supports_multi_period(::PowerFlowData) = true
 get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
+get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
@@ -202,6 +205,7 @@ function PowerFlowData(
     correct_bustypes = false)
     calculate_loss_factors = pf.calculate_loss_factors
     generator_slack_participation_factors = pf.generator_slack_participation_factors
+    calculate_voltage_stability_factors = pf.calculate_voltage_stability_factors
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
     if time_steps != 0
@@ -250,6 +254,12 @@ function PowerFlowData(
     else
         loss_factors = nothing
     end
+    if calculate_voltage_stability_factors
+        voltage_stability_factors =
+            Matrix{Float64}(undef, (n_buses, length(timestep_names)))
+    else
+        voltage_stability_factors = nothing
+    end
 
     return make_powerflowdata(
         sys,
@@ -270,6 +280,8 @@ function PowerFlowData(
         calculate_loss_factors,
         correct_bustypes,
         generator_slack_participation_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end
 
@@ -330,6 +342,9 @@ function PowerFlowData(
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -346,6 +361,9 @@ function PowerFlowData(
         loss_factors,
         correct_bustypes,
         calculate_loss_factors,
+        generator_slack_participation_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end
 
@@ -407,6 +425,9 @@ function PowerFlowData(
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -423,6 +444,9 @@ function PowerFlowData(
         loss_factors,
         correct_bustypes,
         calculate_loss_factors,
+        generator_slack_participation_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end
 
@@ -483,6 +507,9 @@ function PowerFlowData(
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -499,6 +526,9 @@ function PowerFlowData(
         loss_factors,
         correct_bustypes,
         calculate_loss_factors,
+        generator_slack_participation_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end
 

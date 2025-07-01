@@ -8,6 +8,7 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     check_reactive_power_limits::Bool
     exporter::Union{Nothing, PowerFlowEvaluationModel}
     calculate_loss_factors::Bool
+    calculate_voltage_stability_factors::Bool
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
@@ -19,6 +20,7 @@ ACPowerFlow{ACSolver}(;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
+    calculate_voltage_stability_factors::Bool = false,
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
@@ -29,6 +31,7 @@ ACPowerFlow{ACSolver}(;
         check_reactive_power_limits,
         exporter,
         calculate_loss_factors,
+        calculate_voltage_stability_factors,
         generator_slack_participation_factors,
     )
 
@@ -37,6 +40,7 @@ ACPowerFlow(
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
+    calculate_voltage_stability_factors::Bool = false,
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
@@ -46,6 +50,7 @@ ACPowerFlow(
     check_reactive_power_limits,
     exporter,
     calculate_loss_factors,
+    calculate_voltage_stability_factors,
     generator_slack_participation_factors,
 )
 
