@@ -412,22 +412,35 @@ function calculate_x0(data::ACPowerFlowData,
     return x0
 end
 
-
-function enhanced_flat_start!(x0::Vector{Float64}, data::ACPowerFlowData, time_step::Int64, n_buses::Int)
+function enhanced_flat_start!(
+    x0::Vector{Float64},
+    data::ACPowerFlowData,
+    time_step::Int64,
+    n_buses::Int,
+)
     # TODO: use the subnetworks already computed earlier
-    subnetworks = PNM.find_subnetworks(data.power_network_matrix.adjacency_data, collect(1:n_buses))
-    subnetworks = PNM.assign_reference_buses!(subnetworks, findall(x -> x == PSY.ACBusTypes.REF, data.bus_type[:, time_step]))
+    subnetworks =
+        PNM.find_subnetworks(data.power_network_matrix.adjacency_data, collect(1:n_buses))
+    subnetworks = PNM.assign_reference_buses!(
+        subnetworks,
+        findall(x -> x == PSY.ACBusTypes.REF, data.bus_type[:, time_step]),
+    )
 
     for (ref_bus, subnetwork) in subnetworks
-        pv_buses = [ix for ix in subnetwork if data.bus_type[ix, time_step] == PSY.ACBusTypes.PV]
-        pq_buses = [ix for ix in subnetwork if data.bus_type[ix, time_step] == PSY.ACBusTypes.PQ]
+        pv_buses =
+            [ix for ix in subnetwork if data.bus_type[ix, time_step] == PSY.ACBusTypes.PV]
+        pq_buses =
+            [ix for ix in subnetwork if data.bus_type[ix, time_step] == PSY.ACBusTypes.PQ]
         ref_bus_angle = data.bus_angles[ref_bus, time_step]
         (ref_bus_angle == 0.0) || (x0[2 .* [pv_buses; pq_buses]] .= ref_bus_angle)
-        (length(pv_buses) == 0) || (length(pq_buses) == 0) || (x0[2 .* pq_buses .- 1] .= sum(data.bus_magnitude[pv_buses, time_step]) / length(pv_buses))
+        (length(pv_buses) == 0) || (length(pq_buses) == 0) ||
+            (
+                x0[2 .* pq_buses .- 1] .=
+                    sum(data.bus_magnitude[pv_buses, time_step]) / length(pv_buses)
+            )
     end
     return
 end
-
 
 """When solving AC power flows, if the initial guess has large residual, we run a DC power 
 flow as a fallback. This runs a DC powerflow on `data::ACPowerFlowData` for the given
