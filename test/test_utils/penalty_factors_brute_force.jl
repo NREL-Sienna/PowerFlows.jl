@@ -25,7 +25,7 @@ The loss factor value is computed as the change in the reference bus power injec
 # Arguments
 - `data::PowerFlowData`: The power flow data containing bus types, active power injections, and other relevant information.
 - `step_size::Float64 = 1e-6`: The step size used to perturb the active power injection at each bus.
-- `kwargs...`: Additional keyword arguments to be passed to the `solve_powerflow!` function.
+- `kwargs...`: Additional keyword arguments to be passed to the `solve_power_flow!` function.
 
 # Returns
 - `loss_factors::Array{Float64, 2}`: A 2D array of penalty factors for each bus and time step.
@@ -54,7 +54,7 @@ function penalty_factors_brute_force(
     loss_factors = zeros(Float64, n_buses, length(time_steps))
 
     # initial PF to establish the ref power value
-    solve_powerflow!(data; pf = pf, kwargs...)
+    PF.solve_power_flow_data!(data, pf, kwargs...)
 
     ref_power = copy(sum(data.bus_activepower_injection[ref, :]; dims = 1))
 
@@ -64,7 +64,7 @@ function penalty_factors_brute_force(
             continue
         end
         data.bus_activepower_injection[bx, :] .+= step_size
-        solve_powerflow!(data; pf = pf, kwargs...)
+        PF.solve_power_flow_data!(data, pf, kwargs...)
         loss_factors[[bx], :] .=
             (sum(data.bus_activepower_injection[ref, :]; dims = 1) .- ref_power) ./
             step_size

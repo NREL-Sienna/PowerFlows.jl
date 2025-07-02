@@ -32,47 +32,49 @@
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
-    pf = ACPowerFlow{ACSolver}()
+    default_pf = ACPowerFlow{ACSolver}()
+    pf_no_limits = ACPowerFlow{ACSolver}(; check_reactive_power_limits = false)
+    pf_with_limits = ACPowerFlow{ACSolver}(; check_reactive_power_limits = true)
     data = PowerFlows.PowerFlowData(
-        pf,
+        default_pf,
         sys;
         check_connectivity = true,
         correct_bustypes = true,
     )
     #Compare results between finite diff methods and Jacobian method
-    converged1 = PowerFlows._ac_powerflow(data, pf, 1)
+    converged1 = PowerFlows._ac_powerflow(data, default_pf, 1)
     x1 = _calc_x(data, 1)
     @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6
 
-    # Test that solve_powerflow! succeeds
+    # Test that solve_power_flow! succeeds
     solved1 = deepcopy(sys)
-    @test solve_powerflow!(pf, solved1)
+    @test solve_power_flow!(solved1, default_pf)
 
     # Test that passing check_reactive_power_limits=false is the default and violates limits
     solved2 = deepcopy(sys)
-    @test solve_powerflow!(pf, solved2; check_reactive_power_limits = false)
+    @test solve_power_flow!(solved2, pf_no_limits)
     @test IS.compare_values(solved1, solved2)
     @test get_reactive_power(get_component(ThermalStandard, solved2, "Bus8")) >
           get_reactive_power_limits(get_component(ThermalStandard, solved2, "Bus8")).max
 
     # Test that passing check_reactive_power_limits=true fixes that
     solved3 = deepcopy(sys)
-    @test solve_powerflow!(pf, solved3; check_reactive_power_limits = true)
+    @test solve_power_flow!(solved3, pf_with_limits)
     @test get_reactive_power(get_component(ThermalStandard, solved3, "Bus8")) <=
           get_reactive_power_limits(get_component(ThermalStandard, solved3, "Bus8")).max
 
     # Test Newton method
-    @test solve_powerflow!(pf, deepcopy(sys))
+    @test solve_power_flow!(deepcopy(sys), default_pf)
 
     # Test enforcing the reactive power limits in closer detail
     set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
     data = PowerFlows.PowerFlowData(
-        pf,
+        default_pf,
         sys;
         check_connectivity = true,
         correct_bustypes = true,
     )
-    converged2 = PowerFlows._ac_powerflow(data, pf, 1; check_reactive_power_limits = true)
+    converged2 = PowerFlows._ac_powerflow(data, pf_with_limits, 1)
     x2 = _calc_x(data, 1)
     @test LinearAlgebra.norm(result_14 - x2, Inf) >= 1e-6
     @test 1.08 <= x2[15] <= 1.09
@@ -81,19 +83,19 @@ end
 @testset "AC Power Flow 14-Bus Line Configurations" for ACSolver in AC_SOLVERS_TO_TEST
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     pf = ACPowerFlow{ACSolver}()
-    base_res = solve_powerflow(pf, sys; correct_bustypes = true)
+    base_res = solve_power_flow(sys, pf; correct_bustypes = true)
     branch = first(PSY.get_components(Line, sys))
     dyn_branch = DynamicBranch(branch)
     add_component!(sys, dyn_branch)
-    @test dyn_pf = solve_powerflow!(pf, sys; correct_bustypes = true)
-    dyn_pf = solve_powerflow(pf, sys; correct_bustypes = true)
+    @test dyn_pf = solve_power_flow!(sys, pf; correct_bustypes = true)
+    dyn_pf = solve_power_flow(sys, pf; correct_bustypes = true)
     @test LinearAlgebra.norm(dyn_pf["bus_results"].Vm - base_res["bus_results"].Vm, Inf) <=
           1e-6
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
     PSY.set_available!(line, false)
-    solve_powerflow!(pf, sys; correct_bustypes = true)
+    solve_power_flow!(sys, pf; correct_bustypes = true)
     @test PSY.get_active_power_flow(line) == 0.0
     test_bus = get_component(PSY.ACBus, sys, "Bus 4")
     @test isapprox(PSY.get_magnitude(test_bus), 1.002; atol = 1e-3, rtol = 0)
@@ -101,7 +103,7 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
     PSY.set_available!(line, false)
-    res = solve_powerflow(pf, sys; correct_bustypes = true)
+    res = solve_power_flow(sys, pf; correct_bustypes = true)
     @test res["flow_results"].P_from_to[4] == 0.0
     @test res["flow_results"].P_to_from[4] == 0.0
 end
@@ -115,7 +117,7 @@ end
     fix_shunt = PSY.FixedAdmittance("FixAdmBus3", true, bus_103, 0.0 + 0.2im)
     add_component!(sys_3bus, fix_shunt)
     pf = ACPowerFlow{ACSolver}()
-    df = solve_powerflow(pf, sys_3bus; correct_bustypes = true)
+    df = solve_power_flow(sys_3bus, pf; correct_bustypes = true)
     @test isapprox(df["bus_results"].P_gen, p_gen_matpower_3bus, atol = 1e-4)
     @test isapprox(df["bus_results"].Q_gen, q_gen_matpower_3bus, atol = 1e-4)
 end
@@ -134,7 +136,7 @@ end
     @test_logs(
         (:error, "The powerflow solver returned convergence = false"),
         match_mode = :any,
-        @test !solve_powerflow!(pf, pf_sys5_re)
+        @test !solve_power_flow!(pf_sys5_re, pf)
     )
 end
 
@@ -157,9 +159,9 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
-    pf1 = solve_powerflow!(pf, system; correct_bustypes = true)
+    pf1 = solve_power_flow!(system, pf; correct_bustypes = true)
     @test pf1
-    pf_result_df = solve_powerflow(pf, system; correct_bustypes = true)
+    pf_result_df = solve_power_flow(system, pf; correct_bustypes = true)
 
     v_diff, angle_diff, number = psse_bus_results_compare(pf_bus_result_file, pf_result_df)
     p_diff, q_diff, names = psse_gen_results_compare(pf_gen_result_file, system)
@@ -184,13 +186,13 @@ end
     s2 = _add_simple_source!(sys, b, -0.5, -0.1)
 
     pf = ACPowerFlow{ACSolver}()
-    @test solve_powerflow!(pf, sys; correct_bustypes = true)
+    @test solve_power_flow!(sys, pf; correct_bustypes = true)
 
     #Create power mismatch, test for error
     set_active_power!(s1, -0.4)
     @test_throws ErrorException(
         "Sources do not match P and/or Q requirements for reference bus.",
-    ) solve_powerflow!(pf, sys)
+    ) solve_power_flow!(sys, pf)
 end
 
 @testset "AC PowerFlow with Multiple sources at PV" for ACSolver in AC_SOLVERS_TO_TEST
@@ -207,13 +209,13 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
-    @test solve_powerflow!(pf, sys; correct_bustypes = true)
+    @test solve_power_flow!(sys, pf; correct_bustypes = true)
 
     #Create power mismatch, test for error
     set_reactive_power!(s3, -0.5)
-    @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_powerflow!(
-        pf,
+    @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_power_flow!(
         sys,
+        pf;
         correct_bustypes = true,
     )
 end
@@ -229,7 +231,7 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
-    @test solve_powerflow!(pf, sys)
+    @test solve_power_flow!(sys, pf)
     @test isapprox(get_active_power(s1), 0.5; atol = 0.001)
     @test isapprox(get_reactive_power(s1), 0.1; atol = 0.001)
 end
@@ -248,7 +250,7 @@ end
 
     pf = ACPowerFlow{ACSolver}()
 
-    @test solve_powerflow!(pf, sys; correct_bustypes = true)
+    @test solve_power_flow!(sys, pf; correct_bustypes = true)
     @test isapprox(get_active_power(s2), 0.5; atol = 0.001)
     @test isapprox(get_reactive_power(s2), 1.1; atol = 0.001)
 end
@@ -261,8 +263,8 @@ end
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
     pf_default = ACPowerFlow()
-    pf_lu = ACPowerFlow(LUACPowerFlow)
-    pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow)
+    pf_lu = ACPowerFlow(LUACPowerFlow())
+    pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow())
 
     PSY.set_units_base_system!(sys, "SYSTEM_BASE")
     data = PowerFlowData(
@@ -273,9 +275,9 @@ end
 
     time_step = 1
 
-    res_default = solve_powerflow(pf_default, sys; correct_bustypes = true)  # must be the same as KLU
-    res_lu = solve_powerflow(pf_lu, sys; correct_bustypes = true)
-    res_newton = solve_powerflow(pf_newton, sys; correct_bustypes = true)
+    res_default = solve_power_flow(sys, pf_default; correct_bustypes = true)  # must be the same as KLU
+    res_lu = solve_power_flow(sys, pf_lu; correct_bustypes = true)
+    res_newton = solve_power_flow(sys, pf_newton; correct_bustypes = true)
 
     @test all(
         isapprox.(
@@ -315,9 +317,9 @@ end
 @testset "Test loss factors for larger grid" begin
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
-    pf_lu = ACPowerFlow(LUACPowerFlow)
-    pf_lu_lf = ACPowerFlow(LUACPowerFlow; calculate_loss_factors = true)
-    pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow; calculate_loss_factors = true)
+    pf_lu = ACPowerFlow(LUACPowerFlow())
+    pf_lu_lf = ACPowerFlow(LUACPowerFlow(); calculate_loss_factors = true)
+    pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow(); calculate_loss_factors = true)
 
     data_lu = PowerFlowData(
         pf_lu_lf,
@@ -339,8 +341,8 @@ end
 
     time_step = 1
 
-    solve_powerflow!(data_lu; pf = pf_lu)
-    solve_powerflow!(data_newton; pf = pf_newton)
+    PF.solve_power_flow_data!(data_lu, pf_lu)
+    PF.solve_power_flow_data!(data_newton, pf_newton)
 
     @test all(
         isapprox.(
@@ -442,7 +444,7 @@ end
     data = PowerFlowData(pf, sys; correct_bustypes = true)
     original_bus_power, original_gen_power = _system_generation_power(sys, bus_numbers)
     data_original_bus_power = copy(data.bus_activepower_injection[:, 1])
-    res1 = solve_powerflow(pf, sys; correct_bustypes = true)
+    res1 = solve_power_flow(sys, pf; correct_bustypes = true)
 
     bus_slack_participation_factors = zeros(Float64, length(bus_numbers))
     bus_slack_participation_factors[ref_n] .= 1.0
@@ -452,7 +454,7 @@ end
             bus_slack_participation_factors,
         ),
     )
-    res2 = solve_powerflow(pf2, sys; correct_bustypes = true)
+    res2 = solve_power_flow(sys, pf2; correct_bustypes = true)
 
     # basic test: if we pass the same slack participation factors as the default ones, the results
     # should be the same
@@ -574,7 +576,7 @@ end
         (ThermalStandard, get_name(g2)) => 0.0,
     )
     pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
-    solve_powerflow!(pf, sys; correct_bustypes = true)
+    solve_power_flow!(sys, pf; correct_bustypes = true)
     @test isapprox(get_active_power(g1), p1; atol = 1e-6, rtol = 0)
     @test isapprox(get_active_power(g2), p2; atol = 1e-6, rtol = 0)
     reset_p()
@@ -585,7 +587,7 @@ end
         (ThermalStandard, get_name(g2)) => 0.5,
     )
     pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
-    solve_powerflow!(pf, sys; correct_bustypes = true)
+    solve_power_flow!(sys, pf; correct_bustypes = true)
     @test isapprox(get_active_power(s1), ps; atol = 1e-6, rtol = 0)
     @test isapprox(
         get_active_power(g1) - p1,
@@ -598,7 +600,7 @@ end
     gspf =
         Dict((ThermalStandard, get_name(g1)) => 0.0, (ThermalStandard, get_name(g2)) => 1.0)
     pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
-    solve_powerflow!(pf, sys)
+    solve_power_flow!(sys, pf)
     @test isapprox(get_active_power(s1), ps; atol = 1e-6, rtol = 0)
     @test isapprox(get_active_power(g1), p1; atol = 1e-6, rtol = 0)
     @test isapprox(
@@ -615,7 +617,7 @@ end
         (ThermalStandard, get_name(g2)) => 0.4,
     )
     pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
-    solve_powerflow!(pf, sys)
+    solve_power_flow!(sys, pf)
     total_slack_power =
         -(get_active_power(s1) - ps) + get_active_power(g1) - p1 + get_active_power(g2) - p2
     @test isapprox(
@@ -689,7 +691,7 @@ end
     generator_slack_participation_factors =
         Dict((typeof(x), get_name(x)) => f for (x, f) in zip(devices, factors))
 
-    pf = ACPowerFlow(ACSolver;
+    pf = ACPowerFlow(ACSolver();
         generator_slack_participation_factors = generator_slack_participation_factors,
     )
 
@@ -698,7 +700,7 @@ end
     bus_numbers = get_bus_numbers(sys)
     original_bus_power, original_gen_power = _system_generation_power(sys, bus_numbers)
 
-    solve_powerflow!(pf, sys; check_connectivity = false, correct_bustypes = true)
+    solve_power_flow!(sys, pf; check_connectivity = false, correct_bustypes = true)
 
     if mode == :same
         @test isapprox(get_active_power(s1), get_active_power(g1), rtol = 0, atol = 1e-6)
@@ -722,7 +724,7 @@ end
         atol = 1e-3,
     )
 
-    solve_powerflow!(data; pf = pf)
+    PF.solve_power_flow_data!(data, pf)
 
     @test isapprox(
         data.bus_activepower_injection[data.bus_lookup[get_number(b1)], 1],
@@ -762,7 +764,7 @@ end
         (typeof(x), get_name(x)) => f for
         (x, f) in zip(devices, factors) if get_bustype(get_bus(x)) != ACBusTypes.PQ
     )
-    pf2 = ACPowerFlow(ACSolver;
+    pf2 = ACPowerFlow(ACSolver();
         generator_slack_participation_factors = generator_slack_participation_factors2,
     )
 
@@ -803,10 +805,10 @@ end
     generator_slack_participation_factors =
         Dict((typeof(x), get_name(x)) => 1.0 for x in vcat(sources, gens))
 
-    pf = ACPowerFlow(ACSolver;
+    pf = ACPowerFlow(ACSolver();
         generator_slack_participation_factors = generator_slack_participation_factors,
     )
-    solve_powerflow!(pf, sys; correct_bustypes = true)
+    solve_power_flow!(sys, pf; correct_bustypes = true)
 
     # equal slack participation
     for (s, g) in zip(sources, gens)
@@ -820,9 +822,9 @@ end
     # test that isolated islands raise error
     b = _add_simple_bus!(sys, 100, ACBusTypes.PQ, 230, 1.1, 0.0)
 
-    @test_throws "No REF bus found in the subnetwork" solve_powerflow!(
-        pf,
-        sys;
+    @test_throws "No REF bus found in the subnetwork" solve_power_flow!(
+        sys,
+        pf;
         check_connectivity = false,
         correct_bustypes = true,
     )
@@ -855,9 +857,10 @@ end
     matpower_df = DataFrame(CSV.File(MATPOWER_CSV))
 
     sys_sienna = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
-    pf_sienna = ACPowerFlow()
+    solver_sienna = NewtonRaphsonACPowerFlow(; tolerance = 1e-11)
+    pf_sienna = ACPowerFlow(solver_sienna)
     data_sienna = PowerFlowData(pf_sienna, sys_sienna; correct_bustypes = true)
-    solve_powerflow!(data_sienna; pf = pf_sienna, tol = 1e-11)
+    PF.solve_power_flow_data!(data_sienna, pf_sienna)
     sienna_df = PowerFlowData_to_DataFrame(data_sienna)
     @assert all(sienna_df[!, "bus_number"] .== matpower_df[!, "bus_number"])
     # The bus types don't match, so we don't compare them here. (We changed PQ with 

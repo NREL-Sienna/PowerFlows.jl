@@ -54,7 +54,7 @@ const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl
 # "test_multiperiod_dc_powerflow.jl",
 # "test_powerflow_data.jl",
 # "test_psse_export.jl",
-# "test_solve_powerflow.jl",
+# "test_solve_power_flow.jl",
 ]
 
 LOG_LEVELS = Dict(

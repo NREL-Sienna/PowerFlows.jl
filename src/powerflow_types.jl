@@ -11,8 +11,8 @@ abstract type ACPowerFlowSolverType end
 end
 
 @kwdef struct TrustRegionACPowerFlow <: ACPowerFlowSolverType
-    max_iterations::Int = DEFAULT_MAX_ITER
-    tolerance::Float64 = DEFAULT_TOL
+    max_iterations::Int = DEFAULT_NR_MAX_ITER
+    tolerance::Float64 = DEFAULT_NR_TOL
     refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD
     refinement_epsilon::Float64 = DEFAULT_REFINEMENT_EPS
     eta::Float64 = DEFAULT_TRUST_REGION_ETA
@@ -43,7 +43,7 @@ ACPowerFlow(
         Vector{Dict{Tuple{DataType, String}, Float64}},
     } = nothing,
 ) where {ACSolver <: ACPowerFlowSolverType} =
-    ACPowerFlow{ACPowerFlowSolverType}(
+    ACPowerFlow{ACSolver}(
         solver,
         check_reactive_power_limits,
         exporter,
@@ -52,7 +52,7 @@ ACPowerFlow(
     )
 
 # only type of solver provided: construct instance with default parameters. 
-ACPowerFlow{ACSolver}(; kwargs...) where {ACSolver <: ACPowerFlowSolverType}=
+ACPowerFlow{ACSolver}(; kwargs...) where {ACSolver <: ACPowerFlowSolverType} =
     ACPowerFlow(ACSolver(); kwargs...)
 
 # nothing specified: construct with default NR solver and default parameters.
@@ -83,6 +83,8 @@ PSSEExportPowerFlow(psse_version::Symbol, export_dir::AbstractString; kwargs...)
 
 get_exporter(pfem::PowerFlowEvaluationModel) = pfem.exporter
 get_exporter(::PSSEExportPowerFlow) = nothing
+
+get_solver(pfem::ACPowerFlow) = pfem.solver
 
 """
 Expand a single `PowerFlowEvaluationModel` into its possibly multiple parts for separate

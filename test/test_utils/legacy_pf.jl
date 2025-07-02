@@ -123,8 +123,8 @@ end
 
 # legacy NR implementation - here we do not care about allocations, we use this function only for testing purposes
 function PowerFlows._newton_powerflow(
-    pf::ACPowerFlow{LUACPowerFlow},
     data::PowerFlows.ACPowerFlowData,
+    ::LUACPowerFlow,
     time_step::Int64;
     kwargs...,
 )

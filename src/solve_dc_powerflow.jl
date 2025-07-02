@@ -41,7 +41,7 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
 - `data::PTDFPowerFlowData`:
         PTDFPowerFlowData structure containing all the information related to the system's power flow.
 """
-function solve_powerflow!(
+function solve_power_flow_data!(
     data::PTDFPowerFlowData,
 )
     solver_cache = KLULinSolveCache(data.aux_network_matrix.data)
@@ -67,7 +67,7 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
 - `data::vPTDFPowerFlowData`:
         vPTDFPowerFlowData structure containing all the information related to the system's power flow.
 """
-function solve_powerflow!(
+function solve_power_flow_data!(
     data::vPTDFPowerFlowData,
 )
     solver_cache = KLULinSolveCache(data.aux_network_matrix.data)
@@ -93,7 +93,7 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
         ABAPowerFlowData structure containing all the information related to the system's power flow.
 """
 # DC flow: ABA and BA case
-function solve_powerflow!(
+function solve_power_flow_data!(
     data::ABAPowerFlowData,
 )
     solver_cache = KLULinSolveCache(data.power_network_matrix.data)
@@ -120,20 +120,20 @@ The DataFrame containts the flows and angles related to the information stored
 in the PSY.System considered as input.
 
 # Arguments:
-- `::PTDFDCPowerFlow`:
-        use PTDFDCPowerFlow() to evaluate the power flows according to the
-        method based on the PTDF matrix
 - `sys::PSY.System`:
         container gathering the system data used for the evaluation of flows
         and angles.
+- `::PTDFDCPowerFlow`:
+        use PTDFDCPowerFlow() to evaluate the power flows according to the
+        method based on the PTDF matrix
 """
-function solve_powerflow(
-    ::PTDFDCPowerFlow,
-    sys::PSY.System;
+function solve_power_flow(
+    sys::PSY.System,
+    ::PTDFDCPowerFlow;
     correct_bustypes = false,
 )
     data = PowerFlowData(PTDFDCPowerFlow(), sys; correct_bustypes = correct_bustypes)
-    solve_powerflow!(data)
+    solve_power_flow_data!(data)
     return write_results(data, sys)
 end
 
@@ -146,20 +146,20 @@ The DataFrame containts the flows and angles related to the information stored
 in the PSY.System considered as input.
 
 # Arguments:
-- `::DCPowerFlow`:
-        use DCPowerFlow() to evaluate the power flows according to the method
-        based on the ABA and BA matrices
 - `sys::PSY.System`:
         container gathering the system data used for the evaluation of flows
         and angles.
+- `::DCPowerFlow`:
+        use DCPowerFlow() to evaluate the power flows according to the method
+        based on the ABA and BA matrices
 """
-function solve_powerflow(
-    ::DCPowerFlow,
-    sys::PSY.System;
+function solve_power_flow(
+    sys::PSY.System,
+    ::DCPowerFlow;
     correct_bustypes = false,
 )
     data = PowerFlowData(DCPowerFlow(), sys; correct_bustypes = correct_bustypes)
-    solve_powerflow!(data)
+    solve_power_flow_data!(data)
     return write_results(data, sys)
 end
 
@@ -172,20 +172,20 @@ The DataFrame containts the flows and angles related to the information stored
 in the PSY.System considered as input.
 
 # Arguments:
-- `::vPTDFDCPowerFlow`:
-        use vPTDFDCPowerFlow() to evaluate the power flows according to the
-        method based on the Virtual PTDF matrix
 - `sys::PSY.System`:
         container gathering the system data used for the evaluation of flows
         and angles.
+- `::vPTDFDCPowerFlow`:
+        use vPTDFDCPowerFlow() to evaluate the power flows according to the
+        method based on the Virtual PTDF matrix
 """
-function solve_powerflow(
-    ::vPTDFDCPowerFlow,
-    sys::PSY.System;
+function solve_power_flow(
+    sys::PSY.System,
+    ::vPTDFDCPowerFlow;
     correct_bustypes = false,
 )
     data = PowerFlowData(vPTDFDCPowerFlow(), sys; correct_bustypes = correct_bustypes)
-    solve_powerflow!(data)
+    solve_power_flow_data!(data)
     return write_results(data, sys)
 end
 
@@ -204,11 +204,11 @@ Each DataFrame containts the flows and angles.
 - `sys::PSY.System`:
         container gathering the system data.
 """
-function solve_powerflow(
+function solve_power_flow_data(
     data::PTDFPowerFlowData,
     sys::PSY.System;
 )
-    solve_powerflow!(data)
+    solve_power_flow_data!(data)
     return write_results(data, sys)
 end
 
@@ -226,11 +226,11 @@ Each DataFrame containts the flows and angles.
 - `sys::PSY.System`:
         container gathering the system data.
 """
-function solve_powerflow(
+function solve_power_flow_data(
     data::ABAPowerFlowData,
     sys::PSY.System;
 )
-    solve_powerflow!(data)
+    solve_power_flow_data!(data)
     return write_results(data, sys)
 end
 
@@ -248,10 +248,10 @@ Each DataFrame containts the flows and angles.
 - `sys::PSY.System`:
         container gathering the system data.
 """
-function solve_powerflow(
+function solve_power_flow_data(
     data::vPTDFPowerFlowData,
     sys::PSY.System;
 )
-    solve_powerflow!(data)
+    solve_power_flow_data!(data)
     return write_results(data, sys)
 end

@@ -306,7 +306,7 @@ function _run_powerflow_method(time_step::Int,
 )
     maxIterations::Int = solver.max_iterations
     tol::Float64 = solver.tolerance
-    factor::Float64 = solver.factor
+    factor::Float64 = solver.trust_region_factor
     eta::Float64 = solver.eta
     refinement_threshold::Float64 = solver.refinement_threshold
     refinement_eps::Float64 = solver.refinement_epsilon
@@ -362,7 +362,7 @@ function _newton_powerflow(
         linSolveCache,
         residual,
         J,
-        solver
+        solver,
     )
     if converged
         @info("The $T solver converged after $i iterations.")

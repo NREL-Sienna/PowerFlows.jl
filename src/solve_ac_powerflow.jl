@@ -1,5 +1,5 @@
 """
-    solve_powerflow!(system::PSY.System, ac_pf::ACPowerFlow{<:ACPowerFlowSolverType}; kwargs...)
+    solve_power_flow!(system::PSY.System, ac_pf::ACPowerFlow{<:ACPowerFlowSolverType}; kwargs...)
 
 Solves the power flow in the system and writes the solution into the relevant structs.
 Updates active and reactive power setpoints for generators and active and reactive
@@ -23,13 +23,13 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 # Examples
 
 ```julia
-solve_powerflow!(sys, ac_pf)
+solve_power_flow!(sys, ac_pf)
 
 # Passing kwargs
-solve_powerflow!(sys, ac_pf; check_connectivity=false)
+solve_power_flow!(sys, ac_pf; check_connectivity=false)
 ```
 """
-function solve_powerflow!(
+function solve_power_flow!(
     system::PSY.System,
     ac_pf::ACPowerFlow{<:ACPowerFlowSolverType};
     kwargs...,
@@ -51,7 +51,7 @@ function solve_powerflow!(
             write_powerflow_solution!(
                 system,
                 data,
-                DEFAULT_MAX_ITER, # could add "number of retries for reactive power limits"
+                DEFAULT_NR_MAX_ITER, # could add "number of retries for reactive power limits"
                 # as another kwarg.
             )
             @info("PowerFlow solve converged, the results have been stored in the system")
@@ -64,18 +64,19 @@ function solve_powerflow!(
 end
 
 """
-Similar to solve_powerflow!(sys, ac_pf) but does not update the system struct with results.
+Similar to solve_power_flow!(sys, ac_pf) but does not update the system struct with results.
 Returns the results in a dictionary of dataframes.
 
 ## Examples
 
 ```julia
-res = solve_powerflow(sys, ac_pf)
+res = solve_power_flow(sys, ac_pf)
 ```
 """
-function solve_powerflow(
+function solve_power_flow(
     system::PSY.System,
-    ac_pf::ACPowerFlow{<:ACPowerFlowSolverType},
+    ac_pf::ACPowerFlow{<:ACPowerFlowSolverType};
+    kwargs...,
 )
     # df_results must be defined in the outer scope first to be visible for return
     df_results = Dict{String, DataFrames.DataFrame}()
@@ -104,7 +105,7 @@ function solve_powerflow(
 end
 
 """
-    solve_powerflow!(data::ACPowerFlowData, ac_pf::ACPowerFlow{<:ACPowerFlowSolverType})
+    solve_power_flow_data!(data::ACPowerFlowData, ac_pf::ACPowerFlow{<:ACPowerFlowSolverType})
 
 Solve the multiperiod AC power flow problem for the given power flow data.
 
@@ -133,17 +134,18 @@ It preallocates memory for the results and iterates over the sorted time steps.
 
 # Examples
 ```julia
-solve_powerflow!(data)
+solve_power_flow_data!(data, ACPowerFlow())
 ```
 """
-function solve_powerflow!(
+function solve_power_flow_data!(
     data::ACPowerFlowData,
-    ac_pf::ACPowerFlow{<:ACPowerFlowSolverType},
+    ac_pf::ACPowerFlow{<:ACPowerFlowSolverType};
+    kwargs...,
 )
     # why do we need to specify time steps in 2 places like this?
     # sorted_time_steps = get(kwargs, :time_steps, sort(collect(keys(data.timestep_map))))
     sorted_time_steps = sort(collect(keys(data.timestep_map)))
-    
+
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
 
