@@ -243,8 +243,16 @@ function _initialize_bus_data!(
             bus_angles[ix] = angle(avg_complex_power)
         end
         bus_magnitude[ix] = abs(avg_complex_power)
-        # TODO: add a sanity check here. Maybe the complex voltages all sum up to something
-        # tiny, so then your average is close to 0.0 and your starting point is bad...
+        # TODO: what if the complex sum is close to 0.0? You'd get a bad starting magnitude.
+        # the below fixes this for PQ buses, but not for other bus types.
+        if combined_bt == PSY.ACBusTypes.PQ && (bus_magnitude < 0.8 || bus_magnitude > 1.2)
+            @warn(
+                "Initial bus voltage magnitude of $(bus_magnitude[ix]) p.u. at bus" *
+                " $red_bus_no is outside the plausible range of [0.8, 1.2] p.u.",
+                maxlog = PF_MAX_LOG,
+            )
+            bus_magnitude[ix] = clamp(bus_magnitude[ix], 0.8, 1.2)
+        end
     end
 end
 ##############################################################################
