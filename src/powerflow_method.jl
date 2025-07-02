@@ -333,10 +333,16 @@ function _newton_powerflow(
     residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
+    if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
+       get_robust_power_flow(pf)
+        improve_x0!(x0, data, time_step, residual)
+    else
+        @debug "skipping DC powerflow fallback"
+    end
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     J(time_step)  # we need to fill J with values because at this point it was just initialized
 
-    if sum(abs, residual.Rv) > WARN_LARGE_RESIDUAL * length(residual.Rv)
+    if sum(abs, residual.Rv) > LARGE_RESIDUAL * length(residual.Rv)
         lg_res, ix = findmax(residual.Rv)
         lg_res_rounded = round(lg_res; sigdigits = 3)
         pow_type = ix % 2 == 1 ? "active" : "reactive"
@@ -370,34 +376,55 @@ function _newton_powerflow(
     return false
 end
 
+"""If initial residual is large, run a DC power flow and see if that gives
+a better starting point for angles. Return the original or the result of the DC powerflow,
+whichever gives the smaller residual."""
+function improve_x0!(x0::Vector{Float64},
+    data::ACPowerFlowData,
+    time_step::Int64,
+    residual::ACPowerFlowResidual,
+)
+    @debug "Trying to improve x0 via DC powerflow fallback"
+    residualSize = norm(residual.Rv, 1)
+    _dc_powerflow_fallback!(data, time_step)
+    # is the new starting point better?
+    newx0 = calculate_x0(data, time_step)
+    residual(newx0, time_step)
+    newResidualSize = norm(residual.Rv, 1)
+    if newResidualSize < residualSize
+        @info "success: DC powerflow fallback yields better x0"
+        copyto!(x0, newx0)
+        residual(x0, time_step) # re-calculate for new x0.
+    else
+        @debug "no improvement from DC powerflow fallback"
+    end
+    return nothing
+end
+
+"""Calculate x0 from data."""
 function calculate_x0(data::ACPowerFlowData,
     time_step::Int64)
     n_buses = length(data.bus_type[:, 1])
     x0 = Vector{Float64}(undef, 2 * n_buses)
-    state_variable_count = 1
-    for (ix, b) in enumerate(data.bus_type[:, time_step])
-        if b == PSY.ACBusTypes.REF
-            x0[state_variable_count] =
-                data.bus_activepower_injection[ix, time_step] -
-                data.bus_activepower_withdrawals[ix, time_step]
-            x0[state_variable_count + 1] =
-                data.bus_reactivepower_injection[ix, time_step] -
-                data.bus_reactivepower_withdrawals[ix, time_step]
-            state_variable_count += 2
-        elseif b == PSY.ACBusTypes.PV
-            x0[state_variable_count] =
-                data.bus_reactivepower_injection[ix, time_step] -
-                data.bus_reactivepower_withdrawals[ix, time_step]
-            x0[state_variable_count + 1] = data.bus_angles[ix, time_step]
-            state_variable_count += 2
-        elseif b == PSY.ACBusTypes.PQ
-            x0[state_variable_count] = data.bus_magnitude[ix, time_step]
-            x0[state_variable_count + 1] = data.bus_angles[ix, time_step]
-            state_variable_count += 2
-        else
-            throw(ArgumentError("$b not recognized as a bustype"))
-        end
-    end
-    @assert state_variable_count - 1 == n_buses * 2
+    update_state!(x0, data, time_step)
     return x0
+end
+
+"""When solving AC power flows, if the initial guess has large residual, we run a DC power 
+flow as a fallback. This runs a DC powerflow on `data::ACPowerFlowData` for the given
+`time_step`, and writes the solution to `data.bus_angles`."""
+function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
+    # dev note: for DC, we can efficiently solve for all timesteps at once, and we want branch
+    # flows. For AC fallback, we're only interested in the current timestep, and no branch flows
+    # PERF: if multi-period and multiple time steps have bad initial guesses,
+    #       we're re-creating this factorization for each time step. Store it inside
+    #       data.aux_network_matrix instead.
+    ABA_matrix = data.aux_network_matrix.data
+    solver_cache = KLULinSolveCache(ABA_matrix)
+    full_factor!(solver_cache, ABA_matrix)
+    p_inj =
+        data.bus_activepower_injection[data.valid_ix, time_step] -
+        data.bus_activepower_withdrawals[data.valid_ix, time_step]
+    solve!(solver_cache, p_inj)
+    data.bus_angles[data.valid_ix, time_step] .= p_inj
 end
