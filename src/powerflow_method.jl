@@ -333,6 +333,13 @@ function _newton_powerflow(
     residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
+
+    if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
+       get_robust_power_flow(pf)
+        enhanced_flat_start!(x0, data, time_step, n_buses)
+        residual(x0, time_step)
+    end
+
     if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
        get_robust_power_flow(pf)
         improve_x0!(x0, data, time_step, residual)
@@ -407,8 +414,6 @@ function calculate_x0(data::ACPowerFlowData,
     n_buses = length(data.bus_type[:, 1])
     x0 = Vector{Float64}(undef, 2 * n_buses)
     update_state!(x0, data, time_step)
-    # TODO: make contingent on residual size
-    enhanced_flat_start!(x0, data, time_step, n_buses)
     return x0
 end
 
