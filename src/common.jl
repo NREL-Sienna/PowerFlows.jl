@@ -145,11 +145,7 @@ function _initialize_bus_data!(
                 PF_MAX_LOG
         end
         bus_type[ix] = bt
-        if bus_type[ix] == PSY.ACBusTypes.REF
-            bus_angles[ix] = 0.0
-        else
-            bus_angles[ix] = PSY.get_angle(bus)
-        end
+        bus_angles[ix] = PSY.get_angle(bus)
         bus_vm = PSY.get_magnitude(bus)
         # prevent unfeasible starting values for voltage magnitude at PQ buses (for PV and REF buses we cannot do this):
         if bt == PSY.ACBusTypes.PQ && bus_vm < BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
