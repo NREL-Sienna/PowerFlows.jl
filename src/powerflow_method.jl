@@ -407,6 +407,8 @@ function calculate_x0(data::ACPowerFlowData,
     n_buses = length(data.bus_type[:, 1])
     x0 = Vector{Float64}(undef, 2 * n_buses)
     update_state!(x0, data, time_step)
+    # TODO: make contingent on residual size
+    enhanced_flat_start!(x0, data, time_step, n_buses)
     return x0
 end
 
