@@ -61,7 +61,7 @@ function _get_injections!(
     for source in PSY.get_components(PSY.StaticInjection, sys)
         isa(source, PSY.ElectricLoad) && continue
         # temporary fix: remove once PSY has a get_{re}active_power function for SynchronousCondensers
-        isa(source, PSY.SynchronousCondenser) && continue 
+        isa(source, PSY.SynchronousCondenser) && continue
         !PSY.get_available(source) && continue
         bus = PSY.get_bus(source)
         bus_ix = bus_lookup[PSY.get_number(bus)]
