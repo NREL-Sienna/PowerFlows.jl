@@ -1,11 +1,3 @@
-const ACPowerFlowData = PowerFlowData{
-    PNM.Ybus{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-    },
-    Nothing,
-}
-
 """
     struct ACPowerFlowResidual
 
@@ -320,29 +312,28 @@ function _update_residual_values!(
     Vm = view(data.bus_magnitude, :, time_step)
     θ = view(data.bus_angles, :, time_step)
     # F is active and reactive power balance equations at all buses
-    for bus_from in eachindex(P_net)
-        S_re = 0.0
-        S_im = 0.0
-        for bus_to in data.neighbors[bus_from]
-            gb = real(Yb[bus_from, bus_to])
-            bb = imag(Yb[bus_from, bus_to])
+    Yb_vals = SparseArrays.nonzeros(Yb)
+    Yb_rowvals = SparseArrays.rowvals(Yb)
+    F .= 0.0
+    for bus_to in axes(Yb, 1)
+        for j in Yb.colptr[bus_to]:(Yb.colptr[bus_to + 1] - 1)
+            yb = Yb_vals[j]
+            bus_from = Yb_rowvals[j]
+            gb = real(yb)
+            bb = imag(yb)
+            Δθ = θ[bus_from] - θ[bus_to]
             if bus_from == bus_to
-                S_re += Vm[bus_from] * Vm[bus_to] * gb
-                S_im += -Vm[bus_from] * Vm[bus_to] * bb
+                F[2 * bus_from - 1] += Vm[bus_from] * Vm[bus_to] * gb
+                F[2 * bus_from] += -Vm[bus_from] * Vm[bus_to] * bb
             else
-                S_re +=
-                    Vm[bus_from] *
-                    Vm[bus_to] *
-                    (gb * cos(θ[bus_from] - θ[bus_to]) + bb * sin(θ[bus_from] - θ[bus_to]))
-                S_im +=
-                    Vm[bus_from] *
-                    Vm[bus_to] *
-                    (gb * sin(θ[bus_from] - θ[bus_to]) - bb * cos(θ[bus_from] - θ[bus_to]))
+                F[2 * bus_from - 1] +=
+                    Vm[bus_from] * Vm[bus_to] * (gb * cos(Δθ) + bb * sin(Δθ))
+                F[2 * bus_from] += Vm[bus_from] * Vm[bus_to] * (gb * sin(Δθ) - bb * cos(Δθ))
             end
         end
-        F[2 * bus_from - 1] = S_re - P_net[bus_from]
-        F[2 * bus_from] = S_im - Q_net[bus_from]
     end
+    F[1:2:end] .-= P_net
+    F[2:2:end] .-= Q_net
     return
 end
 

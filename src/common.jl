@@ -60,6 +60,8 @@ function _get_injections!(
 )
     for source in PSY.get_components(PSY.StaticInjection, sys)
         isa(source, PSY.ElectricLoad) && continue
+        # temporary fix: remove once PSY has a get_{re}active_power function for SynchronousCondensers
+        isa(source, PSY.SynchronousCondenser) && continue
         !PSY.get_available(source) && continue
         bus = PSY.get_bus(source)
         bus_ix = bus_lookup[PSY.get_number(bus)]
@@ -143,11 +145,7 @@ function _initialize_bus_data!(
                 PF_MAX_LOG
         end
         bus_type[ix] = bt
-        if bus_type[ix] == PSY.ACBusTypes.REF
-            bus_angles[ix] = 0.0
-        else
-            bus_angles[ix] = PSY.get_angle(bus)
-        end
+        bus_angles[ix] = PSY.get_angle(bus)
         bus_vm = PSY.get_magnitude(bus)
         # prevent unfeasible starting values for voltage magnitude at PQ buses (for PV and REF buses we cannot do this):
         if bt == PSY.ACBusTypes.PQ && bus_vm < BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
