@@ -37,8 +37,8 @@ const IS = InfrastructureSystems
 const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
 
-include("common.jl")
 include("definitions.jl")
+include("common.jl")
 include("powerflow_types.jl")
 include("PowerFlowData.jl")
 include("psse_export.jl")
