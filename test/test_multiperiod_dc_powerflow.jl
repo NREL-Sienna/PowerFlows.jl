@@ -57,13 +57,13 @@
     data_3.bus_activepower_withdrawals .= deepcopy(withs)
 
     # case 1: get power flows with ABA method and write results
-    results_1 = solve_powerflow(data_1, sys)
+    results_1 = solve_power_flow(data_1, sys)
 
     # case 2: get power flows PTDF method and write results
-    results_2 = solve_powerflow(data_2, sys)
+    results_2 = solve_power_flow(data_2, sys)
 
     # case 3: get power flows Virtual PTDF method and write results
-    results_3 = solve_powerflow(data_3, sys)
+    results_3 = solve_power_flow(data_3, sys)
 
     # check results
 

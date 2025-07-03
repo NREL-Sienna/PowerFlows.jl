@@ -1,10 +1,26 @@
 abstract type PowerFlowEvaluationModel end
 abstract type ACPowerFlowSolverType end
 
-struct NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType end
-struct TrustRegionACPowerFlow <: ACPowerFlowSolverType end
+# note: refinement strategy and parameters are very basic, not tuned at all.
+# so while those parameters are exposed, changing probably won't do much.
+@kwdef struct NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType
+    max_iterations::Int = DEFAULT_NR_MAX_ITER
+    tolerance::Float64 = DEFAULT_NR_TOL
+    refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD
+    refinement_epsilon::Float64 = DEFAULT_REFINEMENT_EPS
+end
+
+@kwdef struct TrustRegionACPowerFlow <: ACPowerFlowSolverType
+    max_iterations::Int = DEFAULT_NR_MAX_ITER
+    tolerance::Float64 = DEFAULT_NR_TOL
+    refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD
+    refinement_epsilon::Float64 = DEFAULT_REFINEMENT_EPS
+    eta::Float64 = DEFAULT_TRUST_REGION_ETA
+    trust_region_factor::Float64 = DEFAULT_TRUST_REGION_FACTOR
+end
 
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel
+    solver::ACSolver
     check_reactive_power_limits::Bool
     exporter::Union{Nothing, PowerFlowEvaluationModel}
     calculate_loss_factors::Bool
@@ -15,7 +31,9 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     }
 end
 
-ACPowerFlow{ACSolver}(;
+# fully specified solver instance.
+ACPowerFlow(
+    solver::ACSolver;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
@@ -26,28 +44,19 @@ ACPowerFlow{ACSolver}(;
     } = nothing,
 ) where {ACSolver <: ACPowerFlowSolverType} =
     ACPowerFlow{ACSolver}(
+        solver,
         check_reactive_power_limits,
         exporter,
         calculate_loss_factors,
         generator_slack_participation_factors,
     )
 
-ACPowerFlow(
-    ACSolver::Type{<:ACPowerFlowSolverType} = NewtonRaphsonACPowerFlow;
-    check_reactive_power_limits::Bool = false,
-    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
-    calculate_loss_factors::Bool = false,
-    generator_slack_participation_factors::Union{
-        Nothing,
-        Dict{Tuple{DataType, String}, Float64},
-        Vector{Dict{Tuple{DataType, String}, Float64}},
-    } = nothing,
-) = ACPowerFlow{ACSolver}(
-    check_reactive_power_limits,
-    exporter,
-    calculate_loss_factors,
-    generator_slack_participation_factors,
-)
+# only type of solver provided: construct instance with default parameters. 
+ACPowerFlow{ACSolver}(; kwargs...) where {ACSolver <: ACPowerFlowSolverType} =
+    ACPowerFlow(ACSolver(); kwargs...)
+
+# nothing specified: construct with default NR solver and default parameters.
+ACPowerFlow(; kwargs...) = ACPowerFlow{NewtonRaphsonACPowerFlow}(; kwargs...)
 
 @kwdef struct DCPowerFlow <: PowerFlowEvaluationModel
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
@@ -74,6 +83,8 @@ PSSEExportPowerFlow(psse_version::Symbol, export_dir::AbstractString; kwargs...)
 
 get_exporter(pfem::PowerFlowEvaluationModel) = pfem.exporter
 get_exporter(::PSSEExportPowerFlow) = nothing
+
+get_solver(pfem::ACPowerFlow) = pfem.solver
 
 """
 Expand a single `PowerFlowEvaluationModel` into its possibly multiple parts for separate

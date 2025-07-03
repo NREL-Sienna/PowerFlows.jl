@@ -26,7 +26,7 @@
     ref_flow_values = transpose(aux_network_matrix.data) * ref_bus_angles
 
     # CASE 1: ABA and BA matrices
-    solved_data_ABA = solve_powerflow(DCPowerFlow(), sys; correct_bustypes = true)
+    solved_data_ABA = solve_power_flow(sys, DCPowerFlow(); correct_bustypes = true)
     @test isapprox(
         solved_data_ABA["1"]["flow_results"].P_from_to,
         ref_flow_values,
@@ -40,7 +40,7 @@
     @test isapprox(solved_data_ABA["1"]["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 
     # CASE 2: PTDF and ABA MATRICES
-    solved_data_PTDF = solve_powerflow(PTDFDCPowerFlow(), sys; correct_bustypes = true)
+    solved_data_PTDF = solve_power_flow(PTDFDCPowerFlow(), sys; correct_bustypes = true)
     @test isapprox(
         solved_data_PTDF["1"]["flow_results"].P_from_to,
         ref_flow_values,
@@ -54,7 +54,7 @@
     @test isapprox(solved_data_PTDF["1"]["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 
     # CASE 3: VirtualPTDF and ABA MATRICES
-    solved_data_vPTDF = solve_powerflow(vPTDFDCPowerFlow(), sys; correct_bustypes = true)
+    solved_data_vPTDF = solve_power_flow(vPTDFDCPowerFlow(), sys; correct_bustypes = true)
     @test isapprox(
         solved_data_vPTDF["1"]["flow_results"].P_from_to,
         ref_flow_values,

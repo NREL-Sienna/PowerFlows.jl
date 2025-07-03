@@ -24,7 +24,7 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
     # create structure for multi-period case
-    pf = ACPowerFlow(ACSolver)
+    pf = ACPowerFlow(ACSolver())
     time_steps = 24
     data = PowerFlowData(pf, sys; time_steps = time_steps)
 
@@ -32,11 +32,11 @@ end
     prepare_ts_data!(data, time_steps)
 
     # get power flows with NR KLU method and write results
-    solve_powerflow!(data; pf = pf)
+    PF.solve_power_flow_data!(data, pf)
 
     # check results
     # for t in 1:length(data.timestep_map)
-    #     res_t = solve_powerflow(pf, sys, t)  # does not work - ts data not set in sys
+    #     res_t = solve_power_flow(pf, sys, t)  # does not work - ts data not set in sys
     #     flow_ft = res_t["flow_results"].P_from_to
     #     flow_tf = res_t["flow_results"].P_to_from
     #     ts_flow_ft = results[data.timestep_map[t]]["flow_results"].P_from_to
@@ -51,8 +51,8 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
     # create structure for multi-period case
-    pf_lu = ACPowerFlow(LUACPowerFlow)
-    pf_test = ACPowerFlow(NewtonRaphsonACPowerFlow)
+    pf_lu = ACPowerFlow(LUACPowerFlow())
+    pf_test = ACPowerFlow(NewtonRaphsonACPowerFlow())
 
     time_steps = 24
     data_lu = PowerFlowData(pf_lu, sys; time_steps = time_steps)
@@ -63,8 +63,8 @@ end
     prepare_ts_data!(data_test, time_steps)
 
     # get power flows with NR KLU method and write results
-    solve_powerflow!(data_lu; pf = pf_lu)
-    solve_powerflow!(data_test; pf = pf_test)
+    PF.solve_power_flow_data!(data_lu, pf_lu)
+    PF.solve_power_flow_data!(data_test, pf_test)
 
     # check results
     @test isapprox(data_lu.bus_magnitude, data_test.bus_magnitude, atol = 1e-9)
@@ -94,8 +94,8 @@ end
 @testset "test_loss_factors_case_14" for ACSolver in AC_SOLVERS_TO_TEST
     sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
 
-    pf = ACPowerFlow(ACSolver)
-    pf_lf = ACPowerFlow(ACSolver; calculate_loss_factors = true)
+    pf = ACPowerFlow(ACSolver())
+    pf_lf = ACPowerFlow(ACSolver(); calculate_loss_factors = true)
     time_steps = 24
     data_loss_factors =
         PowerFlowData(pf_lf, sys; time_steps = time_steps)
@@ -107,7 +107,7 @@ end
     prepare_ts_data!(data_brute_force, time_steps)
 
     # get power flows with NR KLU method and write results
-    solve_powerflow!(data_loss_factors; pf = pf_lf)
+    PF.solve_power_flow_data!(data_loss_factors, pf_lf)
 
     # get loss factors using brute force approach (sequential power flow evaluations for each bus)
     bf_loss_factors = penalty_factors_brute_force(data_brute_force, pf)
@@ -116,7 +116,7 @@ end
     @test isapprox(bf_loss_factors, data_loss_factors.loss_factors, atol = 1e-4, rtol = 0)
 
     # get power flow results without loss factors
-    solve_powerflow!(data_brute_force; pf = pf)
+    PF.solve_power_flow_data!(data_brute_force, pf)
     @test isnothing(data_brute_force.loss_factors)
 end
 
@@ -163,7 +163,7 @@ end
     prepare_ts_data!(data, time_steps)
 
     init_p_injections = copy(data.bus_activepower_injection)
-    solve_powerflow!(data; pf = pf)
+    PF.solve_power_flow_data!(data, pf)
 
     # check results
     subnetworks = PowerFlows._find_subnetworks_for_reference_buses(

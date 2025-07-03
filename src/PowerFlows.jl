@@ -1,7 +1,7 @@
 module PowerFlows
 
-export solve_powerflow
-export solve_powerflow!
+export solve_power_flow
+export solve_power_flow!
 export PowerFlowData
 export DCPowerFlow
 export NewtonRaphsonACPowerFlow

@@ -123,8 +123,8 @@ end
 
 # legacy NR implementation - here we do not care about allocations, we use this function only for testing purposes
 function PowerFlows._newton_powerflow(
-    pf::ACPowerFlow{LUACPowerFlow},
     data::PowerFlows.ACPowerFlowData,
+    ::LUACPowerFlow,
     time_step::Int64;
     kwargs...,
 )
@@ -136,8 +136,7 @@ function PowerFlows._newton_powerflow(
     Ybus = data.power_network_matrix.data
 
     # Find indices for each bus type
-    ref, pv, pq =
-        PowerFlows.bus_type_idx(data, time_step)
+    ref, pv, pq = bus_type_idx(data, time_step)
     pvpq = [pv; pq]
 
     npv = length(pv)
