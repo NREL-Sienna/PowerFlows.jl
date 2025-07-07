@@ -124,12 +124,27 @@ Obtain total load on bus b
 function _get_load_data(sys::PSY.System, b::PSY.ACBus)
     active_power = 0.0
     reactive_power = 0.0
-    for l in PSY.get_components(x -> !isa(x, PSY.FixedAdmittance), PSY.ElectricLoad, sys)
-        !PSY.get_available(l) && continue
-        if (l.bus == b)
-            active_power += get_total_p(l)
-            reactive_power += get_total_q(l)
-        end
+    for l in PSY.get_components(
+        x -> get_available(x) && (get_bus(x) == b),
+        _SingleComponentLoad,
+        sys,
+    )
+        active_power += PSY.get_active_power(l)
+        reactive_power += PSY.get_reactive_power(l)
+    end
+    for l in PSY.get_components(
+        x -> get_available(x) && (get_bus(x) == b),
+        PSY.StandardLoad,
+        sys,
+    )
+        active_power +=
+            PSY.get_constant_active_power(l) + 
+            PSY.get_current_active_power(l) +
+            PSY.get_impedance_active_power(l)
+        reactive_power +=
+            PSY.get_constant_reactive_power(l) + 
+            PSY.get_current_reactive_power(l) +
+            PSY.get_impedance_reactive_power(l)
     end
     return active_power, reactive_power
 end

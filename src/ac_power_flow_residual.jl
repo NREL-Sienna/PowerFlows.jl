@@ -64,10 +64,22 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     for (ix, bt) in zip(1:n_buses, bus_type)
         P_net[ix] =
             data.bus_activepower_injection[ix, time_step] -
-            data.bus_activepower_withdrawals[ix, time_step]
+            (
+                data.bus_activepower_withdrawals[ix, time_step] +
+                data.bus_activepower_constant_current_withdrawals[ix, time_step] *
+                data.bus_magnitude[ix, time_step] +
+                data.bus_activepower_constant_impedance_withdrawals[ix, time_step] *
+                data.bus_magnitude[ix, time_step]^2
+            )
         Q_net[ix] =
             data.bus_reactivepower_injection[ix, time_step] -
-            data.bus_reactivepower_withdrawals[ix, time_step]
+            (
+                data.bus_reactivepower_withdrawals[ix, time_step] +
+                data.bus_reactivepower_constant_current_withdrawals[ix, time_step] *
+                data.bus_magnitude[ix, time_step] +
+                data.bus_reactivepower_constant_impedance_withdrawals[ix, time_step] *
+                data.bus_magnitude[ix, time_step]^2
+            )
         P_net_set[ix] = P_net[ix]
 
         bt ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
@@ -189,9 +201,17 @@ function _setpq(
 )
     # Set the active and reactive power injections at the bus
     data.bus_activepower_injection[ix, time_step] =
-        P_net[ix] + data.bus_activepower_withdrawals[ix, time_step]
+        P_net[ix] + data.bus_activepower_withdrawals[ix, time_step] +
+        data.bus_activepower_constant_current_withdrawals[ix, time_step] *
+        data.bus_magnitude[ix, time_step] +
+        data.bus_activepower_constant_impedance_withdrawals[ix, time_step] *
+        data.bus_magnitude[ix, time_step]^2
     data.bus_reactivepower_injection[ix, time_step] =
-        Q_net[ix] + data.bus_reactivepower_withdrawals[ix, time_step]
+        Q_net[ix] + data.bus_reactivepower_withdrawals[ix, time_step] +
+        data.bus_reactivepower_constant_current_withdrawals[ix, time_step] *
+        data.bus_magnitude[ix, time_step] +
+        data.bus_reactivepower_constant_impedance_withdrawals[ix, time_step] *
+        data.bus_magnitude[ix, time_step]^2
 end
 
 # dispatching on Val for performance reasons.
@@ -243,8 +263,8 @@ end
 
 function _set_state_vars_at_bus!(
     ix::Int,
-    ::Vector{Float64},
-    ::Vector{Float64},
+    P_net::Vector{Float64},
+    Q_net::Vector{Float64},
     ::Vector{Float64},
     ::Float64,
     StateVector::Vector{Float64},
@@ -254,6 +274,14 @@ function _set_state_vars_at_bus!(
     # When bustype == PQ PSY.ACBus, state variables are Voltage Magnitude and Voltage Angle
     data.bus_magnitude[ix, time_step] = StateVector[2 * ix - 1]
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
+    # update P_net and Q_net for ZIP loads
+    _setpq(
+        ix,
+        P_net,
+        Q_net,
+        data,
+        time_step,
+    )
 end
 
 """

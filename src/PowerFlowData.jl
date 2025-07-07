@@ -88,6 +88,10 @@ struct PowerFlowData{
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
     bus_reactivepower_withdrawals::Matrix{Float64}
+    bus_activepower_constant_current_withdrawals::Matrix{Float64}
+    bus_activepower_constant_impedance_withdrawals::Matrix{Float64}
+    bus_reactivepower_constant_current_withdrawals::Matrix{Float64}
+    bus_reactivepower_constant_impedance_withdrawals::Matrix{Float64}
     bus_reactivepower_bounds::Matrix{Vector{Float64}}
     generator_slack_participation_factors::Union{
         Vector{Dict{Tuple{DataType, String}, Float64}},
@@ -117,7 +121,15 @@ get_branch_lookup(pfd::PowerFlowData) = pfd.branch_lookup
 get_bus_activepower_injection(pfd::PowerFlowData) = pfd.bus_activepower_injection
 get_bus_reactivepower_injection(pfd::PowerFlowData) = pfd.bus_reactivepower_injection
 get_bus_activepower_withdrawals(pfd::PowerFlowData) = pfd.bus_activepower_withdrawals
+get_bus_activepower_constant_current_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_activepower_constant_current_withdrawals
+get_bus_activepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_activepower_constant_impedance_withdrawals
 get_bus_reactivepower_withdrawals(pfd::PowerFlowData) = pfd.bus_reactivepower_withdrawals
+get_bus_reactivepower_constant_current_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_reactivepower_constant_current_withdrawals
+get_bus_reactivepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_reactivepower_constant_impedance_withdrawals
 get_bus_reactivepower_bounds(pfd::PowerFlowData) = pfd.bus_reactivepower_bounds
 get_bus_slack_participation_factors(pfd::PowerFlowData) =
     pfd.bus_slack_participation_factors
@@ -148,7 +160,11 @@ function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
     pfd.bus_reactivepower_injection .= 0.0
     pfd.bus_activepower_withdrawals .= 0.0
+    pfd.bus_activepower_constant_current_withdrawals .= 0.0
+    pfd.bus_activepower_constant_impedance_withdrawals .= 0.0
     pfd.bus_reactivepower_withdrawals .= 0.0
+    pfd.bus_reactivepower_constant_current_withdrawals .= 0.0
+    pfd.bus_reactivepower_constant_impedance_withdrawals .= 0.0
     return
 end
 
