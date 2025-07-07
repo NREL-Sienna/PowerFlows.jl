@@ -336,7 +336,7 @@ function _newton_powerflow(
 
     if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
        get_robust_power_flow(pf)
-        enhanced_flat_start!(x0, data, time_step, n_buses)
+        enhanced_flat_start!(x0, data, time_step)
         residual(x0, time_step)
     end
 
@@ -421,14 +421,14 @@ function enhanced_flat_start!(
     x0::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
-    n_buses::Int,
 )
     # TODO: use the subnetworks already computed earlier
+    n_buses = size(data.bus_type, 1)
     subnetworks =
         PNM.find_subnetworks(data.power_network_matrix.adjacency_data, collect(1:n_buses))
     subnetworks = PNM.assign_reference_buses!(
         subnetworks,
-        findall(x -> x == PSY.ACBusTypes.REF, data.bus_type[:, time_step]),
+        Set(findall(x -> x == PSY.ACBusTypes.REF, data.bus_type[:, time_step])),
     )
 
     for (ref_bus, subnetwork) in subnetworks

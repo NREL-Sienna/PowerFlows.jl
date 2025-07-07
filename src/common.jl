@@ -59,10 +59,8 @@ function _get_injections!(
     sys::PSY.System,
 )
     for source in PSY.get_components(PSY.StaticInjection, sys)
-        isa(source, PSY.ElectricLoad) && continue
-        # temporary fix: remove once PSY has a get_{re}active_power function for SynchronousCondensers
-        isa(source, PSY.SynchronousCondenser) && continue
-        !PSY.get_available(source) && continue
+        !isa(source, PSY.ElectricLoad) && PSY.get_available(source) &&
+            PSY.supports_active_power_injecton(source) || continue
         bus = PSY.get_bus(source)
         bus_ix = bus_lookup[PSY.get_number(bus)]
         bus_activepower_injection[bus_ix] += PSY.get_active_power(source)
@@ -79,8 +77,7 @@ function _get_withdrawals!(
 )
     # FIXME properly handle SwitchedAdmittance components
     for l in PSY.get_components(PSY.ElectricLoad, sys)
-        (isa(l, PSY.FixedAdmittance) || isa(l, PSY.SwitchedAdmittance)) && continue
-        !PSY.get_available(l) && continue
+        PSY.get_available(l) && PSY.supports_active_power_injecton(l) || continue
         bus = PSY.get_bus(l)
         bus_ix = bus_lookup[PSY.get_number(bus)]
         bus_activepower_withdrawals[bus_ix] += get_total_p(l)
@@ -95,8 +92,7 @@ function _get_reactive_power_bound!(
     bus_lookup::Dict{Int, Int},
     sys::PSY.System)
     for source in PSY.get_components(PSY.StaticInjection, sys)
-        isa(source, PSY.ElectricLoad) && continue
-        !PSY.get_available(source) && continue
+        !isa(source, PSY.ElectricLoad) && PSY.get_available(source) || continue
         bus = PSY.get_bus(source)
         bus_ix = bus_lookup[PSY.get_number(bus)]
         reactive_power_limits = get_reactive_power_limits_for_power_flow(source)
