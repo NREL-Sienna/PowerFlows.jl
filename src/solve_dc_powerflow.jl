@@ -113,12 +113,11 @@ end
 # SINGLE PERIOD ##############################################################
 
 """
-Evaluates the power flows on the system's branches by means of the `T` matrix, where an
-instance of a `PTDFDCPowerFlow`, `vPTDFDCPowerFlow`, or `DCPowerFlow`,
-which correspond to the PTDF, virtual PTDF, and DC power flow methods, respectively.
-Here, DC means the method based on the ABA and BA matrices.
-Returns a dictionary containing a `DataFrame` for the single timestep considered, storing
-the branch flows and bus voltages for the input `PSY.System`.
+Evaluates the power flows on the system's branches by means of the PTDF, virtual PTDF,
+or DC power flow method: the type first parameter (a `PTDFDCPowerFlow`, `vPTDFDCPowerFlow`, 
+or `DCPowerFlow`) selects the method to be used. Returns a dictionary containing a 
+`DataFrame` for the single timestep considered, storing the branch flows and bus 
+voltages for the input `PSY.System`.
 
 # Arguments:
 - `::Union{PTDFDCPowerFlow, vPTDFDCPowerFlow, DCPowerFlow}`:
@@ -131,7 +130,7 @@ function solve_powerflow(
     ::T,
     sys::PSY.System;
     correct_bustypes::Bool = false,
-) where {T <: Union{PTDFDCPowerFlow, vPTDFDCPowerFlow, DCPowerFlow}}
+) where {T <: AbstractDCPowerFlow}
     data = PowerFlowData(T(), sys; correct_bustypes = correct_bustypes)
     solve_powerflow!(data)
     return write_results(data, sys)
