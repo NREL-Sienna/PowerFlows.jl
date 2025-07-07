@@ -138,11 +138,11 @@ function _get_load_data(sys::PSY.System, b::PSY.ACBus)
         sys,
     )
         active_power +=
-            PSY.get_constant_active_power(l) + 
+            PSY.get_constant_active_power(l) +
             PSY.get_current_active_power(l) +
             PSY.get_impedance_active_power(l)
         reactive_power +=
-            PSY.get_constant_reactive_power(l) + 
+            PSY.get_constant_reactive_power(l) +
             PSY.get_current_reactive_power(l) +
             PSY.get_impedance_reactive_power(l)
     end
