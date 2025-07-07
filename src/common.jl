@@ -520,15 +520,15 @@ function validate_voltages(x::Vector{Float64},
     for (i, bt) in enumerate(bus_types)
         if bt == PSY.ACBusTypes.PQ
             if (x[2 * i - 1] < range.min || x[2 * i - 1] > range.max) #&&
-              # size(outside_range, 1) <= MAX_INDS_TO_PRINT
+                # size(outside_range, 1) <= MAX_INDS_TO_PRINT
                 #push!(outside_range, i)
                 num_outside_range += 1
             end
         end
     end
     if num_outside_range > 0
-        @warn "Iteration $i: voltage magnitudes outside of range $range at "*
-            "$num_outside_range PQ buses." maxlog = PF_MAX_LOG
+        @warn "Iteration $i: voltage magnitudes outside of range $range at " *
+              "$num_outside_range PQ buses." maxlog = PF_MAX_LOG
     end
     #=
     if size(outside_range, 1) > MAX_INDS_TO_PRINT

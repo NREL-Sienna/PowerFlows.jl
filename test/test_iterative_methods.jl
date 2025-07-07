@@ -13,7 +13,8 @@ end
     tr_pf = ACPowerFlow{TrustRegionACPowerFlow}()
     @test_logs (:info, r".*TrustRegionACPowerFlow solver converged"
     ) match_mode = :any PF.solve_powerflow(tr_pf, sys; eta = 1e-5,
-        tol = 1e-10, factor = 1.1, maxIterations = 100, autoscale = true)
+        tol = 1e-10, factor = 1.1, maxIterations = 100, autoscale = !PF.DEFAULT_AUTOSCALE,
+        validate_voltages = !PF.DEFAULT_VALIDATE_VOLTAGES)
     # TODO better tests? i.e. more granularly compare behavior to expected, not just check end result.
     # could check behavior of delta, ie that delta is increased/decreased properly.
 end

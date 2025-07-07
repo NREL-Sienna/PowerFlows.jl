@@ -889,3 +889,15 @@ end
     # this fails with 1e-4.
     @test norm(sienna_df[!, "generator_q"] .- matpower_df[!, "generator_q"], Inf) < 1e-3
 end
+
+#=
+# Unfortunately, we correct the voltage magnitude to something sensible before running the 
+# solver, so testing this isn't straightforward.
+@testset "voltage validation" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    pf = ACPowerFlow{TrustRegionACPowerFlow}()
+    data = PowerFlowData(pf, sys; correct_bustypes = true)
+    solve_powerflow!(data; pf = pf)
+    data.bus_magnitude[1, 1] = 2.0
+    @test_logs (:warn, r".*voltage magnitudes outside of range.*") match_mode = :any solve_powerflow!(data; pf = pf)
+end=#
