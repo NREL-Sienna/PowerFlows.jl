@@ -27,13 +27,13 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 # Examples
 
 ```julia
-solve_ac_powerflow!(pf, sys)
+solve_powerflow!(pf, sys)
 
 # Passing kwargs
-solve_ac_powerflow!(pf, sys; check_connectivity=false)
+solve_powerflow!(pf, sys; check_connectivity=false)
 
 # Passing keyword arguments
-solve_ac_powerflow!(pf, sys; maxIterations=100)
+solve_powerflow!(pf, sys; maxIterations=100)
 ```
 """
 function solve_powerflow!(
@@ -49,6 +49,7 @@ function solve_powerflow!(
             pf,
             system;
             check_connectivity = get(kwargs, :check_connectivity, true),
+            correct_bustypes = get(kwargs, :correct_bustypes, false),
         )
 
         converged = _ac_powerflow(data, pf, time_step; kwargs...)
@@ -83,7 +84,7 @@ function solve_powerflow(
     system::PSY.System;
     kwargs...,
 )
-    # df_results must be defined in the oueter scope first to be visible for return
+    # df_results must be defined in the outer scope first to be visible for return
     df_results = Dict{String, DataFrames.DataFrame}()
     converged = false
     time_step = 1
@@ -92,6 +93,7 @@ function solve_powerflow(
             pf,
             system;
             check_connectivity = get(kwargs, :check_connectivity, true),
+            correct_bustypes = get(kwargs, :correct_bustypes, false),
         )
 
         converged = _ac_powerflow(data, pf, time_step; kwargs...)
@@ -116,7 +118,7 @@ Solve the multiperiod AC power flow problem for the given power flow data.
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- `data::ACPowerFlowData`: The power flow data containing netwthe grid information and initial conditions.
+- `data::ACPowerFlowData`: The power flow data containing the grid information and initial conditions.
 - `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver type. Defaults to `NewtonRaphsonACPowerFlow`.
 - `kwargs...`: Additional keyword arguments.
 

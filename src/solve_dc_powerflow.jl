@@ -130,8 +130,9 @@ in the PSY.System considered as input.
 function solve_powerflow(
     ::PTDFDCPowerFlow,
     sys::PSY.System;
+    correct_bustypes = false,
 )
-    data = PowerFlowData(PTDFDCPowerFlow(), sys)
+    data = PowerFlowData(PTDFDCPowerFlow(), sys; correct_bustypes = correct_bustypes)
     solve_powerflow!(data)
     return write_results(data, sys)
 end
@@ -155,8 +156,9 @@ in the PSY.System considered as input.
 function solve_powerflow(
     ::DCPowerFlow,
     sys::PSY.System;
+    correct_bustypes = false,
 )
-    data = PowerFlowData(DCPowerFlow(), sys)
+    data = PowerFlowData(DCPowerFlow(), sys; correct_bustypes = correct_bustypes)
     solve_powerflow!(data)
     return write_results(data, sys)
 end
@@ -165,7 +167,7 @@ end
 Evaluates the power flows on each system's branch by means of the Virtual PTDF
 matrix.
 Updates the PowerFlowData structure "data" and returns a dictionary containing
-a number of DataFrames equal to the numeber of timestep considered in "data".
+a number of DataFrames equal to the number of timestep considered in "data".
 The DataFrame containts the flows and angles related to the information stored
 in the PSY.System considered as input.
 
@@ -180,8 +182,9 @@ in the PSY.System considered as input.
 function solve_powerflow(
     ::vPTDFDCPowerFlow,
     sys::PSY.System;
+    correct_bustypes = false,
 )
-    data = PowerFlowData(vPTDFDCPowerFlow(), sys)
+    data = PowerFlowData(vPTDFDCPowerFlow(), sys; correct_bustypes = correct_bustypes)
     solve_powerflow!(data)
     return write_results(data, sys)
 end
@@ -191,7 +194,7 @@ end
 """
 Evaluates the power flows on each system's branch by means of the PTDF matrix.
 Updates the PowerFlowData structure "data" and returns a dictionary containing
-a number of DataFrames equal to the numeber of timestep considered in "data".
+a number of DataFrames equal to the number of timestep considered in "data".
 Each DataFrame containts the flows and angles.
 
 # Arguments:
@@ -213,7 +216,7 @@ end
 Evaluates the power flows on each system's branch by means of the ABA and BA
 matrices.
 Updates the PowerFlowData structure "data" and returns a dictionary containing
-a number of DataFrames equal to the numeber of timestep considered in "data".
+a number of DataFrames equal to the number of timestep considered in "data".
 Each DataFrame containts the flows and angles.
 
 # Arguments:
@@ -235,7 +238,7 @@ end
 Evaluates the power flows on each system's branch by means of Virtual PTDF
 matrices.
 Updates the PowerFlowData structure "data" and returns a dictionary containing
-a number of DataFrames equal to the numeber of timestep considered in "data".
+a number of DataFrames equal to the number of timestep considered in "data".
 Each DataFrame containts the flows and angles.
 
 # Arguments:

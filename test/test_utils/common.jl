@@ -225,6 +225,7 @@ function _add_simple_bus!(
     bus = ACBus(;
         number = number,
         name = _check_name(sys, "bus_$number", ACBus),
+        available = true,
         bustype = bus_type,
         angle = voltage_angle,
         magnitude = voltage_magnitude,

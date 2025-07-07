@@ -948,10 +948,10 @@ function write_to_buffers!(
         CW = 1  # NOTE on parsing we do the transformation to this unit system
         CZ = 1  # NOTE on parsing we do the transformation to this unit system
         CM = 1  # NOTE on parsing we do the transformation to this unit system
-        MAG1 = PSSE_DEFAULT
-        MAG2 = -PSY.get_primary_shunt(transformer)
+        MAG1 = real(PSY.get_primary_shunt(transformer))
+        MAG2 = imag(PSY.get_primary_shunt(transformer))
         (MAG2 > 0) &&
-            @warn "Detected positive MAG2 for transformer $(PSY.get_name(transformer)) due to negative `get_primary_shunt`; exporting anyway"
+            @warn "Detected positive MAG2 for transformer $(PSY.get_name(transformer)) due to positive imaginary part of `get_primary_shunt`; exporting anyway"
         NMETR = PSSE_DEFAULT
         NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
         STAT = PSY.get_available(transformer) ? 1 : 0
@@ -1070,7 +1070,7 @@ _step_to_string(::Nothing) = ""
 _step_to_string(iterable_step::Union{Tuple, AbstractArray}) = "_" * join(iterable_step, "_")
 _step_to_string(scalar_step::Any) = "_$scalar_step"
 
-"Peform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
+"Perform an export from the data contained in a `PSSEExporter` to the PSS/E file format."
 function write_export(
     exporter::PSSEExporter,
     name::AbstractString;
