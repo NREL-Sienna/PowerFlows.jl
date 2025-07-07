@@ -515,15 +515,22 @@ function validate_voltages(x::Vector{Float64},
     range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = VM_VALIDATION_RANGE,
     i::Int64 = 1,
 )
-    outside_range = sizehint!(Vector{Int64}(), MAX_INDS_TO_PRINT)
+    # outside_range = sizehint!(Vector{Int64}(), MAX_INDS_TO_PRINT)
+    num_outside_range = 0
     for (i, bt) in enumerate(bus_types)
         if bt == PSY.ACBusTypes.PQ
-            if (x[2 * i - 1] < range.min || x[2 * i - 1] > range.max) &&
-               size(outside_range, 1) <= MAX_INDS_TO_PRINT
-                push!(outside_range, i)
+            if (x[2 * i - 1] < range.min || x[2 * i - 1] > range.max) #&&
+              # size(outside_range, 1) <= MAX_INDS_TO_PRINT
+                #push!(outside_range, i)
+                num_outside_range += 1
             end
         end
     end
+    if num_outside_range > 0
+        @warn "Iteration $i: voltage magnitudes outside of range $range at "*
+            "$num_outside_range PQ buses." maxlog = PF_MAX_LOG
+    end
+    #=
     if size(outside_range, 1) > MAX_INDS_TO_PRINT
         @warn "Iteration $i: voltage magnitudes outside of range $range at over $MAX_INDS_TO_PRINT buses." maxlog =
             PF_MAX_LOG
@@ -531,6 +538,7 @@ function validate_voltages(x::Vector{Float64},
         @warn "Iteration $i: voltage magnitudes outside of range $range at $(size(outside_range, 1)) buses: $(outside_range)" maxlog =
             PF_MAX_LOG
     end
+    =#
     return
 end
 
