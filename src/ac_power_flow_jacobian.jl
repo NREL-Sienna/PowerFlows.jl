@@ -474,7 +474,7 @@ KLU is used to factorize the sparse Jacobian matrix to solve for the loss factor
 - `Jv::SparseMatrixCSC{Float64, Int32}`: The sparse Jacobian matrix of the power flow system.
 - `time_step::Int`: The time step index for which the loss factors are calculated.
 """
-function calculate_loss_factors(
+function do_calculate_loss_factors(
     data::ACPowerFlowData,
     Jv::SparseMatrixCSC{Float64, Int32},
     time_step::Int,
@@ -516,16 +516,16 @@ The function uses the method described in the following publication:
 - `J::ACPowerFlowJacobian`: The Jacobian matrix cache.
 - `time_step::Integer`: The calculated time step.
 """
-function calculate_voltage_stability_factors(
+function do_calculate_voltage_stability_factors(
     data::ACPowerFlowData,
     J::ACPowerFlowJacobian,
     time_step::Integer,
 )
-    ref, pv, pq = PowerFlows.bus_type_idx(data, time_step)
+    ref, pv, pq = bus_type_idx(data, time_step)
     pvpq = [pv; pq]
     npvpq = length(pvpq)
-    rows, cols = PowerFlows.block_J_indices(pvpq, pq)
-    σ, u, v = PowerFlows.find_sigma_uv(J.Jv[rows, cols], npvpq)
+    rows, cols = block_J_indices(pvpq, pq)
+    σ, u, v = find_sigma_uv(J.Jv[rows, cols], npvpq)
     data.voltage_stability_factors[ref, time_step] .= 0.0
     data.voltage_stability_factors[first(ref), time_step] = σ
     data.voltage_stability_factors[pv, time_step] .= 0.0

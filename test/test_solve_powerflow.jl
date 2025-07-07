@@ -378,6 +378,53 @@ end
     ))
 end
 
+@testset "voltage_stability_factors" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    pf_lu = ACPowerFlow(LUACPowerFlow; calculate_voltage_stability_factors = true)
+    pf_newton =
+        ACPowerFlow(NewtonRaphsonACPowerFlow; calculate_voltage_stability_factors = true)
+    data_lu = PowerFlowData(
+        pf_lu,
+        sys;
+        check_connectivity = true,
+        correct_bustypes = true,
+    )
+    data_newton = PowerFlowData(
+        pf_newton,
+        sys;
+        check_connectivity = true,
+        correct_bustypes = true,
+    )
+    time_step = 1
+    solve_powerflow!(data_lu; pf = pf_lu)
+    solve_powerflow!(data_newton; pf = pf_newton)
+    @test all(
+        isapprox.(
+            data_lu.voltage_stability_factors,
+            data_newton.voltage_stability_factors,
+            rtol = 0,
+            atol = 1e-9,
+        ),
+    )
+    LinearAlgebra.__init__()  # to remove warnings
+    ref, pv, pq = bus_type_idx(data_lu, time_step)
+    pvpq = [pv; pq]
+    npvpq = length(pvpq)
+    dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, data_lu.Ybus.data)
+    J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
+    Gs =
+        J[(npvpq + 1):end, (npvpq + 1):end] -
+        J[(npvpq + 1):end, 1:npvpq] * inv(collect(J[1:npvpq, 1:npvpq])) *
+        J[1:npvpq, (npvpq + 1):end]
+    u_1, (σ_1,), v_1, _ = PROPACK.tsvd_irl(Gs; smallest = true, k = 1)
+    σ, u, v = find_sigma_uv(J, npvpq)
+
+    @assert isapprox(σ_1, σ, atol = 1e-6)
+    # the sign does not matter
+    @assert isapprox(sign(first(u_1)) * u_1, u, atol = 1e-4)
+    @assert isapprox(sign(first(v_1)) * v_1, v, atol = 1e-4)
+end
+
 @testset "AC PF with distributed slack" for (grid_lib, grid_name) in [
         (PSB.PSITestSystems, "c_sys14"),
         (PSB.MatpowerTestSystems, "matpower_case30_sys"),

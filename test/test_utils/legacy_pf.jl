@@ -214,7 +214,7 @@ function PowerFlows._newton_powerflow(
             end
         end
 
-        if data.calculate_loss_factors
+        if get_calculate_loss_factors(data)
             dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus)
             J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
             dSbus_dV_ref = collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:])
@@ -224,20 +224,8 @@ function PowerFlows._newton_powerflow(
             data.loss_factors[pvpq, time_step] .= lf[1:npvpq]
             data.loss_factors[ref, time_step] .= 1.0
         end
-        if data.calculate_voltage_stability_factors
-            LinearAlgebra.__init__()  # to remove warnings
-            Gs =
-                J[(npvpq + 1):end, (npvpq + 1):end] -
-                J[(npvpq + 1):end, 1:npvpq] * inv(collect(J[1:npvpq, 1:npvpq])) *
-                J[1:npvpq, (npvpq + 1):end]
-            u_1, (σ_1,), v_1, _ = PROPACK.tsvd_irl(Gs; smallest = true, k = 1)
-            σ, u, v = PowerFlows.find_sigma_uv(J, npvpq)
-
-            @assert isapprox(σ_1, σ, atol = 1e-6)
-            # the sign does not matter
-            @assert isapprox(sign(first(u_1)) * u_1, u, atol = 1e-4)
-            @assert isapprox(sign(first(v_1)) * v_1, v, atol = 1e-4)
-
+        if get_calculate_voltage_stability_factors(data)
+            σ, u, v = find_sigma_uv(J, npvpq)
             data.voltage_stability_factors[ref, time_step] .= 0.0
             data.voltage_stability_factors[first(ref), time_step] = σ
             data.voltage_stability_factors[pv, time_step] .= 0.0

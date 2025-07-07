@@ -361,11 +361,11 @@ function _newton_powerflow(
     )
     if converged
         @info("The $T solver converged after $i iterations.")
-        if data.calculate_loss_factors
-            calculate_loss_factors(data, J.Jv, time_step)
+        if get_calculate_loss_factors(data)
+            do_calculate_loss_factors(data, J.Jv, time_step)
         end
-        if data.calculate_voltage_stability_factors
-            calculate_voltage_stability_factors(data, J, time_step)
+        if get_calculate_voltage_stability_factors(data)
+            do_calculate_voltage_stability_factors(data, J, time_step)
         end
         return true
     end

@@ -145,7 +145,10 @@ get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 supports_multi_period(::PowerFlowData) = true
 get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
+get_calculate_loss_factors(pfd::PowerFlowData) = pfd.calculate_loss_factors
 get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
+get_calculate_voltage_stability_factors(pfd::PowerFlowData) =
+    pfd.calculate_voltage_stability_factors
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
