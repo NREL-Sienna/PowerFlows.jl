@@ -1,4 +1,4 @@
-testset "NewtonRaphsonACPowerFlow" begin
+@testset "NewtonRaphsonACPowerFlow" begin
     # test NR kwargs.
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
     nr_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
@@ -13,8 +13,7 @@ end
     tr_pf = ACPowerFlow{TrustRegionACPowerFlow}()
     @test_logs (:info, r".*TrustRegionACPowerFlow solver converged"
     ) match_mode = :any PF.solve_powerflow(tr_pf, sys; eta = 1e-5,
-        tol = 1e-10, factor = 1.1, maxIterations = 100, autoscale = !PF.DEFAULT_AUTOSCALE,
-        validate_voltages = !PF.DEFAULT_VALIDATE_VOLTAGES)
+        tol = 1e-10, factor = 1.1, maxIterations = 50)
     # TODO better tests? i.e. more granularly compare behavior to expected, not just check end result.
     # could check behavior of delta, ie that delta is increased/decreased properly.
 end
@@ -97,7 +96,7 @@ end
     # (May break if trust region is changed. TODO eventually: find a better test case.)
     pf = ACPowerFlow{TrustRegionACPowerFlow}()
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg10k_sys")
-    data = PowerFlowData(pf, sys, correct_bustypes = true)
+    data = PowerFlowData(pf, sys)
     @test_logs (:warn, Regex(".*Jacobian is singular.*")
     ) match_mode = :any for _ in 1:20
         solve_powerflow!(data; pf = pf)
