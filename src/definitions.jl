@@ -21,6 +21,8 @@ const DEFAULT_TRUST_REGION_FACTOR::Float64 = 1.0 # controls starting size of tru
 const HALVE_TRUST_REGION = 0.1
 const MAX_DOUBLE_TRUST_REGION = 0.5
 const DOUBLE_TRUST_REGION = 0.9
+const DEFAULT_AUTOSCALE = false # correct for scaling of the system
+# typically converges in fewer iteration without autoscaling.
 
 const PF_MAX_LOG = 10
 
@@ -32,3 +34,10 @@ const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN = 0.8
 const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX = 1.2
 
 const TIs = Union{Int32, Int64}
+
+# voltage validation
+const DEFAULT_VALIDATE_VOLTAGES = true
+const MinMax = NamedTuple{(:min, :max), Tuple{Float64, Float64}}
+const DEFAULT_VALIDATION_RANGE = (min = 0.5, max = 1.5)
+# const MAX_INDS_TO_PRINT = 10
+const PF_MAX_LOG = 10
