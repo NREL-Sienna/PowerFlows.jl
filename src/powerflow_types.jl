@@ -8,31 +8,31 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     check_reactive_power_limits::Bool
     exporter::Union{Nothing, PowerFlowEvaluationModel}
     calculate_loss_factors::Bool
-    robust_power_flow::Bool
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
         Vector{Dict{Tuple{DataType, String}, Float64}},
     }
+    robust_power_flow::Bool
 end
 
 ACPowerFlow{ACSolver}(;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
-    robust_power_flow::Bool = false,
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
         Vector{Dict{Tuple{DataType, String}, Float64}},
     } = nothing,
+    robust_power_flow::Bool = false,
 ) where {ACSolver <: ACPowerFlowSolverType} =
     ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,
         calculate_loss_factors,
-        robust_power_flow,
         generator_slack_participation_factors,
+        robust_power_flow,
     )
 
 ACPowerFlow(
@@ -40,34 +40,31 @@ ACPowerFlow(
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
-    robust_power_flow::Bool = false,
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
         Vector{Dict{Tuple{DataType, String}, Float64}},
     } = nothing,
+    robust_power_flow::Bool = false,
 ) = ACPowerFlow{ACSolver}(
     check_reactive_power_limits,
     exporter,
     calculate_loss_factors,
+    generator_slack_participation_factors,
     robust_power_flow,
 )
 
 get_robust_power_flow(pf::ACPowerFlow{ACSolver}) where {ACSolver} = pf.robust_power_flow
-    generator_slack_participation_factors,
-)
 
-abstract type AbstractDCPowerFlow <: PowerFlowEvaluationModel end
-
-@kwdef struct DCPowerFlow <: AbstractDCPowerFlow
+@kwdef struct DCPowerFlow <: PowerFlowEvaluationModel
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 
-@kwdef struct PTDFDCPowerFlow <: AbstractDCPowerFlow
+@kwdef struct PTDFDCPowerFlow <: PowerFlowEvaluationModel
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 
-@kwdef struct vPTDFDCPowerFlow <: AbstractDCPowerFlow
+@kwdef struct vPTDFDCPowerFlow <: PowerFlowEvaluationModel
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 
