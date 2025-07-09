@@ -38,6 +38,18 @@ flows and angles, as well as these ones.
 - `bus_reactivepower_withdrawals::Matrix{Float64}`:
         "(b, t)" matrix containing the bus reactive power withdrawals. b:
         number of buses, t: number of time period.
+- `bus_activepower_constant_current_withdrawals::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus active power constant current
+        withdrawals. b: number of buses, t: number of time period.
+- `bus_reactivepower_constant_current_withdrawals::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus reactive power constant current
+        withdrawals. b: number of buses, t: number of time period.
+- `bus_activepower_constant_impedance_withdrawals::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus active power constant impedance
+        withdrawals. b: number of buses, t: number of time period.
+- `bus_reactivepower_constant_impedance_withdrawals::Matrix{Float64}`:  
+        "(b, t)" matrix containing the bus reactive power constant impedance
+        withdrawals. b: number of buses, t: number of time period.
 - `bus_reactivepower_bounds::Matrix{Float64}`:
         "(b, t)" matrix containing upper and lower bounds for the reactive supply at each
         bus at each time period.
@@ -83,7 +95,7 @@ struct PowerFlowData{
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
 } <: PowerFlowContainer
     bus_lookup::Dict{Int, Int}
-    branch_lookup::Dict{Tuple{Int, Int}, Int}
+    branch_lookup::Dict{String, Int}
     bus_activepower_injection::Matrix{Float64}
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
