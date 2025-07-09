@@ -83,14 +83,14 @@ struct PowerFlowData{
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
 } <: PowerFlowContainer
     bus_lookup::Dict{Int, Int}
-    branch_lookup::Dict{String, Int}
+    branch_lookup::Dict{Tuple{Int, Int}, Int}
     bus_activepower_injection::Matrix{Float64}
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
     bus_reactivepower_withdrawals::Matrix{Float64}
     bus_activepower_constant_current_withdrawals::Matrix{Float64}
-    bus_activepower_constant_impedance_withdrawals::Matrix{Float64}
     bus_reactivepower_constant_current_withdrawals::Matrix{Float64}
+    bus_activepower_constant_impedance_withdrawals::Matrix{Float64}
     bus_reactivepower_constant_impedance_withdrawals::Matrix{Float64}
     bus_reactivepower_bounds::Matrix{Vector{Float64}}
     generator_slack_participation_factors::Union{
@@ -360,8 +360,8 @@ function PowerFlowData(
         valid_ix,
         converged,
         loss_factors,
-        correct_bustypes,
         calculate_loss_factors,
+        correct_bustypes,
     )
 end
 
@@ -437,8 +437,8 @@ function PowerFlowData(
         valid_ix,
         converged,
         loss_factors,
-        correct_bustypes,
         calculate_loss_factors,
+        correct_bustypes,
     )
 end
 
@@ -513,8 +513,8 @@ function PowerFlowData(
         valid_ix,
         converged,
         loss_factors,
-        correct_bustypes,
         calculate_loss_factors,
+        correct_bustypes,
     )
 end
 
