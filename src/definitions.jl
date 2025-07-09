@@ -40,4 +40,3 @@ const DEFAULT_VALIDATE_VOLTAGES = true
 const MinMax = NamedTuple{(:min, :max), Tuple{Float64, Float64}}
 const DEFAULT_VALIDATION_RANGE = (min = 0.5, max = 1.5)
 # const MAX_INDS_TO_PRINT = 10
-const PF_MAX_LOG = 10

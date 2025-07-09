@@ -56,15 +56,17 @@ ACPowerFlow(
 
 get_robust_power_flow(pf::ACPowerFlow{ACSolver}) where {ACSolver} = pf.robust_power_flow
 
-@kwdef struct DCPowerFlow <: PowerFlowEvaluationModel
+abstract type AbstractDCPowerFlow <: PowerFlowEvaluationModel end
+
+@kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 
-@kwdef struct PTDFDCPowerFlow <: PowerFlowEvaluationModel
+@kwdef struct PTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 
-@kwdef struct vPTDFDCPowerFlow <: PowerFlowEvaluationModel
+@kwdef struct vPTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 

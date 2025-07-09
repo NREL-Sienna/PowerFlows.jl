@@ -838,7 +838,7 @@ end
                                                                     "phase shifting transformers: " *
                                                                     "change `force_build` to `true` in the test."
     pf_tr = ACPowerFlow{TrustRegionACPowerFlow}()
-    data_tr = PowerFlowData(pf_tr, sys)
+    data_tr = PowerFlowData(pf_tr, sys; correct_bustypes = true)
     solve_powerflow!(
         data_tr;
         pf = pf_tr,
