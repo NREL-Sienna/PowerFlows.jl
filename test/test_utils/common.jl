@@ -27,11 +27,6 @@ function create_pf_friendly_rts_gmlc()
             new_limits,
         )
     end
-
-    # Patch https://github.com/NREL-Sienna/PowerFlows.jl/issues/47
-    sync_conds = filter(c -> occursin("SYNC_COND", get_name(c)),
-        collect(get_components(StaticInjection, sys)))
-    set_base_power!.(sync_conds, 100.0)
     return sys
 end
 
