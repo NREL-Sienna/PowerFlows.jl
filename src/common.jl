@@ -531,3 +531,42 @@ function make_powerflowdata(
     calculate_loss_factors,
 )
 end
+
+function validate_voltages(x::Vector{Float64},
+    bus_types::AbstractArray{PSY.ACBusTypes},
+    range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = VM_VALIDATION_RANGE,
+    i::Int64 = 1,
+)
+    # outside_range = sizehint!(Vector{Int64}(), MAX_INDS_TO_PRINT)
+    num_outside_range = 0
+    for (i, bt) in enumerate(bus_types)
+        if bt == PSY.ACBusTypes.PQ
+            if (x[2 * i - 1] < range.min || x[2 * i - 1] > range.max) #&&
+                # size(outside_range, 1) <= MAX_INDS_TO_PRINT
+                #push!(outside_range, i)
+                num_outside_range += 1
+            end
+        end
+    end
+    if num_outside_range > 0
+        @warn "Iteration $i: voltage magnitudes outside of range $range at " *
+              "$num_outside_range PQ buses." maxlog = PF_MAX_LOG
+    end
+    #=
+    if size(outside_range, 1) > MAX_INDS_TO_PRINT
+        @warn "Iteration $i: voltage magnitudes outside of range $range at over $MAX_INDS_TO_PRINT buses." maxlog =
+            PF_MAX_LOG
+    elseif size(outside_range, 1) > 0
+        @warn "Iteration $i: voltage magnitudes outside of range $range at $(size(outside_range, 1)) buses: $(outside_range)" maxlog =
+            PF_MAX_LOG
+    end
+    =#
+    return
+end
+
+"""Weighted dot product of two vectors."""
+wdot(wx::Vector{Float64}, x::Vector{Float64}, wy::Vector{Float64}, y::Vector{Float64}) =
+    LinearAlgebra.dot(wx .* x, wy .* y)
+
+"""Weighted norm of two vectors."""
+wnorm(w::Vector{Float64}, x::Vector{Float64}) = norm(w .* x)

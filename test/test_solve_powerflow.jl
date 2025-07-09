@@ -828,6 +828,27 @@ end
     )
 end
 
+@testset "AC PF 10k bus system: voltage magnitudes" begin
+    sys = PSB.build_system(
+        PSB.MatpowerTestSystems,
+        "matpower_ACTIVSg10k_sys";
+        force_build = false,
+    )
+    @assert !isempty(get_components(PhaseShiftingTransformer, sys)) "System should have " *
+                                                                    "phase shifting transformers: " *
+                                                                    "change `force_build` to `true` in the test."
+    pf_tr = ACPowerFlow{TrustRegionACPowerFlow}()
+    data_tr = PowerFlowData(pf_tr, sys; correct_bustypes = true)
+    solve_powerflow!(
+        data_tr;
+        pf = pf_tr,
+        maxIterations = 200,
+        factor = 0.1,
+    )
+    @test all(data_tr.bus_magnitude[:, 1] .<= 1.1)
+    @test all(data_tr.bus_magnitude[:, 1] .>= 0.9)
+end
+
 function PowerFlowData_to_DataFrame(data::PowerFlowData)
     nbuses = size(data.bus_magnitude, 1)
     # Convert the PowerFlowData to a DataFrame
@@ -868,3 +889,15 @@ end
     # this fails with 1e-4.
     @test norm(sienna_df[!, "generator_q"] .- matpower_df[!, "generator_q"], Inf) < 1e-3
 end
+
+#=
+# Unfortunately, we correct the voltage magnitude to something sensible before running the 
+# solver, so testing this isn't straightforward.
+@testset "voltage validation" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    pf = ACPowerFlow{TrustRegionACPowerFlow}()
+    data = PowerFlowData(pf, sys; correct_bustypes = true)
+    solve_powerflow!(data; pf = pf)
+    data.bus_magnitude[1, 1] = 2.0
+    @test_logs (:warn, r".*voltage magnitudes outside of range.*") match_mode = :any solve_powerflow!(data; pf = pf)
+end=#
