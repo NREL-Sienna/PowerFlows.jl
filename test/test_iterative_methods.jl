@@ -1,4 +1,4 @@
-@testset "NewtonRaphsonACPowerFlow" begin
+testset "NewtonRaphsonACPowerFlow" begin
     # test NR kwargs.
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
     nr_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
