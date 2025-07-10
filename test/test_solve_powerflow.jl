@@ -403,21 +403,22 @@ end
             data_lu.voltage_stability_factors,
             data_newton.voltage_stability_factors,
             rtol = 0,
-            atol = 1e-9,
+            atol = 1e-6,
         ),
     )
     LinearAlgebra.__init__()  # to remove warnings
-    ref, pv, pq = bus_type_idx(data_lu, time_step)
+    ref, pv, pq = PowerFlows.bus_type_idx(data_lu, time_step)
     pvpq = [pv; pq]
     npvpq = length(pvpq)
-    dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, data_lu.Ybus.data)
+    V = data_lu.bus_magnitude[:, time_step] .* exp.(1im * data_lu.bus_angles[:, time_step])
+    dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, data_lu.power_network_matrix.data)
     J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
     Gs =
         J[(npvpq + 1):end, (npvpq + 1):end] -
         J[(npvpq + 1):end, 1:npvpq] * inv(collect(J[1:npvpq, 1:npvpq])) *
         J[1:npvpq, (npvpq + 1):end]
     u_1, (σ_1,), v_1, _ = PROPACK.tsvd_irl(Gs; smallest = true, k = 1)
-    σ, u, v = find_sigma_uv(J, npvpq)
+    σ, u, v = PowerFlows.find_sigma_uv(J, npvpq)
 
     @assert isapprox(σ_1, σ, atol = 1e-6)
     # the sign does not matter

@@ -214,7 +214,7 @@ function PowerFlows._newton_powerflow(
             end
         end
 
-        if get_calculate_loss_factors(data)
+        if PowerFlows.get_calculate_loss_factors(data)
             dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus)
             J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
             dSbus_dV_ref = collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:])
@@ -224,8 +224,8 @@ function PowerFlows._newton_powerflow(
             data.loss_factors[pvpq, time_step] .= lf[1:npvpq]
             data.loss_factors[ref, time_step] .= 1.0
         end
-        if get_calculate_voltage_stability_factors(data)
-            σ, u, v = find_sigma_uv(J, npvpq)
+        if PowerFlows.get_calculate_voltage_stability_factors(data)
+            σ, u, v = PowerFlows.find_sigma_uv(J, npvpq)
             data.voltage_stability_factors[ref, time_step] .= 0.0
             data.voltage_stability_factors[first(ref), time_step] = σ
             data.voltage_stability_factors[pv, time_step] .= 0.0
