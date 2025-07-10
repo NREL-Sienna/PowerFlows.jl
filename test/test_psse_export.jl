@@ -427,7 +427,7 @@ end
 
     # Updating with changed value should result in a different reimport (PowerFlowData version)
     exporter = PSSEExporter(sys, :v33, export_location)
-    pf2 = PowerFlowData(pf, sys)
+    pf2 = PowerFlowData(pf, sys; correct_bustypes = true) # TODO this might mess with things...
     # This modifies the PowerFlowData in the same way that modify_rts_system! modifies the
     # system, so the reimport should be comparable to sys2 from above
     modify_rts_powerflow!(pf2)

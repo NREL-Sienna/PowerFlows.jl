@@ -14,6 +14,7 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
         Dict{Tuple{DataType, String}, Float64},
         Vector{Dict{Tuple{DataType, String}, Float64}},
     }
+    robust_power_flow::Bool
 end
 
 ACPowerFlow{ACSolver}(;
@@ -26,6 +27,7 @@ ACPowerFlow{ACSolver}(;
         Dict{Tuple{DataType, String}, Float64},
         Vector{Dict{Tuple{DataType, String}, Float64}},
     } = nothing,
+    robust_power_flow::Bool = false,
 ) where {ACSolver <: ACPowerFlowSolverType} =
     ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
@@ -33,6 +35,7 @@ ACPowerFlow{ACSolver}(;
         calculate_loss_factors,
         calculate_voltage_stability_factors,
         generator_slack_participation_factors,
+        robust_power_flow,
     )
 
 ACPowerFlow(
@@ -46,23 +49,29 @@ ACPowerFlow(
         Dict{Tuple{DataType, String}, Float64},
         Vector{Dict{Tuple{DataType, String}, Float64}},
     } = nothing,
+    robust_power_flow::Bool = false,
 ) = ACPowerFlow{ACSolver}(
     check_reactive_power_limits,
     exporter,
     calculate_loss_factors,
     calculate_voltage_stability_factors,
     generator_slack_participation_factors,
+    robust_power_flow,
 )
 
-@kwdef struct DCPowerFlow <: PowerFlowEvaluationModel
+get_robust_power_flow(pf::ACPowerFlow{ACSolver}) where {ACSolver} = pf.robust_power_flow
+
+abstract type AbstractDCPowerFlow <: PowerFlowEvaluationModel end
+
+@kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 
-@kwdef struct PTDFDCPowerFlow <: PowerFlowEvaluationModel
+@kwdef struct PTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 
-@kwdef struct vPTDFDCPowerFlow <: PowerFlowEvaluationModel
+@kwdef struct vPTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 

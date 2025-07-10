@@ -21,6 +21,7 @@ struct StateVectorCache
     Δx_proposed::Vector{Float64} # proposed Δx: Cauchy, NR, or dogleg step.
     Δx_cauchy::Vector{Float64} # Cauchy step
     Δx_nr::Vector{Float64} # Newton-Raphson step
+    d::Vector{Float64}
 end
 
 function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
@@ -30,7 +31,7 @@ function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     Δx_proposed = copy(x0)
     Δx_cauchy = copy(x0)
     Δx_nr = copy(x0)
-    return StateVectorCache(x, r, r_predict, Δx_proposed, Δx_cauchy, Δx_nr)
+    return StateVectorCache(x, r, r_predict, Δx_proposed, Δx_cauchy, Δx_nr, ones(size(x0)))
 end
 
 """Returns a stand-in matrix for singular J's."""
@@ -116,19 +117,21 @@ function _dogleg!(Δx_proposed::Vector{Float64},
     Δx_nr::Vector{Float64},
     r::Vector{Float64},
     Jv::SparseMatrixCSC{Float64, Int32},
+    d::Vector{Float64},
     delta::Float64,
 )
-    if norm(Δx_nr) <= delta
+    if wnorm(d, Δx_nr) <= delta
         copyto!(Δx_proposed, Δx_nr) # update Δx_proposed: newton-raphson case.
     else
         # using Δx_proposed as a temporary buffer: alias to g for readability
         g = Δx_proposed
         LinearAlgebra.mul!(g, Jv', r)
-        Δx_cauchy .= -norm(g)^2 / norm(Jv * g)^2 .* g # Cauchy point
+        g .= g ./ d .^ 2
+        Δx_cauchy .= -wnorm(d, g)^2 / sum(abs2, Jv * g) .* g # Cauchy point
 
-        if norm(Δx_cauchy) >= delta
+        if wnorm(d, Δx_cauchy) >= delta
             # Δx_cauchy outside region => take step of length delta in direction of -g.
-            LinearAlgebra.rmul!(g, -delta / norm(g))
+            LinearAlgebra.rmul!(g, -delta / wnorm(d, g))
             # not needed because g is already an alias for Δx_proposed.
             # copyto!(Δx_proposed, g) # update Δx_proposed: cauchy point case
         else
@@ -140,9 +143,9 @@ function _dogleg!(Δx_proposed::Vector{Float64},
             Δx_nr .-= Δx_cauchy
             Δx_diff = Δx_nr
 
-            b = LinearAlgebra.dot(Δx_cauchy, Δx_diff)
-            a = norm(Δx_diff)^2
-            tau = (-b + sqrt(b^2 - 4a * (norm(Δx_cauchy)^2 - delta^2))) / (2a)
+            b = wdot(d, Δx_cauchy, d, Δx_diff)
+            a = wnorm(d, Δx_diff)^2
+            tau = (-b + sqrt(b^2 - 4a * (wnorm(d, Δx_cauchy)^2 - delta^2))) / (2a)
             Δx_cauchy .+= tau .* Δx_diff
             copyto!(Δx_proposed, Δx_cauchy) # update Δx_proposed: dogleg case.
         end
@@ -160,7 +163,8 @@ function _trust_region_step(time_step::Int,
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     delta::Float64,
-    eta::Float64 = DEFAULT_TRUST_REGION_ETA,
+    eta::Float64,
+    autoscale::Bool,
 )
     _set_Δx_nr!(
         stateVector,
@@ -176,6 +180,7 @@ function _trust_region_step(time_step::Int,
         stateVector.Δx_nr,
         stateVector.r,
         J.Jv,
+        stateVector.d,
         delta,
     )
     # find proposed next point.
@@ -198,6 +203,13 @@ function _trust_region_step(time_step::Int,
         stateVector.r .= residual.Rv
         # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
         J(time_step)
+        if autoscale
+            for i in 1:length(stateVector.x)
+                stateVector.d[i] = max(0.1 * stateVector.d[i], norm(view(J.Jv, :, i)))
+            end
+        else
+            @assert all(stateVector.d .== 1.0)
+        end
     else
         # Unsuccessful: reset x and residual.
         stateVector.x .-= stateVector.Δx_proposed
@@ -208,9 +220,9 @@ function _trust_region_step(time_step::Int,
     if rho < HALVE_TRUST_REGION # rho < 0.1: insufficient improvement
         delta = delta / 2
     elseif rho >= DOUBLE_TRUST_REGION # rho >= 0.9: good improvement
-        delta = 2 * norm(stateVector.Δx_proposed)
+        delta = 2 * wnorm(stateVector.d, stateVector.Δx_proposed)
     elseif rho >= MAX_DOUBLE_TRUST_REGION # rho >= 0.5: so-so improvement
-        delta = max(delta, 2 * norm(stateVector.Δx_proposed))
+        delta = max(delta, 2 * wnorm(stateVector.d, stateVector.Δx_proposed))
     end
     return delta
 end
@@ -268,7 +280,18 @@ function _run_powerflow_method(time_step::Int,
         :refinement_eps,
         DEFAULT_REFINEMENT_THRESHOLD)
     refinement_eps::Float64 = get(kwargs, :refinement_eps, DEFAULT_REFINEMENT_EPS)
-    i, converged = 0, false
+    validate_vms::Bool = get(
+        kwargs,
+        :validate_voltages,
+        DEFAULT_VALIDATE_VOLTAGES,
+    )
+    validation_range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = get(
+        kwargs,
+        :vm_validation_range,
+        DEFAULT_VALIDATION_RANGE,
+    )
+    i, converged = 1, false
+    bus_types = @view get_bus_type(J.data)[:, time_step]
     while i < maxIterations && !converged
         _simple_step(
             time_step,
@@ -279,8 +302,11 @@ function _run_powerflow_method(time_step::Int,
             refinement_threshold,
             refinement_eps,
         )
+        validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
         converged = norm(residual.Rv, Inf) < tol
-        i += 1
+        if !converged
+            i += 1
+        end
     end
     return converged, i
 end
@@ -306,9 +332,31 @@ function _run_powerflow_method(time_step::Int,
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
     factor::Float64 = get(kwargs, :factor, DEFAULT_TRUST_REGION_FACTOR)
     eta::Float64 = get(kwargs, :eta, DEFAULT_TRUST_REGION_ETA)
+    autoscale::Bool = get(kwargs, :autoscale, DEFAULT_AUTOSCALE)
+
+    validate_vms::Bool = get(
+        kwargs,
+        :validate_voltages,
+        DEFAULT_VALIDATE_VOLTAGES,
+    )
+    validation_range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = get(
+        kwargs,
+        :vm_validation_range,
+        DEFAULT_VALIDATION_RANGE,
+    )
+
+    if autoscale
+        for i in 1:length(stateVector.x)
+            stateVector.d[i] = norm(view(J.Jv, :, i))
+            if stateVector.d[i] == 0.0
+                stateVector.d[i] = 1.0
+            end
+        end
+    end
 
     delta::Float64 = norm(stateVector.x) > 0 ? factor * norm(stateVector.x) : factor
-    i, converged = 0, false
+    i, converged = 1, false
+    bus_types = @view get_bus_type(J.data)[:, time_step]
     while i < maxIterations && !converged
         delta = _trust_region_step(
             time_step,
@@ -318,9 +366,13 @@ function _run_powerflow_method(time_step::Int,
             J,
             delta,
             eta,
+            autoscale,
         )
+        validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
         converged = norm(residual.Rv, Inf) < tol
-        i += 1
+        if !converged
+            i += 1
+        end
     end
     return converged, i
 end
@@ -333,10 +385,16 @@ function _newton_powerflow(
     residual = ACPowerFlowResidual(data, time_step)
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
+    if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
+       get_robust_power_flow(pf)
+        improve_x0!(x0, data, time_step, residual)
+    else
+        @debug "skipping DC powerflow fallback"
+    end
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     J(time_step)  # we need to fill J with values because at this point it was just initialized
 
-    if sum(abs, residual.Rv) > WARN_LARGE_RESIDUAL * length(residual.Rv)
+    if sum(abs, residual.Rv) > LARGE_RESIDUAL * length(residual.Rv)
         lg_res, ix = findmax(residual.Rv)
         lg_res_rounded = round(lg_res; sigdigits = 3)
         pow_type = ix % 2 == 1 ? "active" : "reactive"
@@ -346,6 +404,18 @@ function _newton_powerflow(
               "Largest residual at bus $bus_no ($bus_ix by matrix indexing; $pow_type power)"
     end
 
+    bus_types = @view get_bus_type(J.data)[:, time_step]
+    validate_vms::Bool = get(
+        kwargs,
+        :validate_voltages,
+        DEFAULT_VALIDATE_VOLTAGES,
+    )
+    validation_range::MinMax = get(
+        kwargs,
+        :vm_validation_range,
+        DEFAULT_VALIDATION_RANGE,
+    )
+    validate_vms && validate_voltages(x0, bus_types, validation_range, 0)
     linSolveCache = KLULinSolveCache(J.Jv)
     symbolic_factor!(linSolveCache, J.Jv)
     stateVector = StateVectorCache(x0, residual.Rv)
@@ -373,34 +443,55 @@ function _newton_powerflow(
     return false
 end
 
+"""If initial residual is large, run a DC power flow and see if that gives
+a better starting point for angles. Return the original or the result of the DC powerflow,
+whichever gives the smaller residual."""
+function improve_x0!(x0::Vector{Float64},
+    data::ACPowerFlowData,
+    time_step::Int64,
+    residual::ACPowerFlowResidual,
+)
+    @debug "Trying to improve x0 via DC powerflow fallback"
+    residualSize = norm(residual.Rv, 1)
+    _dc_powerflow_fallback!(data, time_step)
+    # is the new starting point better?
+    newx0 = calculate_x0(data, time_step)
+    residual(newx0, time_step)
+    newResidualSize = norm(residual.Rv, 1)
+    if newResidualSize < residualSize
+        @info "success: DC powerflow fallback yields better x0"
+        copyto!(x0, newx0)
+        residual(x0, time_step) # re-calculate for new x0.
+    else
+        @debug "no improvement from DC powerflow fallback"
+    end
+    return nothing
+end
+
+"""Calculate x0 from data."""
 function calculate_x0(data::ACPowerFlowData,
     time_step::Int64)
     n_buses = length(data.bus_type[:, 1])
     x0 = Vector{Float64}(undef, 2 * n_buses)
-    state_variable_count = 1
-    for (ix, b) in enumerate(data.bus_type[:, time_step])
-        if b == PSY.ACBusTypes.REF
-            x0[state_variable_count] =
-                data.bus_activepower_injection[ix, time_step] -
-                data.bus_activepower_withdrawals[ix, time_step]
-            x0[state_variable_count + 1] =
-                data.bus_reactivepower_injection[ix, time_step] -
-                data.bus_reactivepower_withdrawals[ix, time_step]
-            state_variable_count += 2
-        elseif b == PSY.ACBusTypes.PV
-            x0[state_variable_count] =
-                data.bus_reactivepower_injection[ix, time_step] -
-                data.bus_reactivepower_withdrawals[ix, time_step]
-            x0[state_variable_count + 1] = data.bus_angles[ix, time_step]
-            state_variable_count += 2
-        elseif b == PSY.ACBusTypes.PQ
-            x0[state_variable_count] = data.bus_magnitude[ix, time_step]
-            x0[state_variable_count + 1] = data.bus_angles[ix, time_step]
-            state_variable_count += 2
-        else
-            throw(ArgumentError("$b not recognized as a bustype"))
-        end
-    end
-    @assert state_variable_count - 1 == n_buses * 2
+    update_state!(x0, data, time_step)
     return x0
+end
+
+"""When solving AC power flows, if the initial guess has large residual, we run a DC power 
+flow as a fallback. This runs a DC powerflow on `data::ACPowerFlowData` for the given
+`time_step`, and writes the solution to `data.bus_angles`."""
+function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
+    # dev note: for DC, we can efficiently solve for all timesteps at once, and we want branch
+    # flows. For AC fallback, we're only interested in the current timestep, and no branch flows
+    # PERF: if multi-period and multiple time steps have bad initial guesses,
+    #       we're re-creating this factorization for each time step. Store it inside
+    #       data.aux_network_matrix instead.
+    ABA_matrix = data.aux_network_matrix.data
+    solver_cache = KLULinSolveCache(ABA_matrix)
+    full_factor!(solver_cache, ABA_matrix)
+    p_inj =
+        data.bus_activepower_injection[data.valid_ix, time_step] -
+        data.bus_activepower_withdrawals[data.valid_ix, time_step]
+    solve!(solver_cache, p_inj)
+    data.bus_angles[data.valid_ix, time_step] .= p_inj
 end
