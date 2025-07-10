@@ -48,13 +48,13 @@ const AC_SOLVERS_TO_TEST = (
 LOG_FILE = "power-flows.log"
 
 const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl"
-    "test_dc_powerflow.jl",
-    "test_iterative_methods.jl",
-    "test_klu_linear_solver_cache.jl",
-    "test_multiperiod_ac_powerflow.jl",
-    "test_multiperiod_dc_powerflow.jl",
-    "test_powerflow_data.jl",
-    "test_psse_export.jl",
+    # "test_dc_powerflow.jl",
+    # "test_iterative_methods.jl",
+    # "test_klu_linear_solver_cache.jl",
+    # "test_multiperiod_ac_powerflow.jl",
+    # "test_multiperiod_dc_powerflow.jl",
+    # "test_powerflow_data.jl",
+    # "test_psse_export.jl",
     # "test_solve_powerflow.jl",
 ]
 
