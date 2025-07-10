@@ -76,15 +76,16 @@ function _get_withdrawals!(
         PSY.get_available(l) || continue
         bus = PSY.get_bus(l)
         bus_ix = bus_lookup[PSY.get_number(bus)]
-        bus_activepower_withdrawals[bus_ix] += get_constant_active_power(l)
-        bus_activepower_constant_current_withdrawals[bus_ix] += get_current_active_power(l)
+        bus_activepower_withdrawals[bus_ix] += PSY.get_constant_active_power(l)
+        bus_activepower_constant_current_withdrawals[bus_ix] +=
+            PSY.get_current_active_power(l)
         bus_activepower_constant_impedance_withdrawals[bus_ix] +=
-            get_impedance_active_power(l)
-        bus_reactivepower_withdrawals[bus_ix] += get_constant_reactive_power(l)
+            PSY.get_impedance_active_power(l)
+        bus_reactivepower_withdrawals[bus_ix] += PSY.get_constant_reactive_power(l)
         bus_reactivepower_constant_current_withdrawals[bus_ix] +=
-            get_current_reactive_power(l)
+            PSY.get_current_reactive_power(l)
         bus_reactivepower_constant_impedance_withdrawals[bus_ix] +=
-            get_impedance_reactive_power(l)
+            PSY.get_impedance_reactive_power(l)
     end
     return
 end
@@ -464,10 +465,14 @@ function make_powerflowdata(
     bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
     bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
     bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
-    bus_activepower_constant_current_withdrawals_1[:, 1] .= bus_activepower_constant_current_withdrawals
-    bus_reactivepower_constant_current_withdrawals_1[:, 1] .= bus_reactivepower_constant_current_withdrawals
-    bus_activepower_constant_impedance_withdrawals_1[:, 1] .= bus_activepower_constant_impedance_withdrawals
-    bus_reactivepower_constant_impedance_withdrawals_1[:, 1] .= bus_reactivepower_constant_impedance_withdrawals
+    bus_activepower_constant_current_withdrawals_1[:, 1] .=
+        bus_activepower_constant_current_withdrawals
+    bus_reactivepower_constant_current_withdrawals_1[:, 1] .=
+        bus_reactivepower_constant_current_withdrawals
+    bus_activepower_constant_impedance_withdrawals_1[:, 1] .=
+        bus_activepower_constant_impedance_withdrawals
+    bus_reactivepower_constant_impedance_withdrawals_1[:, 1] .=
+        bus_reactivepower_constant_impedance_withdrawals
     bus_magnitude_1[:, 1] .= bus_magnitude
     bus_angles_1[:, 1] .= bus_angles
 
@@ -500,36 +505,36 @@ function make_powerflowdata(
     branch_reactivepower_flow_to_from = zeros(Float64, n_branches, time_steps)
 
     return PowerFlowData(
-    bus_lookup,
-    branch_lookup,
-    bus_activepower_injection_1,
-    bus_reactivepower_injection_1,
-    bus_activepower_withdrawals_1,
-    bus_reactivepower_withdrawals_1,
-    bus_activepower_constant_current_withdrawals_1,
-    bus_reactivepower_constant_current_withdrawals_1,
-    bus_activepower_constant_impedance_withdrawals_1,
-    bus_reactivepower_constant_impedance_withdrawals_1,
-    bus_reactivepower_bounds_1,
-    generator_slack_participation_factors,
-    bus_slack_participation_factors,
-    bus_type_1,
-    branch_type,
-    bus_magnitude_1,
-    bus_angles_1,
-    branch_activepower_flow_from_to,
-    branch_reactivepower_flow_from_to,
-    branch_activepower_flow_to_from,
-    branch_reactivepower_flow_to_from,
-    timestep_map,
-    valid_ix,
-    power_network_matrix,
-    aux_network_matrix,
-    neighbors,
-    converged,
-    loss_factors,
-    calculate_loss_factors,
-)
+        bus_lookup,
+        branch_lookup,
+        bus_activepower_injection_1,
+        bus_reactivepower_injection_1,
+        bus_activepower_withdrawals_1,
+        bus_reactivepower_withdrawals_1,
+        bus_activepower_constant_current_withdrawals_1,
+        bus_reactivepower_constant_current_withdrawals_1,
+        bus_activepower_constant_impedance_withdrawals_1,
+        bus_reactivepower_constant_impedance_withdrawals_1,
+        bus_reactivepower_bounds_1,
+        generator_slack_participation_factors,
+        bus_slack_participation_factors,
+        bus_type_1,
+        branch_type,
+        bus_magnitude_1,
+        bus_angles_1,
+        branch_activepower_flow_from_to,
+        branch_reactivepower_flow_from_to,
+        branch_activepower_flow_to_from,
+        branch_reactivepower_flow_to_from,
+        timestep_map,
+        valid_ix,
+        power_network_matrix,
+        aux_network_matrix,
+        neighbors,
+        converged,
+        loss_factors,
+        calculate_loss_factors,
+    )
 end
 
 function validate_voltages(x::Vector{Float64},

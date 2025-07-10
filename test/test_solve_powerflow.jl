@@ -901,3 +901,118 @@ end
     data.bus_magnitude[1, 1] = 2.0
     @test_logs (:warn, r".*voltage magnitudes outside of range.*") match_mode = :any solve_powerflow!(data; pf = pf)
 end=#
+
+@testset "Test ZIP loads: constant current" begin
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+    l = _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
+    s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
+    lc = PSY.StandardLoad(;
+        name = "ZIP_I",
+        available = true,
+        bus = b2,
+        base_power = 10.0,
+        constant_active_power = 0.0,
+        constant_reactive_power = 0.0,
+        impedance_active_power = 0.0,
+        impedance_reactive_power = 0.0,
+        current_active_power = 2.0,
+        current_reactive_power = 1.0,
+        max_constant_active_power = 0.0,
+        max_constant_reactive_power = 0.0,
+        max_impedance_active_power = 0.0,
+        max_impedance_reactive_power = 0.0,
+        max_current_active_power = 0.0,
+        max_current_reactive_power = 0.0,
+    )
+    add_component!(sys, lc)
+    data = PowerFlowData(ACPowerFlow(), sys; correct_bustypes = true)
+    solve_powerflow!(data)
+
+    s_t =
+        data.branch_activepower_flow_to_from + 1im * data.branch_reactivepower_flow_to_from
+    i_t = abs(s_t[1]) / data.bus_magnitude[2, 1] / sqrt(3)
+
+    load_input_power = (get_current_active_power(lc) + 1im * get_current_reactive_power(lc))
+    # constant current load is given for 1.0 p.u. base voltage:
+    load_input_current = abs(load_input_power) / 1.0 / sqrt(3)
+
+    V = data.bus_magnitude[:, 1] .* exp.(1im * data.bus_angles[:, 1])
+    Sbus = V .* conj(data.power_network_matrix.data * V)
+
+    load_expected_power = load_input_power * data.bus_magnitude[2, 1]
+
+    # - due to the reference frame in Sbus vs. load inputs
+    @test isapprox(Sbus[2], -load_expected_power; atol = 1e-6, rtol = 0)
+
+    load_expected_current = abs(load_expected_power) / data.bus_magnitude[2, 1] / sqrt(3)
+
+    @test isapprox(load_expected_current, load_input_current; atol = 1e-6, rtol = 0)
+
+    @test isapprox(i_t, load_input_current; atol = 1e-6, rtol = 0)
+
+    @test isapprox(data.bus_activepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
+    @test isapprox(data.bus_reactivepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
+end
+
+@testset "Test ZIP loads: constant impedance" begin
+    sys = System(100.0)
+    b_1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+    l = _add_simple_line!(sys, b_1, b2, 5e-3, 5e-3, 1e-3)
+    s1 = _add_simple_source!(sys, b_1, 0.0, 0.0)
+    lz = PSY.StandardLoad(;
+        name = "ZIP_Z",
+        available = true,
+        bus = b2,
+        base_power = 10.0,
+        constant_active_power = 0.0,
+        constant_reactive_power = 0.0,
+        impedance_active_power = 2.0,
+        impedance_reactive_power = 1.0,
+        current_active_power = 0.0,
+        current_reactive_power = 0.0,
+        max_constant_active_power = 0.0,
+        max_constant_reactive_power = 0.0,
+        max_impedance_active_power = 0.0,
+        max_impedance_reactive_power = 0.0,
+        max_current_active_power = 0.0,
+        max_current_reactive_power = 0.0,
+    )
+    add_component!(sys, lz)
+    data = PowerFlowData(ACPowerFlow(), sys; correct_bustypes = true)
+    solve_powerflow!(data)
+
+    s_t =
+        data.branch_activepower_flow_to_from + 1im * data.branch_reactivepower_flow_to_from
+    i_t = abs(s_t[1]) / data.bus_magnitude[2, 1] / sqrt(3)
+
+    load_input_power =
+        (get_impedance_active_power(lz) + 1im * get_impedance_reactive_power(lz))
+    # constant impedance load is given for 1.0 p.u. base voltage:
+    load_input_impedance = abs(load_input_power) / (1.0)^2 / sqrt(3)
+
+    V = data.bus_magnitude[:, 1] .* exp.(1im * data.bus_angles[:, 1])
+    Sbus = V .* conj(data.power_network_matrix.data * V)
+
+    load_expected_power = load_input_power * data.bus_magnitude[2, 1]^2
+
+    # - due to the reference frame in Sbus vs. load inputs
+    @test isapprox(Sbus[2], -load_expected_power; atol = 1e-6, rtol = 0)
+
+    load_expected_impedance =
+        abs(load_expected_power) / data.bus_magnitude[2, 1]^2 / sqrt(3)
+
+    @test isapprox(load_expected_impedance, load_input_impedance; atol = 1e-6, rtol = 0)
+
+    @test isapprox(
+        i_t / data.bus_magnitude[2, 1],
+        load_input_impedance;
+        atol = 1e-6,
+        rtol = 0,
+    )
+
+    @test isapprox(data.bus_activepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
+    @test isapprox(data.bus_reactivepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
+end

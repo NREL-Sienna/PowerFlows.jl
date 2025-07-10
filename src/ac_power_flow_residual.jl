@@ -264,9 +264,20 @@ function _set_state_vars_at_bus!(
     time_step::Int64,
     ::Val{PSY.ACBusTypes.PQ})
     # When bustype == PQ PSY.ACBus, state variables are Voltage Magnitude and Voltage Angle
-    data.bus_magnitude[ix, time_step] = StateVector[2 * ix - 1]
+    # delta_vm = (vm_1 = data.bus_magnitude[ix, time_step]) - StateVector[2 * ix - 1]
+    vm_1 = data.bus_magnitude[ix, time_step]
+    vm_2 = data.bus_magnitude[ix, time_step] = StateVector[2 * ix - 1]
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
     # update P_net and Q_net for ZIP loads
+    P_net[ix] +=
+        data.bus_activepower_constant_current_withdrawals[ix, time_step] * (vm_1 - vm_2) +
+        data.bus_activepower_constant_impedance_withdrawals[ix, time_step] *
+        (vm_1^2 - vm_2^2)
+    Q_net[ix] +=
+        data.bus_reactivepower_constant_current_withdrawals[ix, time_step] * (vm_1 - vm_2) +
+        data.bus_reactivepower_constant_impedance_withdrawals[ix, time_step] *
+        (vm_1^2 - vm_2^2)
+    # set the active and reactive power injections at the bus
     _setpq(
         ix,
         P_net,
