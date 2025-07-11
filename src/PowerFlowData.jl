@@ -221,9 +221,11 @@ end
 
 function error_if_has_network_reduction(m::PNM.PowerNetworkMatrix)
     if length(PNM.get_reverse_bus_search_map(m.network_reduction)) > 0
-        throw(NotImplementedError(
-            "AC Power Flow with network reduction is not implemented yet.",
-        ))
+        throw(
+            NotImplementedError(
+                "AC Power Flow with network reduction is not implemented yet.",
+            ),
+        )
     end
 end
 

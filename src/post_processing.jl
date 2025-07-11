@@ -601,7 +601,7 @@ function write_results(
 
     # get bus and branches
     branches, buses = _get_branches_buses(data)
-    
+
     branch_lookup = get_branch_lookup(data)
     # get branches from/to buses
     from_bus = first.(branches)
