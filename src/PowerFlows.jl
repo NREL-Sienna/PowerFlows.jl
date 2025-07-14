@@ -23,7 +23,7 @@ import DataFrames
 import PowerSystems
 import PowerSystems: System, with_units_base
 import LinearAlgebra
-import LinearAlgebra: norm
+import LinearAlgebra: norm, ldiv!
 import KLU
 import SparseArrays
 import InfrastructureSystems
