@@ -282,7 +282,7 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
 end
 
 function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32},
-    Y_from_to::ComplexF64,
+    Y_from_to::ComplexF32,
     Vm_from::Float64,
     Vm_to::Float64,
     θ_from_to::Float64,
@@ -310,7 +310,7 @@ function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32
 end
 
 function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
-    Y_from_to::ComplexF64,
+    Y_from_to::ComplexF32,
     Vm_from::Float64,
     Vm_to::Float64,
     θ_from_to::Float64,
@@ -347,7 +347,7 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
 end
 
 function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
-    Y_from_to::ComplexF64,
+    Y_from_to::ComplexF32,
     Vm_from::Float64,
     Vm_to::Float64,
     θ_from_to::Float64,

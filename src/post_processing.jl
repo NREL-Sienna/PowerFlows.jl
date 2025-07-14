@@ -330,8 +330,13 @@ function _reactive_power_redistribution_pv(
     else
         error("No devices in bus $(PSY.get_name(bus))")
     end
-
-    total_active_power = sum(PSY.get_active_power.(devices))
+    # see issue https://github.com/NREL-Sienna/PowerSystems.jl/pull/1463
+    total_active_power = 0.0
+    for d in devices
+        if PSY.get_available(d) && !isa(d, PSY.SynchronousCondenser)
+            total_active_power += PSY.get_active_power(d)
+        end
+    end
 
     if isapprox(total_active_power, 0.0; atol = ISAPPROX_ZERO_TOLERANCE)
         @debug "Total Active Power Output at the bus is $(total_active_power). Using Unit's Base Power"
@@ -532,7 +537,7 @@ function _get_branches_buses(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData})
 end
 
 function _allocate_results_data(
-    branches::Vector{String},
+    branch_names::Vector{String},
     buses::Vector{Int64},
     from_bus::Vector{Int64},
     to_bus::Vector{Int64},
@@ -560,15 +565,15 @@ function _allocate_results_data(
     DataFrames.sort!(bus_df, :bus_number)
 
     branch_df = DataFrames.DataFrame(;
-        line_name = branches,
+        line_name = branch_names,
         bus_from = from_bus,
         bus_to = to_bus,
         P_from_to = branch_activepower_flow_from_to,
         Q_from_to = branch_reactivepower_flow_from_to,
         P_to_from = branch_activepower_flow_to_from,
         Q_to_from = branch_reactivepower_flow_to_from,
-        P_losses = zeros(length(branches)),
-        Q_losses = zeros(length(branches)),
+        P_losses = zeros(length(branch_names)),
+        Q_losses = zeros(length(branch_names)),
     )
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
@@ -597,19 +602,26 @@ function write_results(
     # get bus and branches
     branches, buses = _get_branches_buses(data)
 
+    branch_lookup = get_branch_lookup(data)
     # get branches from/to buses
-    from_bus = Vector{Int}(undef, length(branches))
-    to_bus = Vector{Int}(undef, length(branches))
-    for (i, branch) in enumerate(branches)
-        br = PSY.get_component(PSY.ACTransmission, sys, branch)
-        from_bus[i] = PSY.get_number(PSY.get_arc(br).from)
-        to_bus[i] = PSY.get_number(PSY.get_arc(br).to)
+    from_bus = first.(branches)
+    to_bus = last.(branches)
+
+    branch_names = fill("", length(branches))
+    branch_lookup = get_branch_lookup(data)
+    for br in PSY.get_components(PSY.ACTransmission, sys)
+        if br isa PSY.Transformer3W
+            @warn "3-winding transformers are not supported in the results export"
+            # do the math to recover the flow in each winding from the star bus model?
+            continue
+        end
+        branch_names[branch_lookup[PNM.get_arc_tuple(br)]] = PSY.get_name(br)
     end
 
     result_dict = Dict{Union{String, Char}, Dict{String, DataFrames.DataFrame}}()
     for i in 1:length(data.timestep_map)
         temp_dict = _allocate_results_data(
-            branches,
+            branch_names,
             buses,
             from_bus,
             to_bus,
