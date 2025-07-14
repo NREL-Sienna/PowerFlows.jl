@@ -495,7 +495,9 @@ function enhanced_flat_start!(
             i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.PQ
         ]
         ref_bus_angle = sum(data.bus_angles[ref_bus, time_step]) / length(ref_bus)
-        ref_bus_angle == 0.0 || (x0[2 .* [pv; pq]] .= ref_bus_angle)
+        if ref_bus_angle != 0.0
+            x0[2 .* vcat(pv, pq)] .= ref_bus_angle
+        end
         length(pv) == 0 && length(pq) == 0 && continue
         x0[2 .* pq .- 1] .= sum(data.bus_magnitude[pv, time_step]) / length(pv)
     end
