@@ -396,7 +396,7 @@ function _newton_powerflow(
        get_robust_power_flow(pf)
         improve_x0!(x0, data, time_step, residual)
     else
-        @debug "skipping DC powerflow fallback"
+        @debug "skipping efforts to improve initial guess"
     end
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     J(time_step)  # we need to fill J with values because at this point it was just initialized
@@ -447,29 +447,48 @@ function _newton_powerflow(
     return false
 end
 
+function _smaller_residual(x0::Vector{Float64},
+    newx0::Vector{Float64},
+    time_step::Int64,
+    residual::ACPowerFlowResidual,
+)
+    residual(x0, time_step)
+    residualSize = norm(residual.Rv, 1)
+    residual(newx0, time_step)
+    newResidualSize = norm(residual.Rv, 1)
+    return newResidualSize < residualSize
+end
+
+function _pick_better_x0(x0::Vector{Float64},
+    newx0::Vector{Float64},
+    time_step::Int64,
+    residual::ACPowerFlowResidual,
+    improvement_method::String,
+)
+    if _smaller_residual(x0, newx0, time_step, residual)
+        @info "success: $improvement_method yields smaller residual"
+        copyto!(x0, newx0)
+        residual(x0, time_step) # re-calculate for new x0.
+    else
+        @debug "no improvement from $improvement_method"
+    end
+    return nothing
+end
+
 """If initial residual is large, run a DC power flow and see if that gives
-a better starting point for angles. Return the original or the result of the DC powerflow,
-whichever gives the smaller residual."""
+a better starting point for angles. If so, then overwrite `x0` with the result of the DC
+power flow. If not, keep the original `x0`."""
 function improve_x0!(x0::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
     residual::ACPowerFlowResidual,
 )
-    @debug "Trying to improve x0 via DC powerflow fallback"
-    residualSize = norm(residual.Rv, 1)
+    newx0 = enhanced_flat_start(x0, data, time_step)
+    _pick_better_x0(x0, newx0, time_step, residual, "enhanced flat start")
     _dc_powerflow_fallback!(data, time_step)
-    # is the new starting point better?
     newx0 = calculate_x0(data, time_step)
-    residual(newx0, time_step)
-    newResidualSize = norm(residual.Rv, 1)
-    if newResidualSize < residualSize
-        @info "success: DC powerflow fallback yields better x0"
-        copyto!(x0, newx0)
-        residual(x0, time_step) # re-calculate for new x0.
-    else
-        @debug "no improvement from DC powerflow fallback"
-    end
-    return nothing
+    _pick_better_x0(x0, newx0, time_step, residual, "DC powerflow fallback")
+    return
 end
 
 """Calculate x0 from data."""
@@ -478,16 +497,16 @@ function calculate_x0(data::ACPowerFlowData,
     n_buses = length(data.bus_type[:, 1])
     x0 = Vector{Float64}(undef, 2 * n_buses)
     update_state!(x0, data, time_step)
-    enhanced_flat_start!(x0, data, time_step)
     return x0
 end
 
-function enhanced_flat_start!(
+function enhanced_flat_start(
     x0::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
 )
-    for (_, subnetwork) in data.power_network_matrix.subnetworks
+    newx0 = copy(x0)
+    for subnetwork in values(data.power_network_matrix.subnetworks)
         subnetwork_indices = [data.bus_lookup[ix] for ix in subnetwork]
         ref_bus = [
             i for
@@ -503,12 +522,12 @@ function enhanced_flat_start!(
         ]
         ref_bus_angle = sum(data.bus_angles[ref_bus, time_step]) / length(ref_bus)
         if ref_bus_angle != 0.0
-            x0[2 .* vcat(pv, pq)] .= ref_bus_angle
+            newx0[2 .* vcat(pv, pq)] .= ref_bus_angle
         end
         length(pv) == 0 && length(pq) == 0 && continue
-        x0[2 .* pq .- 1] .= sum(data.bus_magnitude[pv, time_step]) / length(pv)
+        newx0[2 .* pq .- 1] .= sum(data.bus_magnitude[pv, time_step]) / length(pv)
     end
-    return
+    return newx0
 end
 
 """When solving AC power flows, if the initial guess has large residual, we run a DC power 

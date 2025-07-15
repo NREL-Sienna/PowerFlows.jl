@@ -60,12 +60,16 @@ end
     # _initialize_bus_data! corrects the voltages to be "reasonable," between 0.8 and 1.2
     sys4 = deepcopy(sys)
     bad_x0!(sys4)
-    improvement_regex = r".*DC powerflow fallback yields better x0"
-    @test_logs (:info, improvement_regex) match_mode = :any PF.solve_powerflow(pf, sys4)
+    improvement_regex = r".*DC powerflow fallback yields smaller residual.*"
+    @test_logs (:info, improvement_regex) match_mode = :any PF.solve_powerflow(
+        pf,
+        sys4,
+        robust_power_flow = true,
+    )
     pf_no_dc = ACPowerFlow{NewtonRaphsonACPowerFlow}(; robust_power_flow = false)
     sys5 = deepcopy(sys)
     bad_x0!(sys5)
-    @test_logs (:debug, "skipping DC powerflow fallback") match_mode = :any min_level =
+    @test_logs (:debug, "skipping efforts to improve initial guess") match_mode = :any min_level =
         Logging.Debug PF.solve_powerflow(pf_no_dc, sys5)
 end
 
