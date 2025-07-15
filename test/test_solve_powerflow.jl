@@ -406,7 +406,6 @@ end
             atol = 1e-6,
         ),
     )
-    LinearAlgebra.__init__()  # to remove warnings
     ref, pv, pq = PowerFlows.bus_type_idx(data_lu, time_step)
     pvpq = [pv; pq]
     npvpq = length(pvpq)
@@ -418,7 +417,7 @@ end
         J[(npvpq + 1):end, 1:npvpq] * inv(collect(J[1:npvpq, 1:npvpq])) *
         J[1:npvpq, (npvpq + 1):end]
     u_1, (σ_1,), v_1, _ = PROPACK.tsvd_irl(Gs; smallest = true, k = 1)
-    σ, u, v = PowerFlows.find_sigma_uv(J, npvpq)
+    σ, u, v = PowerFlows._singular_value_decomposition(J, npvpq)
 
     @assert isapprox(σ_1, σ, atol = 1e-6)
     # the sign does not matter

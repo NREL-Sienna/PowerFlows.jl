@@ -225,7 +225,7 @@ function PowerFlows._newton_powerflow(
             data.loss_factors[ref, time_step] .= 1.0
         end
         if PowerFlows.get_calculate_voltage_stability_factors(data)
-            σ, u, v = PowerFlows.find_sigma_uv(J, npvpq)
+            σ, u, v = PowerFlows._singular_value_decomposition(J, npvpq)
             data.voltage_stability_factors[ref, time_step] .= 0.0
             data.voltage_stability_factors[first(ref), time_step] = σ
             data.voltage_stability_factors[pv, time_step] .= 0.0
