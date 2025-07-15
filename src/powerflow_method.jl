@@ -471,7 +471,37 @@ function calculate_x0(data::ACPowerFlowData,
     n_buses = length(data.bus_type[:, 1])
     x0 = Vector{Float64}(undef, 2 * n_buses)
     update_state!(x0, data, time_step)
+    enhanced_flat_start!(x0, data, time_step)
     return x0
+end
+
+function enhanced_flat_start!(
+    x0::Vector{Float64},
+    data::ACPowerFlowData,
+    time_step::Int64,
+)
+    for (_, subnetwork) in data.power_network_matrix.subnetworks
+        subnetwork_indices = [data.bus_lookup[ix] for ix in subnetwork]
+        ref_bus = [
+            i for
+            i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.REF
+        ]
+        pv = [
+            i for
+            i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.PV
+        ]
+        pq = [
+            i for
+            i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.PQ
+        ]
+        ref_bus_angle = sum(data.bus_angles[ref_bus, time_step]) / length(ref_bus)
+        if ref_bus_angle != 0.0
+            x0[2 .* vcat(pv, pq)] .= ref_bus_angle
+        end
+        length(pv) == 0 && length(pq) == 0 && continue
+        x0[2 .* pq .- 1] .= sum(data.bus_magnitude[pv, time_step]) / length(pv)
+    end
+    return
 end
 
 """When solving AC power flows, if the initial guess has large residual, we run a DC power 
