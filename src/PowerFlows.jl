@@ -23,7 +23,7 @@ import DataFrames
 import PowerSystems
 import PowerSystems: System, with_units_base
 import LinearAlgebra
-import LinearAlgebra: norm, ldiv!
+import LinearAlgebra: norm, dot, ldiv!
 import KLU
 import SparseArrays
 import InfrastructureSystems
@@ -32,7 +32,6 @@ import SparseArrays: SparseMatrixCSC, SparseVector, sparse, sparsevec
 import JSON3
 import DataStructures: OrderedDict
 import Dates
-
 const IS = InfrastructureSystems
 const PSY = PowerSystems
 const PNM = PowerNetworkMatrices

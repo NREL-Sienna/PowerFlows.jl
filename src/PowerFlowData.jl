@@ -225,8 +225,8 @@ function _calculate_neighbors(
     return neighbors
 end
 
-function error_if_has_network_reduction(m::PNM.PowerNetworkMatrix)
-    if length(PNM.get_reverse_bus_search_map(m.network_reduction)) > 0
+function error_if_has_network_reduction_data(m::PNM.PowerNetworkMatrix)
+    if length(PNM.get_reverse_bus_search_map(m.network_reduction_data)) > 0
         throw(
             NotImplementedError(
                 "AC Power Flow with network reduction is not implemented yet.",
@@ -287,7 +287,7 @@ function PowerFlowData(
         check_connectivity = check_connectivity,
         make_branch_admittance_matrices = true,
     )
-    error_if_has_network_reduction(power_network_matrix)
+    error_if_has_network_reduction_data(power_network_matrix)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 1))
@@ -473,7 +473,7 @@ function PowerFlowData(
     # get the network matrices
     power_network_matrix = PNM.PTDF(sys)
     aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
-    error_if_has_network_reduction(power_network_matrix)
+    error_if_has_network_reduction_data(power_network_matrix)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 1))
@@ -552,7 +552,7 @@ function PowerFlowData(
     # get the network matrices
     power_network_matrix = PNM.VirtualPTDF(sys) # evaluates an empty virtual PTDF
     aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
-    error_if_has_network_reduction(power_network_matrix)
+    error_if_has_network_reduction_data(power_network_matrix)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 2))

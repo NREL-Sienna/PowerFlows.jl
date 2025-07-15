@@ -143,9 +143,9 @@ function _dogleg!(Δx_proposed::Vector{Float64},
             Δx_nr .-= Δx_cauchy
             Δx_diff = Δx_nr
 
-            b = wdot(d, Δx_cauchy, d, Δx_diff)
-            a = wnorm(d, Δx_diff)^2
-            tau = (-b + sqrt(b^2 - 4a * (wnorm(d, Δx_cauchy)^2 - delta^2))) / (2a)
+            b = dot(Δx_cauchy, Δx_diff)
+            a = norm(Δx_diff)^2
+            tau = (-b + sqrt(b^2 - 4a * (norm(Δx_cauchy)^2 - delta^2))) / (2a)
             Δx_cauchy .+= tau .* Δx_diff
             copyto!(Δx_proposed, Δx_cauchy) # update Δx_proposed: dogleg case.
         end
@@ -201,6 +201,9 @@ function _trust_region_step(time_step::Int,
     if rho > eta
         # Successful iteration
         stateVector.r .= residual.Rv
+        residualSize = dot(residual.Rv, residual.Rv)
+        linf = norm(residual.Rv, Inf)
+        @debug "sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed))), angle $(siground(theta))"
         # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
         J(time_step)
         if autoscale
@@ -355,7 +358,11 @@ function _run_powerflow_method(time_step::Int,
     end
 
     delta::Float64 = norm(stateVector.x) > 0 ? factor * norm(stateVector.x) : factor
-    i, converged = 1, false
+    i, converged = 0, false
+    residualSize = dot(residual.Rv, residual.Rv)
+    linf = norm(residual.Rv, Inf)
+    @debug "initially: sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ $(siground(delta))"
+
     bus_types = @view get_bus_type(J.data)[:, time_step]
     while i < maxIterations && !converged
         delta = _trust_region_step(
@@ -474,7 +481,37 @@ function calculate_x0(data::ACPowerFlowData,
     n_buses = length(data.bus_type[:, 1])
     x0 = Vector{Float64}(undef, 2 * n_buses)
     update_state!(x0, data, time_step)
+    enhanced_flat_start!(x0, data, time_step)
     return x0
+end
+
+function enhanced_flat_start!(
+    x0::Vector{Float64},
+    data::ACPowerFlowData,
+    time_step::Int64,
+)
+    for (_, subnetwork) in data.power_network_matrix.subnetworks
+        subnetwork_indices = [data.bus_lookup[ix] for ix in subnetwork]
+        ref_bus = [
+            i for
+            i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.REF
+        ]
+        pv = [
+            i for
+            i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.PV
+        ]
+        pq = [
+            i for
+            i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.PQ
+        ]
+        ref_bus_angle = sum(data.bus_angles[ref_bus, time_step]) / length(ref_bus)
+        if ref_bus_angle != 0.0
+            x0[2 .* vcat(pv, pq)] .= ref_bus_angle
+        end
+        length(pv) == 0 && length(pq) == 0 && continue
+        x0[2 .* pq .- 1] .= sum(data.bus_magnitude[pv, time_step]) / length(pv)
+    end
+    return
 end
 
 """When solving AC power flows, if the initial guess has large residual, we run a DC power 
