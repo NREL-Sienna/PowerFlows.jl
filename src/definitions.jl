@@ -48,3 +48,7 @@ const DEFAULT_VALIDATE_VOLTAGES = true
 const MinMax = NamedTuple{(:min, :max), Tuple{Float64, Float64}}
 const DEFAULT_VALIDATION_RANGE = (min = 0.5, max = 1.5)
 # const MAX_INDS_TO_PRINT = 10
+
+# true = prevent user from computing with the result of a non-converged power 
+# flow via writing NaNs to bus voltages, angles, etc.
+const OVERWRITE_NON_CONVERGED = true
