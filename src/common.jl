@@ -183,7 +183,7 @@ function my_mul_mt(
     y = zeros(length(A.axes[1]))
     for i in 1:length(A.axes[1])
         name_ = A.axes[1][i]
-        y[i] = LinearAlgebra.dot(A[name_, :], x)
+        y[i] = dot(A[name_, :], x)
     end
     return y
 end
@@ -548,3 +548,5 @@ wdot(wx::Vector{Float64}, x::Vector{Float64}, wy::Vector{Float64}, y::Vector{Flo
 
 """Weighted norm of two vectors."""
 wnorm(w::Vector{Float64}, x::Vector{Float64}) = norm(w .* x)
+"""For pretty printing floats in debugging messages."""
+siground(x::Float64) = round(x; sigdigits = 3)

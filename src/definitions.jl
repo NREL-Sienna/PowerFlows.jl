@@ -25,6 +25,14 @@ const DEFAULT_AUTOSCALE = false # correct for scaling of the system
 # typically converges in fewer iteration without autoscaling.
 
 const PF_MAX_LOG = 10
+# only used for Levenberg-Maquardt
+const BIG_λ_THRESHOLD = 100.0
+# 2.0 and 3.0 , or 1.5 and 5.0 for big problems; 
+const DAMPING_INCR = 1.5 # no improvement => increasing damping by this factor.
+const DAMPING_DECR = 5.0 # yes improvement => decrease damping by this factor.
+const DEFAULT_λ_0 = 0.000001 # starting damping factor. TODO could start smaller. Not well-scaled:
+# input is mix of powers (100 MW), voltages (0.8-1.2), and angles (-π/4 to π/4).
+const DEFAULT_MAX_TEST_λs = 20 # give up after increasing damping factor 20 times.
 
 const AC_PF_KW = []
 
