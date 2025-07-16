@@ -1035,7 +1035,6 @@ function write_to_buffers!(
     for (dcline, (from_n, to_n)) in dclines_with_numbers
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
-        CKT = dcline_name_mapping[((from_n, to_n), PSY.get_name(dcline))]
         dcline_name = string(split(PSY.get_name(dcline), "_")[end])
         NAME = _psse_quote_string(dcline_name)
         MDC = Int(PSY.get_power_mode(dcline))
@@ -1104,24 +1103,147 @@ function write_to_buffers!(
 
         @fastprintdelim_unroll(io, false,
             NAME, MDC, RDC, SETVL, VSCHD, VCMOD, RCOMP, DELTI, METER, DCVMIN, CCCITMX)
-        fastprintdelim_psse_default_ownership(io)
         fastprintln(io, CCCACC)
 
         @fastprintdelim_unroll(io, false,
             IPR, NBR, ANMXR, ANMNR, RCR, XCR, EBASR, TRR, TAPR, TMXR, TMNR, STPR, ICR, IFR,
             ITR, IDR)
-        fastprintdelim_psse_default_ownership(io)
         fastprintln(io, XCAPR)
 
         @fastprintdelim_unroll(io, false,
             IPI, NBI, ANMXI, ANMNI, RCI, XCI, EBASI, TRI, TAPI, TMXI, TMNI, STPI, ICI, IFI,
             ITI, IDI)
-        fastprintdelim_psse_default_ownership(io)
         fastprintln(io, XCAPI)
     end
     end_group_33(io, md, exporter, "Two-Terminal DC Transmission Line Data", true)
     exporter.md_valid ||
         (md["dcline_name_mapping"] = serialize_component_ids(dcline_name_mapping))
+end
+
+"""
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Two-Terminal DC Transmission Line Data
+"""
+function write_to_buffers!(
+    exporter::PSSEExporter,
+    ::Val{Symbol("Voltage Source Converter (VSC) DC Transmission Line Data")},
+)
+    io = exporter.raw_buffer
+    md = exporter.md_dict
+    check_33(exporter)
+
+    vsc_lines_with_numbers = get!(exporter.components_cache, "vsc_lines") do
+        vsc_lines = sort!(
+            collect(
+                PSY.get_components(PSY.TwoTerminalVSCLine, exporter.system),
+            );
+            by = branch_to_bus_numbers,
+        )
+        [(vscline, branch_to_bus_numbers(vscline)) for vscline in vsc_lines]
+    end
+    vsc_line_name_mapping = get!(exporter.components_cache, "vsc_line_name_mapping") do
+        create_component_ids(
+            convert_empty_stringvec(PSY.get_name.(first.(vsc_lines_with_numbers))),
+            last.(vsc_lines_with_numbers);
+            singles_to_1 = false,
+        )
+    end
+
+    for (vscline, (from_n, to_n)) in vsc_lines_with_numbers
+        I = md["bus_number_mapping"][from_n]
+        J = md["bus_number_mapping"][to_n]
+        vsc_line_name = string(split(PSY.get_name(vscline), "_")[end])
+        NAME = _psse_quote_string(vsc_line_name)
+        MDC = Int(PSY.get_available(vscline))
+        g = PSY.get_g(vscline)
+        if g == 0.0
+            RDC = g
+        else
+            RDC =
+                1 / (
+                    g * PSY.get_dc_setpoint_from(vscline)^2 /
+                    PSY.get_base_power(exporter.system)
+                )
+        end
+        IBUS1 = I
+        TYPE1 = Int(PSY.get_dc_voltage_control_from(vscline))
+        MODE1 = Int(PSY.get_available(vscline))
+        DCSET1 = PSY.get_dc_setpoint_from(vscline)
+        ACSET1 = PSY.get_ac_setpoint_from(vscline)
+        ALOSS1 = PSSE_DEFAULT
+        BLOSS1 =
+            round(
+                PSY.get_proportional_term(
+                    PSY.get_function_data(PSY.get_converter_loss_from(vscline)),
+                ) * 1e3 * PSY.get_base_power(exporter.system); digits = 5)
+        MINLOSS1 = PSSE_DEFAULT
+        SMAX1 = PSY.get_rating_from(vscline)
+        SMAX1 = if SMAX1 == 9999.0
+            0.0
+        else
+            SMAX1 * PSY.get_base_power(exporter.system)
+        end
+        IMAX1 = PSY.get_max_dc_current_from(vscline)
+        IMAX1 = if IMAX1 == 9999.0
+            0.0
+        else
+            IMAX1
+        end
+        PWF1 = PSY.get_power_factor_weighting_fraction_from(vscline)
+        MAXQ1 =
+            PSY.get_reactive_power_limits_from(vscline).max *
+            PSY.get_base_power(exporter.system)
+        MINQ1 =
+            PSY.get_reactive_power_limits_from(vscline).min *
+            PSY.get_base_power(exporter.system)
+        REMOT1 = get(PSY.get_ext(vscline), "REMOT_FROM", PSSE_DEFAULT)
+        RMPCT1 = get(PSY.get_ext(vscline), "RMPCT_FROM", PSSE_DEFAULT)
+        IBUS2 = J
+        TYPE2 = Int(PSY.get_dc_voltage_control_to(vscline))
+        MODE2 = Int(PSY.get_available(vscline))
+        DCSET2 = PSY.get_dc_setpoint_to(vscline)
+        ACSET2 = PSY.get_ac_setpoint_to(vscline)
+        ALOSS2 = PSSE_DEFAULT
+        BLOSS2 =
+            round(
+                PSY.get_proportional_term(
+                    PSY.get_function_data(PSY.get_converter_loss_to(vscline)),
+                ) * 1e3 * PSY.get_base_power(exporter.system); digits = 5)
+        MINLOSS2 = PSSE_DEFAULT
+        SMAX2 = PSY.get_rating_from(vscline)
+        SMAX2 = if SMAX2 == 9999.0
+            0.0
+        else
+            SMAX2 * PSY.get_base_power(exporter.system)
+        end
+        IMAX2 = PSY.get_max_dc_current_from(vscline)
+        IMAX2 = if IMAX2 == 9999.0
+            0.0
+        else
+            IMAX2
+        end
+        PWF2 = PSY.get_power_factor_weighting_fraction_to(vscline)
+        MAXQ2 =
+            PSY.get_reactive_power_limits_to(vscline).max *
+            PSY.get_base_power(exporter.system)
+        MINQ2 =
+            PSY.get_reactive_power_limits_to(vscline).min *
+            PSY.get_base_power(exporter.system)
+        REMOT2 = get(PSY.get_ext(vscline), "REMOT_TO", PSSE_DEFAULT)
+        RMPCT2 = get(PSY.get_ext(vscline), "RMPCT_TO", PSSE_DEFAULT)
+
+        @fastprintdelim_unroll(io, false, NAME, MDC, RDC)
+        fastprintln(io, RDC)
+
+        @fastprintdelim_unroll(io, false,
+            IBUS1, TYPE1, MODE1, DCSET1, ACSET1, ALOSS1, BLOSS1, MINLOSS1, SMAX1, IMAX1,
+            PWF1, MAXQ1, MINQ1, REMOT1)
+        fastprintln(io, RMPCT1)
+
+        @fastprintdelim_unroll(io, false,
+            IBUS2, TYPE2, MODE2, DCSET2, ACSET2, ALOSS2, BLOSS2, MINLOSS2, SMAX2, IMAX2,
+            PWF2, MAXQ2, MINQ2, REMOT2)
+        fastprintln(io, RMPCT2)
+    end
 end
 
 """
@@ -1207,8 +1329,8 @@ function write_to_buffers!(
 
         @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
             VSET, SHMX, TRMX, VTMN, VTMX, VSMX, IMX, LINX, RMPCT, OWNER,
-            SET1, SET2, VSREF, REMOT, MNAME)
-        fastprintln_psse_default_ownership(io)
+            SET1, SET2, VSREF, REMOT)
+        fastprintln(io, MNAME)
     end
     end_group_33(io, md, exporter, "FACTS Device Data", true)
     exporter.md_valid ||
