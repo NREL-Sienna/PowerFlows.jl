@@ -639,7 +639,6 @@ function write_to_buffers!(
             singles_to_1 = true,
         )
     end
-    println(shunt_name_mapping)
     for shunt in shunts
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
@@ -1121,7 +1120,6 @@ function write_to_buffers!(
                 singles_to_1 = true,
             )
         end
-    println(switched_shunt_name_mapping)
     for shunt in switched_shunts
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
