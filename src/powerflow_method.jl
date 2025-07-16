@@ -384,7 +384,7 @@ function _run_powerflow_method(time_step::Int,
     return converged, i
 end
 
-function loss_factors_helper!(data::ACPowerFlowData,
+function loss_factors_calculation!(data::ACPowerFlowData,
     x0::Vector{Float64},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
@@ -441,7 +441,7 @@ function _newton_powerflow(
 
     if converged
         @info("The $T solver converged after $i iterations.")
-        loss_factors_helper!(data, x0, residual, J, time_step)
+        loss_factors_calculation!(data, x0, residual, J, time_step)
         return true
     end
     @error("The $T solver failed to converge.")
