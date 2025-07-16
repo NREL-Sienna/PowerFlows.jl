@@ -56,7 +56,7 @@ end
     residual(x0, 1)
     residualSize = norm(residual.Rv, 1)
     newx0 = deepcopy(x0)
-    PF.improve_x0!(newx0, data, 1, residual)
+    PF.dc_powerflow_start!(newx0, data, 1, residual)
     residual(newx0, 1)
     newResidualSize = norm(residual.Rv, 1)
     @test x0 !== newx0

@@ -3,6 +3,7 @@ abstract type ACPowerFlowSolverType end
 
 struct NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType end
 struct TrustRegionACPowerFlow <: ACPowerFlowSolverType end
+struct LevenbergMarquardtACPowerFlow <: ACPowerFlowSolverType end
 
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel
     check_reactive_power_limits::Bool
