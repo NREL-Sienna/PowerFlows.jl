@@ -393,11 +393,19 @@ function _newton_powerflow(
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
     if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
+       get_enhanced_flat_start(pf)
+        newx0 = _enhanced_flat_start(x0, data, time_step)
+        _pick_better_x0(x0, newx0, time_step, residual, "enhanced flat start")
+    else
+        @debug "skipping enhanced flat start"
+    end
+    if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
        get_robust_power_flow(pf)
         improve_x0!(x0, data, time_step, residual)
     else
-        @debug "skipping efforts to improve initial guess"
+        @debug "skipping running DC powerflow fallback"
     end
+    residual(x0, time_step)  # re-calculate residual for new x0: might have changed.
     J = PowerFlows.ACPowerFlowJacobian(data, time_step)
     J(time_step)  # we need to fill J with values because at this point it was just initialized
 
@@ -483,8 +491,6 @@ function improve_x0!(x0::Vector{Float64},
     time_step::Int64,
     residual::ACPowerFlowResidual,
 )
-    newx0 = enhanced_flat_start(x0, data, time_step)
-    _pick_better_x0(x0, newx0, time_step, residual, "enhanced flat start")
     _dc_powerflow_fallback!(data, time_step)
     newx0 = calculate_x0(data, time_step)
     _pick_better_x0(x0, newx0, time_step, residual, "DC powerflow fallback")
@@ -500,7 +506,7 @@ function calculate_x0(data::ACPowerFlowData,
     return x0
 end
 
-function enhanced_flat_start(
+function _enhanced_flat_start(
     x0::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
