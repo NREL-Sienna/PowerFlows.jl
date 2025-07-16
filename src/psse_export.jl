@@ -796,12 +796,16 @@ function write_to_buffers!(
     branches_with_numbers = get!(exporter.components_cache, "branches") do
         branches = sort!(
             collect(
-                PSY.get_components(Union{PSY.Line, PSY.MonitoredLine}, exporter.system),
+                PSY.get_components(
+                    Union{PSY.Line, PSY.MonitoredLine, PSY.DiscreteControlledACBranch},
+                    exporter.system,
+                ),
             );
             by = branch_to_bus_numbers,
         )
         [(branch, branch_to_bus_numbers(branch)) for branch in branches]
     end
+
     branch_name_mapping = get!(exporter.components_cache, "branch_name_mapping") do
         create_component_ids(
             convert_empty_stringvec(PSY.get_name.(first.(branches_with_numbers))),
@@ -813,39 +817,61 @@ function write_to_buffers!(
     for (branch, (from_n, to_n)) in branches_with_numbers
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
-        CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
-        if first(CKT) in PSSE_BRANCH_SPECIAL_CHARACTERS
-            if first(CKT) == '&'
-                @error "Exporting branch $(PSY.get_name(branch)) with disallowed name '$CKT'"
-            elseif first(CKT) == '@'
-                @warn "Exporting branch $(PSY.get_name(branch)) with name '$CKT', it will be treated as a breaker"
-            elseif first(CKT) == '*'
-                @warn "Exporting branch $(PSY.get_name(branch)) with name '$CKT', it will be treated as a switch"
-            else
-                error("Should be unreachable")
-            end
-        end
-        # '&', 
-        CKT = _psse_quote_string(CKT)
-        R = PSY.get_r(branch)
-        X = PSY.get_x(branch)
-        B = 0.0  # NOTE PowerSystems only represents BI, BJ
-        RATEA, RATEB, RATEC =
-            with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-                _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT),
-                _value_or_default(PSY.get_rating_b(branch), PSSE_DEFAULT),
-                _value_or_default(PSY.get_rating_c(branch), PSSE_DEFAULT)
-            end
-        GI, BI = 0.0, PSY.get_b(branch).from
-        GJ, BJ = 0.0, PSY.get_b(branch).to
+        BASE_CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
+        BASE_CKT = _psse_quote_string(BASE_CKT)
+
         ST = PSY.get_available(branch) ? 1 : 0
         MET = PSSE_DEFAULT
         LEN = PSSE_DEFAULT
+        R = PSY.get_r(branch)
+        X = PSY.get_x(branch)
 
-        @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B,
-            RATEA, RATEB, RATEC, GI, BI,
-            GJ, BJ, ST, MET, LEN)
-        fastprintln_psse_default_ownership(io)
+        if branch isa PSY.DiscreteControlledACBranch
+            CKT = replace(BASE_CKT, r"^'|'$" => "")
+            CKT = replace(CKT, r"^_" => "")
+            branch_type = PSY.get_discrete_branch_type(branch)
+            if branch_type == PSY.DiscreteControlledBranchType.SWITCH
+                CKT = "*" * CKT
+            elseif branch_type == PSY.DiscreteControlledBranchType.BREAKER
+                CKT = "@" * CKT
+            else
+                warn("Unknown dicrete branch type $branch_type for branch $branch")
+            end
+            CKT = _psse_quote_string(CKT)
+            B = 0.0
+            RATEA, RATEB, RATEC =
+                with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                    _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT),
+                    0.0,
+                    0.0
+                end
+            RATEA = RATEA >= 1e6 ? 0.0 : RATEA
+            GI, BI = 0.0, 0.0
+            GJ, BJ = 0.0, 0.0
+
+            @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B,
+                RATEA, RATEB, RATEC, GI, BI,
+                GJ, BJ, ST, MET, LEN)
+            fastprintln_psse_default_ownership(io)
+        else
+            RATEA, RATEB, RATEC =
+                with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                    _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT),
+                    _value_or_default(PSY.get_rating_b(branch), PSSE_DEFAULT),
+                    _value_or_default(PSY.get_rating_c(branch), PSSE_DEFAULT)
+                end
+            RATEA = (isa(RATEA, Number) && RATEA >= 1e6) ? 0.0 : RATEA
+            RATEB = (isa(RATEB, Number) && RATEB >= 1e6) ? 0.0 : RATEB
+            RATEC = (isa(RATEC, Number) && RATEC >= 1e6) ? 0.0 : RATEC
+            B = PSY.get_b(branch).from * 2
+            GI, BI = 0.0, PSY.get_b(branch).from
+            GJ, BJ = 0.0, PSY.get_b(branch).to
+
+            @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B,
+                RATEA, RATEB, RATEC, GI, BI,
+                GJ, BJ, ST, MET, LEN)
+            fastprintln_psse_default_ownership(io)
+        end
     end
     end_group_33(io, md, exporter, "Non-Transformer Branch Data", true)
     exporter.md_valid ||
