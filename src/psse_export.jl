@@ -1005,6 +1005,126 @@ function write_to_buffers!(
 end
 
 """
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Two-Terminal DC Transmission Line Data
+"""
+function write_to_buffers!(
+    exporter::PSSEExporter,
+    ::Val{Symbol("Two-Terminal DC Transmission Line Data")},
+)
+    io = exporter.raw_buffer
+    md = exporter.md_dict
+    check_33(exporter)
+
+    dclines_with_numbers = get!(exporter.components_cache, "dclines") do
+        dclines = sort!(
+            collect(
+                PSY.get_components(PSY.TwoTerminalLCCLine, exporter.system),
+            );
+            by = branch_to_bus_numbers,
+        )
+        [(dcline, branch_to_bus_numbers(dcline)) for dcline in dclines]
+    end
+    dcline_name_mapping = get!(exporter.components_cache, "dcline_name_mapping") do
+        create_component_ids(
+            convert_empty_stringvec(PSY.get_name.(first.(dclines_with_numbers))),
+            last.(dclines_with_numbers);
+            singles_to_1 = false,
+        )
+    end
+
+    for (dcline, (from_n, to_n)) in dclines_with_numbers
+        I = md["bus_number_mapping"][from_n]
+        J = md["bus_number_mapping"][to_n]
+        CKT = dcline_name_mapping[((from_n, to_n), PSY.get_name(dcline))]
+        dcline_name = string(split(PSY.get_name(dcline), "_")[end])
+        NAME = _psse_quote_string(dcline_name)
+        MDC = Int(PSY.get_power_mode(dcline))
+        RDC =
+            PSY.get_r(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
+            PSY.get_base_power(exporter.system)
+        SETVL = PSY.get_transfer_setpoint(dcline)
+        VSCHD = PSY.get_scheduled_dc_voltage(dcline)
+        VCMOD = PSY.get_switch_mode_voltage(dcline)
+        RCOMP = PSY.get_compounding_resistance(dcline)
+        DELTI = PSSE_DEFAULT
+        METER = PSSE_DEFAULT
+        DCVMIN = PSY.get_min_compounding_voltage(dcline)
+        CCCITMX = PSSE_DEFAULT
+        CCCACC = PSSE_DEFAULT
+        IPR = I
+        NBR = PSY.get_rectifier_bridges(dcline)
+        ANMXR = round(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).max); digits = 5)
+        ANMNR = round(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).min); digits = 5)
+        RCR = round(
+            PSY.get_rectifier_rc(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
+            PSY.get_base_power(exporter.system); digits = 5)
+        XCR = round(
+            PSY.get_rectifier_xc(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
+            PSY.get_base_power(exporter.system); digits = 5)
+        EBASR = PSY.get_rectifier_base_voltage(dcline)
+        TRR = PSY.get_rectifier_transformer_ratio(dcline)
+        TAPR = PSY.get_rectifier_tap_setting(dcline)
+        TMXR = PSY.get_rectifier_tap_limits(dcline).max
+        TMNR = PSY.get_rectifier_tap_limits(dcline).min
+        STPR = PSY.get_rectifier_tap_step(dcline)
+        ICR = PSSE_DEFAULT
+        IFR = PSSE_DEFAULT
+        ITR = PSSE_DEFAULT
+        IDR = PSSE_DEFAULT
+        XCAPR =
+            PSY.get_rectifier_capacitor_reactance(dcline) *
+            PSY.get_rectifier_base_voltage(dcline)^2 /
+            PSY.get_base_power(exporter.system)
+        IPI = J
+        NBI = PSY.get_inverter_bridges(dcline)
+        ANMXI =
+            round(rad2deg(PSY.get_inverter_extinction_angle_limits(dcline).max); digits = 5)
+        ANMNI =
+            round(rad2deg(PSY.get_inverter_extinction_angle_limits(dcline).min); digits = 5)
+        RCI = round(
+            PSY.get_inverter_rc(dcline) * PSY.get_inverter_base_voltage(dcline)^2 /
+            PSY.get_base_power(exporter.system); digits = 5)
+        XCI = round(
+            PSY.get_inverter_xc(dcline) * PSY.get_inverter_base_voltage(dcline)^2 /
+            PSY.get_base_power(exporter.system); digits = 5)
+        EBASI = PSY.get_inverter_base_voltage(dcline)
+        TRI = PSY.get_inverter_transformer_ratio(dcline)
+        TAPI = PSY.get_inverter_tap_setting(dcline)
+        TMXI = PSY.get_inverter_tap_limits(dcline).max
+        TMNI = PSY.get_inverter_tap_limits(dcline).min
+        STPI = PSY.get_inverter_tap_step(dcline)
+        ICI = PSSE_DEFAULT
+        IFI = PSSE_DEFAULT
+        ITI = PSSE_DEFAULT
+        IDI = PSSE_DEFAULT
+        XCAPI =
+            PSY.get_inverter_capacitor_reactance(dcline) *
+            PSY.get_inverter_base_voltage(dcline)^2 /
+            PSY.get_base_power(exporter.system)
+
+        @fastprintdelim_unroll(io, false,
+            NAME, MDC, RDC, SETVL, VSCHD, VCMOD, RCOMP, DELTI, METER, DCVMIN, CCCITMX)
+        fastprintdelim_psse_default_ownership(io)
+        fastprintln(io, CCCACC)
+
+        @fastprintdelim_unroll(io, false,
+            IPR, NBR, ANMXR, ANMNR, RCR, XCR, EBASR, TRR, TAPR, TMXR, TMNR, STPR, ICR, IFR,
+            ITR, IDR)
+        fastprintdelim_psse_default_ownership(io)
+        fastprintln(io, XCAPR)
+
+        @fastprintdelim_unroll(io, false,
+            IPI, NBI, ANMXI, ANMNI, RCI, XCI, EBASI, TRI, TAPI, TMXI, TMNI, STPI, ICI, IFI,
+            ITI, IDI)
+        fastprintdelim_psse_default_ownership(io)
+        fastprintln(io, XCAPI)
+    end
+    end_group_33(io, md, exporter, "Two-Terminal DC Transmission Line Data", true)
+    exporter.md_valid ||
+        (md["dcline_name_mapping"] = serialize_component_ids(dcline_name_mapping))
+end
+
+"""
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Zone Data
 """
 function write_to_buffers!(
