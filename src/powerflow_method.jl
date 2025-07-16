@@ -143,9 +143,9 @@ function _dogleg!(Δx_proposed::Vector{Float64},
             Δx_nr .-= Δx_cauchy
             Δx_diff = Δx_nr
 
-            b = dot(Δx_cauchy, Δx_diff)
-            a = norm(Δx_diff)^2
-            tau = (-b + sqrt(b^2 - 4a * (norm(Δx_cauchy)^2 - delta^2))) / (2a)
+            b = wdot(d, Δx_cauchy, d, Δx_diff)
+            a = wnorm(d, Δx_diff)^2
+            tau = (-b + sqrt(b^2 - 4a * (wnorm(d, Δx_cauchy)^2 - delta^2))) / (2a)
             Δx_cauchy .+= tau .* Δx_diff
             copyto!(Δx_proposed, Δx_cauchy) # update Δx_proposed: dogleg case.
         end

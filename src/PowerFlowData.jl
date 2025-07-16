@@ -219,6 +219,7 @@ function _calculate_neighbors(
     return neighbors
 end
 
+# TODO: add a function in PNM for this.
 function error_if_has_network_reduction_data(m::PNM.PowerNetworkMatrix)
     if length(PNM.get_reverse_bus_search_map(m.network_reduction_data)) > 0
         throw(

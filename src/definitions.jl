@@ -48,3 +48,5 @@ const DEFAULT_VALIDATE_VOLTAGES = true
 const MinMax = NamedTuple{(:min, :max), Tuple{Float64, Float64}}
 const DEFAULT_VALIDATION_RANGE = (min = 0.5, max = 1.5)
 # const MAX_INDS_TO_PRINT = 10
+
+const OVERWRITE_NON_CONVERGED = true # overwrite non-converged time steps with NaN values
