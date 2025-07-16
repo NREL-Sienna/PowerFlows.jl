@@ -1334,7 +1334,14 @@ function write_to_buffers!(
             name = name[(length(string(sienna_bus_number)) + 2):end]
         end
         NAME = _psse_quote_string(name)
-        MODE = PSY.get_control_mode(facts).value
+        MODE = PSY.get_control_mode(facts)
+        if MODE == PSY.FACTSOperationModes.OOS
+            MODE = 0
+        elseif MODE == PSY.FACTSOperationModes.NML
+            MODE = 1
+        else
+            MODE = 2
+        end
         PDES = PSSE_DEFAULT
         QDES = PSSE_DEFAULT
         VSET = PSY.get_voltage_setpoint(facts)
