@@ -34,14 +34,6 @@ function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     return StateVectorCache(x, r, r_predict, Δx_proposed, Δx_cauchy, Δx_nr, ones(size(x0)))
 end
 
-"""Returns a stand-in matrix for singular J's."""
-function _singular_J_fallback(Jv::SparseMatrixCSC{Float64, Int32},
-    x::Vector{Float64})
-    fjac2 = Jv' * Jv
-    lambda = NR_SINGULAR_SCALING * sqrt(length(x) * eps()) * norm(fjac2, 1)
-    return -(fjac2 + lambda * LinearAlgebra.I)
-end
-
 """Solve for the Newton-Raphson step, given the factorization object for `J.Jv` 
 (if non-singular) or its stand-in (if singular)."""
 function _solve_Δx_nr!(stateVector::StateVectorCache, cache::KLULinSolveCache{Int32})
@@ -115,73 +107,6 @@ function _singular_J_fallback(Jv::SparseMatrixCSC{Float64, Int32},
     fjac2 = Jv' * Jv
     lambda = NR_SINGULAR_SCALING * sqrt(length(x) * eps()) * norm(fjac2, 1)
     return -(fjac2 + lambda * LinearAlgebra.I)
-end
-
-"""Solve for the Newton-Raphson step, given the factorization object for `J.Jv` 
-(if non-singular) or its stand-in (if singular)."""
-function _solve_Δx_nr!(stateVector::StateVectorCache, cache::KLULinSolveCache{Int32})
-    copyto!(stateVector.Δx_nr, stateVector.r)
-    solve!(cache, stateVector.Δx_nr)
-    return
-end
-
-"""Check error and do refinement."""
-function _do_refinement!(stateVector::StateVectorCache,
-    A::SparseMatrixCSC{Float64, Int32},
-    cache::KLULinSolveCache{Int32},
-    refinement_threshold::Float64,
-    refinement_eps::Float64,
-)
-    # use stateVector.r_predict as temporary buffer.
-    δ_temp = stateVector.r_predict
-    copyto!(δ_temp, A * stateVector.Δx_nr)
-    δ_temp .-= stateVector.r
-    delta = norm(δ_temp, 1) / norm(stateVector.r, 1)
-    if delta > refinement_threshold
-        stateVector.Δx_nr .= solve_w_refinement(cache,
-            A,
-            stateVector.r,
-            refinement_eps)
-    end
-    return
-end
-
-"""Sets the Newton-Raphson step. Usually, this is just `J.Jv \\ stateVector.r`, but
-`J.Jv` might be singular."""
-function _set_Δx_nr!(stateVector::StateVectorCache,
-    J::ACPowerFlowJacobian,
-    linSolveCache::KLULinSolveCache{Int32},
-    solver::ACPowerFlowSolverType,
-    refinement_threshold::Float64,
-    refinement_eps::Float64)
-    try
-        numeric_refactor!(linSolveCache, J.Jv)
-    catch e
-        if e isa LinearAlgebra.SingularException
-            @warn("$solver hit a point where the Jacobian is singular.")
-            M = _singular_J_fallback(J.Jv, stateVector.x)
-            tempCache = KLULinSolveCache(M)
-            # creating a new solver cache to solve Mx = stateVector.r once. Default ldiv!
-            # might be faster, but singular J's should be rare.
-            full_factor!(tempCache, M)
-            _solve_Δx_nr!(stateVector, tempCache)
-            _do_refinement!(stateVector, M, tempCache, refinement_threshold, refinement_eps)
-            LinearAlgebra.rmul!(stateVector.Δx_nr, -1.0)
-        else
-            @error("KLU factorization failed: $e")
-        end
-    else
-        _solve_Δx_nr!(stateVector, linSolveCache)
-        _do_refinement!(
-            stateVector,
-            J.Jv,
-            linSolveCache,
-            refinement_threshold,
-            refinement_eps,
-        )
-        LinearAlgebra.rmul!(stateVector.Δx_nr, -1.0)
-    end
-    return
 end
 
 """Sets `Δx_proposed` equal to the `Δx` by which we should update `x`. Decides
