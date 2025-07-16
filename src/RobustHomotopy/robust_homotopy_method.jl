@@ -72,7 +72,7 @@ function _second_order_newton(homHess::HomotopyHessian,
     i, converged, stop = 0, false, false
     F_val = F_value(homHess, x, time_step)
     last_tk = homHess.t_k_ref[] == 1.0
-    δ = zeros(size(x, 1))
+    δ = zeros(size(x, 1)) # PERF: allocating
     while i < maxIterations && !converged && !stop
         stop = _second_order_newton_step(
             homHess,
@@ -118,6 +118,7 @@ function _second_order_newton_step(homHess::HomotopyHessian,
 
     # PERF: the line search is taking up 80%+ of the time in _second_order_newton_step
     # evidently I need a better (or better optimized) line search.
+    # (The line search is non-allocating, except for the @warn message.)
     α_star = line_search(x, time_step, homHess, δ)
     if !last_step && norm(δ * α_star) < INSUFFICIENT_CHANGE_IN_X
         # stop case 2: slow progress.

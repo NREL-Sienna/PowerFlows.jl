@@ -29,11 +29,12 @@ function (hess::HomotopyHessian)(x::Vector{Float64}, time_step::Int)
     _update_hessian_matrix_values!(hess.Hv, Rv, hess.data, time_step)
     A_plus_eq_BT_B!(hess.Hv, Jv)
     SparseArrays.nonzeros(hess.Hv) .*= t_k
-    for (bus_ix, bt) in enumerate(get_bus_type(hess.data)[:, time_step])
+    for (bus_ix, bt) in enumerate(get_bus_type(hess.data)[:, time_step]) # PERF: allocating
         if bt == PSY.ACBusTypes.PQ
             hess.Hv[2 * bus_ix - 1, 2 * bus_ix - 1] += (1 - t_k)
         end
     end
+    # PERF: allocating
     hess.grad .= (1 - t_k) * hess.PQ_V_mags .* (x - ones(size(x, 1))) + t_k * Jv' * Rv
     return
 end
@@ -42,7 +43,7 @@ function F_value(hess::HomotopyHessian, x::Vector{Float64}, time_step::Int)
     t_k = hess.t_k_ref[]
     hess.pfResidual(x, time_step)
     Rv = hess.pfResidual.Rv
-    φ_vector = x[hess.PQ_V_mags] .- 1.0
+    φ_vector = x[hess.PQ_V_mags] .- 1.0 # PERF: allocating
     F_value = (1 - t_k) * 0.5 * dot(φ_vector, φ_vector) + t_k * 0.5 * dot(Rv, Rv)
     return F_value
 end
@@ -55,13 +56,14 @@ function gradient_value(hess::HomotopyHessian, x::Vector{Float64}, time_step::In
     # for a 10k bus system, computing J takes over 10x longer than computing F.
     Jv = hess.J.Jv
     mask = hess.PQ_V_mags
+    # PERF: allocating
     grad = (1 - t_k) * (mask .* (x - ones(size(x, 1)))) + t_k * Jv' * hess.pfResidual.Rv
     return grad
 end
 
 function homotopy_x0(data::ACPowerFlowData, time_step::Int)
     x = calculate_x0(data, time_step)
-    for (bus_ix, bt) in enumerate(get_bus_type(data)[:, time_step])
+    for (bus_ix, bt) in enumerate(get_bus_type(data)[:, time_step]) # PERF: allocating
         if bt == PSY.ACBusTypes.PQ
             x[2 * bus_ix - 1] = 1.0
         end
@@ -86,7 +88,8 @@ function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int6
 
     # an over-estimate: I want ordered pairs of vertices that are 2 or fewer
     # steps apart, whereas this counts directed paths of 2 edges.
-    numEdgePairs = sum(x -> length(x)^2, get_branch_lookup(data))
+    # (subtracting the number of non-degenerate quadrilaterals would give a better estimate)
+    numEdgePairs = sum(x -> length(x)^2, get_branch_lookup(data); init = 0.0)
     sizehint!(rows, 4 * numEdgePairs)
     sizehint!(columns, 4 * numEdgePairs)
     sizehint!(values, 4 * numEdgePairs)
@@ -109,9 +112,9 @@ function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int6
                     # structure took into account the bus type
                     for (i, j) in Iterators.product((2 * bus_from - 1, 2 * bus_from),
                         (2 * bus_to - 1, 2 * bus_to))
-                        push!(rows, i)
-                        push!(columns, j)
-                        push!(values, 0.0)
+                        push!(rows, i) # PERF: allocating
+                        push!(columns, j) # PERF: allocating
+                        push!(values, 0.0) # (oddly enough, this line is non-allocating)
                     end
                     push!(visited, (ind, nbrOfNbr))
                 end
