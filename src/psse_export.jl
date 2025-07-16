@@ -639,6 +639,7 @@ function write_to_buffers!(
             singles_to_1 = true,
         )
     end
+    println(shunt_name_mapping)
     for shunt in shunts
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
@@ -1030,6 +1031,152 @@ function write_to_buffers!(
         @fastprintdelim_unroll(io, true, I, ZONAME)
     end
     end_group_33(io, md, exporter, "Zone Data", true)
+end
+
+"""
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 FACTS Device Data
+"""
+function write_to_buffers!(
+    exporter::PSSEExporter,
+    ::Val{Symbol("FACTS Device Data")},
+)
+    io = exporter.raw_buffer
+    md = exporter.md_dict
+    check_33(exporter)
+
+    facts_devices = get!(exporter.components_cache, "facts_devices") do
+        sort!(
+            collect(PSY.get_components(PSY.FACTSControlDevice, exporter.system));
+            by = PSY.get_name,
+        )
+    end
+    facts_name_mapping = get!(exporter.components_cache, "facts_name_mapping") do
+        create_component_ids(
+            convert_empty_stringvec(PSY.get_name.(facts_devices)),
+            PSY.get_number.(PSY.get_bus.(facts_devices));
+            singles_to_1 = true,
+        )
+    end
+
+    for facts in facts_devices
+        sienna_bus_number = PSY.get_number(PSY.get_bus(facts))
+        I = md["bus_number_mapping"][sienna_bus_number]
+        J = PSSE_DEFAULT
+        name = PSY.get_name(facts)
+        if startswith(name, string(sienna_bus_number) * "_")
+            name = name[(length(string(sienna_bus_number)) + 2):end]
+        end
+        NAME = _psse_quote_string(name)
+        MODE = PSY.get_control_mode(facts).value
+        PDES = PSSE_DEFAULT
+        QDES = PSSE_DEFAULT
+        VSET = PSY.get_voltage_setpoint(facts)
+        SHMX = PSY.get_max_shunt_current(facts)
+        TRMX = PSSE_DEFAULT
+        VTMX = PSSE_DEFAULT
+        VTMN = PSSE_DEFAULT
+        VSMX = PSSE_DEFAULT
+        IMX = PSSE_DEFAULT
+        LINX = PSSE_DEFAULT
+        RMPCT = PSY.get_reactive_power_required(facts)
+        OWNER = PSSE_DEFAULT
+        SET1 = PSSE_DEFAULT
+        SET2 = PSSE_DEFAULT
+        VSREF = PSSE_DEFAULT
+        REMOT = PSSE_DEFAULT
+        MNAME = PSSE_DEFAULT
+
+        @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
+            VSET, SHMX, TRMX, VTMN, VTMX, VSMX, IMX, LINX, RMPCT, OWNER,
+            SET1, SET2, VSREF, REMOT, MNAME)
+        fastprintln_psse_default_ownership(io)
+    end
+    end_group_33(io, md, exporter, "FACTS Device Data", true)
+    exporter.md_valid ||
+        (md["facts_name_mapping"] = serialize_component_ids(facts_name_mapping))
+end
+
+"""
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 FACTS Device Data
+"""
+function write_to_buffers!(
+    exporter::PSSEExporter,
+    ::Val{Symbol("Switched Shunt Data")},
+)
+    io = exporter.raw_buffer
+    md = exporter.md_dict
+    check_33(exporter)
+
+    switched_shunts = get!(exporter.components_cache, "switched_shunts") do
+        sort!(
+            collect(PSY.get_components(PSY.SwitchedAdmittance, exporter.system));
+            by = PSY.get_name,
+        )
+    end
+    switched_shunt_name_mapping =
+        get!(exporter.components_cache, "switched_shunt_name_mapping") do
+            create_component_ids(
+                convert_empty_stringvec(PSY.get_name.(switched_shunts)),
+                PSY.get_number.(PSY.get_bus.(switched_shunts));
+                singles_to_1 = true,
+            )
+        end
+    println(switched_shunt_name_mapping)
+    for shunt in switched_shunts
+        sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
+        I = md["bus_number_mapping"][sienna_bus_number]
+        MODSW = PSSE_DEFAULT
+        ADJM = PSSE_DEFAULT
+        STAT = PSY.get_available(shunt) ? 1 : 0
+        VSWHI = PSY.get_admittance_limits(shunt).max
+        VSWLO = PSY.get_admittance_limits(shunt).min
+        SWREM = PSSE_DEFAULT
+        RMPCT = PSSE_DEFAULT
+        RMIDNT = PSSE_DEFAULT
+        BINIT = imag(PSY.get_Y(shunt)) * PSY.get_base_power(exporter.system)
+
+        steps = PSY.get_number_of_steps(shunt)
+        increases = PSY.get_Y_increase(shunt)
+
+        N_vals = []
+        B_vals = []
+        for (N, B) in zip(steps, increases)
+            push!(N_vals, N)
+            push!(B_vals, imag(B) * PSY.get_base_power(exporter.system))
+        end
+
+        while length(N_vals) < 8
+            push!(N_vals, PSSE_DEFAULT)
+            push!(B_vals, PSSE_DEFAULT)
+        end
+
+        N1 = get(N_vals, 1, PSSE_DEFAULT)
+        B1 = get(B_vals, 1, PSSE_DEFAULT)
+        N2 = get(N_vals, 2, PSSE_DEFAULT)
+        B2 = get(B_vals, 2, PSSE_DEFAULT)
+        N3 = get(N_vals, 3, PSSE_DEFAULT)
+        B3 = get(B_vals, 3, PSSE_DEFAULT)
+        N4 = get(N_vals, 4, PSSE_DEFAULT)
+        B4 = get(B_vals, 4, PSSE_DEFAULT)
+        N5 = get(N_vals, 5, PSSE_DEFAULT)
+        B5 = get(B_vals, 5, PSSE_DEFAULT)
+        N6 = get(N_vals, 6, PSSE_DEFAULT)
+        B6 = get(B_vals, 6, PSSE_DEFAULT)
+        N7 = get(N_vals, 7, PSSE_DEFAULT)
+        B7 = get(B_vals, 7, PSSE_DEFAULT)
+        N8 = get(N_vals, 8, PSSE_DEFAULT)
+        B8 = get(B_vals, 8, PSSE_DEFAULT)
+
+        @fastprintdelim_unroll(io, true, I, MODSW, ADJM, STAT,
+            VSWHI, VSWLO, SWREM, RMPCT, RMIDNT, BINIT,
+            N1, B1, N2, B2, N3, B3, N4, B4, N5, B5, N6, B6, N7, B7, N8, B8)
+    end
+    end_group_33(io, md, exporter, "Switched Shunt Data", true)
+    exporter.md_valid ||
+        (
+            md["switched_shunt_name_mapping"] =
+                serialize_component_ids(switched_shunt_name_mapping)
+        )
 end
 
 """
