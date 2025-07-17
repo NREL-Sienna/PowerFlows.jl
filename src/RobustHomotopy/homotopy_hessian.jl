@@ -6,7 +6,6 @@ struct HomotopyHessian
     PQ_V_mags::BitVector # true iff that coordinate in the state vector is V_mag at a PQ bus
     grad::Vector{Float64}
     Hv::SparseMatrixCSC{Float64, Int32}
-    t_k_ref::Base.RefValue{Float64}
 end
 
 """Does `A += B' * B`, in a way that preserves the sparse structure of `A`, if possible.
@@ -20,8 +19,7 @@ function A_plus_eq_BT_B!(A::SparseMatrixCSC, B::SparseMatrixCSC)
 end
 
 """Compute value of gradient and Hessian at x."""
-function (hess::HomotopyHessian)(x::Vector{Float64}, time_step::Int)
-    t_k = hess.t_k_ref[]
+function (hess::HomotopyHessian)(x::Vector{Float64}, t_k::Float64, time_step::Int)
     hess.pfResidual(x, time_step)
     Rv = hess.pfResidual.Rv
     hess.J(time_step)
@@ -39,8 +37,7 @@ function (hess::HomotopyHessian)(x::Vector{Float64}, time_step::Int)
     return
 end
 
-function F_value(hess::HomotopyHessian, x::Vector{Float64}, time_step::Int)
-    t_k = hess.t_k_ref[]
+function F_value(hess::HomotopyHessian, t_k::Float64, x::Vector{Float64}, time_step::Int)
     hess.pfResidual(x, time_step)
     Rv = hess.pfResidual.Rv
     φ_vector = x[hess.PQ_V_mags] .- 1.0 # PERF: allocating
@@ -48,8 +45,12 @@ function F_value(hess::HomotopyHessian, x::Vector{Float64}, time_step::Int)
     return F_value
 end
 
-function gradient_value(hess::HomotopyHessian, x::Vector{Float64}, time_step::Int)
-    t_k = hess.t_k_ref[]
+function gradient_value!(grad::Vector{Float64},
+    hess::HomotopyHessian,
+    t_k::Float64,
+    x::Vector{Float64},
+    time_step::Int,
+)
     hess.pfResidual(x, time_step)
     hess.J(time_step) # PERF bottleneck. Look into a different line search strategy?
     # or otherwise reduce the number of gradient computations?
@@ -57,7 +58,7 @@ function gradient_value(hess::HomotopyHessian, x::Vector{Float64}, time_step::In
     Jv = hess.J.Jv
     mask = hess.PQ_V_mags
     # PERF: allocating
-    grad = (1 - t_k) * (mask .* (x - ones(size(x, 1)))) + t_k * Jv' * hess.pfResidual.Rv
+    grad .= (1 - t_k) * (mask .* (x - ones(size(x, 1)))) + t_k * Jv' * hess.pfResidual.Rv
     return grad
 end
 
@@ -78,7 +79,7 @@ function HomotopyHessian(data::ACPowerFlowData, time_step::Int)
     nbuses = size(get_bus_type(data), 1)
     PQ_mask = get_bus_type(data)[:, time_step] .== (PSY.ACBusTypes.PQ,)
     PQ_V_mags = collect(Iterators.flatten(zip(PQ_mask, falses(nbuses))))
-    return HomotopyHessian(data, pfResidual, J, PQ_V_mags, zeros(2 * nbuses), Hv, Ref(0.0))
+    return HomotopyHessian(data, pfResidual, J, PQ_V_mags, zeros(2 * nbuses), Hv)
 end
 
 function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int64)
