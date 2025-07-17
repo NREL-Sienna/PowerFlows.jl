@@ -45,6 +45,7 @@ const AC_SOLVERS_TO_TEST = (
     NewtonRaphsonACPowerFlow,
     TrustRegionACPowerFlow,
     LevenbergMarquardtACPowerFlow,
+    RobustHomotopyPowerFlow,
 )
 
 LOG_FILE = "power-flows.log"
