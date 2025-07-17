@@ -7,6 +7,7 @@ export DCPowerFlow
 export NewtonRaphsonACPowerFlow
 export TrustRegionACPowerFlow
 export LevenbergMarquardtACPowerFlow
+export RobustHomotopyPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow
@@ -33,6 +34,10 @@ import SparseArrays: SparseMatrixCSC, SparseVector, sparse, sparsevec
 import JSON3
 import DataStructures: OrderedDict
 import Dates
+import MUMPS
+import MUMPS: Mumps
+import MPI
+
 const IS = InfrastructureSystems
 const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
@@ -53,4 +58,8 @@ include("powerflow_setup.jl")
 include("powerflow_method.jl")
 include("levenberg-marquardt.jl")
 include("post_processing.jl")
+include("RobustHomotopy/MUMPS_helpers.jl")
+include("RobustHomotopy/homotopy_hessian.jl")
+include("RobustHomotopy/wolfe_conditions.jl")
+include("RobustHomotopy/robust_homotopy_method.jl")
 end

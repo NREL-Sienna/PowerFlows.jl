@@ -34,6 +34,8 @@ const DEFAULT_λ_0 = 0.000001 # starting damping factor. TODO could start smalle
 # input is mix of powers (100 MW), voltages (0.8-1.2), and angles (-π/4 to π/4).
 const DEFAULT_MAX_TEST_λs = 20 # give up after increasing damping factor 20 times.
 
+const DEFAULT_Δt_k = 0.2
+
 const AC_PF_KW = []
 
 const PSSE_DEFAULT_EXPORT_NAME = "export"

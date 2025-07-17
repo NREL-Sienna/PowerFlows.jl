@@ -34,14 +34,6 @@ function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     return StateVectorCache(x, r, r_predict, Δx_proposed, Δx_cauchy, Δx_nr, ones(size(x0)))
 end
 
-"""Returns a stand-in matrix for singular J's."""
-function _singular_J_fallback(Jv::SparseMatrixCSC{Float64, Int32},
-    x::Vector{Float64})
-    fjac2 = Jv' * Jv
-    lambda = NR_SINGULAR_SCALING * sqrt(length(x) * eps()) * norm(fjac2, 1)
-    return -(fjac2 + lambda * LinearAlgebra.I)
-end
-
 """Solve for the Newton-Raphson step, given the factorization object for `J.Jv` 
 (if non-singular) or its stand-in (if singular)."""
 function _solve_Δx_nr!(stateVector::StateVectorCache, cache::KLULinSolveCache{Int32})
@@ -107,6 +99,14 @@ function _set_Δx_nr!(stateVector::StateVectorCache,
         LinearAlgebra.rmul!(stateVector.Δx_nr, -1.0)
     end
     return
+end
+
+"""Returns a stand-in matrix for singular J's."""
+function _singular_J_fallback(Jv::SparseMatrixCSC{Float64, Int32},
+    x::Vector{Float64})
+    fjac2 = Jv' * Jv
+    lambda = NR_SINGULAR_SCALING * sqrt(length(x) * eps()) * norm(fjac2, 1)
+    return -(fjac2 + lambda * LinearAlgebra.I)
 end
 
 """Sets `Δx_proposed` equal to the `Δx` by which we should update `x`. Decides
