@@ -315,7 +315,7 @@ function PowerFlowData(
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true,
-    correct_bustypes = false)
+    correct_bustypes::Bool = false)
     calculate_loss_factors = pf.calculate_loss_factors
     generator_slack_participation_factors = pf.generator_slack_participation_factors
     calculate_voltage_stability_factors = pf.calculate_voltage_stability_factors
@@ -394,10 +394,10 @@ function PowerFlowData(
         converged,
         loss_factors,
         calculate_loss_factors,
-        correct_bustypes,
-        generator_slack_participation_factors,
         voltage_stability_factors,
         calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
+        correct_bustypes,
     )
 end
 
@@ -474,6 +474,7 @@ function PowerFlowData(
         calculate_loss_factors,
         voltage_stability_factors,
         calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
         correct_bustypes,
     )
 end
@@ -553,6 +554,7 @@ function PowerFlowData(
         calculate_loss_factors,
         voltage_stability_factors,
         calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
         correct_bustypes,
     )
 end
@@ -631,6 +633,7 @@ function PowerFlowData(
         calculate_loss_factors,
         voltage_stability_factors,
         calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
         correct_bustypes,
     )
 end

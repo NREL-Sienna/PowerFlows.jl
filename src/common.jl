@@ -210,6 +210,7 @@ function make_dc_powerflowdata(
     calculate_loss_factors,
     voltage_stability_factors,
     calculate_voltage_stability_factors,
+    generator_slack_participation_factors,
     correct_bustypes,
 )
     branch_type = Vector{DataType}(undef, length(branch_lookup))
@@ -237,6 +238,7 @@ function make_dc_powerflowdata(
         calculate_loss_factors,
         voltage_stability_factors,
         calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
         correct_bustypes,
     )
 end
@@ -405,10 +407,10 @@ function make_powerflowdata(
     converged,
     loss_factors,
     calculate_loss_factors,
-    correct_bustypes::Bool = false,
-    generator_slack_participation_factors = nothing,
     voltage_stability_factors = nothing,
     calculate_voltage_stability_factors = nothing,
+    generator_slack_participation_factors = nothing,
+    correct_bustypes::Bool = false,
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
