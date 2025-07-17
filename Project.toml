@@ -15,6 +15,7 @@ Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 PowerNetworkMatrices = "bed98974-b02a-5e2f-9fe0-a103f5c450dd"
 PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 DataFrames = "1"
@@ -28,4 +29,5 @@ Logging = "1"
 PowerNetworkMatrices = "^0.13"
 PowerSystems = "^4.6"
 SparseArrays = "1"
+StaticArrays = "1.9.13"
 julia = "^1.6"
