@@ -266,7 +266,8 @@ function _set_state_vars_at_bus!(
     # When bustype == PQ PSY.ACBus, state variables are Voltage Magnitude and Voltage Angle
     # delta_vm = (vm_1 = data.bus_magnitude[ix, time_step]) - StateVector[2 * ix - 1]
     vm_1 = data.bus_magnitude[ix, time_step]
-    vm_2 = data.bus_magnitude[ix, time_step] = StateVector[2 * ix - 1]
+    vm_2 = StateVector[2 * ix - 1]
+    data.bus_magnitude[ix, time_step] = vm_2
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
     # update P_net and Q_net for ZIP loads
     P_net[ix] +=
