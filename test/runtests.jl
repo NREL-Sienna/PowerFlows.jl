@@ -13,6 +13,7 @@ using DataStructures
 import SparseArrays
 import SparseArrays: SparseMatrixCSC, sparse, sprandn, sprand
 import Random
+import PROPACK
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
@@ -42,7 +43,9 @@ include("test_utils/legacy_pf.jl")
 const AC_SOLVERS_TO_TEST = (
     LUACPowerFlow,
     NewtonRaphsonACPowerFlow,
-    TrustRegionACPowerFlow)
+    TrustRegionACPowerFlow,
+    LevenbergMarquardtACPowerFlow,
+)
 
 LOG_FILE = "power-flows.log"
 

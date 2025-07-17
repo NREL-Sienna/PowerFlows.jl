@@ -201,6 +201,9 @@ function _trust_region_step(time_step::Int,
     if rho > eta
         # Successful iteration
         stateVector.r .= residual.Rv
+        residualSize = dot(residual.Rv, residual.Rv)
+        linf = norm(residual.Rv, Inf)
+        @debug "sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed))), angle $(siground(theta))"
         # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
         J(time_step)
         if autoscale
@@ -355,7 +358,11 @@ function _run_powerflow_method(time_step::Int,
     end
 
     delta::Float64 = norm(stateVector.x) > 0 ? factor * norm(stateVector.x) : factor
-    i, converged = 1, false
+    i, converged = 0, false
+    residualSize = dot(residual.Rv, residual.Rv)
+    linf = norm(residual.Rv, Inf)
+    @debug "initially: sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ $(siground(delta))"
+
     bus_types = @view get_bus_type(J.data)[:, time_step]
     while i < maxIterations && !converged
         delta = _trust_region_step(
@@ -382,113 +389,52 @@ function _newton_powerflow(
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
+    # setup: common code
     residual = ACPowerFlowResidual(data, time_step)
-    x0 = calculate_x0(data, time_step)
-    residual(x0, time_step)
-    if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
-       get_robust_power_flow(pf)
-        improve_x0!(x0, data, time_step, residual)
-    else
-        @debug "skipping DC powerflow fallback"
+    x0 = improve_x0(pf, data, residual, time_step)
+    J = ACPowerFlowJacobian(data, time_step)
+    J(time_step)
+    converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
+    i = 0
+
+    if !converged
+        bus_types = @view get_bus_type(J.data)[:, time_step]
+        validate_vms::Bool = get(
+            kwargs,
+            :validate_voltages,
+            DEFAULT_VALIDATE_VOLTAGES,
+        )
+        validation_range::MinMax = get(
+            kwargs,
+            :vm_validation_range,
+            DEFAULT_VALIDATION_RANGE,
+        )
+        validate_vms && validate_voltages(x0, bus_types, validation_range, 0)
+        linSolveCache = KLULinSolveCache(J.Jv)
+        symbolic_factor!(linSolveCache, J.Jv)
+        stateVector = StateVectorCache(x0, residual.Rv)
+
+        converged, i = _run_powerflow_method(
+            time_step,
+            stateVector,
+            linSolveCache,
+            residual,
+            J,
+            T;
+            kwargs...,
+        )
     end
-    J = PowerFlows.ACPowerFlowJacobian(data, time_step)
-    J(time_step)  # we need to fill J with values because at this point it was just initialized
 
-    if sum(abs, residual.Rv) > LARGE_RESIDUAL * length(residual.Rv)
-        lg_res, ix = findmax(residual.Rv)
-        lg_res_rounded = round(lg_res; sigdigits = 3)
-        pow_type = ix % 2 == 1 ? "active" : "reactive"
-        bus_ix = div(ix + 1, 2)
-        bus_no = axes(data.power_network_matrix, 1)[bus_ix]
-        @warn "Initial guess provided results in a large initial residual of $lg_res_rounded. " *
-              "Largest residual at bus $bus_no ($bus_ix by matrix indexing; $pow_type power)"
-    end
-
-    bus_types = @view get_bus_type(J.data)[:, time_step]
-    validate_vms::Bool = get(
-        kwargs,
-        :validate_voltages,
-        DEFAULT_VALIDATE_VOLTAGES,
-    )
-    validation_range::MinMax = get(
-        kwargs,
-        :vm_validation_range,
-        DEFAULT_VALIDATION_RANGE,
-    )
-    validate_vms && validate_voltages(x0, bus_types, validation_range, 0)
-    linSolveCache = KLULinSolveCache(J.Jv)
-    symbolic_factor!(linSolveCache, J.Jv)
-    stateVector = StateVectorCache(x0, residual.Rv)
-
-    converged, i = _run_powerflow_method(
-        time_step,
-        stateVector,
-        linSolveCache,
-        residual,
-        J,
-        T;
-        kwargs...,
-    )
     if converged
         @info("The $T solver converged after $i iterations.")
-        if data.calculate_loss_factors
-            calculate_loss_factors(data, J.Jv, time_step)
+        if get_calculate_loss_factors(data)
+            _calculate_loss_factors(data, J.Jv, time_step)
+        end
+        if get_calculate_voltage_stability_factors(data)
+            _calculate_voltage_stability_factors(data, J.Jv, time_step)
         end
         return true
     end
     @error("The $T solver failed to converge.")
     return false
-end
-
-"""If initial residual is large, run a DC power flow and see if that gives
-a better starting point for angles. Return the original or the result of the DC powerflow,
-whichever gives the smaller residual."""
-function improve_x0!(x0::Vector{Float64},
-    data::ACPowerFlowData,
-    time_step::Int64,
-    residual::ACPowerFlowResidual,
-)
-    @debug "Trying to improve x0 via DC powerflow fallback"
-    residualSize = norm(residual.Rv, 1)
-    _dc_powerflow_fallback!(data, time_step)
-    # is the new starting point better?
-    newx0 = calculate_x0(data, time_step)
-    residual(newx0, time_step)
-    newResidualSize = norm(residual.Rv, 1)
-    if newResidualSize < residualSize
-        @info "success: DC powerflow fallback yields better x0"
-        copyto!(x0, newx0)
-        residual(x0, time_step) # re-calculate for new x0.
-    else
-        @debug "no improvement from DC powerflow fallback"
-    end
-    return nothing
-end
-
-"""Calculate x0 from data."""
-function calculate_x0(data::ACPowerFlowData,
-    time_step::Int64)
-    n_buses = length(data.bus_type[:, 1])
-    x0 = Vector{Float64}(undef, 2 * n_buses)
-    update_state!(x0, data, time_step)
-    return x0
-end
-
-"""When solving AC power flows, if the initial guess has large residual, we run a DC power 
-flow as a fallback. This runs a DC powerflow on `data::ACPowerFlowData` for the given
-`time_step`, and writes the solution to `data.bus_angles`."""
-function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
-    # dev note: for DC, we can efficiently solve for all timesteps at once, and we want branch
-    # flows. For AC fallback, we're only interested in the current timestep, and no branch flows
-    # PERF: if multi-period and multiple time steps have bad initial guesses,
-    #       we're re-creating this factorization for each time step. Store it inside
-    #       data.aux_network_matrix instead.
-    ABA_matrix = data.aux_network_matrix.data
-    solver_cache = KLULinSolveCache(ABA_matrix)
-    full_factor!(solver_cache, ABA_matrix)
-    p_inj =
-        data.bus_activepower_injection[data.valid_ix, time_step] -
-        data.bus_activepower_withdrawals[data.valid_ix, time_step]
-    solve!(solver_cache, p_inj)
-    data.bus_angles[data.valid_ix, time_step] .= p_inj
 end

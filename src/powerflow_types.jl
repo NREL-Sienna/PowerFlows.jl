@@ -3,16 +3,19 @@ abstract type ACPowerFlowSolverType end
 
 struct NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType end
 struct TrustRegionACPowerFlow <: ACPowerFlowSolverType end
+struct LevenbergMarquardtACPowerFlow <: ACPowerFlowSolverType end
 
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel
     check_reactive_power_limits::Bool
     exporter::Union{Nothing, PowerFlowEvaluationModel}
     calculate_loss_factors::Bool
+    calculate_voltage_stability_factors::Bool
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
         Vector{Dict{Tuple{DataType, String}, Float64}},
     }
+    enhanced_flat_start::Bool
     robust_power_flow::Bool
 end
 
@@ -20,18 +23,22 @@ ACPowerFlow{ACSolver}(;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
+    calculate_voltage_stability_factors::Bool = false,
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
         Vector{Dict{Tuple{DataType, String}, Float64}},
     } = nothing,
+    enhanced_flat_start::Bool = true,
     robust_power_flow::Bool = false,
 ) where {ACSolver <: ACPowerFlowSolverType} =
     ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,
         calculate_loss_factors,
+        calculate_voltage_stability_factors,
         generator_slack_participation_factors,
+        enhanced_flat_start,
         robust_power_flow,
     )
 
@@ -40,20 +47,26 @@ ACPowerFlow(
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
+    calculate_voltage_stability_factors::Bool = false,
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
         Vector{Dict{Tuple{DataType, String}, Float64}},
     } = nothing,
+    enhanced_flat_start::Bool = true,
     robust_power_flow::Bool = false,
 ) = ACPowerFlow{ACSolver}(
     check_reactive_power_limits,
     exporter,
     calculate_loss_factors,
+    calculate_voltage_stability_factors,
     generator_slack_participation_factors,
+    enhanced_flat_start,
     robust_power_flow,
 )
 
+get_enhanced_flat_start(pf::ACPowerFlow{ACSolver}) where {ACSolver} =
+    pf.enhanced_flat_start
 get_robust_power_flow(pf::ACPowerFlow{ACSolver}) where {ACSolver} = pf.robust_power_flow
 
 abstract type AbstractDCPowerFlow <: PowerFlowEvaluationModel end

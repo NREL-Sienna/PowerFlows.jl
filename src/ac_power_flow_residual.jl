@@ -207,7 +207,7 @@ function _setpq(
 end
 
 # dispatching on Val for performance reasons.
-function _set_state_vars_at_bus!(
+function _set_state_variables_at_bus!(
     ix::Int,
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
@@ -229,7 +229,7 @@ function _set_state_vars_at_bus!(
     )
 end
 
-function _set_state_vars_at_bus!(
+function _set_state_variables_at_bus!(
     ix::Int,
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
@@ -253,7 +253,7 @@ function _set_state_vars_at_bus!(
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
 end
 
-function _set_state_vars_at_bus!(
+function _set_state_variables_at_bus!(
     ix::Int,
     P_net::Vector{Float64},
     Q_net::Vector{Float64},
@@ -333,7 +333,7 @@ function _update_residual_values!(
 
         for (ix, bt, p_bus_slack) in
             zip(subnetwork_buses, bus_types[subnetwork_buses], P_slack)
-            _set_state_vars_at_bus!(
+            _set_state_variables_at_bus!(
                 ix,
                 P_net,
                 Q_net,

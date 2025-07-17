@@ -23,7 +23,7 @@ flows and angles, as well as these ones.
 - `bus_lookup::Dict{Int, Int}`:
         dictionary linking the system's bus number with the rows of either
         "power_network_matrix" or "aux_network_matrix".
-- `branch_lookup::Dict{String, Int}`:
+- `branch_lookup::Dict{Tuple{Int, Int}, Int}`:
         dictionary linking the branch name with the column name of either the
         "power_network_matrix" or "aux_network_matrix".
 - `bus_activepower_injection::Matrix{Float64}`:
@@ -95,7 +95,7 @@ struct PowerFlowData{
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
 } <: PowerFlowContainer
     bus_lookup::Dict{Int, Int}
-    branch_lookup::Dict{String, Int}
+    branch_lookup::Dict{Tuple{Int, Int}, Int}
     bus_activepower_injection::Matrix{Float64}
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
@@ -126,6 +126,8 @@ struct PowerFlowData{
     converged::Vector{Bool}
     loss_factors::Union{Matrix{Float64}, Nothing}
     calculate_loss_factors::Bool
+    voltage_stability_factors::Union{Matrix{Float64}, Nothing}
+    calculate_voltage_stability_factors::Bool
 end
 
 # aliases for specific type parameter combinations.
@@ -144,8 +146,8 @@ const ACPowerFlowData = PowerFlowData{
 
 const PTDFPowerFlowData = PowerFlowData{
     PNM.PTDF{
-        Tuple{Vector{Int64}, Vector{String}},
-        Tuple{Dict{Int64, Int64}, Dict{String, Int64}},
+        Tuple{Vector{Int64}, Vector{Tuple{Int, Int}}},
+        Tuple{Dict{Int64, Int64}, Dict{Tuple{Int, Int}, Int64}},
         Matrix{Float64},
     },
     PNM.ABA_Matrix{
@@ -157,8 +159,8 @@ const PTDFPowerFlowData = PowerFlowData{
 
 const vPTDFPowerFlowData = PowerFlowData{
     PNM.VirtualPTDF{
-        Tuple{Vector{String}, Vector{Int64}},
-        Tuple{Dict{String, Int64}, Dict{Int64, Int64}},
+        Tuple{Vector{Tuple{Int, Int}}, Vector{Int64}},
+        Tuple{Dict{Tuple{Int, Int}, Int64}, Dict{Int64, Int64}},
     },
     PNM.ABA_Matrix{
         Tuple{Vector{Int64}, Vector{Int64}},
@@ -174,8 +176,8 @@ const ABAPowerFlowData = PowerFlowData{
         PNM.KLU.KLUFactorization{Float64, Int64},
     },
     PNM.BA_Matrix{
-        Tuple{Vector{Int64}, Vector{String}},
-        Tuple{Dict{Int64, Int64}, Dict{String, Int64}}},
+        Tuple{Vector{Int64}, Vector{Tuple{Int, Int}}},
+        Tuple{Dict{Int64, Int64}, Dict{Tuple{Int, Int}, Int64}}},
 }
 
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
@@ -217,6 +219,10 @@ get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 supports_multi_period(::PowerFlowData) = true
 get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
+get_calculate_loss_factors(pfd::PowerFlowData) = pfd.calculate_loss_factors
+get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
+get_calculate_voltage_stability_factors(pfd::PowerFlowData) =
+    pfd.calculate_voltage_stability_factors
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
@@ -245,6 +251,17 @@ function _calculate_neighbors(
         push!(neighbors[J[nz]], I[nz])
     end
     return neighbors
+end
+
+# TODO: add a function in PNM for this.
+function error_if_has_network_reduction_data(m::PNM.PowerNetworkMatrix)
+    if length(PNM.get_reverse_bus_search_map(m.network_reduction_data)) > 0
+        throw(
+            NotImplementedError(
+                "AC Power Flow with network reduction is not implemented yet.",
+            ),
+        )
+    end
 end
 
 """
@@ -280,6 +297,7 @@ function PowerFlowData(
     correct_bustypes = false)
     calculate_loss_factors = pf.calculate_loss_factors
     generator_slack_participation_factors = pf.generator_slack_participation_factors
+    calculate_voltage_stability_factors = pf.calculate_voltage_stability_factors
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
     if time_steps != 0
@@ -298,6 +316,7 @@ function PowerFlowData(
         check_connectivity = check_connectivity,
         make_branch_admittance_matrices = true,
     )
+    error_if_has_network_reduction_data(power_network_matrix)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 1))
@@ -308,14 +327,12 @@ function PowerFlowData(
     n_branches = length(branches)
 
     bus_lookup = power_network_matrix.lookup[2]
-    branch_lookup = Dict{String, Int}()
+    branch_lookup = Dict{Tuple{Int, Int}, Int}()
     sizehint!(branch_lookup, n_branches)
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
-    )
     branch_types = Vector{DataType}(undef, n_branches)
+    # ybus doesn't have the branch lookup, so construct it here. (only works without network reduction)
     for (ix, b) in enumerate(branches)
-        branch_lookup[PSY.get_name(b)] = ix
+        branch_lookup[PNM.get_arc_tuple(b)] = ix
         branch_types[ix] = typeof(b)
     end
 
@@ -328,6 +345,12 @@ function PowerFlowData(
         loss_factors = Matrix{Float64}(undef, (n_buses, length(timestep_names)))
     else
         loss_factors = nothing
+    end
+    if calculate_voltage_stability_factors
+        voltage_stability_factors =
+            Matrix{Float64}(undef, (n_buses, length(timestep_names)))
+    else
+        voltage_stability_factors = nothing
     end
     if get_robust_power_flow(pf)
         aux_network_matrix = PNM.ABA_Matrix(sys)
@@ -343,7 +366,6 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
-        temp_bus_map,
         branch_types,
         timestep_map,
         valid_ix,
@@ -353,6 +375,8 @@ function PowerFlowData(
         calculate_loss_factors,
         correct_bustypes,
         generator_slack_participation_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end
 
@@ -406,13 +430,13 @@ function PowerFlowData(
 
     bus_lookup = aux_network_matrix.lookup[1]
     branch_lookup = aux_network_matrix.lookup[2]
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
-    )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -423,11 +447,12 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
-        temp_bus_map,
         valid_ix,
         converged,
         loss_factors,
         calculate_loss_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
         correct_bustypes,
     )
 end
@@ -476,6 +501,7 @@ function PowerFlowData(
     # get the network matrices
     power_network_matrix = PNM.PTDF(sys)
     aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
+    error_if_has_network_reduction_data(power_network_matrix)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 1))
@@ -483,13 +509,13 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
-    )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -500,11 +526,12 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
-        temp_bus_map,
         valid_ix,
         converged,
         loss_factors,
         calculate_loss_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
         correct_bustypes,
     )
 end
@@ -552,6 +579,7 @@ function PowerFlowData(
     # get the network matrices
     power_network_matrix = PNM.VirtualPTDF(sys) # evaluates an empty virtual PTDF
     aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
+    error_if_has_network_reduction_data(power_network_matrix)
 
     # get number of buses and branches
     n_buses = length(axes(power_network_matrix, 2))
@@ -559,13 +587,13 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
-    )
     valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -576,11 +604,12 @@ function PowerFlowData(
         n_branches,
         bus_lookup,
         branch_lookup,
-        temp_bus_map,
         valid_ix,
         converged,
         loss_factors,
         calculate_loss_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
         correct_bustypes,
     )
 end

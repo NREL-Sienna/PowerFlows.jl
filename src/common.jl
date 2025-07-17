@@ -49,7 +49,10 @@ function _get_injections!(
         !PSY.get_available(source) && continue
         bus = PSY.get_bus(source)
         bus_ix = bus_lookup[PSY.get_number(bus)]
-        bus_activepower_injection[bus_ix] += PSY.get_active_power(source)
+        # see issue #1463 in PSY
+        if !isa(source, PSY.SynchronousCondenser)
+            bus_activepower_injection[bus_ix] += PSY.get_active_power(source)
+        end
         bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power(source)
     end
     return
@@ -116,13 +119,15 @@ function _initialize_bus_data!(
     bus_type::Vector{PSY.ACBusTypes},
     bus_angles::Vector{Float64},
     bus_magnitude::Vector{Float64},
-    temp_bus_map::Dict{Int, String},
     bus_lookup::Dict{Int, Int},
     sys::PSY.System,
     correct_bustypes::Bool = false,
 )
     forced_PV = must_be_PV(sys)
     possible_PV = can_be_PV(sys)
+    temp_bus_map = Dict{Int, String}(
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
+    )
     for (bus_no, ix) in bus_lookup
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.ACBus, sys, bus_name)
@@ -146,11 +151,7 @@ function _initialize_bus_data!(
                 PF_MAX_LOG
         end
         bus_type[ix] = bt
-        if bus_type[ix] == PSY.ACBusTypes.REF
-            bus_angles[ix] = 0.0
-        else
-            bus_angles[ix] = PSY.get_angle(bus)
-        end
+        bus_angles[ix] = PSY.get_angle(bus)
         bus_vm = PSY.get_magnitude(bus)
         # prevent unfeasible starting values for voltage magnitude at PQ buses (for PV and REF buses we cannot do this):
         if bt == PSY.ACBusTypes.PQ && bus_vm < BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
@@ -182,7 +183,7 @@ function my_mul_mt(
     y = zeros(length(A.axes[1]))
     for i in 1:length(A.axes[1])
         name_ = A.axes[1][i]
-        y[i] = LinearAlgebra.dot(A[name_, :], x)
+        y[i] = dot(A[name_, :], x)
     end
     return y
 end
@@ -203,11 +204,12 @@ function make_dc_powerflowdata(
     n_branches,
     bus_lookup,
     branch_lookup,
-    temp_bus_map,
     valid_ix,
     converged,
     loss_factors,
     calculate_loss_factors,
+    voltage_stability_factors,
+    calculate_voltage_stability_factors,
     correct_bustypes,
 )
     branch_type = Vector{DataType}(undef, length(branch_lookup))
@@ -226,7 +228,6 @@ function make_dc_powerflowdata(
         n_branches,
         bus_lookup,
         branch_lookup,
-        temp_bus_map,
         branch_type,
         timestep_map,
         valid_ix,
@@ -234,6 +235,8 @@ function make_dc_powerflowdata(
         converged,
         loss_factors,
         calculate_loss_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
         correct_bustypes,
     )
 end
@@ -395,7 +398,6 @@ function make_powerflowdata(
     n_branches,
     bus_lookup,
     branch_lookup,
-    temp_bus_map,
     branch_type,
     timestep_map,
     valid_ix,
@@ -405,6 +407,8 @@ function make_powerflowdata(
     calculate_loss_factors,
     correct_bustypes::Bool = false,
     generator_slack_participation_factors = nothing,
+    voltage_stability_factors = nothing,
+    calculate_voltage_stability_factors = nothing,
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
@@ -414,7 +418,6 @@ function make_powerflowdata(
         bus_type,
         bus_angles,
         bus_magnitude,
-        temp_bus_map,
         bus_lookup,
         sys,
         correct_bustypes,
@@ -534,6 +537,8 @@ function make_powerflowdata(
         converged,
         loss_factors,
         calculate_loss_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
     )
 end
 
@@ -575,3 +580,5 @@ wdot(wx::Vector{Float64}, x::Vector{Float64}, wy::Vector{Float64}, y::Vector{Flo
 
 """Weighted norm of two vectors."""
 wnorm(w::Vector{Float64}, x::Vector{Float64}) = norm(w .* x)
+"""For pretty printing floats in debugging messages."""
+siground(x::Float64) = round(x; sigdigits = 3)
