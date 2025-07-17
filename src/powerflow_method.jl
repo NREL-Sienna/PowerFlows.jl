@@ -384,20 +384,6 @@ function _run_powerflow_method(time_step::Int,
     return converged, i
 end
 
-function loss_factors_calculation!(data::ACPowerFlowData,
-    x0::Vector{Float64},
-    residual::ACPowerFlowResidual,
-    J::ACPowerFlowJacobian,
-    time_step::Int,
-)
-    if data.calculate_loss_factors
-        # ensure data and J are up-to-date.
-        residual(x0, time_step)
-        J(time_step)
-        calculate_loss_factors(data, J.Jv, time_step)
-    end
-end
-
 function _newton_powerflow(
     pf::ACPowerFlow{T},
     data::ACPowerFlowData,
@@ -445,7 +431,7 @@ function _newton_powerflow(
             _calculate_loss_factors(data, J.Jv, time_step)
         end
         if get_calculate_voltage_stability_factors(data)
-            _calculate_voltage_stability_factors(data, J, time_step)
+            _calculate_voltage_stability_factors(data, J.Jv, time_step)
         end
         return true
     end
