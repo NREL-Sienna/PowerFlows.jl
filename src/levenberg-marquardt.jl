@@ -27,7 +27,12 @@ function _newton_powerflow(
 
     if converged
         @info("The LevenbergMarquardtACPowerFlow solver converged after $i iterations.")
-        loss_factors_calculation!(data, x0, residual, J, time_step)
+        if get_calculate_loss_factors(data)
+            _calculate_loss_factors(data, J.Jv, time_step)
+        end
+        if get_calculate_voltage_stability_factors(data)
+            _calculate_voltage_stability_factors(data, J.Jv, time_step)
+        end
         return true
     end
     @error("The LevenbergMarquardtACPowerFlow solver failed to converge.")

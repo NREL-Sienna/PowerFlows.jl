@@ -24,7 +24,7 @@ import DataFrames
 import PowerSystems
 import PowerSystems: System, with_units_base
 import LinearAlgebra
-import LinearAlgebra: norm, dot
+import LinearAlgebra: norm, dot, ldiv!
 import KLU
 import SparseArrays
 import InfrastructureSystems

@@ -113,7 +113,9 @@ end
     bf_loss_factors = penalty_factors_brute_force(data_brute_force, pf)
 
     # confirm that loss factors match for the Jacobian-based and brute force approaches
-    @test isapprox(bf_loss_factors, data_loss_factors.loss_factors, atol = 1e-4, rtol = 0)
+    @test all(
+        isapprox.(bf_loss_factors, data_loss_factors.loss_factors, atol = 1e-4, rtol = 0),
+    )
 
     # get power flow results without loss factors
     solve_powerflow!(data_brute_force; pf = pf)

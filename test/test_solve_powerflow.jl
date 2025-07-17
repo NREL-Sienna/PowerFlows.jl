@@ -42,9 +42,7 @@
     #Compare results between finite diff methods and Jacobian method
     converged1 = PowerFlows._ac_powerflow(data, pf, 1)
     x1 = _calc_x(data, 1)
-    @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6 # this is failing, but the error
-    # is only ~2e-6, which still isn't too bad.
-
+    @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6 # <- this fails likely due to the change of the B allocation
     # Test that solve_powerflow! succeeds
     solved1 = deepcopy(sys)
     @test solve_powerflow!(pf, solved1)
@@ -317,8 +315,16 @@ end
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
 
     pf_lu = ACPowerFlow(LUACPowerFlow)
-    pf_lu_lf = ACPowerFlow(LUACPowerFlow; calculate_loss_factors = true)
-    pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow; calculate_loss_factors = true)
+    pf_lu_lf = ACPowerFlow(
+        LUACPowerFlow;
+        calculate_loss_factors = true,
+        calculate_voltage_stability_factors = true,
+    )
+    pf_newton = ACPowerFlow(
+        NewtonRaphsonACPowerFlow;
+        calculate_loss_factors = true,
+        calculate_voltage_stability_factors = true,
+    )
 
     data_lu = PowerFlowData(
         pf_lu_lf,
@@ -352,6 +358,15 @@ end
         ),
     )
 
+    @test all(
+        isapprox.(
+            data_lu.voltage_stability_factors,
+            data_newton.voltage_stability_factors,
+            rtol = 0,
+            atol = 1e-9,
+        ),
+    )
+
     bf_loss_factors =
         penalty_factors_brute_force(data_brute_force, pf_newton)
     @test all(isapprox.(
@@ -360,6 +375,53 @@ end
         rtol = 0,
         atol = 1e-4,
     ))
+end
+
+@testset "voltage_stability_factors" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    pf_lu = ACPowerFlow(LUACPowerFlow; calculate_voltage_stability_factors = true)
+    pf_newton =
+        ACPowerFlow(NewtonRaphsonACPowerFlow; calculate_voltage_stability_factors = true)
+    data_lu = PowerFlowData(
+        pf_lu,
+        sys;
+        check_connectivity = true,
+        correct_bustypes = true,
+    )
+    data_newton = PowerFlowData(
+        pf_newton,
+        sys;
+        check_connectivity = true,
+        correct_bustypes = true,
+    )
+    time_step = 1
+    solve_powerflow!(data_lu; pf = pf_lu)
+    solve_powerflow!(data_newton; pf = pf_newton)
+    @test all(
+        isapprox.(
+            data_lu.voltage_stability_factors,
+            data_newton.voltage_stability_factors,
+            rtol = 0,
+            atol = 1e-6,
+        ),
+    )
+    ref, pv, pq = PowerFlows.bus_type_idx(data_lu, time_step)
+    pvpq = [pv; pq]
+    npvpq = length(pvpq)
+    V = data_lu.bus_magnitude[:, time_step] .* exp.(1im * data_lu.bus_angles[:, time_step])
+    dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, data_lu.power_network_matrix.data)
+    J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
+    Gs =
+        J[(npvpq + 1):end, (npvpq + 1):end] -
+        J[(npvpq + 1):end, 1:npvpq] * inv(collect(J[1:npvpq, 1:npvpq])) *
+        J[1:npvpq, (npvpq + 1):end]
+    u_1, (σ_1,), v_1, _ = PROPACK.tsvd_irl(Gs; smallest = true, k = 1)
+    σ, u, v = PowerFlows._singular_value_decomposition(J, npvpq)
+
+    @assert isapprox(σ_1, σ, atol = 1e-6)
+    # the sign does not matter
+    @assert isapprox(sign(first(u_1)) * u_1, u, atol = 1e-4)
+    @assert isapprox(sign(first(v_1)) * v_1, v, atol = 1e-4)
 end
 
 @testset "AC PF with distributed slack" for (grid_lib, grid_name) in [
