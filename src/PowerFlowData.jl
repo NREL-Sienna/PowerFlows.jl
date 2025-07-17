@@ -194,6 +194,27 @@ get_bus_reactivepower_constant_current_withdrawals(pfd::PowerFlowData) =
     pfd.bus_reactivepower_constant_current_withdrawals
 get_bus_reactivepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
     pfd.bus_reactivepower_constant_impedance_withdrawals
+
+function get_bus_activepower_total_withdrawals(pfd::PowerFlowData, ix::Int, time_step::Int)
+    return pfd.bus_activepower_withdrawals[ix, time_step] +
+           pfd.bus_activepower_constant_current_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step] +
+           pfd.bus_activepower_constant_impedance_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step]^2
+end
+
+function get_bus_reactivepower_total_withdrawals(
+    pfd::PowerFlowData,
+    ix::Int,
+    time_step::Int,
+)
+    return pfd.bus_reactivepower_withdrawals[ix, time_step] +
+           pfd.bus_reactivepower_constant_current_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step] +
+           pfd.bus_reactivepower_constant_impedance_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step]^2
+end
+
 get_bus_reactivepower_bounds(pfd::PowerFlowData) = pfd.bus_reactivepower_bounds
 get_bus_slack_participation_factors(pfd::PowerFlowData) =
     pfd.bus_slack_participation_factors

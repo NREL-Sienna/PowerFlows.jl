@@ -137,14 +137,15 @@ function _get_load_data(sys::PSY.System, b::PSY.ACBus)
         PSY.StandardLoad,
         sys,
     )
+        vm = PSY.get_magnitude(b)
         active_power +=
             PSY.get_constant_active_power(l) +
-            PSY.get_current_active_power(l) +
-            PSY.get_impedance_active_power(l)
+            PSY.get_current_active_power(l) * vm +
+            PSY.get_impedance_active_power(l) * vm^2
         reactive_power +=
             PSY.get_constant_reactive_power(l) +
-            PSY.get_current_reactive_power(l) +
-            PSY.get_impedance_reactive_power(l)
+            PSY.get_current_reactive_power(l) * vm +
+            PSY.get_impedance_reactive_power(l) * vm^2
     end
     return active_power, reactive_power
 end
