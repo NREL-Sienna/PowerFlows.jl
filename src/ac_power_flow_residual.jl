@@ -181,8 +181,7 @@ function _setpq(
 )
     # Set the active and reactive power injections at the bus
     data.bus_activepower_injection[ix, time_step] =
-        P_net[ix] + data.bus_activepower_withdrawals[ix, time_step] +
-        get_bus_activepower_total_withdrawals(data, ix, time_step)
+        P_net[ix] + get_bus_activepower_total_withdrawals(data, ix, time_step)
     data.bus_reactivepower_injection[ix, time_step] =
         Q_net[ix] + get_bus_reactivepower_total_withdrawals(data, ix, time_step)
 end
