@@ -971,7 +971,12 @@ end=#
     b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
     l = _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
     s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
-    lc = _add_simple_zip_load(sys, b2, 0.0, 0.0, 2.0, 1.0)
+    lc = _add_simple_zip_load!(
+        sys,
+        b2;
+        constant_current_active_power = 2.0,
+        constant_current_reactive_power = 1.0,
+    )
     data = PowerFlowData(ACPowerFlow(), sys; correct_bustypes = true)
     solve_powerflow!(data)
 
@@ -1014,7 +1019,12 @@ end
     b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
     l = _add_simple_line!(sys, b_1, b2, 5e-3, 5e-3, 1e-3)
     s1 = _add_simple_source!(sys, b_1, 0.0, 0.0)
-    lz = _add_simple_zip_load(sys, b2, 0.0, 0.0, 2.0, 1.0)
+    lz = _add_simple_zip_load!(
+        sys,
+        b2;
+        constant_impedance_active_power = 2.0,
+        constant_impedance_reactive_power = 1.0,
+    )
     data = PowerFlowData(ACPowerFlow(), sys; correct_bustypes = true)
     solve_powerflow!(data)
 
@@ -1029,7 +1039,7 @@ end
         (get_impedance_active_power(lz) + 1im * get_impedance_reactive_power(lz))
     # calculating by hand the impedance that corresponds to the load inputs
     # constant impedance load is given for 1.0 p.u. base voltage:
-    load_input_impedance = abs(load_input_power) / (1.0)^2 / sqrt(3)
+    load_input_impedance = 1.0^2 / abs(load_input_power)
 
     # Calculate the observed bus power based on the Ybus and voltage at the bus of the load:
     V = data.bus_magnitude[:, 1] .* exp.(1im * data.bus_angles[:, 1])
@@ -1042,14 +1052,31 @@ end
     @test isapprox(Sbus[2], -load_expected_power; atol = 1e-6, rtol = 0)
 
     # Calculate the expected impedance based on the load inputs and the bus voltage:
-    load_expected_impedance =
-        abs(load_expected_power) / data.bus_magnitude[2, 1]^2 / sqrt(3)
+    load_expected_impedance = (data.bus_magnitude[2, 1]^2) / abs(load_expected_power)
 
     @test isapprox(load_expected_impedance, load_input_impedance; atol = 1e-6, rtol = 0)
 
+    s_zip_load =
+        PF.get_bus_activepower_total_withdrawals(data, 2, 1) +
+        1im * PF.get_bus_reactivepower_total_withdrawals(data, 2, 1)
+
     @test isapprox(
-        i_t / data.bus_magnitude[2, 1],
-        load_input_impedance;
+        Sbus[2],
+        -s_zip_load;
+        atol = 1e-6,
+        rtol = 0,
+    )
+
+    @test isapprox(
+        data.bus_magnitude[2, 1]^2 / load_input_impedance,
+        abs(s_zip_load);
+        atol = 1e-6,
+        rtol = 0,
+    )
+
+    @test isapprox(  # <- need to come back to this and check why it fails
+        s_t[1],
+        s_zip_load;
         atol = 1e-6,
         rtol = 0,
     )

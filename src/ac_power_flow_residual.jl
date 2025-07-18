@@ -250,14 +250,14 @@ function _set_state_variables_at_bus!(
     data.bus_magnitude[ix, time_step] = vm_2
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
     # update P_net and Q_net for ZIP loads
-    P_net[ix] -=
-        data.bus_activepower_constant_current_withdrawals[ix, time_step] * (vm_2 - vm_1) +
+    P_net[ix] +=
+        data.bus_activepower_constant_current_withdrawals[ix, time_step] * (vm_1 - vm_2) +
         data.bus_activepower_constant_impedance_withdrawals[ix, time_step] *
-        (vm_2^2 - vm_1^2)
-    Q_net[ix] -=
-        data.bus_reactivepower_constant_current_withdrawals[ix, time_step] * (vm_2 - vm_1) +
+        (vm_1^2 - vm_2^2)
+    Q_net[ix] +=
+        data.bus_reactivepower_constant_current_withdrawals[ix, time_step] * (vm_1 - vm_2) +
         data.bus_reactivepower_constant_impedance_withdrawals[ix, time_step] *
-        (vm_2^2 - vm_1^2)
+        (vm_1^2 - vm_2^2)
     # set the active and reactive power injections at the bus
     _setpq(
         ix,
