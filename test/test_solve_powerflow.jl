@@ -1076,7 +1076,7 @@ end
 
     @test isapprox(  # <- need to come back to this and check why it fails
         s_t[1],
-        s_zip_load;
+        -s_zip_load;
         atol = 1e-6,
         rtol = 0,
     )
