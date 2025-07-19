@@ -16,6 +16,7 @@ struct ACPowerFlowJacobian
     data::ACPowerFlowData
     Jf!::Function   # This is the function that calculates the Jacobian matrix and updates Jv inplace
     Jv::SparseArrays.SparseMatrixCSC{Float64, Int32}  # This is the Jacobian matrix, that is updated by the function Jf
+    diag_elements::MVector{4, Float64}  # Temporary storage for diagonal elements during Jacobian update
 end
 
 """
@@ -35,7 +36,7 @@ J(time_step)  # Updates the Jacobian matrix Jv
 ```
 """
 function (J::ACPowerFlowJacobian)(time_step::Int64)
-    J.Jf!(J.Jv, J.data, time_step)
+    J.Jf!(J.Jv, J.data, time_step, J.diag_elements)
     return
 end
 
@@ -63,7 +64,7 @@ function (J::ACPowerFlowJacobian)(
     Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     time_step::Int64,
 )
-    J.Jf!(J.Jv, J.data, time_step)
+    J.Jf!(J.Jv, J.data, time_step, J.diag_elements)
     copyto!(Jv, J.Jv)
     return
 end
@@ -96,7 +97,12 @@ function ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64)
     # Jacobian matrix.
     Jv0 = _create_jacobian_matrix_structure(data, time_step)
     # We just initialize the structure here, evaluation must happen later
-    return ACPowerFlowJacobian(data, _update_jacobian_matrix_values!, Jv0)
+    return ACPowerFlowJacobian(
+        data,
+        _update_jacobian_matrix_values!,
+        Jv0,
+        MVector{4, Float64}(undef),
+    )
 end
 
 """
@@ -290,10 +296,7 @@ function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32
     ::Int,
     ::Int,
     ::Int,
-    ∂P∂θ_from::Base.RefValue{Float64},
-    ∂Q∂θ_from::Base.RefValue{Float64},
-    ∂P∂V_from::Base.RefValue{Float64},
-    ∂Q∂V_from::Base.RefValue{Float64},
+    diag_elements::MVector{4, Float64},
     ::Val{PSY.ACBusTypes.REF})
     # State variables are Active and Reactive Power Generated
     # F[2*i-1] := p[i] = p_flow[i] + p_load[i] - x[2*i-1]
@@ -302,10 +305,10 @@ function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32
     g_ij, b_ij = real(Y_from_to), imag(Y_from_to)
     # still need to do diagonal terms: those are based off
     # the bus type of from_bus, when we're dispatching on bustype of to_bus.
-    ∂P∂θ_from[] -= Vm_from * Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
-    ∂Q∂θ_from[] -= Vm_from * Vm_to * (-g_ij * cos(θ_from_to) - b_ij * sin(θ_from_to))
-    ∂P∂V_from[] += Vm_to * (g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to))
-    ∂Q∂V_from[] += Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
+    diag_elements[1] -= Vm_from * Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))  # ∂P∂θ_from
+    diag_elements[2] -= Vm_from * Vm_to * (-g_ij * cos(θ_from_to) - b_ij * sin(θ_from_to))  # ∂Q∂θ_from
+    diag_elements[3] += Vm_to * (g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to))  # ∂P∂V_from
+    diag_elements[4] += Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))  # ∂Q∂V_from
     return
 end
 
@@ -318,10 +321,7 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     row_from_q::Int,
     ::Int,
     col_to_va::Int,
-    ∂P∂θ_from::Base.RefValue{Float64},
-    ∂Q∂θ_from::Base.RefValue{Float64},
-    ∂P∂V_from::Base.RefValue{Float64},
-    ∂Q∂V_from::Base.RefValue{Float64},
+    diag_elements::MVector{4, Float64},
     ::Val{PSY.ACBusTypes.PV},
 )
     # State variables are Reactive Power Generated and Voltage Angle
@@ -333,16 +333,16 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     # Jac: Active PF against other angles θ[bus_to]
     p_va_common_term = Vm_from * Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
     Jv[row_from_p, col_to_va] = p_va_common_term
-    ∂P∂θ_from[] -= p_va_common_term
+    diag_elements[1] -= p_va_common_term # ∂P∂θ_from
     # Jac: Reactive PF w/r to different angle θ[bus_to]
     q_va_common_term = Vm_from * Vm_to * (-g_ij * cos(θ_from_to) - b_ij * sin(θ_from_to))
     Jv[row_from_q, col_to_va] = q_va_common_term
-    ∂Q∂θ_from[] -= q_va_common_term
+    diag_elements[2] -= q_va_common_term # ∂Q∂θ_from
 
     # still need to do all diagonal terms: those are based off
     # the bus type of from_bus, when we're dispatching on bustype of to_bus.
-    ∂P∂V_from[] += Vm_to * (g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to))
-    ∂Q∂V_from[] += Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
+    diag_elements[3] += Vm_to * (g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to))  # ∂P∂V_from
+    diag_elements[4] += Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))  # ∂Q∂V_from
     return
 end
 
@@ -355,10 +355,7 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     row_from_q::Int,
     col_to_vm::Int,
     col_to_va::Int,
-    ∂P∂θ_from::Base.RefValue{Float64},
-    ∂Q∂θ_from::Base.RefValue{Float64},
-    ∂P∂V_from::Base.RefValue{Float64},
-    ∂Q∂V_from::Base.RefValue{Float64},
+    diag_elements::MVector{4, Float64},
     ::Val{PSY.ACBusTypes.PQ},
 )
     # State variables are Voltage Magnitude and Voltage Angle
@@ -367,19 +364,19 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     # Active PF w/r to different voltage magnitude Vm[bus_to]
     p_vm_common_term = g_ij * cos(θ_from_to) + b_ij * sin(θ_from_to)
     Jv[row_from_p, col_to_vm] = Vm_from * p_vm_common_term
-    ∂P∂V_from[] += Vm_to * p_vm_common_term
+    diag_elements[3] += Vm_to * p_vm_common_term # ∂P∂V_from
     # Active PF w/r to different angle θ[bus_to]
     p_va_common_term = Vm_from * Vm_to * (g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to))
     Jv[row_from_p, col_to_va] = p_va_common_term
-    ∂P∂θ_from[] -= p_va_common_term
+    diag_elements[1] -= p_va_common_term # ∂P∂θ_from
     # Reactive PF w/r to different voltage magnitude Vm[bus_to]
     q_vm_common_term = g_ij * sin(θ_from_to) - b_ij * cos(θ_from_to)
     Jv[row_from_q, col_to_vm] = Vm_from * q_vm_common_term
-    ∂Q∂V_from[] += Vm_to * q_vm_common_term
+    diag_elements[4] += Vm_to * q_vm_common_term # ∂Q∂V_from
     # Jac: Reactive PF w/r to different angle θ[bus_to]
     q_va_common_term = Vm_from * Vm_to * (-g_ij * cos(θ_from_to) - b_ij * sin(θ_from_to))
     Jv[row_from_q, col_to_va] = q_va_common_term
-    ∂Q∂θ_from[] -= q_va_common_term
+    diag_elements[2] -= q_va_common_term # ∂Q∂θ_from
     return
 end
 
@@ -388,6 +385,7 @@ function _update_jacobian_matrix_values!(
     Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     data::ACPowerFlowData,
     time_step::Int64,
+    diag_elements::MVector{4, Float64},
 )
     Yb = data.power_network_matrix.data
     Vm = view(data.bus_magnitude, :, time_step)
@@ -398,11 +396,9 @@ function _update_jacobian_matrix_values!(
         row_from_p = 2 * bus_from - 1
         row_from_q = 2 * bus_from
 
-        # the diagonal terms: e.g. ∂P_from/∂θ_from
-        ∂P∂θ_from = Base.RefValue{Float64}(0.0)
-        ∂Q∂θ_from = Base.RefValue{Float64}(0.0)
-        ∂P∂V_from = Base.RefValue{Float64}(0.0)
-        ∂Q∂V_from = Base.RefValue{Float64}(0.0)
+        # Reset diagonal elements for this bus
+        fill!(diag_elements, 0.0)
+
         Vm_from = Vm[bus_from]
         for bus_to in data.neighbors[bus_from]
             if bus_to != bus_from
@@ -423,10 +419,7 @@ function _update_jacobian_matrix_values!(
                         row_from_q,
                         col_to_vm,
                         col_to_va,
-                        ∂P∂θ_from,
-                        ∂Q∂θ_from,
-                        ∂P∂V_from,
-                        ∂Q∂V_from,
+                        diag_elements,
                         Val(PSY.ACBusTypes.PQ))
                 elseif bus_type == PSY.ACBusTypes.PV
                     _set_entries_for_neighbor(Jv,
@@ -438,10 +431,7 @@ function _update_jacobian_matrix_values!(
                         row_from_q,
                         col_to_vm,
                         col_to_va,
-                        ∂P∂θ_from,
-                        ∂Q∂θ_from,
-                        ∂P∂V_from,
-                        ∂Q∂V_from,
+                        diag_elements,
                         Val(PSY.ACBusTypes.PV))
                 elseif bus_type == PSY.ACBusTypes.REF
                     _set_entries_for_neighbor(Jv,
@@ -453,10 +443,7 @@ function _update_jacobian_matrix_values!(
                         row_from_q,
                         col_to_vm,
                         col_to_va,
-                        ∂P∂θ_from,
-                        ∂Q∂θ_from,
-                        ∂P∂V_from,
-                        ∂Q∂V_from,
+                        diag_elements,
                         Val(PSY.ACBusTypes.REF))
                 end
             end
@@ -465,16 +452,16 @@ function _update_jacobian_matrix_values!(
         col_from_va = 2 * bus_from
         # set entries in diagonal blocks
         if data.bus_type[bus_from, time_step] == PSY.ACBusTypes.PQ
-            Jv[row_from_p, col_from_va] = ∂P∂θ_from[]
-            Jv[row_from_q, col_from_va] = ∂Q∂θ_from[]
-            ∂P∂V_from[] += 2 * real(Yb[bus_from, bus_from]) * Vm[bus_from]
-            ∂Q∂V_from[] -= 2 * imag(Yb[bus_from, bus_from]) * Vm[bus_from]
-            Jv[row_from_p, col_from_vm] = ∂P∂V_from[]
-            Jv[row_from_q, col_from_vm] = ∂Q∂V_from[]
+            Jv[row_from_p, col_from_va] = diag_elements[1]  # ∂P∂θ_from
+            Jv[row_from_q, col_from_va] = diag_elements[2]  # ∂Q∂θ_from
+            diag_elements[3] += 2 * real(Yb[bus_from, bus_from]) * Vm[bus_from]  # ∂P∂V_from
+            diag_elements[4] -= 2 * imag(Yb[bus_from, bus_from]) * Vm[bus_from]  # ∂Q∂V_from
+            Jv[row_from_p, col_from_vm] = diag_elements[3]  # ∂P∂V_from
+            Jv[row_from_q, col_from_vm] = diag_elements[4]  # ∂Q∂V_from
         elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.PV
             Jv[row_from_q, col_from_vm] = -1.0
-            Jv[row_from_p, col_from_va] = ∂P∂θ_from[]
-            Jv[row_from_q, col_from_va] = ∂Q∂θ_from[]
+            Jv[row_from_p, col_from_va] = diag_elements[1]  # ∂P∂θ_from
+            Jv[row_from_q, col_from_va] = diag_elements[2]  # ∂Q∂θ_from
         elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.REF
             Jv[row_from_p, col_from_vm] = -1.0
             Jv[row_from_q, col_from_va] = -1.0
