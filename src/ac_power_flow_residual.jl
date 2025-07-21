@@ -314,17 +314,45 @@ function _update_residual_values!(
 
         for (ix, bt, p_bus_slack) in
             zip(subnetwork_buses, bus_types[subnetwork_buses], P_slack)
-            _set_state_variables_at_bus!(
-                ix,
-                P_net,
-                Q_net,
-                P_net_set,
-                p_bus_slack,
-                x,
-                data,
-                time_step,
-                Val(bt),
-            )
+            # creating Val(bt) at runtime is slow, requires allocating: split into cases
+            # explicitly, so instead it's Val(compile-time constant).
+            if bt == PSY.ACBusTypes.PQ
+                _set_state_variables_at_bus!(
+                    ix,
+                    P_net,
+                    Q_net,
+                    P_net_set,
+                    p_bus_slack,
+                    x,
+                    data,
+                    time_step,
+                    Val(PSY.ACBusTypes.PQ),
+                )
+            elseif bt == PSY.ACBusTypes.PV
+                _set_state_variables_at_bus!(
+                    ix,
+                    P_net,
+                    Q_net,
+                    P_net_set,
+                    p_bus_slack,
+                    x,
+                    data,
+                    time_step,
+                    Val(PSY.ACBusTypes.PV),
+                )
+            elseif bt == PSY.ACBusTypes.REF
+                _set_state_variables_at_bus!(
+                    ix,
+                    P_net,
+                    Q_net,
+                    P_net_set,
+                    p_bus_slack,
+                    x,
+                    data,
+                    time_step,
+                    Val(PSY.ACBusTypes.REF),
+                )
+            end
         end
     end
 
