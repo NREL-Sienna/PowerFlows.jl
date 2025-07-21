@@ -47,8 +47,13 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
         @warn "RobustHomotopyPowerFlow failed to find a solution"
     end
     MUMPS.finalize(mumps)
-    if success && data.calculate_loss_factors
-        calculate_loss_factors(data, homHess.J.Jv, time_step)
+    if success
+        if get_calculate_loss_factors(data)
+            _calculate_loss_factors(data, homHess.J.Jv, time_step)
+        end
+        if get_calculate_voltage_stability_factors(data)
+            _calculate_voltage_stability_factors(data, homHess.J.Jv, time_step)
+        end
     end
     return success
 end

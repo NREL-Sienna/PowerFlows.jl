@@ -122,7 +122,7 @@ end
     @test isnothing(data_brute_force.loss_factors)
 end
 
-@testset failfast = true "MULTI-PERIOD power flows evaluation with DS" for mode in (
+@testset "MULTI-PERIOD power flows evaluation with DS" for mode in (
         :nothing,
         :equal,
         :dict,

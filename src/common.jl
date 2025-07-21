@@ -1,18 +1,4 @@
 _SingleComponentLoad = Union{PSY.PowerLoad, PSY.ExponentialLoad, PSY.InterruptiblePowerLoad}
-get_total_p(l::_SingleComponentLoad) = PSY.get_active_power(l)
-get_total_q(l::_SingleComponentLoad) = PSY.get_reactive_power(l)
-
-function get_total_p(l::PSY.StandardLoad)
-    return PSY.get_constant_active_power(l) +
-           PSY.get_current_active_power(l) +
-           PSY.get_impedance_active_power(l)
-end
-
-function get_total_q(l::PSY.StandardLoad)
-    return PSY.get_constant_reactive_power(l) +
-           PSY.get_current_reactive_power(l) +
-           PSY.get_impedance_reactive_power(l)
-end
 
 """
 Return the reactive power limits that should be used in power flow calculations and PSS/E
@@ -75,20 +61,34 @@ end
 function _get_withdrawals!(
     bus_activepower_withdrawals::Vector{Float64},
     bus_reactivepower_withdrawals::Vector{Float64},
+    bus_activepower_constant_current_withdrawals::Vector{Float64},
+    bus_reactivepower_constant_current_withdrawals::Vector{Float64},
+    bus_activepower_constant_impedance_withdrawals::Vector{Float64},
+    bus_reactivepower_constant_impedance_withdrawals::Vector{Float64},
     bus_lookup::Dict{Int, Int},
     sys::PSY.System,
 )
-    # FIXME properly handle SwitchedAdmittance components
-    for l in PSY.get_components(PSY.ElectricLoad, sys)
-        (isa(l, PSY.FixedAdmittance) || isa(l, PSY.SwitchedAdmittance)) && continue
-        !PSY.get_available(l) && continue
+    for l in PSY.get_components(_SingleComponentLoad, sys)
+        PSY.get_available(l) || continue
         bus = PSY.get_bus(l)
         bus_ix = bus_lookup[PSY.get_number(bus)]
-        # see issue #1463 in PSY
-        if !isa(l, PSY.SynchronousCondenser)
-            bus_activepower_withdrawals[bus_ix] += get_total_p(l)
-        end
-        bus_reactivepower_withdrawals[bus_ix] += get_total_q(l)
+        bus_activepower_withdrawals[bus_ix] += PSY.get_active_power(l)
+        bus_reactivepower_withdrawals[bus_ix] += PSY.get_reactive_power(l)
+    end
+    for l in PSY.get_components(PSY.StandardLoad, sys)
+        PSY.get_available(l) || continue
+        bus = PSY.get_bus(l)
+        bus_ix = bus_lookup[PSY.get_number(bus)]
+        bus_activepower_withdrawals[bus_ix] += PSY.get_constant_active_power(l)
+        bus_activepower_constant_current_withdrawals[bus_ix] +=
+            PSY.get_current_active_power(l)
+        bus_activepower_constant_impedance_withdrawals[bus_ix] +=
+            PSY.get_impedance_active_power(l)
+        bus_reactivepower_withdrawals[bus_ix] += PSY.get_constant_reactive_power(l)
+        bus_reactivepower_constant_current_withdrawals[bus_ix] +=
+            PSY.get_current_reactive_power(l)
+        bus_reactivepower_constant_impedance_withdrawals[bus_ix] +=
+            PSY.get_impedance_reactive_power(l)
     end
     return
 end
@@ -207,11 +207,11 @@ function make_dc_powerflowdata(
     valid_ix,
     converged,
     loss_factors,
-    correct_bustypes,
     calculate_loss_factors,
-    generator_slack_participation_factors,
     voltage_stability_factors,
     calculate_voltage_stability_factors,
+    generator_slack_participation_factors,
+    correct_bustypes,
 )
     branch_type = Vector{DataType}(undef, length(branch_lookup))
     for (ix, b) in enumerate(PNM.get_ac_branches(sys))
@@ -235,11 +235,11 @@ function make_dc_powerflowdata(
         neighbors,
         converged,
         loss_factors,
-        correct_bustypes,
         calculate_loss_factors,
-        generator_slack_participation_factors,
         voltage_stability_factors,
         calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
+        correct_bustypes,
     )
 end
 
@@ -407,10 +407,10 @@ function make_powerflowdata(
     converged,
     loss_factors,
     calculate_loss_factors,
-    correct_bustypes::Bool = false,
-    generator_slack_participation_factors = nothing,
     voltage_stability_factors = nothing,
     calculate_voltage_stability_factors = nothing,
+    generator_slack_participation_factors = nothing,
+    correct_bustypes::Bool = false,
 )
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
@@ -437,9 +437,17 @@ function make_powerflowdata(
 
     bus_activepower_withdrawals = zeros(Float64, n_buses)
     bus_reactivepower_withdrawals = zeros(Float64, n_buses)
+    bus_activepower_constant_current_withdrawals = zeros(Float64, n_buses)
+    bus_reactivepower_constant_current_withdrawals = zeros(Float64, n_buses)
+    bus_activepower_constant_impedance_withdrawals = zeros(Float64, n_buses)
+    bus_reactivepower_constant_impedance_withdrawals = zeros(Float64, n_buses)
     _get_withdrawals!(
         bus_activepower_withdrawals,
         bus_reactivepower_withdrawals,
+        bus_activepower_constant_current_withdrawals,
+        bus_reactivepower_constant_current_withdrawals,
+        bus_activepower_constant_impedance_withdrawals,
+        bus_reactivepower_constant_impedance_withdrawals,
         bus_lookup,
         sys,
     )
@@ -449,6 +457,10 @@ function make_powerflowdata(
     bus_reactivepower_injection_1 = zeros(Float64, n_buses, time_steps)
     bus_activepower_withdrawals_1 = zeros(Float64, n_buses, time_steps)
     bus_reactivepower_withdrawals_1 = zeros(Float64, n_buses, time_steps)
+    bus_activepower_constant_current_withdrawals_1 = zeros(Float64, n_buses, time_steps)
+    bus_reactivepower_constant_current_withdrawals_1 = zeros(Float64, n_buses, time_steps)
+    bus_activepower_constant_impedance_withdrawals_1 = zeros(Float64, n_buses, time_steps)
+    bus_reactivepower_constant_impedance_withdrawals_1 = zeros(Float64, n_buses, time_steps)
     bus_reactivepower_bounds_1 = Matrix{Vector{Float64}}(undef, n_buses, time_steps)
     bus_magnitude_1 = ones(Float64, n_buses, time_steps)
     bus_angles_1 = zeros(Float64, n_buses, time_steps)
@@ -458,6 +470,14 @@ function make_powerflowdata(
     bus_reactivepower_injection_1[:, 1] .= bus_reactivepower_injection
     bus_activepower_withdrawals_1[:, 1] .= bus_activepower_withdrawals
     bus_reactivepower_withdrawals_1[:, 1] .= bus_reactivepower_withdrawals
+    bus_activepower_constant_current_withdrawals_1[:, 1] .=
+        bus_activepower_constant_current_withdrawals
+    bus_reactivepower_constant_current_withdrawals_1[:, 1] .=
+        bus_reactivepower_constant_current_withdrawals
+    bus_activepower_constant_impedance_withdrawals_1[:, 1] .=
+        bus_activepower_constant_impedance_withdrawals
+    bus_reactivepower_constant_impedance_withdrawals_1[:, 1] .=
+        bus_reactivepower_constant_impedance_withdrawals
     bus_magnitude_1[:, 1] .= bus_magnitude
     bus_angles_1[:, 1] .= bus_angles
 
@@ -496,6 +516,10 @@ function make_powerflowdata(
         bus_reactivepower_injection_1,
         bus_activepower_withdrawals_1,
         bus_reactivepower_withdrawals_1,
+        bus_activepower_constant_current_withdrawals_1,
+        bus_reactivepower_constant_current_withdrawals_1,
+        bus_activepower_constant_impedance_withdrawals_1,
+        bus_reactivepower_constant_impedance_withdrawals_1,
         bus_reactivepower_bounds_1,
         generator_slack_participation_factors,
         bus_slack_participation_factors,
