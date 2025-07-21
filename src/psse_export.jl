@@ -730,7 +730,7 @@ function write_to_buffers!(
             PSY.UnitSystem.NATURAL_UNITS,
         )
         QT = if isnothing(reactive_power_limits)
-            PSSE_DEFAULT
+            PSSE_INFINITY
         else
             _warn_finite_default(
                 reactive_power_limits.max;
@@ -740,7 +740,7 @@ function write_to_buffers!(
         end
 
         QB = if isnothing(reactive_power_limits)
-            PSSE_DEFAULT
+            PSSE_INFINITY
         else
             _warn_finite_default(
                 reactive_power_limits.min;
