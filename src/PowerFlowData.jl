@@ -336,6 +336,7 @@ function PowerFlowData(
         sys;
         check_connectivity = check_connectivity,
         make_branch_admittance_matrices = true,
+        include_constant_impedance_loads = false,
     )
     error_if_has_network_reduction_data(power_network_matrix)
 
