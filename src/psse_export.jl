@@ -729,18 +729,25 @@ function write_to_buffers!(
             exporter.system,
             PSY.UnitSystem.NATURAL_UNITS,
         )
-        QT = reactive_power_limits.max
-        QT = _warn_finite_default(
-            QT;
-            field_name = "QT",
-            component_name = PSY.get_name(generator),
-        )
-        QB = reactive_power_limits.min
-        QB = _warn_finite_default(
-            QB;
-            field_name = "QB",
-            component_name = PSY.get_name(generator),
-        )
+        QT = if isnothing(reactive_power_limits)
+            PSSE_DEFAULT
+        else
+            _warn_finite_default(
+                reactive_power_limits.max;
+                field_name = "QT",
+                component_name = PSY.get_name(generator),
+            )
+        end
+
+        QB = if isnothing(reactive_power_limits)
+            PSSE_DEFAULT
+        else
+            _warn_finite_default(
+                reactive_power_limits.min;
+                field_name = "QB",
+                component_name = PSY.get_name(generator),
+            )
+        end
         VS = PSY.get_magnitude(PSY.get_bus(generator))
         IREG = get(PSY.get_ext(generator), "IREG", PSSE_DEFAULT)
         MBASE = PSY.get_base_power(generator)
