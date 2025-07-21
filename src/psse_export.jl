@@ -1186,22 +1186,31 @@ function write_to_buffers!(
         else
             RDC =
                 1 / (
-                    g * PSY.get_dc_setpoint_from(vscline)^2 /
-                    PSY.get_base_power(exporter.system)
+                    g * PSY.get_base_power(exporter.system) /
+                    PSY.get_dc_setpoint_from(vscline)^2
                 )
         end
+        O1 = PSSE_DEFAULT
+        F1 = PSSE_DEFAULT
+        O2 = PSSE_DEFAULT
+        F2 = PSSE_DEFAULT
+        O3 = PSSE_DEFAULT
+        F3 = PSSE_DEFAULT
+        O4 = PSSE_DEFAULT
+        F4 = PSSE_DEFAULT
+
         IBUS1 = I
         TYPE1 = Int(PSY.get_dc_voltage_control_from(vscline))
         MODE1 = Int(PSY.get_available(vscline))
         DCSET1 = PSY.get_dc_setpoint_from(vscline)
         ACSET1 = PSY.get_ac_setpoint_from(vscline)
-        ALOSS1 = PSSE_DEFAULT
+        ALOSS1 = 0.0 # TODO: rethink this approach
         BLOSS1 =
             round(
                 PSY.get_proportional_term(
                     PSY.get_function_data(PSY.get_converter_loss_from(vscline)),
                 ) * 1e3 * PSY.get_base_power(exporter.system); digits = 5)
-        MINLOSS1 = PSSE_DEFAULT
+        MINLOSS1 = 0.0 # TODO: rethink this approach
         SMAX1 = PSY.get_rating_from(vscline)
         SMAX1 = if SMAX1 == 9999.0
             0.0
@@ -1228,13 +1237,13 @@ function write_to_buffers!(
         MODE2 = Int(PSY.get_available(vscline))
         DCSET2 = PSY.get_dc_setpoint_to(vscline)
         ACSET2 = PSY.get_ac_setpoint_to(vscline)
-        ALOSS2 = PSSE_DEFAULT
+        ALOSS2 = 0.0 # TODO: rethink this approach
         BLOSS2 =
             round(
                 PSY.get_proportional_term(
                     PSY.get_function_data(PSY.get_converter_loss_to(vscline)),
                 ) * 1e3 * PSY.get_base_power(exporter.system); digits = 5)
-        MINLOSS2 = PSSE_DEFAULT
+        MINLOSS2 = 0.0 # TODO: rethink this approach
         SMAX2 = PSY.get_rating_from(vscline)
         SMAX2 = if SMAX2 == 9999.0
             0.0
@@ -1257,8 +1266,8 @@ function write_to_buffers!(
         REMOT2 = get(PSY.get_ext(vscline), "REMOT_TO", PSSE_DEFAULT)
         RMPCT2 = get(PSY.get_ext(vscline), "RMPCT_TO", PSSE_DEFAULT)
 
-        @fastprintdelim_unroll(io, false, NAME, MDC, RDC)
-        fastprintln(io, RDC)
+        @fastprintdelim_unroll(io, false, NAME, MDC, RDC, O1, F1, O2, F2, O3, F3, O4)
+        fastprintln(io, F4)
 
         @fastprintdelim_unroll(io, false,
             IBUS1, TYPE1, MODE1, DCSET1, ACSET1, ALOSS1, BLOSS1, MINLOSS1, SMAX1, IMAX1,
@@ -1270,6 +1279,15 @@ function write_to_buffers!(
             PWF2, MAXQ2, MINQ2, REMOT2)
         fastprintln(io, RMPCT2)
     end
+    end_group_33(
+        io,
+        md,
+        exporter,
+        "Voltage Source Converter (VSC) DC Transmission Line Data",
+        true,
+    )
+    exporter.md_valid ||
+        (md["vsc_line_name_mapping"] = serialize_component_ids(vsc_line_name_mapping))
 end
 
 """
