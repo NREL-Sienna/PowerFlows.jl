@@ -391,7 +391,16 @@ function _newton_powerflow(
     kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
     # setup: common code
     residual = ACPowerFlowResidual(data, time_step)
+
     x0 = improve_x0(pf, data, residual, time_step)
+    if OVERRIDE_x0 && :x0 in keys(kwargs)
+        print_signorms(residual.Rv; intro = "corrected ", ps = [1, 2, Inf])
+        x0 .= get(kwargs, :x0, x0)
+        @warn "Overriding initial guess x0."
+        residual(x0, time_step)  # re-calculate residual for new x0: might have changed.
+        print_signorms(residual.Rv; ps = [1, 2, Inf])
+    end
+
     J = ACPowerFlowJacobian(data, time_step)
     J(time_step)
     converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
