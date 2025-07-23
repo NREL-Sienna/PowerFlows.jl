@@ -12,7 +12,7 @@ end
 A workaround for the fact that Julia seems to run `dropzeros!(A)` automatically if I just 
 do `A .+= B' * B`."""
 function A_plus_eq_BT_B!(A::SparseMatrixCSC, B::SparseMatrixCSC)
-    M = B' * B
+    M = B' * B # shouldn't this be allocating too?
     @assert M.colptr == A.colptr && M.rowval == A.rowval
     A.nzval .+= M.nzval
     return

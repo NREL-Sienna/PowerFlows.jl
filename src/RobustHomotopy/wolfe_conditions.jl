@@ -71,7 +71,8 @@ function zoom(x::Vector{Float64},
         x_test = x + α_test * δ
         h_test = F_value(homInfo, t_k, x_test, time_step)
 
-        if !sufficient_decrease(x, grad, time_step, homInfo, t_k, δ, α_test, c_1) || h_test >= h_lo
+        if !sufficient_decrease(x, grad, time_step, homInfo, t_k, δ, α_test, c_1) ||
+           h_test >= h_lo
             # new interval is bottom half.
             α_hi = α_test
         else
@@ -121,6 +122,7 @@ function line_search(x::Vector{Float64},
         println("rate of change in search direction ", roc_x0)
         println("f value ", h_xprev)
     end
+    # TODO: fails for "AC Test 240 Case PSS/e results," but that test has other issues too.
     @assert roc_x0 <= 0.0 # the degenerate == 0.0 case shows up in 1 test case.
     while i < MAX_LINE_SEARCH_ITERS && α_i < α_max
         x_i = x + α_i * δ
