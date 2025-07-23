@@ -4,6 +4,17 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     kwargs...)
     Δt_k = get(kwargs, :Δt_k, DEFAULT_Δt_k)
     homHess = HomotopyHessian(data, time_step)
+    
+    x0 = improve_x0(pf, data, homHess.pfResidual, time_step)
+    if OVERRIDE_x0 && :x0 in keys(kwargs)
+        print_signorms(homHess.pfResidual.Rv; intro = "corrected ", ps = [1, 2, Inf])
+        x0 .= get(kwargs, :x0, x0)
+        @warn "Overriding initial guess x0."
+        homHess.pfResidual(x0, time_step)  # re-calculate residual for new x0: might have changed.
+        print_signorms(homHess.pfResidual.Rv; ps = [1, 2, Inf])
+    end
+
+    t_k_ref = homHess.t_k_ref
     x = homotopy_x0(data, time_step)
     t_k = 0.0
 

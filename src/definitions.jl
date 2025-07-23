@@ -60,3 +60,6 @@ const GRAD_ZERO = 2 * eps()
 # cholesky solver specific
 const VTypes = SparseArrays.CHOLMOD.VRealTypes
 const ITypes = SparseArrays.CHOLMOD.ITypes
+
+const OVERRIDE_x0 = true # if true, then will take kwarg `x0` as the initial guess for the state vector.
+# bypassing all "initial guess improvement" type stuff.
