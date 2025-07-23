@@ -121,6 +121,7 @@ function line_search(x::Vector{Float64},
         println("rate of change in search direction ", roc_x0)
         println("f value ", h_xprev)
     end
+    # TODO: fails for "AC Test 240 Case PSS/e results," but that test has other issues too.
     @assert roc_x0 <= 0.0 # the degenerate == 0.0 case shows up in 1 test case.
     while i < MAX_LINE_SEARCH_ITERS && α_i < α_max
         x_i = x + α_i * δ

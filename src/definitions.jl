@@ -52,3 +52,7 @@ const DEFAULT_VALIDATION_RANGE = (min = 0.5, max = 1.5)
 # const MAX_INDS_TO_PRINT = 10
 
 const OVERWRITE_NON_CONVERGED = true # overwrite non-converged time steps with NaN values
+
+const β = 10.0^-3
+const VTypes = SparseArrays.CHOLMOD.VRealTypes
+const ITypes = SparseArrays.CHOLMOD.ITypes

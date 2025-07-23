@@ -13,9 +13,6 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
-    if !MPI.Initialized()
-        MPI.Init()
-    end
 
     Δt_k = get(kwargs, :Δt_k, DEFAULT_Δt_k)
     homHess = HomotopyHessian(data, time_step)
@@ -27,18 +24,13 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     t_k += Δt_k
     homHess(x, t_k, time_step)
 
-    icntl = deepcopy(MUMPS.default_icntl)
-    icntl[4] = 1 # report errors only
-    icntl[13] = 1 # due to our _modify_hessian! strategy,
-    # we need to know the exact negative pivots.
-    mumps = Mumps{Float64}(MUMPS.mumps_symmetric, icntl, MUMPS.default_cntl32)
-    MPI.add_finalize_hook!(() -> MUMPS.finalize(mumps))
-    MUMPS.associate_matrix!(mumps, homHess.Hv)
-    mumps_job!(mumps, ANALYZE)
+    # options: KLUHessianSolver, MUMPSHessianSolver, CholeskyHessianSolver
+    hSolver = CholeskyHessianSolver(homHess.Hv)
+    symbolic_factor!(hSolver, homHess.Hv)
 
     success = true
     while true # go onto next t_k even if search doesn't terminate within max iterations.
-        converged_t_k, _ = _second_order_newton(homHess, t_k, time_step, x, mumps)
+        converged_t_k, _ = _second_order_newton(homHess, t_k, time_step, x, hSolver)
         if t_k == 1.0
             success = converged_t_k
             break
@@ -48,7 +40,7 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     if !success
         @warn "RobustHomotopyPowerFlow failed to find a solution"
     end
-    MUMPS.finalize(mumps)
+    cleanup!(hSolver)
     if success && data.calculate_loss_factors
         calculate_loss_factors(data, homHess.J.Jv, time_step)
     end
@@ -66,7 +58,7 @@ function _second_order_newton(homHess::HomotopyHessian,
     t_k::Float64,
     time_step::Int,
     x::Vector{Float64},
-    mumps::Mumps;
+    hSolver::HessianSolver;
     kwargs...)
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
@@ -81,7 +73,7 @@ function _second_order_newton(homHess::HomotopyHessian,
             t_k,
             time_step,
             x,
-            mumps,
+            hSolver,
             δ,
         )
         F_val = F_value(homHess, t_k, x, time_step)
@@ -101,7 +93,7 @@ function _second_order_newton_step(homHess::HomotopyHessian,
     t_k::Float64,
     time_step::Int,
     x::Vector{Float64},
-    mumps::Mumps{Float64},
+    hSolver::HessianSolver,
     δ::Vector{Float64},
 )
     F_val = F_value(homHess, t_k, x, time_step)
@@ -112,13 +104,10 @@ function _second_order_newton_step(homHess::HomotopyHessian,
         info_helper(homHess, t_k, F_val, "local minimum")
         return true
     end
-    _modify_hessian!(homHess.Hv, mumps)
-    MUMPS.associate_rhs!(mumps, homHess.grad)
-    mumps_job!(mumps, SOLVE)
-
-    MUMPS.mumps_solve!(δ, mumps)
+    modify_and_numeric_factor!(hSolver, homHess.Hv)
+    δ .= homHess.grad
+    solve!(hSolver, δ)
     δ .*= -1
-    mumps_job!(mumps, FACTOR_CLEANUP)
 
     # PERF: the line search is taking up 80%+ of the time in _second_order_newton_step
     # evidently I need a better (or better optimized) line search.
@@ -131,37 +120,4 @@ function _second_order_newton_step(homHess::HomotopyHessian,
     end
     x .+= δ * α_star
     return false
-end
-
-"""Modify the Hessian to be positive definite, to guarantee that the solution to
-`H Δx = -∇f` is a direction of descent. Currently using algorithm 3.3 from 
-Nocedal & Wright: add a multiple of the identity."""
-function _modify_hessian!(H::SparseMatrixCSC, mumps::Mumps)
-    minDiagElem = minimum(H[i, i] for i in axes(H, 1))
-    if minDiagElem > 0.0
-        τ = 0.0
-    else
-        τ = -minDiagElem + β
-        for i in axes(H, 1)
-            H[i, i] += τ
-        end
-    end
-    # PERF: pass pointers to mumps, so we don't need to associate_matrix! each time.
-    #       MUMPS stores things in COO format, though: just pass a pointer to 
-    #       nzval? That's passing a pointer to a struct internals, though... 
-    #       See issue #160 in the MUMPS.jl repo.
-    MUMPS.associate_matrix!(mumps, H)
-    mumps_job!(mumps, FACTOR)
-    while mumps.infog[12] > 0 # while matrix isn't positive definite.
-        mumps_job!(mumps, FACTOR_CLEANUP)
-        τ_old = τ
-        τ = max(2 * τ, β)
-        for i in axes(H, 1)
-            H[i, i] += τ - τ_old # now try H + τ*I
-        end
-        MUMPS.associate_matrix!(mumps, H)
-        # TODO better error handling, so the user doesn't have to look up arcane
-        # error codes in the MUMPS user manual.
-        mumps_job!(mumps, FACTOR)
-    end
 end

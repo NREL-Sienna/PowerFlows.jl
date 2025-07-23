@@ -26,12 +26,12 @@ import PowerSystems
 import PowerSystems: System, with_units_base
 import LinearAlgebra
 import LinearAlgebra: norm, dot
+import JSON3
 import KLU
 import SparseArrays
 import InfrastructureSystems
 import PowerNetworkMatrices
-import SparseArrays: SparseMatrixCSC, SparseVector, sparse, sparsevec
-import JSON3
+import SparseArrays: SparseMatrixCSC, SparseVector, sparse, sparsevec, AbstractSparseMatrix
 import DataStructures: OrderedDict
 import Dates
 import MUMPS
@@ -58,7 +58,11 @@ include("powerflow_setup.jl")
 include("powerflow_method.jl")
 include("levenberg-marquardt.jl")
 include("post_processing.jl")
-include("RobustHomotopy/MUMPS_helpers.jl")
+include("RobustHomotopy/HessianSolver.jl/hessian_solver.jl")
+include("RobustHomotopy/HessianSolver.jl/MUMPS_hessian_solver.jl")
+include("RobustHomotopy/HessianSolver.jl/KLU_hessian_solver.jl")
+include("RobustHomotopy/HessianSolver.jl/fixed_structure_CHOLMOD.jl")
+include("RobustHomotopy/HessianSolver.jl/cholesky_solver.jl")
 include("RobustHomotopy/homotopy_hessian.jl")
 include("RobustHomotopy/wolfe_conditions.jl")
 include("RobustHomotopy/robust_homotopy_method.jl")
