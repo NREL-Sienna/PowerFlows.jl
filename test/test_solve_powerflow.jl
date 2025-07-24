@@ -1102,7 +1102,7 @@ end
         :r => 0.01,
         :x => 0.05,
         :primary_shunt => 0.0,
-        :phase_shift => deg2rad(30),  # 30 degrees in radians
+        :winding_group_number => 1,  # 30 degrees in radians
         :rating => 1.0,
         :base_power => 100.0,
         :base_voltage_primary => 230,
