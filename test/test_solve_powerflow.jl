@@ -1084,3 +1084,43 @@ end
     @test isapprox(data.bus_activepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
     @test isapprox(data.bus_reactivepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
 end
+
+@testset "Test phase shift in transformers" for Transformer in
+                                                (PSY.Transformer2W, PSY.TapTransformer)
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 110, 1.1, 0.0)
+
+    _add_simple_source!(sys, b1, 0.0, 0.0)
+
+    parameters = Dict(
+        :name => "Transformer",
+        :available => true,
+        :active_power_flow => 0.0,
+        :reactive_power_flow => 0.0,
+        :arc => Arc(b1, b2),
+        :r => 0.01,
+        :x => 0.05,
+        :primary_shunt => 0.0,
+        :phase_shift => deg2rad(30),  # 30 degrees in radians
+        :rating => 1.0,
+        :base_power => 100.0,
+        :base_voltage_primary => 230,
+        :base_voltage_secondary => 110,
+    )
+
+    Transformer == PSY.Transformer2W || (parameters[:tap] = 1.0)
+
+    t = Transformer(;
+        parameters...,
+    )
+    add_component!(sys, t)
+
+    pf = ACPowerFlow()
+    data = PowerFlowData(pf, sys; correct_bustypes = true)
+    solve_powerflow!(data; pf = pf)
+    # Check that the phase shift is correctly applied
+    a1 = data.bus_angles[1, 1]
+    a2 = data.bus_angles[2, 1]
+    @test isapprox(a2, a1 - deg2rad(30); atol = 1e-6, rtol = 0)
+end
