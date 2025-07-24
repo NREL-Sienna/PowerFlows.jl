@@ -4,7 +4,7 @@
     pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
     data = PowerFlowData(pf, sys)
 
-    hess = PF.HomotopyHessian(data, time_step)
+    hess, x0 = System_to_HomotopyHessian(sys, 1)
     t_k = 1.0
 
     residual = PF.ACPowerFlowResidual(data, time_step)
@@ -12,7 +12,6 @@
 
     # when t_k is 1, homotopy hessian H(x) is Jacobian matrix of G(x) := J(x)^T*F(x)
     # check that as Δx -> 0, [G(x) - G(x+Δx)] - H(x)*Δx -> 0 at O(norm(Δx)^2)
-    x0 = PF.calculate_x0(data, time_step)
     n = size(x0, 1)
     u = rand(Float64, n) .- 0.5
     u /= LinearAlgebra.norm(u)
@@ -44,9 +43,9 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
     data = PowerFlowData(pf, sys)
-    hess = PF.HomotopyHessian(data, time_step)
     t_k = 0.0
-    x0 = PF.homotopy_x0(data, time_step)
+    hess, x0 = System_to_HomotopyHessian(sys, 1)
+    PF.homotopy_x0!(x0, data, time_step)
     hess(x0, t_k, time_step)
 
     rowval, colptr = copy(hess.Hv.rowval), copy(hess.Hv.colptr)
@@ -65,11 +64,12 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
     data = PowerFlowData(pf, sys)
-    hess = PF.HomotopyHessian(data, time_step)
+    hess, x0 = System_to_HomotopyHessian(sys, 1)
     t_k = 0.0
-    x0 = PF.homotopy_x0(data, time_step)
+    PF.homotopy_x0!(x0, data, time_step)
     g0 = similar(x0)
     PF.gradient_value!(g0, hess, t_k, x0, time_step)
+
     for (ind, bt) in enumerate(PF.get_bus_type(data)[:, time_step])
         @test g0[2 * ind - 1] == (bt == PSY.ACBusTypes.PQ ? x0[2 * ind - 1] - 1 : 0.0)
         @test g0[2 * ind] == 0.0

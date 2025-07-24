@@ -596,7 +596,6 @@ wdot(wx::Vector{Float64}, x::Vector{Float64}, wy::Vector{Float64}, y::Vector{Flo
 wnorm(w::Vector{Float64}, x::Vector{Float64}) = norm(w .* x)
 """For pretty printing floats in debugging messages."""
 siground(x::Float64) = round(x; sigdigits = 3)
-
 signorm(x::Vector{Float64}; p::Real = 2) = siground(LinearAlgebra.norm(x, p))
-print_signorms(x::Vector{Float64}; intro::String = "",  ps::Vector{Float64} = [2]) =
+print_signorms(x::Vector{Float64}; intro::String = "", ps::Vector{Float64} = [2]) =
     @info "$intro norm: " * join(["$(signorm(x; p = p)) [L$p]" for p in ps], ", ")

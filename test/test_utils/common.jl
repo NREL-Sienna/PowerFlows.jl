@@ -395,3 +395,17 @@ function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
     data.bus_activepower_withdrawals .= deepcopy(withs[:, 1:time_steps])
     return nothing
 end
+
+"""Return a basic homotopy hessian for the given system and time step, along with `x0`."""
+function System_to_HomotopyHessian(
+    sys::System,
+    time_step::Int64 = 1;
+    kwargs...,
+)
+    pf_rh = ACPowerFlow{RobustHomotopyPowerFlow}()
+    data_rh = PowerFlowData(pf_rh, sys)
+    residual, J, x0 =
+        PF.initialize_powerflow_variables(pf_rh, data_rh, time_step; kwargs...)
+    hess = PF.HomotopyHessian(data_rh, residual, J, time_step)
+    return hess, x0
+end

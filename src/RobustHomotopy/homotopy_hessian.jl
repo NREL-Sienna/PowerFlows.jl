@@ -62,20 +62,24 @@ function gradient_value!(grad::Vector{Float64},
     return grad
 end
 
-function homotopy_x0(data::ACPowerFlowData, time_step::Int)
-    x = calculate_x0(data, time_step)
+function homotopy_x0!(x0::Vector{Float64}, data::ACPowerFlowData, time_step::Int)
     for (bus_ix, bt) in enumerate(get_bus_type(data)[:, time_step]) # PERF: allocating
         if bt == PSY.ACBusTypes.PQ
-            x[2 * bus_ix - 1] = 1.0
+            x0[2 * bus_ix - 1] = 1.0
         end
     end
-    return x
+    return x0
 end
 
-function HomotopyHessian(data::ACPowerFlowData, time_step::Int)
-    pfResidual = ACPowerFlowResidual(data, time_step)
+# pf, kwargs, and x are here so that we can call initialize_powerflow_variables,
+# We could instead move that function call outside of this constructor, and pass in
+# pfResidual and J.
+function HomotopyHessian(data::ACPowerFlowData,
+    pfResidual::ACPowerFlowResidual,
+    J::ACPowerFlowJacobian,
+    time_step::Int,
+)
     Hv = _create_hessian_matrix_structure(data, time_step)
-    J = ACPowerFlowJacobian(data, time_step)
     nbuses = size(get_bus_type(data), 1)
     PQ_mask = get_bus_type(data)[:, time_step] .== (PSY.ACBusTypes.PQ,)
     PQ_V_mags = collect(Iterators.flatten(zip(PQ_mask, falses(nbuses))))
