@@ -57,16 +57,10 @@ include("powerflow_setup.jl")
 include("powerflow_method.jl")
 include("levenberg-marquardt.jl")
 include("post_processing.jl")
-include("RobustHomotopy/HessianSolver.jl/hessian_solver.jl")
-if !Sys.iswindows() && USE_MUMPS
-    import MUMPS
-    import MUMPS: Mumps
-    import MPI
-    include("RobustHomotopy/HessianSolver.jl/MUMPS_hessian_solver.jl")
-end
-include("RobustHomotopy/HessianSolver.jl/KLU_hessian_solver.jl")
-include("RobustHomotopy/HessianSolver.jl/fixed_structure_CHOLMOD.jl")
-include("RobustHomotopy/HessianSolver.jl/cholesky_solver.jl")
+include("RobustHomotopy/HessianSolver/hessian_solver.jl")
+include("RobustHomotopy/HessianSolver/KLU_hessian_solver.jl")
+include("RobustHomotopy/HessianSolver/fixed_structure_CHOLMOD.jl")
+include("RobustHomotopy/HessianSolver/cholesky_solver.jl")
 include("RobustHomotopy/homotopy_hessian.jl")
 include("RobustHomotopy/wolfe_conditions.jl")
 include("RobustHomotopy/robust_homotopy_method.jl")

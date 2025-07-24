@@ -8,12 +8,11 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     t_k = 0.0
 
     # the sparse structure of the Hessian is different at t_k = 0.0 and t_k > 0.0
-    # so we need to increase t_k once before we initialize the MUMPS solver.
+    # so we need to increase t_k once before we initialize the solver.
     t_k += Δt_k
     homHess(x, t_k, time_step)
 
-    # options: KLUHessianSolver, MUMPSHessianSolver, CholeskyHessianSolver (fastest)
-    # MUMPSHessianSolver does not work on windows.
+    # options: KLUHessianSolver, CholeskyHessianSolver (fastest)
     hSolver = CholeskyHessianSolver(homHess.Hv)
     symbolic_factor!(hSolver, homHess.Hv)
 
@@ -36,7 +35,6 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
             _calculate_voltage_stability_factors(data, homHess.J.Jv, time_step)
         end
     end
-    cleanup!(hSolver)
     return success
 end
 

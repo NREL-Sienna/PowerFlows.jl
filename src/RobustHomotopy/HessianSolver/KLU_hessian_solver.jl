@@ -48,4 +48,3 @@ function modify_and_numeric_factor!(
 end
 
 solve!(hSolver::KLUHessianSolver, b::Vector{Float64}) = solve!(hSolver.linearSolver, b)
-cleanup!(::KLUHessianSolver) = nothing # KLU doesn't need cleanup.
