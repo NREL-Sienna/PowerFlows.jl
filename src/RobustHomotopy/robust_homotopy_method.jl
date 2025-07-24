@@ -2,21 +2,15 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
-    Δt_k = get(kwargs, :Δt_k, DEFAULT_Δt_k)
-    homHess = HomotopyHessian(data, time_step)
-    
-    x0 = improve_x0(pf, data, homHess.pfResidual, time_step)
-    if OVERRIDE_x0 && :x0 in keys(kwargs)
-        print_signorms(homHess.pfResidual.Rv; intro = "corrected ", ps = [1, 2, Inf])
-        x0 .= get(kwargs, :x0, x0)
-        @warn "Overriding initial guess x0."
-        homHess.pfResidual(x0, time_step)  # re-calculate residual for new x0: might have changed.
-        print_signorms(homHess.pfResidual.Rv; ps = [1, 2, Inf])
-    end
 
-    t_k_ref = homHess.t_k_ref
-    x = homotopy_x0(data, time_step)
+    residual, J, x = initialize_powerflow_variables(pf, data, time_step; kwargs...)
+    Δt_k = get(kwargs, :Δt_k, DEFAULT_Δt_k)
+    homHess = HomotopyHessian(data, residual, J, time_step)
+
     t_k = 0.0
+    homotopy_x0!(x, data, time_step)
+    homHess.pfResidual(x, time_step)
+    print_signorms(homHess.pfResidual.Rv; intro = "homotopy x0 ", ps = [1, 2, Inf])
 
     # the sparse structure of the Hessian is different at t_k = 0.0 and t_k > 0.0
     # so we need to increase t_k once before we initialize the MUMPS solver.
@@ -82,7 +76,7 @@ function _second_order_newton(homHess::HomotopyHessian,
         )
         F_val = F_value(homHess, t_k, x, time_step)
         # TODO jump in tolerance. F_val ~ sum of squares, so...
-        converged = (last_tk ? norm(homHess.pfResidual.Rv, Inf) : abs(F_val)) < tol
+        converged = last_tk ? (norm(homHess.pfResidual.Rv, Inf) < tol) : (abs(F_val) < tol^2)
         i += 1
         if converged
             info_helper(homHess, t_k, F_val, "converged")

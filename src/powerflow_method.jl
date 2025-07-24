@@ -390,35 +390,11 @@ function _newton_powerflow(
     time_step::Int64;
     kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
     # setup: common code
-    residual = ACPowerFlowResidual(data, time_step)
-
-    x0 = improve_x0(pf, data, residual, time_step)
-    if OVERRIDE_x0 && :x0 in keys(kwargs)
-        print_signorms(residual.Rv; intro = "corrected ", ps = [1, 2, Inf])
-        x0 .= get(kwargs, :x0, x0)
-        @warn "Overriding initial guess x0."
-        residual(x0, time_step)  # re-calculate residual for new x0: might have changed.
-        print_signorms(residual.Rv; ps = [1, 2, Inf])
-    end
-
-    J = ACPowerFlowJacobian(data, time_step)
-    J(time_step)
+    residual, J, x0 = initialize_powerflow_variables(pf, data, time_step; kwargs...)
     converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
 
     if !converged
-        bus_types = @view get_bus_type(J.data)[:, time_step]
-        validate_vms::Bool = get(
-            kwargs,
-            :validate_voltages,
-            DEFAULT_VALIDATE_VOLTAGES,
-        )
-        validation_range::MinMax = get(
-            kwargs,
-            :vm_validation_range,
-            DEFAULT_VALIDATION_RANGE,
-        )
-        validate_vms && validate_voltages(x0, bus_types, validation_range, 0)
         linSolveCache = KLULinSolveCache(J.Jv)
         symbolic_factor!(linSolveCache, J.Jv)
         stateVector = StateVectorCache(x0, residual.Rv)
