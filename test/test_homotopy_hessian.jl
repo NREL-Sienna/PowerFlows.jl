@@ -5,7 +5,7 @@
     data = PowerFlowData(pf, sys)
 
     hess = PF.HomotopyHessian(data, time_step)
-    hess.t_k_ref[] = 1.0
+    t_k = 1.0
 
     residual = PF.ACPowerFlowResidual(data, time_step)
     J = PF.ACPowerFlowJacobian(data, time_step)
@@ -16,7 +16,7 @@
     n = size(x0, 1)
     u = rand(Float64, n) .- 0.5
     u /= LinearAlgebra.norm(u)
-    hess(x0, time_step)
+    hess(x0, t_k, time_step)
     errors = []
     Δx_mags = collect(10.0^k for k in -3:-1:-6)
     for Δx_mag in Δx_mags
@@ -44,19 +44,19 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
     data = PowerFlowData(pf, sys)
-
     hess = PF.HomotopyHessian(data, time_step)
+    t_k = 0.0
     x0 = PF.homotopy_x0(data, time_step)
-    hess(x0, time_step)
+    hess(x0, t_k, time_step)
 
     rowval, colptr = copy(hess.Hv.rowval), copy(hess.Hv.colptr)
 
-    hess.t_k_ref[] = 0.5
-    hess(x0, time_step)
+    t_k = 0.5
+    hess(x0, t_k, time_step)
     @test hess.Hv.rowval == rowval && hess.Hv.colptr == colptr
 
-    hess.t_k_ref[] = 1.0
-    hess(x0, time_step)
+    t_k = 1.0
+    hess(x0, t_k, time_step)
     @test hess.Hv.rowval == rowval && hess.Hv.colptr == colptr
 end
 
@@ -65,18 +65,19 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
     data = PowerFlowData(pf, sys)
-
     hess = PF.HomotopyHessian(data, time_step)
+    t_k = 0.0
     x0 = PF.homotopy_x0(data, time_step)
-
-    g0 = PF.gradient_value(hess, x0, time_step)
+    g0 = similar(x0)
+    PF.gradient_value!(g0, hess, t_k, x0, time_step)
     for (ind, bt) in enumerate(PF.get_bus_type(data)[:, time_step])
         @test g0[2 * ind - 1] == (bt == PSY.ACBusTypes.PQ ? x0[2 * ind - 1] - 1 : 0.0)
         @test g0[2 * ind] == 0.0
     end
 
-    hess.t_k_ref[] = 0.5
-    g1 = PF.gradient_value(hess, x0, time_step)
+    t_k = 0.5
+    g1 = similar(x0)
+    PF.gradient_value!(g1, hess, t_k, x0, time_step)
 
     n = size(x0, 1)
     u = rand(Float64, n) .- 0.5
@@ -89,7 +90,7 @@ end
         inputValues = [x0, x1]
         outputValues = Vector{Float64}()
         for inputVal in inputValues
-            push!(outputValues, PF.F_value(hess, inputVal, time_step))
+            push!(outputValues, PF.F_value(hess, t_k, inputVal, time_step))
         end
         ΔF = outputValues[2] - outputValues[1]
         push!(errors, norm(ΔF - dot(g1, x1 - x0)) / Δx_mag)
