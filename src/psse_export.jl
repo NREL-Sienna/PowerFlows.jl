@@ -1037,7 +1037,7 @@ function write_to_buffers!(
         O4 = PSSE_DEFAULT
         F4 = PSSE_DEFAULT
         VECGRP = PSSE_DEFAULT
-        
+
         # Handle both 2-winding transformer fields
         if length(bus_tuple) == 2
             from_n, to_n = bus_tuple
@@ -1099,7 +1099,7 @@ function write_to_buffers!(
 
             @fastprintdelim_unroll(io, true, WINDV2, NOMV2)
 
-        # Handle 3-winding transformer fields
+            # Handle 3-winding transformer fields
         elseif length(bus_tuple) == 3
             p, s, t = bus_tuple
             I = bus_number_mapping[p]
@@ -1111,7 +1111,7 @@ function write_to_buffers!(
             MAG2 = 1
             NAME = transformer_3w_name_mapping[PSY.get_name(transformer)]
             NAME = _psse_quote_string(NAME)
-            
+
             R1_2 = PSSE_DEFAULT
             X1_2 = PSSE_DEFAULT
             SBASE1_2 = PSY.get_base_power_12(transformer)
@@ -1479,7 +1479,11 @@ function write_to_buffers!(
     check_33(exporter)
     println(exporter.system)
     println(collect(PSY.get_components(PSY.Transformer3W, exporter.system))[1])
-    println(PSY.get_supplemental_attributes(collect(PSY.get_components(PSY.Transformer3W, exporter.system))[1]))
+    println(
+        PSY.get_supplemental_attributes(
+            collect(PSY.get_components(PSY.Transformer3W, exporter.system))[1],
+        ),
+    )
 
     transformer_types =
         Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
@@ -1516,7 +1520,7 @@ function write_to_buffers!(
                 end
             end
         end
-        
+
         # @fastprintdelim_unroll(io, false, I)
         # fastprintln(io, I)
         # println(icd_mapping)
