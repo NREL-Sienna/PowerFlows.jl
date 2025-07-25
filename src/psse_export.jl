@@ -570,12 +570,12 @@ _psse_get_load_data(
     load::Union{PSY.StandardLoad, PSY.InterruptibleStandardLoad},
 ) =
     with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-        round(PSY.get_constant_active_power(load), digits=4),
-        round(PSY.get_constant_reactive_power(load), digits=4),
-        round(PSY.get_current_active_power(load), digits=4),
-        round(PSY.get_current_reactive_power(load), digits=4),
-        round(PSY.get_impedance_active_power(load), digits=4),
-        round(PSY.get_impedance_reactive_power(load), digits=4)
+        round(PSY.get_constant_active_power(load); digits = 4),
+        round(PSY.get_constant_reactive_power(load); digits = 4),
+        round(PSY.get_current_active_power(load); digits = 4),
+        round(PSY.get_current_reactive_power(load); digits = 4),
+        round(PSY.get_impedance_active_power(load); digits = 4),
+        round(PSY.get_impedance_reactive_power(load); digits = 4)
     end
 
 # Fallback if not all the data is available
@@ -765,8 +765,10 @@ function write_to_buffers!(
         VS = PSY.get_magnitude(PSY.get_bus(generator))
         IREG = get(PSY.get_ext(generator), "IREG", PSSE_DEFAULT)
         MBASE = PSY.get_base_power(generator)
-        ZR, ZX = PSSE_DEFAULT, PSSE_DEFAULT
-        RT, XT = PSSE_DEFAULT, PSSE_DEFAULT
+        ZR = get(PSY.get_ext(generator), "r", PSSE_DEFAULT)
+        ZX = get(PSY.get_ext(generator), "x", PSSE_DEFAULT)
+        RT = get(PSY.get_ext(generator), "rt", PSSE_DEFAULT)
+        XT = get(PSY.get_ext(generator), "xt", PSSE_DEFAULT)
         GTAP = PSSE_DEFAULT
         STAT = PSY.get_available(generator) ? 1 : 0
         RMPCT = PSSE_DEFAULT
