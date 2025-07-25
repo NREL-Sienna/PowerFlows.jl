@@ -565,14 +565,17 @@ serialize_component_ids(id_mapping::Dict{Tuple{Tuple{Int64, Int64}, String}, Str
     )
 
 # Fetch PL, QL, IP, IQ, YP, YQ
-_psse_get_load_data(exporter::PSSEExporter, load::PSY.StandardLoad) =
+_psse_get_load_data(
+    exporter::PSSEExporter,
+    load::Union{PSY.StandardLoad, PSY.InterruptibleStandardLoad},
+) =
     with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-        PSY.get_constant_active_power(load),
-        PSY.get_constant_reactive_power(load),
-        PSY.get_current_active_power(load),
-        PSY.get_current_reactive_power(load),
-        PSY.get_impedance_active_power(load),
-        PSY.get_impedance_reactive_power(load)
+        round(PSY.get_constant_active_power(load), digits=4),
+        round(PSY.get_constant_reactive_power(load), digits=4),
+        round(PSY.get_current_active_power(load), digits=4),
+        round(PSY.get_current_reactive_power(load), digits=4),
+        round(PSY.get_impedance_active_power(load), digits=4),
+        round(PSY.get_impedance_reactive_power(load), digits=4)
     end
 
 # Fallback if not all the data is available
@@ -599,7 +602,10 @@ function write_to_buffers!(
     check_33(exporter)
 
     loads = get!(exporter.components_cache, "loads") do
-        sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system)); by = PSY.get_name)
+        static_loads = collect(PSY.get_components(PSY.StaticLoad, exporter.system))
+        controllable_loads =
+            collect(PSY.get_components(PSY.ControllableLoad, exporter.system))
+        sort!(unique(vcat(static_loads, controllable_loads)); by = PSY.get_name)
     end
     load_name_mapping = get!(exporter.components_cache, "load_name_mapping") do
         create_component_ids(
@@ -613,12 +619,13 @@ function write_to_buffers!(
         I = md["bus_number_mapping"][sienna_bus_number]
         ID = _psse_quote_string(load_name_mapping[(sienna_bus_number, PSY.get_name(load))])
         STATUS = PSY.get_available(load) ? 1 : 0
-        AREA = PSSE_DEFAULT  # defaults to bus's area
-        ZONE = PSSE_DEFAULT  # defaults to zone's area
+        AREA = parse(Int, PSY.get_name(PSY.get_area(PSY.get_bus(load))))
+        ZONE = parse(Int, PSY.get_name(PSY.get_load_zone(PSY.get_bus(load))))
         PL, QL, IP, IQ, YP, YQ = _psse_get_load_data(exporter, load)
         OWNER = PSSE_DEFAULT  # defaults to bus's owner
-        SCALE = PSSE_DEFAULT
-        INTRPT = PSSE_DEFAULT
+        load_conformity = PSY.get_conformity(load)
+        SCALE = load_conformity == PSY.LoadConformity.CONFORMING ? 1 : 0
+        INTRPT = load isa PSY.ControllableLoad ? 1 : 0
 
         @fastprintdelim_unroll(io, true, I, ID, STATUS, AREA, ZONE,
             PL, QL, IP, IQ, YP, YQ, OWNER,
@@ -1477,14 +1484,6 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_33(exporter)
-    println(exporter.system)
-    println(collect(PSY.get_components(PSY.Transformer3W, exporter.system))[1])
-    println(
-        PSY.get_supplemental_attributes(
-            collect(PSY.get_components(PSY.Transformer3W, exporter.system))[1],
-        ),
-    )
-
     transformer_types =
         Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
     transformers_with_numbers = get!(exporter.components_cache, "transformers") do
