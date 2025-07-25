@@ -2,7 +2,6 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
-
     residual, J, x = initialize_powerflow_variables(pf, data, time_step; kwargs...)
     Δt_k = get(kwargs, :Δt_k, DEFAULT_Δt_k)
     homHess = HomotopyHessian(data, residual, J, time_step)
@@ -23,8 +22,13 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     symbolic_factor!(hSolver, homHess.Hv)
 
     success = true
+    total_iterations = 0
+    iterations_vector = Dict{Float64, Int}()
     while true # go onto next t_k even if search doesn't terminate within max iterations.
-        converged_t_k, _ = _second_order_newton(homHess, t_k, time_step, x, hSolver)
+        converged_t_k, iterations =
+            _second_order_newton(homHess, t_k, time_step, x, hSolver)
+        iterations_vector[siground(t_k)] = iterations
+        total_iterations += iterations
         if t_k == 1.0
             success = converged_t_k
             break
@@ -34,6 +38,8 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     if !success
         @warn "RobustHomotopyPowerFlow failed to find a solution"
     else
+        @info "The RobustHomotopyPowerFlow solver converged after $total_iterations iterations."
+        @info "Iterations for each t_k: $(sort(iterations_vector))."
         if get_calculate_loss_factors(data)
             _calculate_loss_factors(data, homHess.J.Jv, time_step)
         end
@@ -41,6 +47,8 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
             _calculate_voltage_stability_factors(data, homHess.J.Jv, time_step)
         end
     end
+    rv = homHess.pfResidual.Rv
+    @info("Final residual size: $(norm(rv, 2)) L2, $(norm(rv, Inf)) L∞.")
     cleanup!(hSolver)
     return success
 end
@@ -76,7 +84,8 @@ function _second_order_newton(homHess::HomotopyHessian,
         )
         F_val = F_value(homHess, t_k, x, time_step)
         # TODO jump in tolerance. F_val ~ sum of squares, so...
-        converged = last_tk ? (norm(homHess.pfResidual.Rv, Inf) < tol) : (abs(F_val) < tol^2)
+        converged =
+            last_tk ? (norm(homHess.pfResidual.Rv, Inf) < tol) : (abs(F_val) < tol^2)
         i += 1
         if converged
             info_helper(homHess, t_k, F_val, "converged")

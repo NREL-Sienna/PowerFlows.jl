@@ -32,6 +32,7 @@ function _newton_powerflow(
         end
         return true
     end
+    @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
     @error("The LevenbergMarquardtACPowerFlow solver failed to converge.")
     return false
 end

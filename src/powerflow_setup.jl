@@ -137,7 +137,7 @@ function initialize_powerflow_variables(pf::ACPowerFlow{T},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...,
-) where {T <: ACPowerFlowSolverType} 
+) where {T <: ACPowerFlowSolverType}
     residual = ACPowerFlowResidual(data, time_step)
     x0 = improve_x0(pf, data, residual, time_step)
     if OVERRIDE_x0 && :x0 in keys(kwargs)

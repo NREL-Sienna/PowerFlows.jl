@@ -409,7 +409,7 @@ function _newton_powerflow(
             kwargs...,
         )
     end
-
+    @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
     if converged
         @info("The $T solver converged after $i iterations.")
         if get_calculate_loss_factors(data)
