@@ -22,6 +22,7 @@ function _newton_powerflow(
         )
     end
 
+    @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
     if converged
         @info("The LevenbergMarquardtACPowerFlow solver converged after $i iterations.")
         if get_calculate_loss_factors(data)
@@ -32,7 +33,6 @@ function _newton_powerflow(
         end
         return true
     end
-    @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
     @error("The LevenbergMarquardtACPowerFlow solver failed to converge.")
     return false
 end

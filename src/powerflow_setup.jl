@@ -147,7 +147,9 @@ function initialize_powerflow_variables(pf::ACPowerFlow{T},
         residual(x0, time_step)  # re-calculate residual for new x0: might have changed.
         print_signorms(residual.Rv; ps = [1, 2, Inf])
     end
-
+    @info "Initial residual size: " *
+          "$(norm(residual.Rv, 2)) L2, " *
+          "$(norm(residual.Rv, Inf)) L∞"
     J = ACPowerFlowJacobian(data, time_step)
     J(time_step)
     validate_vms::Bool = get(
