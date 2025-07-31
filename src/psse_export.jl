@@ -1538,7 +1538,12 @@ function write_to_buffers!(
 
     icd_entries = get!(exporter.components_cache, "icd_entries") do
         sort(
-            collect(PSY.get_supplemental_attributes(PSY.ImpedanceCorrectionData, exporter.system));
+            collect(
+                PSY.get_supplemental_attributes(
+                    PSY.ImpedanceCorrectionData,
+                    exporter.system,
+                ),
+            );
             by = tn -> PSY.get_table_number(tn),
         )
     end
