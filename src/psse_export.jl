@@ -90,7 +90,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
                     "PSS/E version $psse_version is not supported, must be one of $PSSE_EXPORT_SUPPORTED_VERSIONS",
                 ),
             )
-        system = PSY.fast_deepcopy_system(base_system)
+        system = PSY.fast_deepcopy_system(base_system; skip_supplemental_attributes = false)
         mkpath(export_dir)
         new(
             system,
@@ -265,10 +265,15 @@ convert_empty_stringvec = Base.Fix1(convert_empty, Vector{String})
 # PERF could be improved by appending to the buffer rather than doing string interpolation, seems unnecessary
 _psse_quote_string(s::String) = "'$s'"
 
+# Rounds a value up to 4 decimals, to avoid large approximations in file
+_psse_round_val(val) = isa(val, String) ? val : round(val; digits = 4)
+
 branch_to_bus_numbers(branch) =
     PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch)))::Tuple{Int, Int}
 
-function branch_to_bus_numbers(branch::PSY.Transformer3W)
+function branch_to_bus_numbers(
+    branch::PSY.ThreeWindingTransformer,
+)
     p = PSY.get_number(PSY.get_from(PSY.get_primary_star_arc(branch)))
     s = PSY.get_number(PSY.get_from(PSY.get_secondary_star_arc(branch)))
     t = PSY.get_number(PSY.get_from(PSY.get_tertiary_star_arc(branch)))
@@ -570,12 +575,12 @@ _psse_get_load_data(
     load::Union{PSY.StandardLoad, PSY.InterruptibleStandardLoad},
 ) =
     with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-        round(PSY.get_constant_active_power(load); digits = 4),
-        round(PSY.get_constant_reactive_power(load); digits = 4),
-        round(PSY.get_current_active_power(load); digits = 4),
-        round(PSY.get_current_reactive_power(load); digits = 4),
-        round(PSY.get_impedance_active_power(load); digits = 4),
-        round(PSY.get_impedance_reactive_power(load); digits = 4)
+        _psse_round_val(PSY.get_constant_active_power(load)),
+        _psse_round_val(PSY.get_constant_reactive_power(load)),
+        _psse_round_val(PSY.get_current_active_power(load)),
+        _psse_round_val(PSY.get_current_reactive_power(load)),
+        _psse_round_val(PSY.get_impedance_active_power(load)),
+        _psse_round_val(PSY.get_impedance_reactive_power(load))
     end
 
 # Fallback if not all the data is available
@@ -1035,7 +1040,6 @@ function write_to_buffers!(
         CZ = get(PSY.get_ext(transformer), "CZ", PSSE_DEFAULT)
         CM = get(PSY.get_ext(transformer), "CM", PSSE_DEFAULT)
         NMETR = get(PSY.get_ext(transformer), "NMETR", PSSE_DEFAULT)
-        STAT = PSY.get_available(transformer) ? 1 : 0
 
         O1 = PSSE_DEFAULT
         F1 = PSSE_DEFAULT
@@ -1047,32 +1051,44 @@ function write_to_buffers!(
         F4 = PSSE_DEFAULT
         VECGRP = PSSE_DEFAULT
 
-        # Handle both 2-winding transformer fields
-        if length(bus_tuple) == 2
+        if length(bus_tuple) == 2  # Handle both 2-winding transformer fields
             from_n, to_n = bus_tuple
             I = bus_number_mapping[from_n]
             J = bus_number_mapping[to_n]
             K = 0
             CKT = transformer_ckt_mapping[((from_n, to_n), PSY.get_name(transformer))]
             @assert !(first(CKT) in ['&', '@', '*'])
+            if startswith(CKT, "_")
+                CKT = CKT[2:end]
+            end
             CKT = _psse_quote_string(CKT)
             if CM == 1
                 MAG1 = real(PSY.get_primary_shunt(transformer))
                 MAG2 = imag(PSY.get_primary_shunt(transformer))
             else
                 MAG1 =
-                    real(PSY.get_primary_shunt(transformer)) *
-                    PSY.get_base_power(exporter.system)
-                MAG2 = sqrt(imag(PSY.get_primary_shunt(transformer))^2 + MAG1^2)
+                    _psse_round_val(real(PSY.get_primary_shunt(transformer)))
+                MAG2 = _psse_round_val(
+                    sqrt(imag(PSY.get_primary_shunt(transformer))^2 + MAG1^2),
+                )
             end
             NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
+            STAT = PSY.get_available(transformer) ? 1 : 0
 
-            R1_2 = PSY.get_r(transformer)
-            X1_2 = PSY.get_x(transformer)
+            if CW == 1
+                R1_2 = PSY.get_r(transformer)
+                X1_2 = PSY.get_x(transformer)
+            elseif CW == 2
+                R1_2 = PSY.get_r(transformer)
+                X1_2 = PSY.get_x(transformer)
+            else
+                R1_2 = PSY.get_r(transformer)
+                X1_2 = PSY.get_x(transformer)
+            end
             SBASE1_2 = PSY.get_base_power(transformer)
 
             WINDV1 = (transformer isa PSY.TapTransformer) ? PSY.get_tap(transformer) : 1.0
-            NOMV1 = 0.0  # special case: identical to bus voltage
+            NOMV1 = PSY.get_base_voltage_primary(transformer)
             ANG1 = if (transformer isa PSY.PhaseShiftingTransformer)
                 rad2deg(PSY.get_α(transformer))
             else
@@ -1080,11 +1096,12 @@ function write_to_buffers!(
             end
             RATA1, RATB1, RATC1 =
                 with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-                    _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
-                    _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
-                    _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+                    _value_or_default(PSY.get_rating(transformer), 0.00),
+                    _value_or_default(PSY.get_rating_b(transformer), 0.00),
+                    _value_or_default(PSY.get_rating_c(transformer), 0.00)
                 end
-            COD1 = PSSE_DEFAULT
+            RATA1, RATB1, RATC1 = (_psse_round_val(x) for x in (RATA1, RATB1, RATC1))
+            COD1 = get(PSY.get_ext(transformer), "COD1", PSSE_DEFAULT)
             CONT1 = PSSE_DEFAULT
             RMA1 = RMI1 = VMA1 = VMI1 = PSSE_DEFAULT
             NTP1 = PSSE_DEFAULT
@@ -1093,7 +1110,7 @@ function write_to_buffers!(
             CNXA1 = PSSE_DEFAULT
 
             WINDV2 = 1.0
-            NOMV2 = 0.0
+            NOMV2 = PSY.get_base_voltage_secondary(transformer)
 
             @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
                 MAG1, MAG2, NMETR, NAME, STAT)
@@ -1108,37 +1125,61 @@ function write_to_buffers!(
 
             @fastprintdelim_unroll(io, true, WINDV2, NOMV2)
 
-            # Handle 3-winding transformer fields
-        elseif length(bus_tuple) == 3
+        elseif length(bus_tuple) == 3 # Handle 3-winding transformer fields
             p, s, t = bus_tuple
             I = bus_number_mapping[p]
             J = bus_number_mapping[s]
             K = bus_number_mapping[t]
             CKT = transformer_3w_ckt_mapping[((p, s, t), PSY.get_name(transformer))]
+            if startswith(CKT, "_")
+                CKT = CKT[2:end]
+            end
             CKT = _psse_quote_string(CKT)
             MAG1 = 1
             MAG2 = 1
             NAME = transformer_3w_name_mapping[PSY.get_name(transformer)]
             NAME = _psse_quote_string(NAME)
 
-            R1_2 = PSSE_DEFAULT
-            X1_2 = PSSE_DEFAULT
+            if PSY.get_available_primary(transformer) == false
+                STAT = 4
+            elseif PSY.get_available_secondary(transformer) == false
+                STAT = 2
+            elseif PSY.get_available_tertiary(transformer) == false
+                STAT = 3
+            else
+                STAT = PSY.get_available(transformer) ? 1 : 0
+            end
+
+            if CW == 1
+                R1_2 = PSY.get_r_12(transformer)
+                X1_2 = PSY.get_x_12(transformer)
+            elseif CW == 2
+                R1_2 = PSY.get_r_12(transformer)
+                X1_2 = PSY.get_x_12(transformer)
+            else
+                R1_2 = PSY.get_r_12(transformer)
+                X1_2 = PSY.get_x_12(transformer)
+            end
             SBASE1_2 = PSY.get_base_power_12(transformer)
-            R2_3 = PSSE_DEFAULT
-            X2_3 = PSSE_DEFAULT
+            R2_3 = PSY.get_r_23(transformer)
+            X2_3 = PSY.get_x_23(transformer)
             SBAS2_3 = PSY.get_base_power_23(transformer)
-            R3_1 = PSSE_DEFAULT
-            X3_1 = PSSE_DEFAULT
+            R3_1 = PSY.get_r_13(transformer)
+            X3_1 = PSY.get_x_13(transformer)
             SBAS3_1 = PSY.get_base_power_13(transformer)
             VMSTAR = PSSE_DEFAULT
             ANSTAR = PSSE_DEFAULT
 
             # Primary winding data
-            WINDV1 = PSSE_DEFAULT
-            NOMV1 = PSSE_DEFAULT
-            ANG1 = PSSE_DEFAULT
+            NOMV1 = PSY.get_base_voltage_primary(transformer)
+            WINDV1 = PSY.get_primary_turns_ratio(transformer) * NOMV1
+            ANG1 = if (transformer isa PSY.PhaseShiftingTransformer3W)
+                _psse_round_val(rad2deg(PSY.get_α_primary(transformer)))
+            else
+                0.0
+            end
             RATA1 = RATB1 = RATC1 = PSY.get_rating_primary(transformer)
-            COD1 = PSSE_DEFAULT
+            COD1 = get(PSY.get_ext(transformer), "COD1", PSSE_DEFAULT)
             CONT1 = PSSE_DEFAULT
             RMA1 = PSSE_DEFAULT
             RMI1 = PSSE_DEFAULT
@@ -1151,11 +1192,15 @@ function write_to_buffers!(
             CNXA1 = PSSE_DEFAULT
 
             # Secondary winding data
-            WINDV2 = PSSE_DEFAULT
-            NOMV2 = PSSE_DEFAULT
-            ANG2 = PSSE_DEFAULT
+            NOMV2 = PSY.get_base_voltage_secondary(transformer)
+            WINDV2 = PSY.get_secondary_turns_ratio(transformer) * NOMV2
+            ANG2 = if (transformer isa PSY.PhaseShiftingTransformer3W)
+                _psse_round_val(rad2deg(PSY.get_α_secondary(transformer)))
+            else
+                0.0
+            end
             RATA2 = RATB2 = RATC2 = PSY.get_rating_secondary(transformer)
-            COD2 = PSSE_DEFAULT
+            COD2 = get(PSY.get_ext(transformer), "COD2", PSSE_DEFAULT)
             CONT2 = PSSE_DEFAULT
             RMA2 = PSSE_DEFAULT
             RMI2 = PSSE_DEFAULT
@@ -1168,11 +1213,15 @@ function write_to_buffers!(
             CNXA2 = PSSE_DEFAULT
 
             # Tertiary winding data
-            WINDV3 = PSSE_DEFAULT
-            NOMV3 = PSSE_DEFAULT
-            ANG3 = PSSE_DEFAULT
+            NOMV3 = PSY.get_base_voltage_tertiary(transformer)
+            WINDV3 = PSY.get_tertiary_turns_ratio(transformer) * NOMV3
+            ANG3 = if (transformer isa PSY.PhaseShiftingTransformer3W)
+                _psse_round_val(rad2deg(PSY.get_α_tertiary(transformer)))
+            else
+                0.0
+            end
             RATA3 = RATB3 = RATC3 = PSY.get_rating_tertiary(transformer)
-            COD3 = PSSE_DEFAULT
+            COD3 = get(PSY.get_ext(transformer), "COD3", PSSE_DEFAULT)
             CONT3 = PSSE_DEFAULT
             RMA3 = PSSE_DEFAULT
             RMI3 = PSSE_DEFAULT
@@ -1264,14 +1313,14 @@ function write_to_buffers!(
         CCCACC = PSSE_DEFAULT
         IPR = I
         NBR = PSY.get_rectifier_bridges(dcline)
-        ANMXR = round(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).max); digits = 5)
-        ANMNR = round(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).min); digits = 5)
-        RCR = round(
+        ANMXR = _psse_round_val(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).max))
+        ANMNR = _psse_round_val(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).min))
+        RCR = _psse_round_val(
             PSY.get_rectifier_rc(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
-            PSY.get_base_power(exporter.system); digits = 5)
-        XCR = round(
+            PSY.get_base_power(exporter.system))
+        XCR = _psse_round_val(
             PSY.get_rectifier_xc(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
-            PSY.get_base_power(exporter.system); digits = 5)
+            PSY.get_base_power(exporter.system))
         EBASR = PSY.get_rectifier_base_voltage(dcline)
         TRR = PSY.get_rectifier_transformer_ratio(dcline)
         TAPR = PSY.get_rectifier_tap_setting(dcline)
@@ -1289,15 +1338,15 @@ function write_to_buffers!(
         IPI = J
         NBI = PSY.get_inverter_bridges(dcline)
         ANMXI =
-            round(rad2deg(PSY.get_inverter_extinction_angle_limits(dcline).max); digits = 5)
+            _psse_round_val(rad2deg(PSY.get_inverter_extinction_angle_limits(dcline).max))
         ANMNI =
-            round(rad2deg(PSY.get_inverter_extinction_angle_limits(dcline).min); digits = 5)
-        RCI = round(
+            _psse_round_val(rad2deg(PSY.get_inverter_extinction_angle_limits(dcline).min))
+        RCI = _psse_round_val(
             PSY.get_inverter_rc(dcline) * PSY.get_inverter_base_voltage(dcline)^2 /
-            PSY.get_base_power(exporter.system); digits = 5)
-        XCI = round(
+            PSY.get_base_power(exporter.system))
+        XCI = _psse_round_val(
             PSY.get_inverter_xc(dcline) * PSY.get_inverter_base_voltage(dcline)^2 /
-            PSY.get_base_power(exporter.system); digits = 5)
+            PSY.get_base_power(exporter.system))
         EBASI = PSY.get_inverter_base_voltage(dcline)
         TRI = PSY.get_inverter_transformer_ratio(dcline)
         TAPI = PSY.get_inverter_tap_setting(dcline)
@@ -1392,10 +1441,10 @@ function write_to_buffers!(
         ACSET1 = PSY.get_ac_setpoint_from(vscline)
         ALOSS1 = 0.0 # TODO: rethink this approach
         BLOSS1 =
-            round(
+            _psse_round_val(
                 PSY.get_proportional_term(
                     PSY.get_function_data(PSY.get_converter_loss_from(vscline)),
-                ) * 1e3 * PSY.get_base_power(exporter.system); digits = 5)
+                ) * 1e3 * PSY.get_base_power(exporter.system))
         MINLOSS1 = 0.0 # TODO: rethink this approach
         SMAX1 = PSY.get_rating_from(vscline)
         SMAX1 = if SMAX1 == 9999.0
@@ -1425,10 +1474,10 @@ function write_to_buffers!(
         ACSET2 = PSY.get_ac_setpoint_to(vscline)
         ALOSS2 = 0.0 # TODO: rethink this approach
         BLOSS2 =
-            round(
+            _psse_round_val(
                 PSY.get_proportional_term(
                     PSY.get_function_data(PSY.get_converter_loss_to(vscline)),
-                ) * 1e3 * PSY.get_base_power(exporter.system); digits = 5)
+                ) * 1e3 * PSY.get_base_power(exporter.system))
         MINLOSS2 = 0.0 # TODO: rethink this approach
         SMAX2 = PSY.get_rating_from(vscline)
         SMAX2 = if SMAX2 == 9999.0
@@ -1486,46 +1535,27 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_33(exporter)
-    transformer_types =
-        Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
-    transformers_with_numbers = get!(exporter.components_cache, "transformers") do
-        transformers = sort!(
-            collect(PSY.get_components(transformer_types, exporter.system));
-            by = branch_to_bus_numbers,
+
+    icd_entries = get!(exporter.components_cache, "icd_entries") do
+        sort(
+            collect(PSY.get_supplemental_attributes(PSY.ImpedanceCorrectionData, exporter.system));
+            by = tn -> PSY.get_table_number(tn),
         )
-        [(transformer, branch_to_bus_numbers(transformer)) for transformer in transformers]
-    end
-    transformer_3w_types =
-        Union{PSY.Transformer3W, PSY.PhaseShiftingTransformer3W}
-    transformers_3w_with_numbers = get!(exporter.components_cache, "transformers_3w") do
-        transformers = sort!(
-            collect(PSY.get_components(transformer_3w_types, exporter.system));
-            by = branch_to_bus_numbers,
-        )
-        [(transformer, branch_to_bus_numbers(transformer)) for transformer in transformers]
     end
 
-    for (transformer, _) in
-        vcat(transformers_with_numbers, transformers_3w_with_numbers)
-        icd_mapping = Dict{Int, Vector{Tuple{Float64, Float64}}}()
-        icd_entry = PSY.get_supplemental_attributes(transformer)
-        for icd in icd_entry
-            I = PSY.get_table_number(icd)
-            if !haskey(icd_mapping, I)
-                icd_mapping[I] = Vector{Tuple{Float64, Float64}}()
-            end
-            for point in icd.impedance_correction_curve.points
-                points_tuple = (point.x, point.y)
-                if !(points_tuple in icd_mapping[I])
-                    push!(icd_mapping[I], points_tuple)
-                end
-            end
+    for icd in icd_entries
+        I = PSY.get_table_number(icd)
+        points = PSY.get_points(PSY.get_impedance_correction_curve(icd))
+        fastprint(io, I)
+        for p in points
+            fastprint(io, ",   ")
+            fastprint(io, p.x)
+            fastprint(io, ",")
+            fastprint(io, p.y)
         end
-
-        # @fastprintdelim_unroll(io, false, I)
-        # fastprintln(io, I)
-        # println(icd_mapping)
+        fastprintln(io, "")
     end
+
     end_group_33(io, md, exporter, "Transformer Impedance Correction Tables", true)
 end
 
