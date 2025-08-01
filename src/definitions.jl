@@ -60,5 +60,3 @@ const GRAD_ZERO = 2 * eps()
 # cholesky solver specific
 const VTypes = SparseArrays.CHOLMOD.VRealTypes
 const ITypes = SparseArrays.CHOLMOD.ITypes
-# MUMPS solver
-const USE_MUMPS = false # avoids compilation issues on Windows; cholesky is faster anyway.

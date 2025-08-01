@@ -58,5 +58,3 @@ function solve!(solver::CholeskyHessianSolver, b::Vector{Float64})
     copyto!(solver.buff, b)
     b .= solver.F \ solver.buff
 end
-
-cleanup!(::CholeskyHessianSolver) = nothing # CHOLMOD doesn't need cleanup.
