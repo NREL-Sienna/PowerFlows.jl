@@ -918,7 +918,6 @@ WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Data
 """
 function _psse_transformer_names(
     transformers::Vector{String},
-    # bus_numbers::Vector{Tuple{Int64, Int64}},
     bus_numbers::Vector,
     bus_number_mapping::AbstractDict{Int64, Int64},
     transformer_ckt_mapping,
@@ -1019,19 +1018,32 @@ function write_to_buffers!(
             )
         end
     if !exporter.md_valid
-        md["transformer_name_mapping"] = _psse_transformer_names(
-            convert_empty_stringvec(PSY.get_name.(first.(transformers_with_numbers))),
-            last.(transformers_with_numbers),
-            md["bus_number_mapping"],
-            transformer_ckt_mapping,
-        )
+        # Handle 2W transformers
+        if !isempty(transformers_with_numbers)
+            md["transformer_name_mapping"] = _psse_transformer_names(
+                convert_empty_stringvec(PSY.get_name.(first.(transformers_with_numbers))),
+                last.(transformers_with_numbers),
+                md["bus_number_mapping"],
+                transformer_ckt_mapping,
+            )
+        else
+            md["transformer_name_mapping"] = OrderedDict{String, String}()
+        end
+
+        # Handle 3W transformers separately if needed
+        if !isempty(transformers_3w_with_numbers)
+            md["transformer_3w_name_mapping"] = _psse_transformer_names(
+                convert_empty_stringvec(
+                    PSY.get_name.(first.(transformers_3w_with_numbers)),
+                ),
+                last.(transformers_3w_with_numbers),
+                md["bus_number_mapping"],
+                transformer_3w_ckt_mapping,
+            )
+        else
+            md["transformer_3w_name_mapping"] = OrderedDict{String, String}()
+        end
     end
-    md["transformer_3w_name_mapping"] = _psse_transformer_names(
-        convert_empty_stringvec(PSY.get_name.(first.(transformers_3w_with_numbers))),
-        last.(transformers_3w_with_numbers),
-        md["bus_number_mapping"],
-        transformer_3w_ckt_mapping,
-    )
 
     bus_number_mapping = md["bus_number_mapping"]
     transformer_name_mapping = md["transformer_name_mapping"]
@@ -1078,21 +1090,33 @@ function write_to_buffers!(
             end
             NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
             STAT = PSY.get_available(transformer) ? 1 : 0
+            WINDV1 = get(PSY.get_ext(transformer), "WINDV1", 0.0)
+            WINDV2 = get(PSY.get_ext(transformer), "WINDV2", 0.0)
+            NOMV1 = PSY.get_base_voltage_primary(transformer)
+            NOMV2 = PSY.get_base_voltage_secondary(transformer)
+            bus_to_base_voltage = PSY.get_base_voltage(PSY.get_to(PSY.get_arc(transformer)))
 
             if CW == 1
                 R1_2 = PSY.get_r(transformer)
-                X1_2 = PSY.get_x(transformer)
+                X1_2 = PSY.get_x(transformer) / bus_to_base_voltage^2
             elseif CW == 2
-                R1_2 = PSY.get_r(transformer)
-                X1_2 = PSY.get_x(transformer)
+                R1_2 =
+                    PSY.get_r(transformer) / (bus_to_base_voltage / bus_to_base_voltage)^2
+                X1_2 =
+                    PSY.get_x(transformer) / (bus_to_base_voltage / bus_to_base_voltage)^2
             else
-                R1_2 = PSY.get_r(transformer)
-                X1_2 = PSY.get_x(transformer)
+                if iszero(NOMV2)
+                    nominal_voltage_ratio = 1.0
+                else
+                    nominal_voltage_ratio = NOMV2 / bus_to_base_voltage
+                end
+                R1_2 =
+                    PSY.get_r(transformer) / (bus_to_base_voltage * nominal_voltage_ratio)^2
+                X1_2 =
+                    PSY.get_x(transformer) / (bus_to_base_voltage * nominal_voltage_ratio)^2
             end
             SBASE1_2 = PSY.get_base_power(transformer)
 
-            WINDV1 = (transformer isa PSY.TapTransformer) ? PSY.get_tap(transformer) : 1.0
-            NOMV1 = PSY.get_base_voltage_primary(transformer)
             ANG1 = if (transformer isa PSY.PhaseShiftingTransformer)
                 rad2deg(PSY.get_α(transformer))
             else
@@ -1106,15 +1130,15 @@ function write_to_buffers!(
                 end
             RATA1, RATB1, RATC1 = (_psse_round_val(x) for x in (RATA1, RATB1, RATC1))
             COD1 = get(PSY.get_ext(transformer), "COD1", PSSE_DEFAULT)
-            CONT1 = PSSE_DEFAULT
-            RMA1 = RMI1 = VMA1 = VMI1 = PSSE_DEFAULT
-            NTP1 = PSSE_DEFAULT
-            TAB1 = PSSE_DEFAULT
-            CR1 = CX1 = PSSE_DEFAULT
-            CNXA1 = PSSE_DEFAULT
-
-            WINDV2 = 1.0
-            NOMV2 = PSY.get_base_voltage_secondary(transformer)
+            CONT1 = get(PSY.get_ext(transformer), "CONT1", PSSE_DEFAULT)
+            RMA1 = get(PSY.get_ext(transformer), "RMA1", PSSE_DEFAULT)
+            RMI1 = get(PSY.get_ext(transformer), "RMI1", PSSE_DEFAULT)
+            VMA1 = get(PSY.get_ext(transformer), "VMA1", PSSE_DEFAULT)
+            VMI1 = get(PSY.get_ext(transformer), "VMI1", PSSE_DEFAULT)
+            NTP1 = get(PSY.get_ext(transformer), "NTP1", PSSE_DEFAULT)
+            supp_attr = PSY.get_supplemental_attributes(transformer)
+            TAB1 = !isempty(supp_attr) ? PSY.get_table_number(supp_attr[1]) : 0
+            CR1 = CX1 = CNXA1 = PSSE_DEFAULT
 
             @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
                 MAG1, MAG2, NMETR, NAME, STAT)
@@ -1173,6 +1197,7 @@ function write_to_buffers!(
             SBAS3_1 = PSY.get_base_power_13(transformer)
             VMSTAR = PSSE_DEFAULT
             ANSTAR = PSSE_DEFAULT
+            supp_attr = PSY.get_supplemental_attributes(transformer)
 
             # Primary winding data
             NOMV1 = PSY.get_base_voltage_primary(transformer)
@@ -1191,6 +1216,12 @@ function write_to_buffers!(
             VMI1 = PSSE_DEFAULT
             NTP1 = PSSE_DEFAULT
             TAB1 = PSSE_DEFAULT
+            for icd_tr in supp_attr
+                if PSY.get_transformer_winding(icd_tr) ==
+                   PSY.WindingCategory.PRIMARY_WINDING
+                    TAB1 = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
+                end
+            end
             CR1 = PSSE_DEFAULT
             CX1 = PSSE_DEFAULT
             CNXA1 = PSSE_DEFAULT
@@ -1212,6 +1243,12 @@ function write_to_buffers!(
             VMI2 = PSSE_DEFAULT
             NTP2 = PSSE_DEFAULT
             TAB2 = PSSE_DEFAULT
+            for icd_tr in supp_attr
+                if PSY.get_transformer_winding(icd_tr) ==
+                   PSY.WindingCategory.SECONDARY_WINDING
+                    TAB2 = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
+                end
+            end
             CR2 = PSSE_DEFAULT
             CX2 = PSSE_DEFAULT
             CNXA2 = PSSE_DEFAULT
@@ -1233,6 +1270,12 @@ function write_to_buffers!(
             VMI3 = PSSE_DEFAULT
             NTP3 = PSSE_DEFAULT
             TAB3 = PSSE_DEFAULT
+            for icd_tr in supp_attr
+                if PSY.get_transformer_winding(icd_tr) ==
+                   PSY.WindingCategory.TERTIARY_WINDING
+                    TAB3 = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
+                end
+            end
             CR3 = PSSE_DEFAULT
             CX3 = PSSE_DEFAULT
             CNXA3 = PSSE_DEFAULT
@@ -1443,13 +1486,13 @@ function write_to_buffers!(
         MODE1 = Int(PSY.get_available(vscline))
         DCSET1 = PSY.get_dc_setpoint_from(vscline)
         ACSET1 = PSY.get_ac_setpoint_from(vscline)
-        ALOSS1 = 0.0 # TODO: rethink this approach
+        ALOSS1 = get(PSY.get_ext(vscline), "ALOSS_from", PSSE_DEFAULT)
         BLOSS1 =
             _psse_round_val(
                 PSY.get_proportional_term(
                     PSY.get_function_data(PSY.get_converter_loss_from(vscline)),
                 ) * 1e3 * PSY.get_base_power(exporter.system))
-        MINLOSS1 = 0.0 # TODO: rethink this approach
+        MINLOSS1 = get(PSY.get_ext(vscline), "MINLOSS_from", PSSE_DEFAULT)
         SMAX1 = PSY.get_rating_from(vscline)
         SMAX1 = if SMAX1 == 9999.0
             0.0
@@ -1476,13 +1519,13 @@ function write_to_buffers!(
         MODE2 = Int(PSY.get_available(vscline))
         DCSET2 = PSY.get_dc_setpoint_to(vscline)
         ACSET2 = PSY.get_ac_setpoint_to(vscline)
-        ALOSS2 = 0.0 # TODO: rethink this approach
+        ALOSS2 = get(PSY.get_ext(vscline), "ALOSS_to", PSSE_DEFAULT)
         BLOSS2 =
             _psse_round_val(
                 PSY.get_proportional_term(
                     PSY.get_function_data(PSY.get_converter_loss_to(vscline)),
                 ) * 1e3 * PSY.get_base_power(exporter.system))
-        MINLOSS2 = 0.0 # TODO: rethink this approach
+        MINLOSS2 = get(PSY.get_ext(vscline), "MINLOSS_to", PSSE_DEFAULT)
         SMAX2 = PSY.get_rating_from(vscline)
         SMAX2 = if SMAX2 == 9999.0
             0.0
