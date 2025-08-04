@@ -735,14 +735,87 @@ function write_to_buffers!(
                 by = PSY.get_name,
             ),
         )
-        return temp_gens
+        # Add TwoTerminalGenericHVDCLine components as generators at each end
+        hvdc_lines =
+            collect(PSY.get_components(PSY.TwoTerminalGenericHVDCLine, exporter.system))
+        if !isempty(hvdc_lines)
+            @warn "Found $(length(hvdc_lines)) TwoTerminalGenericHVDCLine components. These will be exported as generators at each end of the DC line."
+        end
+        for hvdc_line in hvdc_lines
+            from_bus = PSY.get_from(PSY.get_arc(hvdc_line))
+            to_bus = PSY.get_to(PSY.get_arc(hvdc_line))
+            println(from_bus, " ", to_bus)
+
+            from_gen = PSY.ThermalStandard(;
+                name = "$(PSY.get_name(hvdc_line))_FR",
+                available = PSY.get_available(hvdc_line),
+                status = true,
+                bus = from_bus,
+                active_power = PSY.get_active_power_flow(hvdc_line),
+                reactive_power = 0.0,
+                rating = PSY.get_active_power_limits_from(hvdc_line).max,
+                active_power_limits = PSY.get_active_power_limits_from(hvdc_line),
+                reactive_power_limits = PSY.get_reactive_power_limits_from(hvdc_line),
+                ramp_limits = (up = 0.0, down = 0.0),
+                operation_cost = PSY.ThermalGenerationCost(
+                    PSY.CostCurve(PSY.LinearCurve(0.0)),
+                    0.0,
+                    0.0,
+                    0.0,
+                ),
+                base_power = PSY.get_base_power(exporter.system),
+            )
+            push!(temp_gens, from_gen)
+
+            to_gen = PSY.ThermalStandard(;
+                name = "$(PSY.get_name(hvdc_line))_TO",
+                available = PSY.get_available(hvdc_line),
+                status = true,
+                bus = to_bus,
+                active_power = PSY.get_active_power_flow(hvdc_line),
+                rating = PSY.get_active_power_limits_to(hvdc_line).max,
+                active_power_limits = PSY.get_active_power_limits_to(hvdc_line),
+                reactive_power_limits = PSY.get_reactive_power_limits_to(hvdc_line),
+                reactive_power = 0.0,
+                ramp_limits = (up = 0.0, down = 0.0),
+                operation_cost = PSY.ThermalGenerationCost(
+                    PSY.CostCurve(PSY.LinearCurve(0.0)),
+                    0.0,
+                    0.0,
+                    0.0,
+                ),
+                base_power = PSY.get_base_power(exporter.system),
+            )
+            push!(temp_gens, to_gen)
+        end
+
+        return sort!(temp_gens; by = x -> PSY.get_number(PSY.get_bus(x)))
     end
     generator_name_mapping = get!(exporter.components_cache, "generator_name_mapping") do
-        create_component_ids(
-            convert_empty_stringvec(PSY.get_name.(generators)),
-            PSY.get_number.(PSY.get_bus.(generators));
-            singles_to_1 = false,
-        )
+        generators_by_bus = Dict{Int, Vector{Tuple{String, Int}}}()
+        for (i, generator) in enumerate(generators)
+            bus_num = PSY.get_number(PSY.get_bus(generator))
+            if !haskey(generators_by_bus, bus_num)
+                generators_by_bus[bus_num] = []
+            end
+            push!(generators_by_bus[bus_num], (PSY.get_name(generator), i))
+        end
+
+        # Create mapping with sequential numbering per bus
+        mapping = Dict{Tuple{Int, String}, String}()
+        for (bus_num, gens_on_bus) in generators_by_bus
+            if length(gens_on_bus) == 1
+                # Single generator on bus gets ID "1".
+                gen_name = gens_on_bus[1][1]
+                mapping[(bus_num, gen_name)] = "1"
+            else
+                # Multiple generators on bus get sequential IDs "1", "2", "3", etc.
+                for (idx, (gen_name, _)) in enumerate(gens_on_bus)
+                    mapping[(bus_num, gen_name)] = string(idx)
+                end
+            end
+        end
+        mapping
     end
     for generator in generators
         sienna_bus_number = PSY.get_number(PSY.get_bus(generator))
@@ -752,10 +825,40 @@ function write_to_buffers!(
                 generator_name_mapping[(sienna_bus_number, PSY.get_name(generator))],
             )
         PG, QG = with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-            PSY.get_active_power(generator), PSY.get_reactive_power(generator)
+            gen_name = PSY.get_name(generator)
+            pg = PSY.get_active_power(generator)
+            qg = PSY.get_reactive_power(generator)
+
+            if endswith(gen_name, "_FR")
+                # From end: positive for power flowing out into the DC system
+                pg = pg
+                base_power = PSY.get_base_power(exporter.system)
+                pg *= base_power
+                qg *= base_power
+            elseif endswith(gen_name, "_TO")
+                # To end: negative for power flowing in into the AC system
+                pg = -pg
+                base_power = PSY.get_base_power(exporter.system)
+                pg *= base_power
+                qg *= base_power
+            end
+
+            pg, qg
         end
         reactive_power_limits = with_units_base(
-            () -> get_reactive_power_limits_for_power_flow(generator),
+            () -> begin
+                limits = get_reactive_power_limits_for_power_flow(generator)
+                gen_name = PSY.get_name(generator)
+                if endswith(gen_name, "_FR") || endswith(gen_name, "_TO")
+                    base_power = PSY.get_base_power(exporter.system)
+                    scaled_limits = (
+                        min = limits.min * base_power,
+                        max = limits.max * base_power,
+                    )
+                    return scaled_limits
+                end
+                return limits
+            end,
             exporter.system,
             PSY.UnitSystem.NATURAL_UNITS,
         )
@@ -783,7 +886,19 @@ function write_to_buffers!(
         RMPCT = PSSE_DEFAULT
         active_power_limits =
             with_units_base(
-                () -> get_active_power_limits_for_power_flow(generator),
+                () -> begin
+                    limits = get_active_power_limits_for_power_flow(generator)
+                    gen_name = PSY.get_name(generator)
+                    if endswith(gen_name, "_FR") || endswith(gen_name, "_TO")
+                        base_power = PSY.get_base_power(exporter.system)
+                        scaled_limits = (
+                            min = limits.min * base_power,
+                            max = limits.max * base_power,
+                        )
+                        return scaled_limits
+                    end
+                    return limits
+                end,
                 exporter.system,
                 PSY.UnitSystem.NATURAL_UNITS,
             )
