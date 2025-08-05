@@ -51,7 +51,7 @@ function flow_val(b::PSY.Transformer2W)
     arc = PSY.get_arc(b)
     V_from = arc.from.magnitude * (cos(arc.from.angle) + sin(arc.from.angle) * 1im)
     V_to = arc.to.magnitude * (cos(arc.to.angle) + sin(arc.to.angle) * 1im)
-    I = V_from * (Y_t + (1im * PSY.get_primary_shunt(b))) - V_to * Y_t
+    I = V_from * (Y_t + PSY.get_primary_shunt(b)) - V_to * Y_t
     flow = V_from * conj(I)
     return flow
 end
@@ -93,7 +93,7 @@ Transformer2W
 function flow_func(b::PSY.Transformer2W, V_from::Complex{Float64}, V_to::Complex{Float64})
     !PSY.get_available(b) && return (0.0, 0.0)
     Y_t = PSY.get_series_admittance(b)
-    I = V_from * (Y_t + (1im * PSY.get_primary_shunt(b))) - V_to * Y_t
+    I = V_from * (Y_t + PSY.get_primary_shunt(b)) - V_to * Y_t
     flow = V_from * conj(I)
     return real(flow), imag(flow)
 end
