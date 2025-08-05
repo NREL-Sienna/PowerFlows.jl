@@ -81,7 +81,7 @@ Line
 function flow_func(b::PSY.ACTransmission, V_from::Complex{Float64}, V_to::Complex{Float64})
     !PSY.get_available(b) && return (0.0, 0.0)
     Y_t = PSY.get_series_admittance(b)
-    I = V_from * (Y_t + (1im * PSY.get_b(b).from)) - V_to * Y_t
+    I = V_from * (Y_t + (PSY.get_g(b).from + 1im * PSY.get_b(b).from)) - V_to * Y_t
     flow = V_from * conj(I)
     return real(flow), imag(flow)
 end
