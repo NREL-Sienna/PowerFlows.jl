@@ -541,13 +541,13 @@ function write_powerflow_solution!(
     return
 end
 
-# returns list of branches names and buses numbers: ABA case
-function _get_branches_buses(data::ABAPowerFlowData)
+# returns list of arc tuples and buses numbers: ABA case
+function _get_arcs_buses(data::ABAPowerFlowData)
     return axes(data.aux_network_matrix)[2], axes(data.aux_network_matrix)[1]
 end
 
-# returns list of branches names and buses numbers: PTDF and virtual PTDF case
-function _get_branches_buses(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData})
+# returns list of arc tuples and buses numbers: PTDF and virtual PTDF case
+function _get_arcs_buses(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData})
     return PNM.get_arc_axis(data.power_network_matrix),
     PNM.get_bus_axis(data.power_network_matrix)
 end
@@ -615,15 +615,16 @@ function write_results(
 
     ### non time-dependent variables
 
-    # get bus and branches
-    branches, buses = _get_branches_buses(data)
+    # get bus and arcs
+    arcs, buses = _get_arcs_buses(data)
 
     branch_lookup = get_branch_lookup(data)
-    # get branches from/to buses
-    from_bus = first.(branches)
-    to_bus = last.(branches)
+    # get arcs from/to buses
+    from_bus = first.(arcs)
+    to_bus = last.(arcs)
 
-    branch_names = fill("", length(branches))
+    # FIXME what if there's a network reduction?
+    branch_names = fill("", length(arcs))
     branch_lookup = get_branch_lookup(data)
     for br in PSY.get_components(PSY.ACTransmission, sys)
         if br isa PSY.Transformer3W
