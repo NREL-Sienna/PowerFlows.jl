@@ -28,7 +28,7 @@ function flow_val(b::PSY.ACTransmission)
     arc = PSY.get_arc(b)
     V_from = arc.from.magnitude * (cos(arc.from.angle) + sin(arc.from.angle) * 1im)
     V_to = arc.to.magnitude * (cos(arc.to.angle) + sin(arc.to.angle) * 1im)
-    I = V_from * (Y_t) - V_to * Y_t
+    I = V_from * (Y_t + (PSY.get_g(b).from + 1im * PSY.get_b(b).from)) - V_to * Y_t
     flow = V_from * conj(I)
     return flow
 end
@@ -518,7 +518,7 @@ function write_powerflow_solution!(
             _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations, gspf)
         elseif bus.bustype == PSY.ACBusTypes.PV
             Q_gen = data.bus_reactivepower_injection[ix, time_step]
-            bus.angle = data.bus_angles[ix, time_step]
+            PSY.set_angle!(bus, data.bus_angles[ix, time_step])
             # If the PV bus has a nonzero slack participation factor,
             # then not only reactive power but also active power could have been changed
             # in the power flow calculation. This requires the same
