@@ -628,8 +628,8 @@ function write_to_buffers!(
         I = md["bus_number_mapping"][sienna_bus_number]
         ID = _psse_quote_string(load_name_mapping[(sienna_bus_number, PSY.get_name(load))])
         STATUS = PSY.get_available(load) ? 1 : 0
-        AREA = parse(Int, PSY.get_name(PSY.get_area(PSY.get_bus(load))))
-        ZONE = parse(Int, PSY.get_name(PSY.get_load_zone(PSY.get_bus(load))))
+        AREA = _permissive_parse_int(PSY.get_name(PSY.get_area(PSY.get_bus(load))))
+        ZONE = _permissive_parse_int(PSY.get_name(PSY.get_load_zone(PSY.get_bus(load))))
         PL, QL, IP, IQ, YP, YQ = _psse_get_load_data(exporter, load)
         OWNER = PSSE_DEFAULT  # defaults to bus's owner
         load_conformity = PSY.get_conformity(load)
@@ -744,11 +744,10 @@ function write_to_buffers!(
         for hvdc_line in hvdc_lines
             from_bus = PSY.get_from(PSY.get_arc(hvdc_line))
             to_bus = PSY.get_to(PSY.get_arc(hvdc_line))
-            println(from_bus, " ", to_bus)
 
             from_gen = PSY.ThermalStandard(;
                 name = "$(PSY.get_name(hvdc_line))_FR",
-                available = PSY.get_available(hvdc_line),
+                available = PSY.get_available(generator) ? 1 : 0,
                 status = true,
                 bus = from_bus,
                 active_power = PSY.get_active_power_flow(hvdc_line),
@@ -769,7 +768,7 @@ function write_to_buffers!(
 
             to_gen = PSY.ThermalStandard(;
                 name = "$(PSY.get_name(hvdc_line))_TO",
-                available = PSY.get_available(hvdc_line),
+                available = PSY.get_available(generator) ? 1 : 0,
                 status = true,
                 bus = to_bus,
                 active_power = PSY.get_active_power_flow(hvdc_line),
@@ -966,7 +965,6 @@ function write_to_buffers!(
         J = md["bus_number_mapping"][to_n]
         BASE_CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
         BASE_CKT = _psse_quote_string(BASE_CKT)
-
         ST = PSY.get_available(branch) ? 1 : 0
         MET = PSSE_DEFAULT
         LEN = PSSE_DEFAULT
@@ -974,17 +972,15 @@ function write_to_buffers!(
         X = PSY.get_x(branch)
 
         if branch isa PSY.DiscreteControlledACBranch
-            CKT = replace(BASE_CKT, r"^'|'$" => "")
-            CKT = replace(CKT, r"^_" => "")
             branch_type = PSY.get_discrete_branch_type(branch)
             if branch_type == PSY.DiscreteControlledBranchType.SWITCH
-                CKT = "*" * CKT
+                CKT = replace(BASE_CKT, "_" => "*")
             elseif branch_type == PSY.DiscreteControlledBranchType.BREAKER
-                CKT = "@" * CKT
+                CKT = replace(BASE_CKT, "_" => "@")
             else
                 warn("Unknown dicrete branch type $branch_type for branch $branch")
+                CKT = BASE_CKT
             end
-            CKT = _psse_quote_string(CKT)
             B = 0.0
             RATEA, RATEB, RATEC =
                 with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
@@ -992,7 +988,7 @@ function write_to_buffers!(
                     0.0,
                     0.0
                 end
-            RATEA = RATEA >= 1e6 ? 0.0 : RATEA
+            RATEA = RATEA >= INFINITE_BOUND ? 0.0 : RATEA
             GI, BI = 0.0, 0.0
             GJ, BJ = 0.0, 0.0
 
@@ -1007,9 +1003,9 @@ function write_to_buffers!(
                     _value_or_default(PSY.get_rating_b(branch), PSSE_DEFAULT),
                     _value_or_default(PSY.get_rating_c(branch), PSSE_DEFAULT)
                 end
-            RATEA = (isa(RATEA, Number) && RATEA >= 1e6) ? 0.0 : RATEA
-            RATEB = (isa(RATEB, Number) && RATEB >= 1e6) ? 0.0 : RATEB
-            RATEC = (isa(RATEC, Number) && RATEC >= 1e6) ? 0.0 : RATEC
+            RATEA = (isa(RATEA, Number) && RATEA >= INFINITE_BOUND) ? 0.0 : RATEA
+            RATEB = (isa(RATEB, Number) && RATEB >= INFINITE_BOUND) ? 0.0 : RATEB
+            RATEC = (isa(RATEC, Number) && RATEC >= INFINITE_BOUND) ? 0.0 : RATEC
             B = PSY.get_b(branch).from * 2
             GI, BI = 0.0, PSY.get_b(branch).from
             GJ, BJ = 0.0, PSY.get_b(branch).to
@@ -1070,11 +1066,7 @@ function _psse_transformer_names(
         if !_is_valid_psse_name(new_name)
             n = 0
             while !_is_valid_psse_name(new_name) || (new_name in used_names)
-                if length(bus_tuple) == 2
-                    new_name = "B$(bus_number_mapping[bus_tuple[1]])-N$n"
-                else
-                    new_name = "B$(bus_number_mapping[bus_tuple[1]])-N$n"
-                end
+                new_name = "B$(bus_number_mapping[bus_tuple[1]])-N$n"
                 n += 1
             end
         end
@@ -1188,7 +1180,6 @@ function write_to_buffers!(
             J = bus_number_mapping[to_n]
             K = 0
             CKT = transformer_ckt_mapping[((from_n, to_n), PSY.get_name(transformer))]
-            @assert !(first(CKT) in ['&', '@', '*'])
             if startswith(CKT, "_")
                 CKT = CKT[2:end]
             end
@@ -1209,27 +1200,9 @@ function write_to_buffers!(
             WINDV2 = get(PSY.get_ext(transformer), "WINDV2", 0.0)
             NOMV1 = PSY.get_base_voltage_primary(transformer)
             NOMV2 = PSY.get_base_voltage_secondary(transformer)
-            bus_to_base_voltage = PSY.get_base_voltage(PSY.get_to(PSY.get_arc(transformer)))
 
-            if CW == 1
-                R1_2 = PSY.get_r(transformer)
-                X1_2 = PSY.get_x(transformer) / bus_to_base_voltage^2
-            elseif CW == 2
-                R1_2 =
-                    PSY.get_r(transformer) / (bus_to_base_voltage / bus_to_base_voltage)^2
-                X1_2 =
-                    PSY.get_x(transformer) / (bus_to_base_voltage / bus_to_base_voltage)^2
-            else
-                if iszero(NOMV2)
-                    nominal_voltage_ratio = 1.0
-                else
-                    nominal_voltage_ratio = NOMV2 / bus_to_base_voltage
-                end
-                R1_2 =
-                    PSY.get_r(transformer) / (bus_to_base_voltage * nominal_voltage_ratio)^2
-                X1_2 =
-                    PSY.get_x(transformer) / (bus_to_base_voltage * nominal_voltage_ratio)^2
-            end
+            R1_2 = get(PSY.get_ext(transformer), "R1-2", 0.0)
+            X1_2 = get(PSY.get_ext(transformer), "X1-2", 0.0)
             SBASE1_2 = PSY.get_base_power(transformer)
 
             ANG1 = if (transformer isa PSY.PhaseShiftingTransformer)
@@ -1293,22 +1266,14 @@ function write_to_buffers!(
                 STAT = PSY.get_available(transformer) ? 1 : 0
             end
 
-            if CW == 1
-                R1_2 = PSY.get_r_12(transformer)
-                X1_2 = PSY.get_x_12(transformer)
-            elseif CW == 2
-                R1_2 = PSY.get_r_12(transformer)
-                X1_2 = PSY.get_x_12(transformer)
-            else
-                R1_2 = PSY.get_r_12(transformer)
-                X1_2 = PSY.get_x_12(transformer)
-            end
+            R1_2 = get(PSY.get_ext(transformer), "R1-2", 0.0)
+            X1_2 = get(PSY.get_ext(transformer), "X1-2", 0.0)
             SBASE1_2 = PSY.get_base_power_12(transformer)
-            R2_3 = PSY.get_r_23(transformer)
-            X2_3 = PSY.get_x_23(transformer)
+            R2_3 = get(PSY.get_ext(transformer), "R2-3", 0.0)
+            X2_3 = get(PSY.get_ext(transformer), "X2-3", 0.0)
             SBAS2_3 = PSY.get_base_power_23(transformer)
-            R3_1 = PSY.get_r_13(transformer)
-            X3_1 = PSY.get_x_13(transformer)
+            R3_1 = get(PSY.get_ext(transformer), "R3-1", 0.0)
+            X3_1 = get(PSY.get_ext(transformer), "X3-1", 0.0)
             SBAS3_1 = PSY.get_base_power_13(transformer)
             VMSTAR = PSSE_DEFAULT
             ANSTAR = PSSE_DEFAULT
@@ -1458,7 +1423,7 @@ function write_to_buffers!(
     for (dcline, (from_n, to_n)) in dclines_with_numbers
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
-        dcline_name = string(split(PSY.get_name(dcline), "_")[end])
+        dcline_name = string(get(PSY.get_ext(dcline), "psse_name", PSY.get_name(dcline)))
         NAME = _psse_quote_string(dcline_name)
         MDC = Int(PSY.get_power_mode(dcline))
         RDC =
@@ -1576,16 +1541,12 @@ function write_to_buffers!(
         J = md["bus_number_mapping"][to_n]
         vsc_line_name = string(split(PSY.get_name(vscline), "_")[end])
         NAME = _psse_quote_string(vsc_line_name)
-        MDC = Int(PSY.get_available(vscline))
+        MDC = PSY.get_available(vscline) ? 1 : 0
         g = PSY.get_g(vscline)
-        if g == 0.0
-            RDC = g
+        RDC = if iszero(g)
+            0.0
         else
-            RDC =
-                1 / (
-                    g * PSY.get_base_power(exporter.system) /
-                    PSY.get_dc_setpoint_from(vscline)^2
-                )
+            PSY.get_dc_setpoint_from(vscline)^2 / (g * PSY.get_base_power(exporter.system))
         end
         O1 = PSSE_DEFAULT
         F1 = PSSE_DEFAULT
@@ -1598,7 +1559,7 @@ function write_to_buffers!(
 
         IBUS1 = I
         TYPE1 = Int(PSY.get_dc_voltage_control_from(vscline))
-        MODE1 = Int(PSY.get_available(vscline))
+        MODE1 = PSY.get_available(vscline) ? 1 : 0
         DCSET1 = PSY.get_dc_setpoint_from(vscline)
         ACSET1 = PSY.get_ac_setpoint_from(vscline)
         ALOSS1 = get(PSY.get_ext(vscline), "ALOSS_from", PSSE_DEFAULT)
@@ -1609,13 +1570,13 @@ function write_to_buffers!(
                 ) * 1e3 * PSY.get_base_power(exporter.system))
         MINLOSS1 = get(PSY.get_ext(vscline), "MINLOSS_from", PSSE_DEFAULT)
         SMAX1 = PSY.get_rating_from(vscline)
-        SMAX1 = if SMAX1 == 9999.0
+        SMAX1 = if SMAX1 == PSSE_INFINITY
             0.0
         else
             SMAX1 * PSY.get_base_power(exporter.system)
         end
         IMAX1 = PSY.get_max_dc_current_from(vscline)
-        IMAX1 = if IMAX1 == 9999.0
+        IMAX1 = if IMAX1 == PSSE_INFINITY
             0.0
         else
             IMAX1
@@ -1631,7 +1592,7 @@ function write_to_buffers!(
         RMPCT1 = get(PSY.get_ext(vscline), "RMPCT_FROM", PSSE_DEFAULT)
         IBUS2 = J
         TYPE2 = Int(PSY.get_dc_voltage_control_to(vscline))
-        MODE2 = Int(PSY.get_available(vscline))
+        MODE2 = PSY.get_available(vscline) ? 1 : 0
         DCSET2 = PSY.get_dc_setpoint_to(vscline)
         ACSET2 = PSY.get_ac_setpoint_to(vscline)
         ALOSS2 = get(PSY.get_ext(vscline), "ALOSS_to", PSSE_DEFAULT)
@@ -1642,13 +1603,13 @@ function write_to_buffers!(
                 ) * 1e3 * PSY.get_base_power(exporter.system))
         MINLOSS2 = get(PSY.get_ext(vscline), "MINLOSS_to", PSSE_DEFAULT)
         SMAX2 = PSY.get_rating_from(vscline)
-        SMAX2 = if SMAX2 == 9999.0
+        SMAX2 = if SMAX2 == PSSE_INFINITY
             0.0
         else
             SMAX2 * PSY.get_base_power(exporter.system)
         end
         IMAX2 = PSY.get_max_dc_current_from(vscline)
-        IMAX2 = if IMAX2 == 9999.0
+        IMAX2 = if IMAX2 == PSSE_INFINITY
             0.0
         else
             IMAX2
@@ -1710,8 +1671,15 @@ function write_to_buffers!(
         )
     end
 
+    written_tables = get!(exporter.components_cache, "written_icd_tables") do
+        Set{Int}()
+    end
+
     for icd in icd_entries
         I = PSY.get_table_number(icd)
+        I in written_tables && continue
+
+        push!(written_tables, I)
         points = PSY.get_points(PSY.get_impedance_correction_curve(icd))
         fastprint(io, I)
         for p in points
@@ -1782,7 +1750,7 @@ function write_to_buffers!(
     for facts in facts_devices
         sienna_bus_number = PSY.get_number(PSY.get_bus(facts))
         I = md["bus_number_mapping"][sienna_bus_number]
-        J = PSSE_DEFAULT
+        J = get(PSY.get_ext(facts), "J", PSSE_DEFAULT)
         name = PSY.get_name(facts)
         if startswith(name, string(sienna_bus_number) * "_")
             name = name[(length(string(sienna_bus_number)) + 2):end]
@@ -1852,14 +1820,15 @@ function write_to_buffers!(
     for shunt in switched_shunts
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
-        MODSW = PSSE_DEFAULT
-        ADJM = PSSE_DEFAULT
+        MODSW = get(PSY.get_ext(shunt), "MODSW", PSSE_DEFAULT)
+        ADJM = get(PSY.get_ext(shunt), "ADJM", PSSE_DEFAULT)
         STAT = PSY.get_available(shunt) ? 1 : 0
         VSWHI = PSY.get_admittance_limits(shunt).max
         VSWLO = PSY.get_admittance_limits(shunt).min
-        SWREM = PSSE_DEFAULT
-        RMPCT = PSSE_DEFAULT
-        RMIDNT = PSSE_DEFAULT
+        SWREM = get(PSY.get_ext(shunt), "SWREM", PSSE_DEFAULT)
+        RMPCT = get(PSY.get_ext(shunt), "RMPCT", PSSE_DEFAULT)
+        RMIDNT = get(PSY.get_ext(shunt), "RMIDNT", PSSE_DEFAULT)
+        RMIDNT = _psse_quote_string(String(RMIDNT))
         BINIT = imag(PSY.get_Y(shunt)) * PSY.get_base_power(exporter.system)
 
         steps = PSY.get_number_of_steps(shunt)
@@ -1877,26 +1846,14 @@ function write_to_buffers!(
             push!(B_vals, PSSE_DEFAULT)
         end
 
-        N1 = get(N_vals, 1, PSSE_DEFAULT)
-        B1 = get(B_vals, 1, PSSE_DEFAULT)
-        N2 = get(N_vals, 2, PSSE_DEFAULT)
-        B2 = get(B_vals, 2, PSSE_DEFAULT)
-        N3 = get(N_vals, 3, PSSE_DEFAULT)
-        B3 = get(B_vals, 3, PSSE_DEFAULT)
-        N4 = get(N_vals, 4, PSSE_DEFAULT)
-        B4 = get(B_vals, 4, PSSE_DEFAULT)
-        N5 = get(N_vals, 5, PSSE_DEFAULT)
-        B5 = get(B_vals, 5, PSSE_DEFAULT)
-        N6 = get(N_vals, 6, PSSE_DEFAULT)
-        B6 = get(B_vals, 6, PSSE_DEFAULT)
-        N7 = get(N_vals, 7, PSSE_DEFAULT)
-        B7 = get(B_vals, 7, PSSE_DEFAULT)
-        N8 = get(N_vals, 8, PSSE_DEFAULT)
-        B8 = get(B_vals, 8, PSSE_DEFAULT)
+        N_vars = [get(N_vals, i, PSSE_DEFAULT) for i in 1:8]
+        B_vars = [get(B_vals, i, PSSE_DEFAULT) for i in 1:8]
 
         @fastprintdelim_unroll(io, true, I, MODSW, ADJM, STAT,
             VSWHI, VSWLO, SWREM, RMPCT, RMIDNT, BINIT,
-            N1, B1, N2, B2, N3, B3, N4, B4, N5, B5, N6, B6, N7, B7, N8, B8)
+            N_vars[1], B_vars[1], N_vars[2], B_vars[2], N_vars[3], B_vars[3],
+            N_vars[4], B_vars[4], N_vars[5], B_vars[5], N_vars[6], B_vars[6],
+            N_vars[7], B_vars[7], N_vars[8], B_vars[8])
     end
     end_group_33(io, md, exporter, "Switched Shunt Data", true)
     exporter.md_valid ||
