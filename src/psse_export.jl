@@ -735,57 +735,65 @@ function write_to_buffers!(
                 by = PSY.get_name,
             ),
         )
+        append!(
+            temp_gens,
+            sort!(
+                collect(PSY.get_components(PSY.SynchronousCondenser, exporter.system));
+                by = PSY.get_name,
+            ),
+        )
         # Add TwoTerminalGenericHVDCLine components as generators at each end
         hvdc_lines =
             collect(PSY.get_components(PSY.TwoTerminalGenericHVDCLine, exporter.system))
         if !isempty(hvdc_lines)
             @warn "Found $(length(hvdc_lines)) TwoTerminalGenericHVDCLine components. These will be exported as generators at each end of the DC line."
-        end
-        for hvdc_line in hvdc_lines
-            from_bus = PSY.get_from(PSY.get_arc(hvdc_line))
-            to_bus = PSY.get_to(PSY.get_arc(hvdc_line))
 
-            from_gen = PSY.ThermalStandard(;
-                name = "$(PSY.get_name(hvdc_line))_FR",
-                available = PSY.get_available(generator) ? 1 : 0,
-                status = true,
-                bus = from_bus,
-                active_power = PSY.get_active_power_flow(hvdc_line),
-                reactive_power = 0.0,
-                rating = PSY.get_active_power_limits_from(hvdc_line).max,
-                active_power_limits = PSY.get_active_power_limits_from(hvdc_line),
-                reactive_power_limits = PSY.get_reactive_power_limits_from(hvdc_line),
-                ramp_limits = (up = 0.0, down = 0.0),
-                operation_cost = PSY.ThermalGenerationCost(
-                    PSY.CostCurve(PSY.LinearCurve(0.0)),
-                    0.0,
-                    0.0,
-                    0.0,
-                ),
-                base_power = PSY.get_base_power(exporter.system),
-            )
-            push!(temp_gens, from_gen)
+            for hvdc_line in hvdc_lines
+                from_bus = PSY.get_from(PSY.get_arc(hvdc_line))
+                to_bus = PSY.get_to(PSY.get_arc(hvdc_line))
 
-            to_gen = PSY.ThermalStandard(;
-                name = "$(PSY.get_name(hvdc_line))_TO",
-                available = PSY.get_available(generator) ? 1 : 0,
-                status = true,
-                bus = to_bus,
-                active_power = PSY.get_active_power_flow(hvdc_line),
-                rating = PSY.get_active_power_limits_to(hvdc_line).max,
-                active_power_limits = PSY.get_active_power_limits_to(hvdc_line),
-                reactive_power_limits = PSY.get_reactive_power_limits_to(hvdc_line),
-                reactive_power = 0.0,
-                ramp_limits = (up = 0.0, down = 0.0),
-                operation_cost = PSY.ThermalGenerationCost(
-                    PSY.CostCurve(PSY.LinearCurve(0.0)),
-                    0.0,
-                    0.0,
-                    0.0,
-                ),
-                base_power = PSY.get_base_power(exporter.system),
-            )
-            push!(temp_gens, to_gen)
+                from_gen = PSY.ThermalStandard(;
+                    name = "$(PSY.get_name(hvdc_line))_FR",
+                    available = PSY.get_available(generator) ? 1 : 0,
+                    status = true,
+                    bus = from_bus,
+                    active_power = PSY.get_active_power_flow(hvdc_line),
+                    reactive_power = 0.0,
+                    rating = PSY.get_active_power_limits_from(hvdc_line).max,
+                    active_power_limits = PSY.get_active_power_limits_from(hvdc_line),
+                    reactive_power_limits = PSY.get_reactive_power_limits_from(hvdc_line),
+                    ramp_limits = (up = 0.0, down = 0.0),
+                    operation_cost = PSY.ThermalGenerationCost(
+                        PSY.CostCurve(PSY.LinearCurve(0.0)),
+                        0.0,
+                        0.0,
+                        0.0,
+                    ),
+                    base_power = PSY.get_base_power(exporter.system),
+                )
+                push!(temp_gens, from_gen)
+
+                to_gen = PSY.ThermalStandard(;
+                    name = "$(PSY.get_name(hvdc_line))_TO",
+                    available = PSY.get_available(hvdc_line) ? 1 : 0,
+                    status = true,
+                    bus = to_bus,
+                    active_power = PSY.get_active_power_flow(hvdc_line),
+                    rating = PSY.get_active_power_limits_to(hvdc_line).max,
+                    active_power_limits = PSY.get_active_power_limits_to(hvdc_line),
+                    reactive_power_limits = PSY.get_reactive_power_limits_to(hvdc_line),
+                    reactive_power = 0.0,
+                    ramp_limits = (up = 0.0, down = 0.0),
+                    operation_cost = PSY.ThermalGenerationCost(
+                        PSY.CostCurve(PSY.LinearCurve(0.0)),
+                        0.0,
+                        0.0,
+                        0.0,
+                    ),
+                    base_power = PSY.get_base_power(exporter.system),
+                )
+                push!(temp_gens, to_gen)
+            end
         end
 
         return sort!(temp_gens; by = x -> PSY.get_number(PSY.get_bus(x)))
@@ -825,8 +833,13 @@ function write_to_buffers!(
             )
         PG, QG = with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
             gen_name = PSY.get_name(generator)
-            pg = PSY.get_active_power(generator)
-            qg = PSY.get_reactive_power(generator)
+            if generator isa PSY.SynchronousCondenser
+                pg = 0.0
+                qg = PSY.get_reactive_power(generator)
+            else
+                pg = PSY.get_active_power(generator)
+                qg = PSY.get_reactive_power(generator)
+            end
 
             if endswith(gen_name, "_FR")
                 # From end: positive for power flowing out into the DC system
@@ -880,12 +893,16 @@ function write_to_buffers!(
         ZX = get(PSY.get_ext(generator), "x", PSSE_DEFAULT)
         RT = get(PSY.get_ext(generator), "rt", PSSE_DEFAULT)
         XT = get(PSY.get_ext(generator), "xt", PSSE_DEFAULT)
-        GTAP = PSSE_DEFAULT
+        GTAP = get(PSY.get_ext(generator), "GTAP", PSSE_DEFAULT)
         STAT = PSY.get_available(generator) ? 1 : 0
-        RMPCT = PSSE_DEFAULT
+        RMPCT = get(PSY.get_ext(generator), "RMPCT", PSSE_DEFAULT)
         active_power_limits =
             with_units_base(
                 () -> begin
+                    if generator isa PSY.SynchronousCondenser
+                        return (min = 0.0, max = 0.0)
+                    end
+
                     limits = get_active_power_limits_for_power_flow(generator)
                     gen_name = PSY.get_name(generator)
                     if endswith(gen_name, "_FR") || endswith(gen_name, "_TO")
