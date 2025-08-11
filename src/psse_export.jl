@@ -1107,7 +1107,7 @@ function write_to_buffers!(
     md = exporter.md_dict
     check_33(exporter)
     transformer_types =
-        Union{PSY.Transformer2W, PSY.TapTransformer, PSY.PhaseShiftingTransformer}
+        Union{PSY.TwoWindingTransformer}
     transformers_with_numbers = get!(exporter.components_cache, "transformers") do
         transformers = sort!(
             collect(PSY.get_components(transformer_types, exporter.system));
@@ -1116,7 +1116,7 @@ function write_to_buffers!(
         [(transformer, branch_to_bus_numbers(transformer)) for transformer in transformers]
     end
     transformer_3w_types =
-        Union{PSY.Transformer3W, PSY.PhaseShiftingTransformer3W}
+        Union{PSY.ThreeWindingTransformer}
     transformers_3w_with_numbers = get!(exporter.components_cache, "transformers_3w") do
         transformers = sort!(
             collect(PSY.get_components(transformer_3w_types, exporter.system));
