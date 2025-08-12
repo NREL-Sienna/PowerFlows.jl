@@ -18,7 +18,8 @@
     matrix_data = deepcopy(data.power_network_matrix.K)       # LU factorization of ABA
     aux_network_matrix = deepcopy(data.aux_network_matrix)    # BA matrix
 
-    valid_ix = setdiff(1:length(power_injection), data.aux_network_matrix.ref_bus_positions)
+    valid_ix =
+        setdiff(1:length(power_injection), data.power_network_matrix.ref_bus_position)
     ref_bus_angles = deepcopy(data.bus_angles)
     ref_flow_values = deepcopy(data.branch_activepower_flow_from_to)
 

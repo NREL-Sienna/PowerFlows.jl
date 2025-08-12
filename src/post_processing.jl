@@ -548,8 +548,8 @@ end
 
 # returns list of branches names and buses numbers: PTDF and virtual PTDF case
 function _get_branches_buses(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData})
-    return PNM.get_branch_ax(data.power_network_matrix),
-    PNM.get_bus_ax(data.power_network_matrix)
+    return PNM.get_arc_axis(data.power_network_matrix),
+    PNM.get_bus_axis(data.power_network_matrix)
 end
 
 function _allocate_results_data(

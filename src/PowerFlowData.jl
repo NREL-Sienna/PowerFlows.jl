@@ -452,7 +452,7 @@ function PowerFlowData(
 
     bus_lookup = aux_network_matrix.lookup[1]
     branch_lookup = aux_network_matrix.lookup[2]
-    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
+    valid_ix = setdiff(1:n_buses, power_network_matrix.ref_bus_position)
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
@@ -532,7 +532,7 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
-    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
+    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_position)
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
@@ -611,7 +611,7 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
-    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
+    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_position)
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
