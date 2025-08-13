@@ -1180,6 +1180,8 @@ function write_to_buffers!(
         CZ = get(PSY.get_ext(transformer), "CZ", PSSE_DEFAULT)
         CM = get(PSY.get_ext(transformer), "CM", PSSE_DEFAULT)
         NMETR = get(PSY.get_ext(transformer), "NMETR", PSSE_DEFAULT)
+        MAG1 = get(PSY.get_ext(transformer), "MAG1", PSSE_DEFAULT)
+        MAG2 = get(PSY.get_ext(transformer), "MAG2", PSSE_DEFAULT)
 
         O1 = PSSE_DEFAULT
         F1 = PSSE_DEFAULT
@@ -1201,16 +1203,6 @@ function write_to_buffers!(
                 CKT = CKT[2:end]
             end
             CKT = _psse_quote_string(CKT)
-            if CM == 1
-                MAG1 = real(PSY.get_primary_shunt(transformer))
-                MAG2 = imag(PSY.get_primary_shunt(transformer))
-            else
-                MAG1 =
-                    _psse_round_val(real(PSY.get_primary_shunt(transformer)))
-                MAG2 = _psse_round_val(
-                    sqrt(imag(PSY.get_primary_shunt(transformer))^2 + MAG1^2),
-                )
-            end
             NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
             STAT = PSY.get_available(transformer) ? 1 : 0
             WINDV1 = get(PSY.get_ext(transformer), "WINDV1", 0.0)
@@ -1268,8 +1260,6 @@ function write_to_buffers!(
                 CKT = CKT[2:end]
             end
             CKT = _psse_quote_string(CKT)
-            MAG1 = 1
-            MAG2 = 1
             NAME = transformer_3w_name_mapping[PSY.get_name(transformer)]
             NAME = _psse_quote_string(NAME)
 
@@ -1306,13 +1296,13 @@ function write_to_buffers!(
             end
             RATA1 = RATB1 = RATC1 = PSY.get_rating_primary(transformer)
             COD1 = get(PSY.get_ext(transformer), "COD1", PSSE_DEFAULT)
-            CONT1 = PSSE_DEFAULT
-            RMA1 = PSSE_DEFAULT
-            RMI1 = PSSE_DEFAULT
-            VMA1 = PSSE_DEFAULT
-            VMI1 = PSSE_DEFAULT
-            NTP1 = PSSE_DEFAULT
-            TAB1 = PSSE_DEFAULT
+            CONT1 = get(PSY.get_ext(transformer), "CONT1", PSSE_DEFAULT)
+            RMA1 = get(PSY.get_ext(transformer), "RMA1", PSSE_DEFAULT)
+            RMI1 = get(PSY.get_ext(transformer), "RMI1", PSSE_DEFAULT)
+            VMA1 = get(PSY.get_ext(transformer), "VMA1", PSSE_DEFAULT)
+            VMI1 = get(PSY.get_ext(transformer), "VMI1", PSSE_DEFAULT)
+            NTP1 = get(PSY.get_ext(transformer), "NTP1", PSSE_DEFAULT)
+            TAB1 = 0
             for icd_tr in supp_attr
                 if PSY.get_transformer_winding(icd_tr) ==
                    PSY.WindingCategory.PRIMARY_WINDING
@@ -1333,13 +1323,13 @@ function write_to_buffers!(
             end
             RATA2 = RATB2 = RATC2 = PSY.get_rating_secondary(transformer)
             COD2 = get(PSY.get_ext(transformer), "COD2", PSSE_DEFAULT)
-            CONT2 = PSSE_DEFAULT
-            RMA2 = PSSE_DEFAULT
-            RMI2 = PSSE_DEFAULT
-            VMA2 = PSSE_DEFAULT
-            VMI2 = PSSE_DEFAULT
-            NTP2 = PSSE_DEFAULT
-            TAB2 = PSSE_DEFAULT
+            CONT2 = get(PSY.get_ext(transformer), "CONT2", PSSE_DEFAULT)
+            RMA2 = get(PSY.get_ext(transformer), "RMA2", PSSE_DEFAULT)
+            RMI2 = get(PSY.get_ext(transformer), "RMI2", PSSE_DEFAULT)
+            VMA2 = get(PSY.get_ext(transformer), "VMA2", PSSE_DEFAULT)
+            VMI2 = get(PSY.get_ext(transformer), "VMI2", PSSE_DEFAULT)
+            NTP2 = get(PSY.get_ext(transformer), "NTP2", PSSE_DEFAULT)
+            TAB2 = 0
             for icd_tr in supp_attr
                 if PSY.get_transformer_winding(icd_tr) ==
                    PSY.WindingCategory.SECONDARY_WINDING
@@ -1360,13 +1350,13 @@ function write_to_buffers!(
             end
             RATA3 = RATB3 = RATC3 = PSY.get_rating_tertiary(transformer)
             COD3 = get(PSY.get_ext(transformer), "COD3", PSSE_DEFAULT)
-            CONT3 = PSSE_DEFAULT
-            RMA3 = PSSE_DEFAULT
-            RMI3 = PSSE_DEFAULT
-            VMA3 = PSSE_DEFAULT
-            VMI3 = PSSE_DEFAULT
-            NTP3 = PSSE_DEFAULT
-            TAB3 = PSSE_DEFAULT
+            CONT3 = get(PSY.get_ext(transformer), "CONT3", PSSE_DEFAULT)
+            RMA3 = get(PSY.get_ext(transformer), "RMA3", PSSE_DEFAULT)
+            RMI3 = get(PSY.get_ext(transformer), "RMI3", PSSE_DEFAULT)
+            VMA3 = get(PSY.get_ext(transformer), "VMA3", PSSE_DEFAULT)
+            VMI3 = get(PSY.get_ext(transformer), "VMI3", PSSE_DEFAULT)
+            NTP3 = get(PSY.get_ext(transformer), "NTP3", PSSE_DEFAULT)
+            TAB3 = 0
             for icd_tr in supp_attr
                 if PSY.get_transformer_winding(icd_tr) ==
                    PSY.WindingCategory.TERTIARY_WINDING
@@ -1559,12 +1549,7 @@ function write_to_buffers!(
         vsc_line_name = string(split(PSY.get_name(vscline), "_")[end])
         NAME = _psse_quote_string(vsc_line_name)
         MDC = PSY.get_available(vscline) ? 1 : 0
-        g = PSY.get_g(vscline)
-        RDC = if iszero(g)
-            0.0
-        else
-            PSY.get_dc_setpoint_from(vscline)^2 / (g * PSY.get_base_power(exporter.system))
-        end
+        RDC = get(PSY.get_ext(vscline), "RDC", PSSE_DEFAULT)
         O1 = PSSE_DEFAULT
         F1 = PSSE_DEFAULT
         O2 = PSSE_DEFAULT
@@ -1575,17 +1560,17 @@ function write_to_buffers!(
         F4 = PSSE_DEFAULT
 
         IBUS1 = I
-        TYPE1 = Int(PSY.get_dc_voltage_control_from(vscline))
+        TYPE1 = get(PSY.get_ext(vscline), "TYPE_FROM", PSSE_DEFAULT)
         MODE1 = PSY.get_available(vscline) ? 1 : 0
         DCSET1 = PSY.get_dc_setpoint_from(vscline)
         ACSET1 = PSY.get_ac_setpoint_from(vscline)
-        ALOSS1 = get(PSY.get_ext(vscline), "ALOSS_from", PSSE_DEFAULT)
+        ALOSS1 = get(PSY.get_ext(vscline), "ALOSS_FROM", PSSE_DEFAULT)
         BLOSS1 =
             _psse_round_val(
                 PSY.get_proportional_term(
                     PSY.get_function_data(PSY.get_converter_loss_from(vscline)),
                 ) * 1e3 * PSY.get_base_power(exporter.system))
-        MINLOSS1 = get(PSY.get_ext(vscline), "MINLOSS_from", PSSE_DEFAULT)
+        MINLOSS1 = get(PSY.get_ext(vscline), "MINLOSS_FROM", PSSE_DEFAULT)
         SMAX1 = PSY.get_rating_from(vscline)
         SMAX1 = if SMAX1 == PSSE_INFINITY
             0.0
@@ -1608,17 +1593,17 @@ function write_to_buffers!(
         REMOT1 = get(PSY.get_ext(vscline), "REMOT_FROM", PSSE_DEFAULT)
         RMPCT1 = get(PSY.get_ext(vscline), "RMPCT_FROM", PSSE_DEFAULT)
         IBUS2 = J
-        TYPE2 = Int(PSY.get_dc_voltage_control_to(vscline))
+        TYPE2 = get(PSY.get_ext(vscline), "TYPE_TO", PSSE_DEFAULT)
         MODE2 = PSY.get_available(vscline) ? 1 : 0
         DCSET2 = PSY.get_dc_setpoint_to(vscline)
         ACSET2 = PSY.get_ac_setpoint_to(vscline)
-        ALOSS2 = get(PSY.get_ext(vscline), "ALOSS_to", PSSE_DEFAULT)
+        ALOSS2 = get(PSY.get_ext(vscline), "ALOSS_TO", PSSE_DEFAULT)
         BLOSS2 =
             _psse_round_val(
                 PSY.get_proportional_term(
                     PSY.get_function_data(PSY.get_converter_loss_to(vscline)),
                 ) * 1e3 * PSY.get_base_power(exporter.system))
-        MINLOSS2 = get(PSY.get_ext(vscline), "MINLOSS_to", PSSE_DEFAULT)
+        MINLOSS2 = get(PSY.get_ext(vscline), "MINLOSS_TO", PSSE_DEFAULT)
         SMAX2 = PSY.get_rating_from(vscline)
         SMAX2 = if SMAX2 == PSSE_INFINITY
             0.0
