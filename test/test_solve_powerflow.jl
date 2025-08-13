@@ -591,3 +591,55 @@ end
     a2 = data.bus_angles[2, 1]
     @test isapprox(a2, a1 - deg2rad(30); atol = 1e-6, rtol = 0)
 end
+
+@testset "Test SwitchedAdmittance" begin
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+    l = _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
+    s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
+
+    data1 = PowerFlowData(ACPowerFlow(), sys)
+
+    # create a switched admittance
+    sa = SwitchedAdmittance(;
+        name = "SA",
+        available = true,
+        bus = b2,
+        Y = 0.03 + 0.05im,
+        initial_status = Int[1, 2],
+        number_of_steps = Int[3, 3],
+        Y_increase = Complex{Float64}[0.01 + 0.02im, 0.02 + 0.03im],
+    )
+    add_component!(sys, sa)
+
+    data2 = PowerFlowData(ACPowerFlow(), sys)
+
+    # The Ybus matrix should not include switched admittance elements
+    @test isapprox(
+        data1.power_network_matrix.data,
+        data2.power_network_matrix.data,
+        atol = 1e-6,
+        rtol = 0,
+    )
+
+    Y = PSY.get_Y(sa) + sum(PSY.get_initial_status(sa) .* PSY.get_Y_increase(sa))
+
+    data1.power_network_matrix.data[2, 2] += Y
+
+    solve_powerflow!(data1)
+
+    solve_powerflow!(data2)
+
+    # Make sure the results are the same for both cases:
+    #  1. The switched admittance is included in the Ybus matrix
+    #  2. The switched admittance is represented as a constant impedance load 
+    #     and is not in the Ybus matrix
+    @test isapprox(
+        data1.bus_magnitude[:, 1],
+        data2.bus_magnitude[:, 1],
+        atol = 1e-6,
+        rtol = 0,
+    )
+    @test isapprox(data1.bus_angles[:, 1], data2.bus_angles[:, 1], atol = 1e-6, rtol = 0)
+end

@@ -90,6 +90,19 @@ function _get_withdrawals!(
         bus_reactivepower_constant_impedance_withdrawals[bus_ix] +=
             PSY.get_impedance_reactive_power(l)
     end
+    for sa in PSY.get_components(PSY.SwitchedAdmittance, sys)
+        PSY.get_available(sa) || continue
+        bus = PSY.get_bus(sa)
+        bus_ix = bus_lookup[PSY.get_number(bus)]
+        Y = PSY.get_Y(sa) + sum(PSY.get_initial_status(sa) .* PSY.get_Y_increase(sa))
+        # Here we implement the switched admittance element as a constant impedance load.
+        # The inputs for ZIP loads are provided for V = 1.0 p.u., so
+        # the following is equivalent to S = V * conj(Y * V) for V = 1.0 p.u.
+        # As conj(Y) = G - jB, we have P = G and Q = -B
+        # (we could use +=real(conj(Y)) and +=imag(conj(Y)) as well).
+        bus_activepower_constant_impedance_withdrawals[bus_ix] += real(Y)
+        bus_reactivepower_constant_impedance_withdrawals[bus_ix] -= imag(Y)
+    end
     return
 end
 
