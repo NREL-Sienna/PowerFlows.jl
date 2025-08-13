@@ -754,7 +754,7 @@ function write_to_buffers!(
 
                 from_gen = PSY.ThermalStandard(;
                     name = "$(PSY.get_name(hvdc_line))_FR",
-                    available = PSY.get_available(generator) ? 1 : 0,
+                    available = PSY.get_available(hvdc_line) ? 1 : 0,
                     status = true,
                     bus = from_bus,
                     active_power = PSY.get_active_power_flow(hvdc_line),
