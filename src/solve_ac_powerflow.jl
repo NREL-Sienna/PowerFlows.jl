@@ -182,16 +182,20 @@ function solve_powerflow!(
 
     # write branch flows
     # TODO if Yft, Ytf change between time steps, this must be moved inside the loop!
-    ts_V =
-        data.bus_magnitude[:, sorted_time_steps] .*
-        exp.(1im .* data.bus_angles[:, sorted_time_steps])
-    Sft = ts_V[fb, :] .* conj.(Yft * ts_V)
-    Stf = ts_V[tb, :] .* conj.(Ytf * ts_V)
 
-    data.branch_activepower_flow_from_to .= real.(Sft)
-    data.branch_reactivepower_flow_from_to .= imag.(Sft)
-    data.branch_activepower_flow_to_from .= real.(Stf)
-    data.branch_reactivepower_flow_to_from .= imag.(Stf)
+    # TODO fb, tb, yft, ytf match the system, don't reflect the network reduction.
+    # so this will give you mismatched size or indexing errors.
+
+    # ts_V =
+    #    data.bus_magnitude[:, sorted_time_steps] .*
+    #    exp.(1im .* data.bus_angles[:, sorted_time_steps])
+    # Sft = ts_V[fb, :] .* conj.(Yft * ts_V)
+    # Stf = ts_V[tb, :] .* conj.(Ytf * ts_V)
+
+    #data.arc_activepower_flow_from_to .= real.(Sft)
+    #data.arc_reactivepower_flow_from_to .= imag.(Sft)
+    #data.arc_activepower_flow_to_from .= real.(Stf)
+    #data.arc_reactivepower_flow_to_from .= imag.(Stf)
 
     data.converged .= ts_converged
 
@@ -231,14 +235,22 @@ function _check_q_limit_bounds!(
         else
             continue
         end
+        Q_max = data.bus_reactivepower_bounds[ix, time_step][2]
+        Q_min = data.bus_reactivepower_bounds[ix, time_step][1]
 
-        if Q_gen <= data.bus_reactivepower_bounds[ix, time_step][1]
+        if isnan(Q_min) && isnan(Q_max)
+            @warn "Reactive power limits are uninitialized for bus $(bus_names[ix])" maxlog =
+                PF_MAX_LOG
+            continue
+        end
+
+        if Q_gen <= Q_min
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
             data.bus_reactivepower_injection[ix, time_step] =
                 data.bus_reactivepower_bounds[ix, time_step][1]
-        elseif Q_gen >= data.bus_reactivepower_bounds[ix, time_step][2]
+        elseif Q_gen >= Q_max
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ

@@ -450,7 +450,7 @@ end=#
     # here we calculate the current that is observed in the power flow solution
     # supplied through the line to the load, which is a constant current load.
     s_t =
-        data.branch_activepower_flow_to_from + 1im * data.branch_reactivepower_flow_to_from
+        data.arc_activepower_flow_to_from + 1im * data.arc_reactivepower_flow_to_from
     i_t = abs(s_t[1]) / data.bus_magnitude[2, 1] / sqrt(3)
 
     # get the load inputs from the load component
@@ -498,7 +498,7 @@ end
     # here we calculate the current that is observed in the power flow solution
     # supplied through the line to the load, which is a constant impedance load.
     s_t =
-        data.branch_activepower_flow_to_from + 1im * data.branch_reactivepower_flow_to_from
+        data.arc_activepower_flow_to_from + 1im * data.arc_reactivepower_flow_to_from
     i_t = abs(s_t[1]) / data.bus_magnitude[2, 1] / sqrt(3)
 
     # get the load inputs from the load component

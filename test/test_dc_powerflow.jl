@@ -23,7 +23,7 @@
         PNM.get_ref_bus_position(data.aux_network_matrix),
     )
     ref_bus_angles = deepcopy(data.bus_angles)
-    ref_flow_values = deepcopy(data.branch_activepower_flow_from_to)
+    ref_flow_values = deepcopy(data.arc_activepower_flow_from_to)
 
     ref_bus_angles[valid_ix] = matrix_data \ power_injection[valid_ix]
     ref_flow_values = transpose(aux_network_matrix.data) * ref_bus_angles
