@@ -53,6 +53,7 @@ LOG_FILE = "power-flows.log"
 const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl"
 # "test_dc_powerflow.jl",
 # "test_distributed_slack.jl",
+# "test_homotopy_hessian.jl",
 # "test_iterative_methods.jl",
 # "test_klu_linear_solver_cache.jl",
 # "test_loss_factors.jl",
@@ -60,7 +61,10 @@ const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl
 # "test_multiperiod_dc_powerflow.jl",
 # "test_powerflow_data.jl",
 # "test_psse_export.jl",
+# "test_reduced_ac_powerflow.jl",
+# "test_robust_powerflow.jl",
 # "test_solve_powerflow.jl",
+# "test_state_indexing_helpers.jl"
 ]
 
 LOG_LEVELS = Dict(

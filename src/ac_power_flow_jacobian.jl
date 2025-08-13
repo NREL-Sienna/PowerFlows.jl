@@ -255,7 +255,7 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
 
     num_buses = first(size(data.bus_type))
 
-    num_lines = length(get_branch_lookup(data))
+    num_lines = length(get_arc_lookup(data))
     sizehint!(rows, 4 * num_lines)
     sizehint!(columns, 4 * num_lines)
     sizehint!(values, 4 * num_lines)

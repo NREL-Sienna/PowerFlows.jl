@@ -152,16 +152,24 @@ end
 
 """Returns a dictionary of bus index to power contribution at that bus from FixedAdmittance
 components, as a tuple of (active power, reactive power)."""
-function _calculate_fixed_admittance_powers(sys::PSY.System, data::PowerFlowData)
+function _calculate_fixed_admittance_powers(
+    sys::PSY.System,
+    data::PowerFlowData,
+    time_step::Int,
+)
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
+    reverse_bus_search_map = PNM.get_reverse_bus_search_map(nrd)
+    bus_lookup = get_bus_lookup(data)
+
     busIxToFAPower = Dict{Int64, Tuple{Float64, Float64}}()
     for l in PSY.get_components(PSY.FixedAdmittance, sys)
         !PSY.get_available(l) && continue
         b = PSY.get_bus(l)
-        bus_ix = get_bus_lookup(data)[PSY.get_number(b)]
+        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(b))
         Vm_squared =
-            if PSY.get_bustype(b) == PSY.ACBusTypes.PQ
-                get_bus_magnitude(data)[bus_ix]^2
-            else
+            if get_bus_type(data)[bus_ix, time_step] == PSY.ACBusTypes.PQ
+                get_bus_magnitude(data)[bus_ix, time_step]^2
+            else # PV/REF bus, so V is known.
                 PSY.get_magnitude(b)^2
             end
         sumSoFar = get(busIxToFAPower, bus_ix, (0.0, 0.0))
@@ -563,10 +571,11 @@ function _allocate_results_data(
     Q_gen_vect::Vector{Float64},
     P_load_vect::Vector{Float64},
     Q_load_vect::Vector{Float64},
-    branch_activepower_flow_from_to::Vector{Float64},
-    branch_reactivepower_flow_from_to::Vector{Float64},
-    branch_activepower_flow_to_from::Vector{Float64},
-    branch_reactivepower_flow_to_from::Vector{Float64})
+    arc_activepower_flow_from_to::Vector{Float64},
+    arc_reactivepower_flow_from_to::Vector{Float64},
+    arc_activepower_flow_to_from::Vector{Float64},
+    arc_reactivepower_flow_to_from::Vector{Float64},
+)
     bus_df = DataFrames.DataFrame(;
         bus_number = buses,
         Vm = bus_magnitude,
@@ -584,10 +593,10 @@ function _allocate_results_data(
         line_name = branch_names,
         bus_from = from_bus,
         bus_to = to_bus,
-        P_from_to = branch_activepower_flow_from_to,
-        Q_from_to = branch_reactivepower_flow_from_to,
-        P_to_from = branch_activepower_flow_to_from,
-        Q_to_from = branch_reactivepower_flow_to_from,
+        P_from_to = arc_activepower_flow_from_to,
+        Q_from_to = arc_reactivepower_flow_from_to,
+        P_to_from = arc_activepower_flow_to_from,
+        Q_to_from = arc_reactivepower_flow_to_from,
         P_losses = zeros(length(branch_names)),
         Q_losses = zeros(length(branch_names)),
     )
@@ -596,8 +605,27 @@ function _allocate_results_data(
     return Dict("bus_results" => bus_df, "flow_results" => branch_df)
 end
 
+"""Return the names of the arcs in the power flow data: those that correspond to branches in the system
+will get the branch names, others will get a placeholder name of the form from-to."""
+function get_arc_names(data::PowerFlowData)
+    arc_lookup = get_arc_lookup(data)
+    arc_names = fill("", length(arc_lookup))
+    # fill in names for those that directly correspond to branches in the system
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
+    for (arc, branch) in PNM.get_direct_branch_map(nrd)
+        arc_names[arc_lookup[arc]] = PSY.get_name(branch)
+    end
+    # fill in missing names with placeholders
+    for (arc, ix) in arc_lookup
+        if arc_names[ix] == ""
+            arc_names[ix] = "$(arc[1])-$(arc[2])"
+        end
+    end
+    return arc_names
+end
+
 """
-Returns a dictionary containing the DC power flow results. Each key conresponds
+Returns a dictionary containing the DC power flow results. Each key corresponds
 to the name of the considered time periods, storing a DataFrame with the PF
 results.
 
@@ -618,27 +646,17 @@ function write_results(
     # get bus and arcs
     arcs, buses = _get_arcs_buses(data)
 
-    branch_lookup = get_branch_lookup(data)
-    # get arcs from/to buses
     from_bus = first.(arcs)
     to_bus = last.(arcs)
-
-    # FIXME what if there's a network reduction?
-    branch_names = fill("", length(arcs))
-    branch_lookup = get_branch_lookup(data)
-    for br in PSY.get_components(PSY.ACTransmission, sys)
-        if br isa PSY.Transformer3W
-            @warn "3-winding transformers are not supported in the results export"
-            # do the math to recover the flow in each winding from the star bus model?
-            continue
-        end
-        branch_names[branch_lookup[PNM.get_arc_tuple(br)]] = PSY.get_name(br)
+    arc_names = get_arc_names(data)
+    if length(PSY.get_components(PSY.Transformer3W, sys)) > 0
+        @warn "3-winding transformers are not supported in the results export"
     end
 
     result_dict = Dict{Union{String, Char}, Dict{String, DataFrames.DataFrame}}()
     for i in 1:length(data.timestep_map)
         temp_dict = _allocate_results_data(
-            branch_names,
+            arc_names,
             buses,
             from_bus,
             to_bus,
@@ -648,10 +666,10 @@ function write_results(
             data.bus_reactivepower_injection[:, i],
             data.bus_activepower_withdrawals[:, i],
             data.bus_reactivepower_withdrawals[:, i],
-            data.branch_activepower_flow_from_to[:, i],
-            data.branch_reactivepower_flow_from_to[:, i],
-            data.branch_activepower_flow_to_from[:, i],
-            data.branch_reactivepower_flow_to_from[:, i],
+            data.arc_activepower_flow_from_to[:, i],
+            data.arc_reactivepower_flow_from_to[:, i],
+            data.arc_activepower_flow_to_from[:, i],
+            data.arc_reactivepower_flow_to_from[:, i],
         )
         result_dict[data.timestep_map[i]] = temp_dict
     end
@@ -680,61 +698,25 @@ function write_results(
     time_step::Int64,
 )
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
-    buses = sort!(collect(PSY.get_components(PSY.ACBus, sys)); by = x -> PSY.get_number(x))
-    N_BUS = length(buses)
-    bus_map = Dict(buses .=> 1:N_BUS)
     sys_basepower = PSY.get_base_power(sys)
-    Vm_vect = fill(0.0, N_BUS)
-    θ_vect = fill(0.0, N_BUS)
-    P_gen_vect = fill(0.0, N_BUS)
-    Q_gen_vect = fill(0.0, N_BUS)
-    P_load_vect = fill(0.0, N_BUS)
-    Q_load_vect = fill(0.0, N_BUS)
-    bus_types = view(data.bus_type, :, time_step)
+    Vm_vect = data.bus_magnitude[:, time_step]
+    θ_vect = data.bus_angles[:, time_step]
+    P_gen_vect = sys_basepower .* data.bus_activepower_injection[:, time_step]
+    Q_gen_vect = sys_basepower .* data.bus_reactivepower_injection[:, time_step]
+    P_load_vect = sys_basepower .* data.bus_activepower_withdrawals[:, time_step]
+    Q_load_vect = sys_basepower .* data.bus_reactivepower_withdrawals[:, time_step]
 
-    busIxToFAPower = _calculate_fixed_admittance_powers(sys, data)
-    for (ix, bt) in enumerate(bus_types)
-        P_load_vect[ix] = data.bus_activepower_withdrawals[ix, time_step] * sys_basepower
-        Q_load_vect[ix] = data.bus_reactivepower_withdrawals[ix, time_step] * sys_basepower
-        (P_admittance, Q_admittance) = get(busIxToFAPower, ix, (0.0, 0.0))
-        P_load_vect[ix] += P_admittance * sys_basepower
-        Q_load_vect[ix] += Q_admittance * sys_basepower
-        if bt == PSY.ACBusTypes.REF
-            Vm_vect[ix] = data.bus_magnitude[ix, time_step]
-            θ_vect[ix] = data.bus_angles[ix, time_step]
-            P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
-            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix, time_step] * sys_basepower
-        elseif bt == PSY.ACBusTypes.PV
-            Vm_vect[ix] = data.bus_magnitude[ix, time_step]
-            θ_vect[ix] = data.bus_angles[ix, time_step]
-            P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
-            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix, time_step] * sys_basepower
-        elseif bt == PSY.ACBusTypes.PQ
-            Vm_vect[ix] = data.bus_magnitude[ix, time_step]
-            θ_vect[ix] = data.bus_angles[ix, time_step]
-            P_gen_vect[ix] = data.bus_activepower_injection[ix, time_step] * sys_basepower
-            Q_gen_vect[ix] = data.bus_reactivepower_injection[ix, time_step] * sys_basepower
-        end
+    busIxToFAPower = _calculate_fixed_admittance_powers(sys, data, time_step)
+    for (bus_ix, fa_power) in busIxToFAPower
+        P_load_vect[bus_ix] += fa_power[1] * sys_basepower
+        Q_load_vect[bus_ix] += fa_power[2] * sys_basepower
     end
 
-    branches = PSY.get_components(PSY.ACTransmission, sys)
-    N_BRANCH = length(branches)
-    P_from_to_vect = fill(0.0, N_BRANCH)
-    Q_from_to_vect = fill(0.0, N_BRANCH)
-    P_to_from_vect = fill(0.0, N_BRANCH)
-    Q_to_from_vect = fill(0.0, N_BRANCH)
-    for (ix, b) in enumerate(branches)
-        !PSY.get_available(b) && continue
-        bus_f_ix = bus_map[PSY.get_arc(b).from]
-        bus_t_ix = bus_map[PSY.get_arc(b).to]
-        V_from = Vm_vect[bus_f_ix] * (cos(θ_vect[bus_f_ix]) + sin(θ_vect[bus_f_ix]) * 1im)
-        V_to = Vm_vect[bus_t_ix] * (cos(θ_vect[bus_t_ix]) + sin(θ_vect[bus_t_ix]) * 1im)
-        P_from_to_vect[ix], Q_from_to_vect[ix] = flow_func(b, V_from, V_to) .* sys_basepower
-        P_to_from_vect[ix], Q_to_from_vect[ix] = flow_func(b, V_to, V_from) .* sys_basepower
-    end
+    # NOTE: this may be different than get_bus_numbers(sys) if there's a network reduction!
+    bus_numbers = PNM.get_bus_axis(data.power_network_matrix)
 
     bus_df = DataFrames.DataFrame(;
-        bus_number = PSY.get_number.(buses),
+        bus_number = bus_numbers,
         Vm = Vm_vect,
         θ = θ_vect,
         P_gen = P_gen_vect,
@@ -745,16 +727,32 @@ function write_results(
         Q_net = Q_gen_vect - Q_load_vect,
     )
 
+    # TODO Ybus lacks a get_arc_axis function.
+    # it really should have one: the rows of the yft/ytf arrays correspond to arcs.
+    arcs = fill((0, 0), length(get_arc_lookup(data)))
+    for (arc, ix) in get_arc_lookup(data)
+        arcs[ix] = arc
+    end
+
+    from_bus = first.(arcs)
+    to_bus = last.(arcs)
+    arc_names = get_arc_names(data)
+    if length(PSY.get_components(PSY.Transformer3W, sys)) > 0
+        @warn "3-winding transformers are not supported in the results export"
+    end
+
     branch_df = DataFrames.DataFrame(;
-        line_name = PSY.get_name.(branches),
-        bus_from = PSY.get_number.(PSY.get_from.(PSY.get_arc.(branches))),
-        bus_to = PSY.get_number.(PSY.get_to.(PSY.get_arc.(branches))),
-        P_from_to = P_from_to_vect,
-        Q_from_to = Q_from_to_vect,
-        P_to_from = P_to_from_vect,
-        Q_to_from = Q_to_from_vect,
-        P_losses = P_from_to_vect + P_to_from_vect,
-        Q_losses = Q_from_to_vect + Q_to_from_vect,
+        line_name = arc_names,
+        bus_from = from_bus,
+        bus_to = to_bus,
+        P_from_to = data.arc_activepower_flow_from_to[:, time_step],
+        Q_from_to = data.arc_reactivepower_flow_from_to[:, time_step],
+        P_to_from = data.arc_activepower_flow_to_from[:, time_step],
+        Q_to_from = data.arc_reactivepower_flow_to_from[:, time_step],
+        P_losses = data.arc_activepower_flow_from_to[:, time_step] .+
+                   data.arc_activepower_flow_to_from[:, time_step],
+        Q_losses = data.arc_reactivepower_flow_from_to[:, time_step] .+
+                   data.arc_reactivepower_flow_to_from[:, time_step],
     )
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
@@ -768,6 +766,7 @@ See also `write_powerflow_solution!`. NOTE that this assumes that `data` was ini
 from `sys` and then solved with no further modifications.
 """
 function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
+    # TODO: throw an error if there's a network reduction.
     for bus in PSY.get_components(PSY.ACBus, sys)
         bus_number = data.bus_lookup[PSY.get_number(bus)]
         bus_type = data.bus_type[bus_number, time_step]  # use this instead of bus.bustype to account for PV -> PQ
