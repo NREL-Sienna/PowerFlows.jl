@@ -375,3 +375,23 @@ function _add_simple_zip_load!(
     add_component!(sys, zip_load)
     return zip_load
 end
+
+function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
+    injections = CSV.read(
+        joinpath(MAIN_DIR, "test", "test_data", "c_sys14_injections.csv"),
+        DataFrame;
+        header = 0,
+    )
+    withdrawals = CSV.read(
+        joinpath(MAIN_DIR, "test", "test_data", "c_sys14_withdrawals.csv"),
+        DataFrame;
+        header = 0,
+    )
+    # allocate data from csv
+    injs = Matrix(injections)
+    withs = Matrix(withdrawals)
+
+    data.bus_activepower_injection .= deepcopy(injs[:, 1:time_steps])
+    data.bus_activepower_withdrawals .= deepcopy(withs[:, 1:time_steps])
+    return nothing
+end

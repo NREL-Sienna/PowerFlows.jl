@@ -230,7 +230,6 @@ function make_dc_powerflowdata(
     for (ix, b) in enumerate(PNM.get_ac_branches(sys))
         branch_type[ix] = typeof(b)
     end
-    bus_reactivepower_bounds = Vector{Vector{Float64}}(undef, n_buses)
     timestep_map = Dict(zip([i for i in 1:time_steps], timestep_names))
     neighbors = Vector{Set{Int}}()
     return make_powerflowdata(
