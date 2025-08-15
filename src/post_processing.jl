@@ -727,13 +727,7 @@ function write_results(
         Q_net = Q_gen_vect - Q_load_vect,
     )
 
-    # TODO Ybus lacks a get_arc_axis function.
-    # it really should have one: the rows of the yft/ytf arrays correspond to arcs.
-    arcs = fill((0, 0), length(get_arc_lookup(data)))
-    for (arc, ix) in get_arc_lookup(data)
-        arcs[ix] = arc
-    end
-
+    arcs = PNM.get_arc_axis(data.power_network_matrix.branch_admittance_from_to)
     from_bus = first.(arcs)
     to_bus = last.(arcs)
     arc_names = get_arc_names(data)

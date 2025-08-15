@@ -352,13 +352,7 @@ function PowerFlowData(
 
     # the ybus matrix doesn't come with an arc lookup, so we just enumerate them arbitrarily.
     # FIXME: the ybus matrix really should have an arc lookup, for the yft, ytf matrices.
-    arc_lookup = Dict{Tuple{Int, Int}, Int}()
-    sizehint!(arc_lookup, n_arcs)
-    for arcs in values(power_network_matrix.arc_subnetwork_axis)
-        for arc in arcs
-            arc_lookup[arc] = length(arc_lookup) + 1
-        end
-    end
+    arc_lookup = PNM.get_arc_lookup(power_network_matrix.branch_admittance_from_to)
     bus_lookup = PNM.get_bus_lookup(power_network_matrix)
 
     valid_ix = setdiff(1:n_buses, ref_bus_positions)

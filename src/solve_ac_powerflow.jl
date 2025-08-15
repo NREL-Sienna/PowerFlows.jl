@@ -156,10 +156,16 @@ function solve_powerflow!(
     # TODO If anything in the grid topology changes, 
     #  e.g. tap positions of transformers or in service 
     #  status of branches, Yft and Ytf must be updated!
-    Yft = data.power_network_matrix.yft
-    Ytf = data.power_network_matrix.ytf
-    fb = data.power_network_matrix.fb
-    tb = data.power_network_matrix.tb
+    Yft = data.power_network_matrix.branch_admittance_from_to
+    Ytf = data.power_network_matrix.branch_admittance_to_from
+    @assert PNM.get_bus_lookup(Yft) == get_bus_lookup(data)
+    arcs = PNM.get_arc_axis(Yft)
+    @assert arcs == PNM.get_arc_axis(Ytf)
+    @assert length(PNM.get_bus_axis(Yft)) == length(data.bus_angles[:, 1])
+    bus_lookup = get_bus_lookup(data)
+    fb_ix = [bus_lookup[bus_no] for bus_no in first.(arcs)]  # from bus indices
+    tb_ix = [bus_lookup[bus_no] for bus_no in last.(arcs)]   # to bus indices
+    @assert length(fb_ix) == length(arcs)
 
     for time_step in sorted_time_steps
         converged = _ac_powerflow(data, pf, time_step; kwargs...)
@@ -182,20 +188,17 @@ function solve_powerflow!(
 
     # write branch flows
     # TODO if Yft, Ytf change between time steps, this must be moved inside the loop!
+    ts_V =
+        data.bus_magnitude[:, sorted_time_steps] .*
+        exp.(1im .* data.bus_angles[:, sorted_time_steps])
 
-    # TODO fb, tb, yft, ytf match the system, don't reflect the network reduction.
-    # so this will give you mismatched size or indexing errors.
+    Sft = ts_V[fb_ix, :] .* conj.(Yft.data * ts_V)
+    Stf = ts_V[tb_ix, :] .* conj.(Ytf.data * ts_V)
 
-    # ts_V =
-    #    data.bus_magnitude[:, sorted_time_steps] .*
-    #    exp.(1im .* data.bus_angles[:, sorted_time_steps])
-    # Sft = ts_V[fb, :] .* conj.(Yft * ts_V)
-    # Stf = ts_V[tb, :] .* conj.(Ytf * ts_V)
-
-    #data.arc_activepower_flow_from_to .= real.(Sft)
-    #data.arc_reactivepower_flow_from_to .= imag.(Sft)
-    #data.arc_activepower_flow_to_from .= real.(Stf)
-    #data.arc_reactivepower_flow_to_from .= imag.(Stf)
+    data.arc_activepower_flow_from_to .= real.(Sft)
+    data.arc_reactivepower_flow_from_to .= imag.(Sft)
+    data.arc_activepower_flow_to_from .= real.(Stf)
+    data.arc_reactivepower_flow_to_from .= imag.(Stf)
 
     data.converged .= ts_converged
 
