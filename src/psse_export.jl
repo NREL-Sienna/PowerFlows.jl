@@ -1176,9 +1176,9 @@ function write_to_buffers!(
     for (transformer, bus_tuple) in
         # Get common fields of both 2W and 3W transformers
         vcat(transformers_with_numbers, transformers_3w_with_numbers)
-        CW = get(PSY.get_ext(transformer), "CW", PSSE_DEFAULT)
-        CZ = get(PSY.get_ext(transformer), "CZ", PSSE_DEFAULT)
-        CM = get(PSY.get_ext(transformer), "CM", PSSE_DEFAULT)
+        CW = get(PSY.get_ext(transformer), "CW", 1)
+        CZ = get(PSY.get_ext(transformer), "CZ", 1)
+        CM = get(PSY.get_ext(transformer), "CM", 1)
         NMETR = get(PSY.get_ext(transformer), "NMETR", PSSE_DEFAULT)
         MAG1 = get(PSY.get_ext(transformer), "MAG1", PSSE_DEFAULT)
         MAG2 = get(PSY.get_ext(transformer), "MAG2", PSSE_DEFAULT)
@@ -1205,14 +1205,59 @@ function write_to_buffers!(
             CKT = _psse_quote_string(CKT)
             NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
             STAT = PSY.get_available(transformer) ? 1 : 0
-            WINDV1 = get(PSY.get_ext(transformer), "WINDV1", 0.0)
-            WINDV2 = get(PSY.get_ext(transformer), "WINDV2", 0.0)
             NOMV1 = PSY.get_base_voltage_primary(transformer)
             NOMV2 = PSY.get_base_voltage_secondary(transformer)
+            SBASE1_2 = PSY.get_base_power(exporter.system)
+            WINDV1 = 1.0
+            WINDV2 = 1.0
+            R1_2 = 1.0
+            X1_2 = 1.0
+            if CW == 1
+                WINDV1 = 1.0
+                WINDV2 = 1.0
 
-            R1_2 = get(PSY.get_ext(transformer), "R1-2", 0.0)
-            X1_2 = get(PSY.get_ext(transformer), "X1-2", 0.0)
-            SBASE1_2 = PSY.get_base_power(transformer)
+                R1_2 /= WINDV2^2
+                X1_2 /= WINDV2^2
+            elseif CW == 2
+                WINDV1 = PSY.get_base_voltage((PSY.get_from(PSY.get_arc(transformer))))
+                WINDV2 = PSY.get_base_voltage((PSY.get_to(PSY.get_arc(transformer))))
+
+                R1_2 /= (SBASE1_2 / WINDV2)^2
+                X1_2 /= (SBASE1_2 / WINDV2)^2
+            elseif CW == 3
+                if iszero(transformer["NOMV2"])
+                    nominal_voltage_ratio = 1.0
+                else
+                    nominal_voltage_ratio =
+                        transformer["NOMV2"] /
+                        PSY.get_base_voltage((PSY.get_to(PSY.get_arc(transformer))))
+                end
+                R1_2 /= (transformer["WINDV2"] * nominal_voltage_ratio)^2
+                X1_2 /= (transformer["WINDV2"] * nominal_voltage_ratio)^2
+            else
+                WINDV1 = get(PSY.get_ext(transformer), "WINDV1", 1.0)
+                WINDV2 = get(PSY.get_ext(transformer), "WINDV2", 1.0)
+                R1_2 = get(PSY.get_ext(transformer), "R1-2", PSSE_DEFAULT)
+                X1_2 = get(PSY.get_ext(transformer), "X1-2", PSSE_DEFAULT)
+            end
+            mva_ratio = SBASE1_2 / PSY.get_base_power(transformer)
+            Z_base_device =
+                PSY.get_base_voltage((PSY.get_from(PSY.get_arc(transformer))))^2 /
+                PSY.get_base_power(transformer)
+            Z_base_sys =
+                PSY.get_base_voltage((PSY.get_from(PSY.get_arc(transformer))))^2 / SBASE1_2
+            if CZ == 3
+                R1_2 /= (1e-6 * R1_2 / SBASE1_2)
+                X1_2 /= sqrt(X1_2^2 - R1_2^2)
+            elseif CZ == 1
+                if iszero(Z_base_device)
+                    R1_2 /= (R1_2 * mva_ratio)
+                    X1_2 /= (X1_2 * mva_ratio)
+                else
+                    R1_2 /= ((R1_2 * Z_base_sys) / Z_base_device)
+                    X1_2 /= ((X1_2 * Z_base_sys) / Z_base_device)
+                end
+            end
 
             ANG1 = if (transformer isa PSY.PhaseShiftingTransformer)
                 rad2deg(PSY.get_α(transformer))
@@ -1226,16 +1271,18 @@ function write_to_buffers!(
                     _value_or_default(PSY.get_rating_c(transformer), 0.00)
                 end
             RATA1, RATB1, RATC1 = (_psse_round_val(x) for x in (RATA1, RATB1, RATC1))
-            COD1 = get(PSY.get_ext(transformer), "COD1", PSSE_DEFAULT)
-            CONT1 = get(PSY.get_ext(transformer), "CONT1", PSSE_DEFAULT)
-            RMA1 = get(PSY.get_ext(transformer), "RMA1", PSSE_DEFAULT)
-            RMI1 = get(PSY.get_ext(transformer), "RMI1", PSSE_DEFAULT)
-            VMA1 = get(PSY.get_ext(transformer), "VMA1", PSSE_DEFAULT)
-            VMI1 = get(PSY.get_ext(transformer), "VMI1", PSSE_DEFAULT)
-            NTP1 = get(PSY.get_ext(transformer), "NTP1", PSSE_DEFAULT)
+            COD1 = get(PSY.get_ext(transformer), "COD1", -99)
+            CONT1 = get(PSY.get_ext(transformer), "CONT1", 0)
+            RMA1 = get(PSY.get_ext(transformer), "RMA1", 1.1)
+            RMI1 = get(PSY.get_ext(transformer), "RMI1", 0.9)
+            VMA1 = get(PSY.get_ext(transformer), "VMA1", 1.1)
+            VMI1 = get(PSY.get_ext(transformer), "VMI1", 0.9)
+            NTP1 = get(PSY.get_ext(transformer), "NTP1", 33)
             supp_attr = PSY.get_supplemental_attributes(transformer)
             TAB1 = !isempty(supp_attr) ? PSY.get_table_number(supp_attr[1]) : 0
-            CR1 = CX1 = CNXA1 = PSSE_DEFAULT
+            CR1 = get(PSY.get_ext(transformer), "CR1", 0.0)
+            CX1 = get(PSY.get_ext(transformer), "CX1", 0.0)
+            CNXA1 = get(PSY.get_ext(transformer), "CNXA1", 0.0)
 
             @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
                 MAG1, MAG2, NMETR, NAME, STAT)
