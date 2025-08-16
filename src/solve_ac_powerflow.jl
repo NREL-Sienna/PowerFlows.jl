@@ -194,7 +194,6 @@ function solve_powerflow!(
 
     Sft = ts_V[fb_ix, :] .* conj.(Yft.data * ts_V)
     Stf = ts_V[tb_ix, :] .* conj.(Ytf.data * ts_V)
-
     data.arc_activepower_flow_from_to .= real.(Sft)
     data.arc_reactivepower_flow_from_to .= imag.(Sft)
     data.arc_activepower_flow_to_from .= real.(Stf)

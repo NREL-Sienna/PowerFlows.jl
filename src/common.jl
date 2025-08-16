@@ -106,7 +106,7 @@ function _get_withdrawals!(
     for sa in PSY.get_components(PSY.SwitchedAdmittance, sys)
         PSY.get_available(sa) || continue
         bus = PSY.get_bus(sa)
-        bus_ix = bus_lookup[PSY.get_number(bus)]
+        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         Y = PSY.get_Y(sa) + sum(PSY.get_initial_status(sa) .* PSY.get_Y_increase(sa))
         # Here we implement the switched admittance element as a constant impedance load.
         # The inputs for ZIP loads are provided for V = 1.0 p.u., so

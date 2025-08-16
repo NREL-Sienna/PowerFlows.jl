@@ -342,18 +342,12 @@ function PowerFlowData(
     # error_if_has_network_reduction_data(power_network_matrix)
 
     # get number of arcs and branches
-    n_buses = length(PNM.get_bus_axis(power_network_matrix))
-    ref_bus_positions = PNM.get_ref_bus_position(power_network_matrix)
-
-    n_arcs = 0
-    for v in values(power_network_matrix.arc_subnetwork_axis)
-        n_arcs += length(v)
-    end
-
-    # the ybus matrix doesn't come with an arc lookup, so we just enumerate them arbitrarily.
-    # FIXME: the ybus matrix really should have an arc lookup, for the yft, ytf matrices.
     arc_lookup = PNM.get_arc_lookup(power_network_matrix.branch_admittance_from_to)
+    n_arcs = length(arc_lookup)
     bus_lookup = PNM.get_bus_lookup(power_network_matrix)
+    n_buses = length(bus_lookup)
+
+    ref_bus_positions = PNM.get_ref_bus_position(power_network_matrix)
 
     valid_ix = setdiff(1:n_buses, ref_bus_positions)
     neighbors = _calculate_neighbors(power_network_matrix)
