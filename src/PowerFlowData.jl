@@ -194,6 +194,12 @@ get_bus_reactivepower_constant_current_withdrawals(pfd::PowerFlowData) =
 get_bus_reactivepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
     pfd.bus_reactivepower_constant_impedance_withdrawals
 
+get_arc_axis(pfd::ACPowerFlowData) =
+    PNM.get_arc_axis(pfd.power_network_matrix.branch_admittance_from_to)
+get_arc_axis(pfd::ABAPowerFlowData) = PNM.get_arc_axis(pfd.aux_network_matrix)
+get_arc_axis(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
+    PNM.get_arc_axis(pfd.power_network_matrix)
+
 function get_bus_activepower_total_withdrawals(pfd::PowerFlowData, ix::Int, time_step::Int)
     return pfd.bus_activepower_withdrawals[ix, time_step] +
            pfd.bus_activepower_constant_current_withdrawals[ix, time_step] *
@@ -273,15 +279,20 @@ function _calculate_neighbors(
     return neighbors
 end
 
-# TODO: add a function in PNM for this.
-function error_if_has_network_reduction_data(m::PNM.PowerNetworkMatrix)
-    if length(PNM.get_reverse_bus_search_map(m.network_reduction_data)) > 0
-        throw(
-            NotImplementedError(
-                "AC Power Flow with network reduction is not implemented yet.",
-            ),
-        )
+function network_reduction_message(
+    nrs::Vector{PNM.NetworkReduction},
+    m::PowerFlowEvaluationModel,
+)
+    if any(isa.(nrs, (PNM.WardReduction,)))
+        error("Ward reduction is not supported yet.")
     end
+    if m isa ACPowerFlow && any(isa.(nrs, (PNM.RadialReduction,)))
+        @error "AC Power Flow with Radial Network Reduction: feature is a work-in-progress. The power flow will likely fail to converge."
+    end
+    if any(isa.(nrs, (PNM.DegreeTwoReduction,)))
+        @warn "Degree 2 network reductions mis-report branch power flows, but bus voltage results are correct. Use with caution."
+    end
+    return
 end
 
 """
@@ -316,6 +327,7 @@ function PowerFlowData(
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true,
     correct_bustypes::Bool = false)
+    network_reduction_message(network_reductions, pf)
     calculate_loss_factors = pf.calculate_loss_factors
     generator_slack_participation_factors = pf.generator_slack_participation_factors
     calculate_voltage_stability_factors = pf.calculate_voltage_stability_factors
@@ -339,7 +351,6 @@ function PowerFlowData(
         make_branch_admittance_matrices = true,
         include_constant_impedance_loads = false,
     )
-    # error_if_has_network_reduction_data(power_network_matrix)
 
     # get number of arcs and branches
     arc_lookup = PNM.get_arc_lookup(power_network_matrix.branch_admittance_from_to)
@@ -419,11 +430,12 @@ NOTE: use it for DC power flow computations.
 function PowerFlowData(
     ::DCPowerFlow,
     sys::PSY.System;
+    network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true,
     correct_bustypes = false)
-
+    network_reduction_message(network_reductions, DCPowerFlow())
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
     if length(timestep_names) == 0
@@ -433,8 +445,9 @@ function PowerFlowData(
     end
 
     # get the network matrices
-    power_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
-    aux_network_matrix = PNM.BA_Matrix(sys)
+    power_network_matrix =
+        PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
+    aux_network_matrix = PNM.BA_Matrix(sys; network_reductions = network_reductions)
 
     # get number of arcs and branches
     bus_lookup = PNM.get_bus_lookup(aux_network_matrix)
@@ -496,11 +509,12 @@ NOTE: use it for DC power flow computations.
 function PowerFlowData(
     ::PTDFDCPowerFlow,
     sys::PSY.System;
+    network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true,
     correct_bustypes = false)
-
+    network_reduction_message(network_reductions, PTDFDCPowerFlow())
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
     if time_steps != 0
@@ -512,9 +526,9 @@ function PowerFlowData(
     end
 
     # get the network matrices
-    power_network_matrix = PNM.PTDF(sys)
-    aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
-    # error_if_has_network_reduction_data(power_network_matrix)
+    power_network_matrix = PNM.PTDF(sys; network_reductions = network_reductions)
+    aux_network_matrix =
+        PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
 
     # get number of arcs and branches
     bus_lookup = PNM.get_bus_lookup(power_network_matrix)
@@ -574,11 +588,12 @@ NOTE: use it for DC power flow computations.
 function PowerFlowData(
     ::vPTDFDCPowerFlow,
     sys::PSY.System;
+    network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true,
     correct_bustypes = false)
-
+    network_reduction_message(network_reductions, vPTDFDCPowerFlow())
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
     if time_steps != 0
@@ -590,9 +605,9 @@ function PowerFlowData(
     end
 
     # get the network matrices
-    power_network_matrix = PNM.VirtualPTDF(sys) # evaluates an empty virtual PTDF
-    aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
-    error_if_has_network_reduction_data(power_network_matrix)
+    power_network_matrix = PNM.VirtualPTDF(sys; network_reductions = network_reductions) # evaluates an empty virtual PTDF
+    aux_network_matrix =
+        PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
 
     # get number of arcs and branches
     n_buses = length(axes(power_network_matrix, 2))
