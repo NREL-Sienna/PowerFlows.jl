@@ -615,10 +615,14 @@ function get_arc_names(data::PowerFlowData)
     for (arc, branch) in PNM.get_direct_branch_map(nrd)
         arc_names[arc_lookup[arc]] = PSY.get_name(branch)
     end
+    arc_names_set = Set(arc_names)
     # fill in missing names with placeholders
     for (arc, ix) in arc_lookup
         if arc_names[ix] == ""
-            arc_names[ix] = "$(arc[1])-$(arc[2])"
+            arc_name = "$(arc[1])-$(arc[2])"
+            @assert !(arc_name in arc_names_set) "Arc name collision detected: $arc_name"
+            arc_names[ix] = arc_name
+            push!(arc_names_set, arc_name)
         end
     end
     return arc_names

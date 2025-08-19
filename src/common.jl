@@ -150,7 +150,7 @@ function _initialize_bus_data!(
     bus_magnitude::Vector{Float64},
     bus_lookup::Dict{Int, Int},
     bus_reduction_map::Dict{Int, Set{Int}},
-    reverse_bus_search_map::Dict{Int, Int}, # do I want the reduction of its reverse here?
+    reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
     correct_bustypes::Bool = false,
 )
@@ -187,18 +187,17 @@ function _initialize_bus_data!(
         temp_bus_types[bus_no] = bt
     end
 
+    bus_type_priorities = Dict{PSY.ACBusTypes, Int}(
+        PSY.ACBusTypes.REF => 3,
+        PSY.ACBusTypes.PV => 2,
+        PSY.ACBusTypes.PQ => 1,
+    )
     for (bus_no, reduced_bus_nos) in bus_reduction_map
         # pick the "highest" bus type among the reduced buses, where REF > PV > PQ.
-        combined_bus_type = temp_bus_types[bus_no]
-        for reduced_bus_no in reduced_bus_nos
-            reduced_bus_type = temp_bus_types[reduced_bus_no]
-            if reduced_bus_type == PSY.ACBusTypes.REF
-                combined_bus_type = reduced_bus_type
-            elseif reduced_bus_type == PSY.ACBusTypes.PV &&
-                   combined_bus_type != PSY.ACBusTypes.REF
-                combined_bus_type = PSY.ACBusTypes.PV
-            end
-        end
+        corrected_bus_types =
+            [temp_bus_types[reduced_bus_no] for reduced_bus_no in reduced_bus_nos]
+        push!(corrected_bus_types, temp_bus_types[bus_no])
+        combined_bus_type = findmax(bt -> bus_type_priorities[bt], corrected_bus_types)[1]
         ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, bus_no)
         bus_type[ix] = combined_bus_type
         # TODO: combine the angles/magnitudes, between the reduced buses?
@@ -255,8 +254,6 @@ function make_dc_powerflowdata(
     timestep_names,
     power_network_matrix,
     aux_network_matrix,
-    n_buses,
-    n_arcs,
     bus_lookup,
     arc_lookup,
     valid_ix,
@@ -275,8 +272,6 @@ function make_dc_powerflowdata(
         time_steps,
         power_network_matrix,
         aux_network_matrix,
-        n_buses,
-        n_arcs,
         bus_lookup,
         arc_lookup,
         timestep_map,
@@ -460,8 +455,6 @@ function make_powerflowdata(
     time_steps,
     power_network_matrix,
     aux_network_matrix,
-    n_buses,
-    n_arcs,
     bus_lookup,
     arc_lookup,
     timestep_map,
@@ -475,6 +468,8 @@ function make_powerflowdata(
     generator_slack_participation_factors = nothing,
     correct_bustypes::Bool = false,
 )
+    n_buses = length(bus_lookup)
+    n_arcs = length(arc_lookup)
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
     bus_angles = zeros(Float64, n_buses)
     bus_magnitude = ones(Float64, n_buses)

@@ -19,6 +19,9 @@ get_system(container::SystemPowerFlowContainer) = container.system
 Structure containing all the data required for the evaluation of the power
 flows and angles, as well as these ones.
 
+In the below descriptions, "number of buses" should be understood as "number of buses remaining,
+after the network reduction." Similarly, we use "arcs" instead of "branches" to distinguish 
+between network elements (post-reduction) and system objects (pre-reduction).
 # Arguments:
 - `bus_lookup::Dict{Int, Int}`:
         dictionary linking the system's bus number with the rows of either
@@ -34,22 +37,22 @@ flows and angles, as well as these ones.
         of buses, t: number of time period.
 - `bus_activepower_withdrawals::Matrix{Float64}`:
         "(b, t)" matrix containing the bus reactive power withdrawals. b:
-        number of arcs, t: number of time period.
+        number of buses, t: number of time period.
 - `bus_reactivepower_withdrawals::Matrix{Float64}`:
         "(b, t)" matrix containing the bus reactive power withdrawals. b:
-        number of arcs, t: number of time period.
+        number of buses, t: number of time period.
 - `bus_activepower_constant_current_withdrawals::Matrix{Float64}`:
         "(b, t)" matrix containing the bus active power constant current
-        withdrawals. b: number of arcs, t: number of time period.
+        withdrawals. b: number of buses, t: number of time period.
 - `bus_reactivepower_constant_current_withdrawals::Matrix{Float64}`:
         "(b, t)" matrix containing the bus reactive power constant current
-        withdrawals. b: number of arcs, t: number of time period.
+        withdrawals. b: number of buses, t: number of time period.
 - `bus_activepower_constant_impedance_withdrawals::Matrix{Float64}`:
         "(b, t)" matrix containing the bus active power constant impedance
-        withdrawals. b: number of arcs, t: number of time period.
+        withdrawals. b: number of buses, t: number of time period.
 - `bus_reactivepower_constant_impedance_withdrawals::Matrix{Float64}`:  
         "(b, t)" matrix containing the bus reactive power constant impedance
-        withdrawals. b: number of arcs, t: number of time period.
+        withdrawals. b: number of buses, t: number of time period.
 - `bus_reactivepower_bounds::Matrix{Float64}`:
         "(b, t)" matrix containing upper and lower bounds for the reactive supply at each
         bus at each time period.
@@ -58,10 +61,10 @@ flows and angles, as well as these ones.
         according to "bus_lookup," at each time period.
 - `bus_magnitude::Matrix{Float64}`:
         "(b, t)" matrix containing the bus magnitudes, ordered according to
-        "bus_lookup". b: number of arcs, t: number of time period.
+        "bus_lookup". b: number of buses, t: number of time period.
 - `bus_angles::Matrix{Float64}`:
         "(b, t)" matrix containing the bus angles, ordered according to
-        "bus_lookup". b: number of arcs, t: number of time period.
+        "bus_lookup". b: number of buses, t: number of time period.
 - `arc_activepower_flow_from_to::Matrix{Float64}`:
         "(br, t)" matrix containing the active power flows measured at the `from` bus,
         ordered according to "arc_lookup". br: number of arcs, t: number of time
@@ -142,6 +145,8 @@ const ACPowerFlowData = PowerFlowData{
         Nothing,
     },
 }
+get_arc_axis(pfd::ACPowerFlowData) =
+    PNM.get_arc_axis(pfd.power_network_matrix.branch_admittance_from_to)
 
 const PTDFPowerFlowData = PowerFlowData{
     PNM.PTDF{
@@ -167,6 +172,8 @@ const vPTDFPowerFlowData = PowerFlowData{
         PNM.KLU.KLUFactorization{Float64, Int64},
     },
 }
+get_arc_axis(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
+    PNM.get_arc_axis(pfd.power_network_matrix)
 
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
@@ -178,6 +185,7 @@ const ABAPowerFlowData = PowerFlowData{
         Tuple{Vector{Int64}, Vector{Tuple{Int, Int}}},
         Tuple{Dict{Int64, Int64}, Dict{Tuple{Int, Int}, Int64}}},
 }
+get_arc_axis(pfd::ABAPowerFlowData) = PNM.get_arc_axis(pfd.aux_network_matrix)
 
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
 get_arc_lookup(pfd::PowerFlowData) = pfd.arc_lookup
@@ -193,12 +201,6 @@ get_bus_reactivepower_constant_current_withdrawals(pfd::PowerFlowData) =
     pfd.bus_reactivepower_constant_current_withdrawals
 get_bus_reactivepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
     pfd.bus_reactivepower_constant_impedance_withdrawals
-
-get_arc_axis(pfd::ACPowerFlowData) =
-    PNM.get_arc_axis(pfd.power_network_matrix.branch_admittance_from_to)
-get_arc_axis(pfd::ABAPowerFlowData) = PNM.get_arc_axis(pfd.aux_network_matrix)
-get_arc_axis(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
-    PNM.get_arc_axis(pfd.power_network_matrix)
 
 function get_bus_activepower_total_withdrawals(pfd::PowerFlowData, ix::Int, time_step::Int)
     return pfd.bus_activepower_withdrawals[ix, time_step] +
@@ -284,7 +286,7 @@ function network_reduction_message(
     m::PowerFlowEvaluationModel,
 )
     if any(isa.(nrs, (PNM.WardReduction,)))
-        error("Ward reduction is not supported yet.")
+        throw(IS.NotImplementedError("Ward reduction is not supported yet."))
     end
     if m isa ACPowerFlow && any(isa.(nrs, (PNM.RadialReduction,)))
         @error "AC Power Flow with Radial Network Reduction: feature is a work-in-progress. The power flow will likely fail to converge."
@@ -354,7 +356,6 @@ function PowerFlowData(
 
     # get number of arcs and branches
     arc_lookup = PNM.get_arc_lookup(power_network_matrix.branch_admittance_from_to)
-    n_arcs = length(arc_lookup)
     bus_lookup = PNM.get_bus_lookup(power_network_matrix)
     n_buses = length(bus_lookup)
 
@@ -386,8 +387,6 @@ function PowerFlowData(
         time_steps,
         power_network_matrix,
         aux_network_matrix,
-        n_buses,
-        n_arcs,
         bus_lookup,
         arc_lookup,
         timestep_map,
@@ -452,10 +451,8 @@ function PowerFlowData(
     # get number of arcs and branches
     bus_lookup = PNM.get_bus_lookup(aux_network_matrix)
     arc_lookup = PNM.get_arc_lookup(aux_network_matrix)
-    n_buses = length(bus_lookup)
-    n_arcs = length(arc_lookup)
 
-    valid_ix = setdiff(1:n_buses, PNM.get_ref_bus_position(aux_network_matrix))
+    valid_ix = setdiff(1:length(bus_lookup), PNM.get_ref_bus_position(aux_network_matrix))
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
@@ -468,8 +465,6 @@ function PowerFlowData(
         timestep_names,
         power_network_matrix,
         aux_network_matrix,
-        n_buses,
-        n_arcs,
         bus_lookup,
         arc_lookup,
         valid_ix,
@@ -533,9 +528,7 @@ function PowerFlowData(
     # get number of arcs and branches
     bus_lookup = PNM.get_bus_lookup(power_network_matrix)
     arc_lookup = PNM.get_arc_lookup(power_network_matrix)
-    n_buses = length(bus_lookup)
-    n_arcs = length(arc_lookup)
-    valid_ix = setdiff(1:n_buses, PNM.get_ref_bus_position(power_network_matrix))
+    valid_ix = setdiff(1:length(bus_lookup), PNM.get_ref_bus_position(power_network_matrix))
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
@@ -548,8 +541,6 @@ function PowerFlowData(
         timestep_names,
         power_network_matrix,
         aux_network_matrix,
-        n_buses,
-        n_arcs,
         bus_lookup,
         arc_lookup,
         valid_ix,
@@ -609,13 +600,9 @@ function PowerFlowData(
     aux_network_matrix =
         PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
 
-    # get number of arcs and branches
-    n_buses = length(axes(power_network_matrix, 2))
-    n_arcs = length(axes(power_network_matrix, 1))
-
     bus_lookup = power_network_matrix.lookup[2]
     arc_lookup = power_network_matrix.lookup[1]
-    valid_ix = setdiff(1:n_buses, PNM.get_ref_bus_position(power_network_matrix))
+    valid_ix = setdiff(1:length(bus_lookup), PNM.get_ref_bus_position(power_network_matrix))
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
@@ -628,8 +615,6 @@ function PowerFlowData(
         timestep_names,
         power_network_matrix,
         aux_network_matrix,
-        n_buses,
-        n_arcs,
         bus_lookup,
         arc_lookup,
         valid_ix,
