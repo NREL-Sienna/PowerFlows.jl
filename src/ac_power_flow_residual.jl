@@ -39,8 +39,9 @@ and net bus reactive power injections.
 """
 function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     n_buses = first(size(data.bus_type))
-    P_net = Vector{Float64}(undef, n_buses)
-    Q_net = Vector{Float64}(undef, n_buses)
+    n_lcc = length(data.P_set)
+    P_net = Vector{Float64}(undef, n_buses + 2 * n_lcc)
+    Q_net = Vector{Float64}(undef, n_buses + 2 * n_lcc)
 
     P_net_set = zeros(Float64, n_buses)
     bus_type = view(data.bus_type, :, time_step)
@@ -67,6 +68,11 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
         push!(spf_idx, ix)
         push!(spf_val, spf_v)
         sum_sl_weights += spf_v
+    end
+
+    for i in n_buses:(n_buses + n_lcc)
+        P_net[i] = 0.0
+        Q_net[i] = 0.0
     end
 
     if sum_sl_weights == 0.0
@@ -100,7 +106,7 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     return ACPowerFlowResidual(
         data,
         _update_residual_values!,
-        Vector{Float64}(undef, 2 * n_buses),
+        Vector{Float64}(undef, 2 * n_buses + 4 * n_lcc),
         P_net,
         Q_net,
         P_net_set,
@@ -266,6 +272,11 @@ function _set_state_variables_at_bus!(
         data,
         time_step,
     )
+    @show StateVector[(end - 3):end]
+    data.t_i[1] = StateVector[end - 3]
+    data.t_j[1] = StateVector[end - 2]
+    data.alpha_i[1] = StateVector[end - 1]
+    data.alpha_j[1] = StateVector[end]
 end
 
 """
@@ -380,8 +391,29 @@ function _update_residual_values!(
             end
         end
     end
+    n_buses = first(size(data.bus_type))
+    for (k, (i, j, t_i, t_j, α_i, α_j, x_i, x_j)) in enumerate(
+        zip(
+            data.lcc_i,
+            data.lcc_j,
+            data.t_i,
+            data.t_j,
+            data.alpha_i,
+            data.alpha_j,
+            data.x_t_i,
+            data.x_t_j,
+        ),
+    )
+        P_net[n_buses + 2 * k - 1] = 0.0 # P_net[i]
+        P_net[n_buses + 2 * k] = 0.0#-α_i
+        Q_net[n_buses + 2 * k - 1] = 0.0 # P_net[j] - 0.1
+        Q_net[n_buses + 2 * k] = 0.0#-α_j
+        # @show P_net[i], P_net[j], α_i, α_j
+    end
     F[1:2:end] .-= P_net
     F[2:2:end] .-= Q_net
+    F[(end - 3):end] = [0.0, 0.1, data.alpha_i[1] - 0, data.alpha_j[1] - π / 2] # LCCs
+    @show F[(end - 3):end]
     return
 end
 

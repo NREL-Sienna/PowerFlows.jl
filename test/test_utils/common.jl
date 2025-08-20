@@ -375,3 +375,56 @@ function _add_simple_zip_load!(
     add_component!(sys, zip_load)
     return zip_load
 end
+
+function _lcc_system()
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+    b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.1, 0.0)
+    ld3 = _add_simple_load!(sys, b3, 60, 20)
+    l12 = _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
+    l13 = _add_simple_line!(sys, b1, b3, 5e-3, 5e-3, 1e-3)
+    s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
+
+    lcc = TwoTerminalLCCLine(;
+        name = "LCC",
+        available = true,
+        arc = Arc(b2, b3),
+        active_power_flow = 0.0,
+        r = 0.05,
+        transfer_setpoint = 100,
+        scheduled_dc_voltage = 230.0,
+        rectifier_bridges = 1,
+        rectifier_delay_angle_limits = (min = 0.0, max = π / 2),
+        rectifier_rc = 0.0,
+        rectifier_xc = 0.1,
+        rectifier_base_voltage = 230.0,
+        inverter_bridges = 1,
+        inverter_extinction_angle_limits = (min = π / 2, max = π),
+        inverter_rc = 0.0,
+        inverter_xc = 0.08,
+        inverter_base_voltage = 230.0,
+        power_mode = true,
+        switch_mode_voltage = 0.0,
+        compounding_resistance = 0.0,
+        min_compounding_voltage = 0.0,
+        rectifier_transformer_ratio = 1.0,
+        rectifier_tap_setting = 1.0,
+        rectifier_tap_limits = (min = 0.5, max = 1.5),
+        rectifier_tap_step = 1.05,
+        rectifier_delay_angle = 0.01,
+        rectifier_capacitor_reactance = 0.0,
+        inverter_transformer_ratio = 1.0,
+        inverter_tap_setting = 1.0,
+        inverter_tap_limits = (min = 0.5, max = 1.5),
+        inverter_tap_step = 1.01,
+        inverter_extinction_angle = π / 2,
+        inverter_capacitor_reactance = 0.0,
+        active_power_limits_from = (min = 0.0, max = 0.0),
+        active_power_limits_to = (min = 0.0, max = 0.0),
+        reactive_power_limits_from = (min = 0.0, max = 0.0),
+        reactive_power_limits_to = (min = 0.0, max = 0.0),
+    )
+    add_component!(sys, lcc)
+    return sys
+end

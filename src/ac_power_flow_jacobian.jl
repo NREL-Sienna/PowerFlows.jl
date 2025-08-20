@@ -255,10 +255,12 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
 
     num_buses = first(size(data.bus_type))
 
+    num_lcc = first(size(data.P_set))
+
     num_lines = length(get_branch_lookup(data))
-    sizehint!(rows, 4 * num_lines)
-    sizehint!(columns, 4 * num_lines)
-    sizehint!(values, 4 * num_lines)
+    sizehint!(rows, 4 * num_lines + 4 * num_lcc)
+    sizehint!(columns, 4 * num_lines + 4 * num_lcc)
+    sizehint!(values, 4 * num_lines + 4 * num_lcc)
 
     for bus_from in 1:num_buses
         row_from_p = 2 * bus_from - 1  # Row index for the value that is related to active power
@@ -283,6 +285,123 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
             )
         end
     end
+
+    # lcc
+    for (k, (i, j)) in enumerate(zip(data.lcc_i, data.lcc_j))
+        row_from_p = 2 * i - 1
+        row_from_q = 2 * i
+        row_to_p = 2 * j - 1
+        row_to_q = 2 * j
+        col_from_vm = 2 * i - 1
+        col_from_va = 2 * i
+        col_to_vm = 2 * j - 1
+        col_to_va = 2 * j
+        idx_c_i_t = 2 * num_buses + 2 * k - 1
+        idx_c_j_t = 2 * num_buses + 2 * k
+        idx_c_i_α = 2 * num_buses + 2 * k + 2 * k - 1
+        idx_c_j_α = 2 * num_buses + 2 * k + 2 * k
+
+        # We ignore the bus type and initialize the structure as if all buses were PQ - 
+        # mainly because we can have a PV -> PQ transition, and the number of REF buses is small
+        _create_jacobian_matrix_structure_bus!(
+            rows,
+            columns,
+            values,
+            i,
+            j,
+            row_from_p,
+            row_from_q,
+            idx_c_i_t,
+            idx_c_i_α,
+            # Val(data.bus_type[j, time_step]),
+        )
+        _create_jacobian_matrix_structure_bus!(
+            rows,
+            columns,
+            values,
+            i,
+            j,
+            row_from_p,
+            row_from_q,
+            idx_c_j_t,
+            idx_c_j_α,
+            # Val(data.bus_type[j, time_step]),
+        )
+        _create_jacobian_matrix_structure_bus!(
+            rows,
+            columns,
+            values,
+            i,
+            j,
+            row_to_p,
+            row_to_q,
+            idx_c_i_t,
+            idx_c_i_α,
+            # Val(data.bus_type[j, time_step]),
+        )
+        _create_jacobian_matrix_structure_bus!(
+            rows,
+            columns,
+            values,
+            i,
+            j,
+            row_to_p,
+            row_to_q,
+            idx_c_j_t,
+            idx_c_j_α,
+            # Val(data.bus_type[j, time_step]),
+        )
+
+        _create_jacobian_matrix_structure_bus!(
+            rows,
+            columns,
+            values,
+            i,
+            j,
+            idx_c_i_t,
+            idx_c_i_α,
+            idx_c_i_t,
+            idx_c_i_α,
+            # Val(data.bus_type[j, time_step]),
+        )
+        _create_jacobian_matrix_structure_bus!(
+            rows,
+            columns,
+            values,
+            i,
+            j,
+            idx_c_i_t,
+            idx_c_i_α,
+            idx_c_j_t,
+            idx_c_j_α,
+            # Val(data.bus_type[j, time_step]),
+        )
+        _create_jacobian_matrix_structure_bus!(
+            rows,
+            columns,
+            values,
+            i,
+            j,
+            idx_c_j_t,
+            idx_c_j_α,
+            idx_c_i_t,
+            idx_c_i_α,
+            # Val(data.bus_type[j, time_step]),
+        )
+        _create_jacobian_matrix_structure_bus!(
+            rows,
+            columns,
+            values,
+            i,
+            j,
+            idx_c_j_t,
+            idx_c_j_α,
+            idx_c_j_t,
+            idx_c_j_α,
+            # Val(data.bus_type[j, time_step]),
+        )
+    end
+
     Jv0 = SparseArrays.sparse(rows, columns, values)
     return Jv0
 end
@@ -467,6 +586,112 @@ function _update_jacobian_matrix_values!(
             Jv[row_from_q, col_from_va] = -1.0
         end
     end
+
+    # set by hand the LCC values
+    for (k, (i, j, t_i, t_j, α_i, α_j, x_i, x_j)) in enumerate(
+        zip(
+            data.lcc_i,
+            data.lcc_j,
+            data.t_i,
+            data.t_j,
+            data.alpha_i,
+            data.alpha_j,
+            data.x_t_i,
+            data.x_t_j,
+        ),
+    )
+        I_dc = 1.0
+
+        @show t_i, t_j, α_i, α_j
+
+        row_from_p = 2 * i - 1
+        row_from_q = 2 * i
+
+        row_to_p = 2 * j - 1
+        row_to_q = 2 * j
+
+        col_from_vm = 2 * i - 1
+        col_from_va = 2 * i
+
+        col_to_vm = 2 * j - 1
+        col_to_va = 2 * j
+
+        idx_from_c_t = 2 * num_buses + 2 * k - 1
+        idx_from_c_α = 2 * num_buses + 2 * k
+
+        idx_to_c_t = 2 * num_buses + 2 * k + 2 * k - 1
+        idx_to_c_α = 2 * num_buses + 2 * k + 2 * k
+
+        # J_C_P_D
+        # Jv[row_from_p, col_from_va] = 0.0
+        # Jv[row_from_p, col_to_va] = 0.0
+
+        # Jv[row_to_p, col_from_va] = 0.0
+        # Jv[row_to_p, col_to_va] = 0.0
+
+        # J_C_P_U
+        Jv[row_from_p, col_from_vm] = ∂P_∂u(Vm[i], t_i, I_dc, α_i)
+        # Jv[row_from_p, col_to_vm] = 0.0
+
+        # Jv[row_to_p, col_from_vm] = 0.0
+        Jv[row_to_p, col_to_vm] = ∂P_∂u(Vm[j], t_j, -I_dc, α_j)
+
+        # J_C_Q_D
+        # Jv[row_from_q, col_from_va] = 0.0
+        # Jv[row_from_q, col_to_va] = 0.0
+
+        # Jv[row_to_q, col_from_va] = 0.0
+        # Jv[row_to_q, col_to_va] = 0.0
+
+        # J_C_Q_U
+        Jv[row_from_q, col_from_vm] = ∂Q_∂u(t_i, α_i, I_dc, x_i, Vm[i], θ[i])
+        # Jv[row_from_q, col_to_vm] = 0.0
+
+        # Jv[row_to_q, col_from_vm] = 0.0
+        @show Vm[j], θ[j], I_dc, α_j, t_j, x_j
+        Jv[row_to_q, col_to_vm] = ∂Q_∂u(t_j, α_j, -I_dc, x_j, Vm[j], θ[j])
+
+        # J_C_P_C
+        Jv[row_from_p, idx_from_c_t] = ∂P_∂t(Vm[i], t_i, I_dc, α_i)
+        Jv[row_from_p, idx_from_c_α] = ∂P_∂α(Vm[i], t_i, I_dc, α_i)
+
+        # Jv[row_from_p, idx_to_c_t] = 0.0
+        # Jv[row_from_p, idx_to_c_α] = 0.0
+
+        # Jv[row_to_p, idx_from_c_t] = 0.0
+        # Jv[row_to_p, idx_from_c_α] = 0.0
+
+        Jv[row_to_p, idx_to_c_t] = ∂P_∂t(Vm[j], t_j, -I_dc, α_j)
+        Jv[row_to_p, idx_to_c_α] = ∂P_∂α(Vm[j], t_j, I_dc, α_j)
+
+        # J_C_Q_C
+        Jv[row_from_q, idx_from_c_t] = ∂Q_∂t(t_i, α_i, I_dc, x_i, Vm[i], θ[i])
+        Jv[row_from_q, idx_from_c_α] = ∂Q_∂α(t_i, α_i, I_dc, x_i, Vm[i], θ[i])
+
+        # Jv[row_to_q, idx_from_c_t] = 0.0
+        # Jv[row_to_q, idx_from_c_α] = 0.0
+
+        # Jv[row_from_q, idx_to_c_t] = 0.0
+        # Jv[row_from_q, idx_to_c_α] = 0.0
+
+        Jv[row_to_q, idx_to_c_t] = ∂Q_∂t(t_j, α_j, -I_dc, x_j, Vm[j], θ[j])
+        Jv[row_to_q, idx_to_c_α] = ∂Q_∂α(t_j, α_j, -I_dc, x_j, Vm[j], θ[j])
+
+        # J_C_C_C
+        Jv[idx_from_c_t, idx_from_c_t] = P_CSC_A(Vm[i], t_i, I_dc, α_i) / t_i
+        Jv[idx_from_c_t, idx_from_c_α] = -P_CSC_A(Vm[i], t_i, I_dc, α_i) * tan(α_i)
+
+        Jv[idx_to_c_t, idx_from_c_t] = P_CSC_A(Vm[i], t_i, I_dc, α_i) / t_i
+        Jv[idx_to_c_t, idx_to_c_t] = P_CSC_A(Vm[j], t_j, -I_dc, α_j) / t_j
+
+        Jv[idx_to_c_t, idx_from_c_α] = -P_CSC_A(Vm[i], t_i, I_dc, α_i) * tan(α_i)
+        Jv[idx_to_c_t, idx_to_c_α] = -P_CSC_A(Vm[j], t_j, -I_dc, α_j) * tan(α_j)
+
+        Jv[idx_from_c_α, idx_from_c_α] = 1.0
+
+        Jv[idx_to_c_α, idx_to_c_α] = 1.0
+    end
+
     return
 end
 
@@ -645,3 +870,63 @@ function _singular_value_decomposition(
     end
     return σ, left[(npvpq + 1):end], right[(npvpq + 1):end]
 end
+
+ϕ(α, I_dc, x_t, Vm) = acos(cos(α) * sign(I_dc) - (x_t * abs(I_dc) / (sqrt(2) * Vm)))
+
+I_ac(t, α, I_dc, x_t, Vm, Va) =
+    t / Vm * sqrt(6) / π * abs(I_dc) * exp(-1im * ϕ(α, I_dc, x_t, Vm)) * Vm * exp(1im * Va)
+
+Y_val(t, α, I_dc, x_t, Vm) =
+    t / Vm * sqrt(6) / π * abs(I_dc) * exp(-1im * ϕ(α, I_dc, x_t, Vm))
+
+Q_CSC_A(Vm, t, I_dc) = Vm * t * sqrt(6) / π * I_dc
+
+Q_CSC_D(t, α, I_dc, x_t, Vm, Va) = cos(α) * sign(I_dc) - x_t * I_dc / (sqrt(2) * t * Vm)
+
+Q_CSC_C(t, α, I_dc, x_t, Vm, Va) = acos(Q_CSC_D(t, α, I_dc, x_t, Vm, Va))
+
+Q_CSC_B(t, α, I_dc, x_t, Vm, Va) = sin(Q_CSC_C(t, α, I_dc, x_t, Vm, Va))
+
+Q_CSC(t, α, I_dc, x_t, Vm, Va) = Q_CSC_A(Vm, t, I_dc) + Q_CSC_B(t, α, I_dc, x_t, Vm, Va)
+
+P_CSC_A(Vm, t, I_dc, α) = Q_CSC_A(Vm, t, I_dc) * cos(α)
+
+P_CSC_B(x_t, I_dc) = -sqrt(3 / 2) * sqrt(6) / π * x_t * I_dc^2
+
+P_CSC(t, α, I_dc, x_t, Vm, Va) = P_CSC_A(Vm, t, I_dc, α) + P_CSC_B(x_t, I_dc)
+
+∂P_∂u(Vm, t, I_dc, α) = P_CSC_A(Vm, t, I_dc, α) * Vm
+
+∂Q_∂u(t, α, I_dc, x_t, Vm, Va) =
+    Q_CSC_A(Vm, t, I_dc) * (
+        Q_CSC_B(t, α, I_dc, x_t, Vm, Va) -
+        cos(Q_CSC_C(t, α, I_dc, x_t, Vm, Va)) * x_t * I_dc /
+        sqrt(1 - Q_CSC_D(t, α, I_dc, x_t, Vm, Va)^2) * sqrt(2) * t * Vm
+    )
+
+∂P_∂t(Vm, t, I_dc, α) = P_CSC_A(Vm, t, I_dc, α) / t
+
+∂P_∂α(Vm, t, I_dc, α) = -P_CSC_A(Vm, t, I_dc, α) * tan(α)
+
+∂Q_∂t(t, α, I_dc, x_t, Vm, Va) =
+    Q_CSC_A(Vm, t, I_dc) * (
+        Q_CSC_B(t, α, I_dc, x_t, Vm, Va) / t -
+        cos(Q_CSC_C(t, α, I_dc, x_t, Vm, Va)) * x_t * I_dc /
+        sqrt(1 - Q_CSC_D(t, α, I_dc, x_t, Vm, Va)^2) * sqrt(2) * t * Vm
+    )
+
+∂Q_∂α(t, α, I_dc, x_t, Vm, Va) =
+    Q_CSC_A(Vm, t, I_dc) * cos(Q_CSC_C(t, α, I_dc, x_t, Vm, Va)) *
+    sin(α) * sign(I_dc) / sqrt(1 - Q_CSC_D(t, α, I_dc, x_t, Vm, Va)^2)
+
+∂F_∂u = P_CSC_A
+
+∂F_∂t(Vm, t, I_dc, α) = P_CSC_A(Vm, t, I_dc, α) / t
+
+∂F_∂α(Vm, t, I_dc, α) = -P_CSC_A(Vm, t, I_dc, α) * tan(α)
+
+F_CSC_1(t, α, I_dc, x_t, Vm, Va, P_set) = P_CSC(t, α, I_dc, x_t, Vm, Va) - P_set
+
+F_CSC_2(tᵢ, αᵢ, I_dc, x_tᵢ, Vmᵢ, Vaᵢ, tⱼ, αⱼ, x_tⱼ, Vmⱼ, Vaⱼ, R) =
+    P_CSC(tᵢ, αᵢ, I_dcᵢ, x_tᵢ, Vmᵢ, Vaᵢ) +
+    P_CSC(tⱼ, αⱼ, I_dcⱼ, x_tⱼ, Vmⱼ, Vaⱼ) - R * I_dc^2

@@ -391,7 +391,9 @@ function _newton_powerflow(
     kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
     # setup: common code
     residual = ACPowerFlowResidual(data, time_step)
+    @show residual.Rv
     x0 = improve_x0(pf, data, residual, time_step)
+    @show x0
     J = ACPowerFlowJacobian(data, time_step)
     J(time_step)
     converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
@@ -413,6 +415,7 @@ function _newton_powerflow(
         linSolveCache = KLULinSolveCache(J.Jv)
         symbolic_factor!(linSolveCache, J.Jv)
         stateVector = StateVectorCache(x0, residual.Rv)
+        @show stateVector.x
 
         converged, i = _run_powerflow_method(
             time_step,

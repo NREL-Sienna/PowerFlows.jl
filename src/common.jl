@@ -509,6 +509,18 @@ function make_powerflowdata(
     branch_activepower_flow_to_from = zeros(Float64, n_branches, time_steps)
     branch_reactivepower_flow_to_from = zeros(Float64, n_branches, time_steps)
 
+    lcc = PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys)
+    P_set = PSY.get_transfer_setpoint.(lcc) ./ PSY.get_base_power(sys)
+    R = PSY.get_r.(lcc)
+    t_i = PSY.get_rectifier_tap_step.(lcc)
+    x_t_i = PSY.get_rectifier_xc.(lcc)
+    t_j = PSY.get_inverter_tap_step.(lcc)
+    x_t_j = PSY.get_inverter_xc.(lcc)
+    α_i = PSY.get_rectifier_delay_angle.(lcc)
+    α_j = PSY.get_inverter_extinction_angle.(lcc)
+    lcc_i = [bus_lookup[x] for x in PSY.get_number.(PSY.get_from.(PSY.get_arc.(lcc)))]
+    lcc_j = [bus_lookup[x] for x in PSY.get_number.(PSY.get_to.(PSY.get_arc.(lcc)))]
+
     return PowerFlowData(
         bus_lookup,
         branch_lookup,
@@ -541,6 +553,16 @@ function make_powerflowdata(
         calculate_loss_factors,
         voltage_stability_factors,
         calculate_voltage_stability_factors,
+        P_set,
+        R,
+        t_i,
+        α_i,
+        x_t_i,
+        t_j,
+        α_j,
+        x_t_j,
+        lcc_i,
+        lcc_j,
     )
 end
 

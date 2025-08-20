@@ -4,6 +4,7 @@ function improve_x0(pf::ACPowerFlow,
     time_step::Int64,
 )
     x0 = calculate_x0(data, time_step)
+    x0 = [x0; [1.05, 1.01, 0.01, 1.5]] # add LCCs
     residual(x0, time_step)
     if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
        get_enhanced_flat_start(pf)

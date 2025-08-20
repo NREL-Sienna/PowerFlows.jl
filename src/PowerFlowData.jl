@@ -128,6 +128,23 @@ struct PowerFlowData{
     calculate_loss_factors::Bool
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
     calculate_voltage_stability_factors::Bool
+
+    # Added parameters for converter/transformer modeling
+    P_set::Union{Vector{Float64}, Nothing}            # Active power setpoint
+    R::Union{Vector{Float64}, Nothing}                # Resistance
+
+    # Parameters for converter/side i
+    t_i::Union{Vector{Float64}, Nothing}
+    alpha_i::Union{Vector{Float64}, Nothing}
+    x_t_i::Union{Vector{Float64}, Nothing}
+
+    # Parameters for converter/side j
+    t_j::Union{Vector{Float64}, Nothing}
+    alpha_j::Union{Vector{Float64}, Nothing}
+    x_t_j::Union{Vector{Float64}, Nothing}
+
+    lcc_i::Union{Vector{Int}, Nothing}  # Indices of LCC rectifier side
+    lcc_j::Union{Vector{Int}, Nothing}  # Indices of LCC inverter side
 end
 
 # aliases for specific type parameter combinations.
