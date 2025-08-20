@@ -157,7 +157,8 @@ function PowerFlows._newton_powerflow(
     lcc_p_set = data.P_set[:, time_step]
     lcc_x_t_i = data.x_t_i[:, time_step]
     lcc_x_t_j = data.x_t_j[:, time_step]
-    lcc_I_dc = [0.1 for _ in lcc_p_set] # This is a placeholder, should be set to the actual DC current value
+    lcc_I_dc_i = [0.01 for _ in lcc_p_set] # This is a placeholder, should be set to the actual DC current value
+    lcc_I_dc_j = [-0.01 for _ in lcc_p_set] # This is a placeholder, should be set to the actual DC current value
     lcc_alpha_i = data.alpha_i[:, time_step]
     lcc_alpha_j = data.alpha_j[:, time_step]
     lcc_t_i = data.t_i[:, time_step]
@@ -170,7 +171,7 @@ function PowerFlows._newton_powerflow(
 
     Ybus_lcc = _ybus_lcc(
         Ybus, Vm, lcc_t_i, lcc_t_j, lcc_alpha_i, lcc_alpha_j,
-        lcc_I_dc, lcc_x_t_i, lcc_x_t_j, lcc_i, lcc_j,
+        lcc_I_dc_i, lcc_I_dc_j, lcc_x_t_i, lcc_x_t_j, lcc_i, lcc_j,
     )
 
     # pre-allocate dx
@@ -184,7 +185,7 @@ function PowerFlows._newton_powerflow(
             data.bus_reactivepower_withdrawals[:, time_step]
         )
 
-    F_lcc = _f_lcc(R, lcc_t_i, lcc_t_j, lcc_alpha_i, lcc_alpha_j, lcc_I_dc,
+    F_lcc = _f_lcc(R, lcc_t_i, lcc_t_j, lcc_alpha_i, lcc_alpha_j, lcc_I_dc_i, lcc_I_dc_j,
         lcc_x_t_i, lcc_x_t_j, lcc_p_set, Vm, data.lcc_i, data.lcc_j)
 
     @show F_lcc
@@ -201,7 +202,7 @@ function PowerFlows._newton_powerflow(
     dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus .+ Ybus_lcc)
     J =
         _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq, size_J) .+
-        _legacy_J_lcc(pvpq, pq, Vm, lcc_t_i, lcc_t_j, lcc_I_dc,
+        _legacy_J_lcc(pvpq, pq, Vm, lcc_t_i, lcc_t_j, lcc_I_dc_i, lcc_I_dc_j,
             lcc_alpha_i, lcc_alpha_j, lcc_x_t_i, lcc_x_t_j, size_J,
             lcc_i, lcc_j)
 
@@ -242,14 +243,14 @@ function PowerFlows._newton_powerflow(
         I_ac = Ybus_lcc * V
         @show abs.(V)
         @show I_ac
-        lcc_I_dc .= abs.(sqrt(6) / π .* I_ac[lcc_i])
-        # lcc_I_dc .= abs.(I_ac[lcc_i])
-        @show lcc_I_dc
-        @show abs.(sqrt(6) / π .* I_ac[lcc_j])
+        lcc_I_dc_i .= abs.(sqrt(6) / π .* I_ac[lcc_i]) .* sign.(real.(I_ac[lcc_i]))
+        lcc_I_dc_j .= abs.(sqrt(6) / π .* I_ac[lcc_j]) .* sign.(real.(I_ac[lcc_j]))
+
+        @show lcc_I_dc_i, lcc_I_dc_j
 
         Ybus_lcc = _ybus_lcc(
             Ybus, Vm, lcc_t_i, lcc_t_j, lcc_alpha_i, lcc_alpha_j,
-            lcc_I_dc, lcc_x_t_i, lcc_x_t_j, lcc_i, lcc_j,
+            lcc_I_dc_i, lcc_I_dc_j, lcc_x_t_i, lcc_x_t_j, lcc_i, lcc_j,
         )
 
         @show lcc_t_i, lcc_t_j, lcc_alpha_i, lcc_alpha_j
@@ -257,7 +258,7 @@ function PowerFlows._newton_powerflow(
         # @show P_CSC(lcc_t_i, lcc_alpha_i, lcc_I_dc, lcc_x_t_i, Vm[data.lcc_i])
         # @show P_CSC(lcc_t_j, lcc_alpha_j, -lcc_I_dc, lcc_x_t_j, Vm[data.lcc_j])
 
-        F_lcc = _f_lcc(R, lcc_t_i, lcc_t_j, lcc_alpha_i, lcc_alpha_j, lcc_I_dc,
+        F_lcc = _f_lcc(R, lcc_t_i, lcc_t_j, lcc_alpha_i, lcc_alpha_j, lcc_I_dc_i, lcc_I_dc_j,
             lcc_x_t_i, lcc_x_t_j, lcc_p_set, Vm, data.lcc_i, data.lcc_j)
 
         @show F_lcc
@@ -275,7 +276,7 @@ function PowerFlows._newton_powerflow(
         dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus .+ Ybus_lcc)
         J =
             _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq, size_J) .+
-            _legacy_J_lcc(pvpq, pq, Vm, lcc_t_i, lcc_t_j, lcc_I_dc,
+            _legacy_J_lcc(pvpq, pq, Vm, lcc_t_i, lcc_t_j, lcc_I_dc_i, lcc_I_dc_j,
                 lcc_alpha_i, lcc_alpha_j, lcc_x_t_i, lcc_x_t_j, size_J,
                 lcc_i, lcc_j)
     end
@@ -329,7 +330,8 @@ function _ybus_lcc(
     lcc_t_j,
     lcc_alpha_i,
     lcc_alpha_j,
-    lcc_I_dc,
+    lcc_I_dc_i,
+    lcc_I_dc_j,
     lcc_x_i,
     lcc_x_j,
     lcc_i,
@@ -339,7 +341,7 @@ function _ybus_lcc(
     J = Int[]
     V = ComplexF32[]
 
-    for k in 1:length(lcc_i)
+    for k in eachindex(lcc_i)
         i = lcc_i[k]
         j = lcc_j[k]
         α_i = lcc_alpha_i[k]
@@ -348,10 +350,11 @@ function _ybus_lcc(
         x_j = lcc_x_j[k]
         t_i = lcc_t_i[k]
         t_j = lcc_t_j[k]
-        I_dc = lcc_I_dc[k]
+        I_dc_i = lcc_I_dc_i[k]
+        I_dc_j = lcc_I_dc_j[k]
 
-        Y_i = Y_val(t_i, α_i, I_dc, x_i, Vm[i])
-        Y_j = Y_val(t_j, α_j, -I_dc, x_j, Vm[j])
+        Y_i = Y_val(t_i, α_i, I_dc_i, x_i, Vm[i])
+        Y_j = Y_val(t_j, α_j, I_dc_j, x_j, Vm[j])
 
         push!(I, i)
         push!(J, i)
@@ -370,7 +373,8 @@ function _f_lcc(
     t_j::Vector{Float64},
     α_i::Vector{Float64},
     α_j::Vector{Float64},
-    I_dc::Vector{Float64},
+    I_dc_i::Vector{Float64},
+    I_dc_j::Vector{Float64},
     x_t_i::Vector{Float64},
     x_t_j::Vector{Float64},
     P_set::Vector{Float64},
@@ -381,9 +385,9 @@ function _f_lcc(
     n = length(R)
     F = Vector{Float64}(undef, 4 * n)
     for k in 1:n
-        F1 = F_CSC_1(t_i[k], α_i[k], I_dc[k], x_t_i[k], Vm[i[k]], P_set[k])
+        F1 = F_CSC_1(t_i[k], α_i[k], I_dc_i[k], x_t_i[k], Vm[i[k]], P_set[k])
         F2 = F_CSC_2(
-            t_i[k], α_i[k], I_dc[k], x_t_i[k], Vm[i[k]],
+            t_i[k], α_i[k], I_dc_i[k], I_dc_j[k], x_t_i[k], Vm[i[k]],
             t_j[k], α_j[k], x_t_j[k], Vm[j[k]], R[k],
         )
         F3 = α_i[k] - 0.0
@@ -402,7 +406,8 @@ function _legacy_J_lcc(
     Vm::Vector{Float64},
     lcc_t_i::Vector{Float64},
     lcc_t_j::Vector{Float64},
-    lcc_I_dc::Vector{Float64},
+    lcc_I_dc_i::Vector{Float64},
+    lcc_I_dc_j::Vector{Float64},
     lcc_α_i::Vector{Float64},
     lcc_α_j::Vector{Float64},
     lcc_x_i::Vector{Float64},
@@ -429,7 +434,9 @@ function _legacy_J_lcc(
         x_j = lcc_x_j[k]
         t_i = lcc_t_i[k]
         t_j = lcc_t_j[k]
-        I_dc = lcc_I_dc[k]
+        I_dc_i = lcc_I_dc_i[k]
+        I_dc_j = lcc_I_dc_j[k]
+
 
         # J_C_P_D
 
@@ -439,7 +446,7 @@ function _legacy_J_lcc(
 
         i ∈ pq && push!(I, i)
         i ∈ pq && push!(J, npvpq + i)
-        i ∈ pq && push!(V, -t_i * sqrt(6) / π * I_dc * cos(α_i))
+        i ∈ pq && push!(V, t_i * sqrt(6) / π * I_dc_i * cos(α_i))
 
         # j ∈ pq && push!(I, j)
         # j ∈ pq && push!(J, npvpq + j)
@@ -449,7 +456,7 @@ function _legacy_J_lcc(
 
         i ∈ pq && push!(I, npvpq + i)
         i ∈ pq && push!(J, npvpq + i)
-        i ∈ pq && push!(V, -∂Q_∂u(t_i, α_i, I_dc, x_i, Vm[i]))
+        i ∈ pq && push!(V, ∂Q_∂u(t_i, α_i, I_dc_i, x_i, Vm[i]))
 
         # j ∈ pq && push!(I, npvpq + j)
         # j ∈ pq && push!(J, npvpq + j)
@@ -459,11 +466,11 @@ function _legacy_J_lcc(
 
         i ∈ pvpq && push!(I, i)
         i ∈ pvpq && push!(J, npvpq + npq + 4 * (k - 1) + 1)
-        i ∈ pvpq && push!(V, -Vm[i] * sqrt(6) / π * I_dc * cos(α_i))
+        i ∈ pvpq && push!(V, Vm[i] * sqrt(6) / π * I_dc_i * cos(α_i))
 
         i ∈ pvpq && push!(I, i)
         i ∈ pvpq && push!(J, npvpq + npq + 4 * (k - 1) + 3)
-        i ∈ pvpq && push!(V, Vm[i] * t_i * sqrt(6) / π * I_dc * cos(α_i) * tan(α_i))
+        i ∈ pvpq && push!(V, -Vm[i] * t_i * sqrt(6) / π * I_dc_i * cos(α_i) * tan(α_i))
 
         # j ∈ pvpq && push!(I, j)
         # j ∈ pvpq && push!(J, npvpq + npq + 4 * (k-1) + 2)
@@ -477,11 +484,11 @@ function _legacy_J_lcc(
 
         i ∈ pq && push!(I, npvpq + i)
         i ∈ pq && push!(J, npvpq + npq + 4 * (k - 1) + 1)
-        i ∈ pq && push!(V, -∂Q_∂t(t_i, α_i, I_dc, x_i, Vm[i]))
+        i ∈ pq && push!(V, ∂Q_∂t(t_i, α_i, I_dc_i, x_i, Vm[i]))
 
         i ∈ pq && push!(I, npvpq + i)
         i ∈ pq && push!(J, npvpq + npq + 4 * (k - 1) + 3)
-        i ∈ pq && push!(V, -∂Q_∂α(t_i, α_i, I_dc, x_i, Vm[i]))
+        i ∈ pq && push!(V, ∂Q_∂α(t_i, α_i, I_dc_i, x_i, Vm[i]))
 
         # j ∈ pq && push!(I, npvpq + j)
         # j ∈ pq && push!(J, npvpq + npq + 4 * (k-1) + 2)
@@ -497,41 +504,41 @@ function _legacy_J_lcc(
 
         i ∈ pq && push!(I, npvpq + npq + 4 * (k - 1) + 1)
         i ∈ pq && push!(J, npvpq + i)
-        i ∈ pq && push!(V, -t_i * sqrt(6) / π * I_dc * cos(α_i))
+        i ∈ pq && push!(V, t_i * sqrt(6) / π * I_dc_i * cos(α_i))
 
         i ∈ pq && push!(I, npvpq + npq + 4 * (k - 1) + 2)
         i ∈ pq && push!(J, npvpq + i)
-        i ∈ pq && push!(V, -t_i * sqrt(6) / π * I_dc * cos(α_i))
+        i ∈ pq && push!(V, t_i * sqrt(6) / π * I_dc_i * cos(α_i))
 
         j ∈ pq && push!(I, npvpq + npq + 4 * (k - 1) + 2)
         j ∈ pq && push!(J, npvpq + j)
-        j ∈ pq && push!(V, -t_j * sqrt(6) / π * (I_dc) * cos(α_j))
+        j ∈ pq && push!(V, t_j * sqrt(6) / π * I_dc_j * cos(α_j))
 
         # J_C_C_C
 
         push!(I, npvpq + npq + 4 * (k - 1) + 1)
         push!(J, npvpq + npq + 4 * (k - 1) + 1)
-        push!(V, -Vm[i] * sqrt(6) / π * I_dc * cos(α_i))
+        push!(V, Vm[i] * sqrt(6) / π * I_dc_i * cos(α_i))
 
         push!(I, npvpq + npq + 4 * (k - 1) + 1)
         push!(J, npvpq + npq + 4 * (k - 1) + 3)
-        push!(V, Vm[i] * t_i * sqrt(6) / π * I_dc * cos(α_i) * tan(α_i))
+        push!(V, -Vm[i] * t_i * sqrt(6) / π * I_dc_i * cos(α_i) * tan(α_i))
 
         push!(I, npvpq + npq + 4 * (k - 1) + 2)
         push!(J, npvpq + npq + 4 * (k - 1) + 1)
-        push!(V, -Vm[i] * sqrt(6) / π * I_dc * cos(α_i))
+        push!(V, Vm[i] * sqrt(6) / π * I_dc_i * cos(α_i))
 
         push!(I, npvpq + npq + 4 * (k - 1) + 2)
         push!(J, npvpq + npq + 4 * (k - 1) + 2)
-        push!(V, -Vm[j] * sqrt(6) / π * (-I_dc) * cos(α_j))
+        push!(V, Vm[j] * sqrt(6) / π * I_dc_j * cos(α_j))
 
         push!(I, npvpq + npq + 4 * (k - 1) + 2)
         push!(J, npvpq + npq + 4 * (k - 1) + 3)
-        push!(V, Vm[i] * t_i * sqrt(6) / π * I_dc * cos(α_i) * tan(α_i))
+        push!(V, -Vm[i] * t_i * sqrt(6) / π * I_dc_i * cos(α_i) * tan(α_i))
 
         push!(I, npvpq + npq + 4 * (k - 1) + 2)
         push!(J, npvpq + npq + 4 * (k - 1) + 4)
-        push!(V, Vm[j] * t_j * sqrt(6) / π * (I_dc) * cos(α_j) * tan(α_j))
+        push!(V, -Vm[j] * t_j * sqrt(6) / π * I_dc_i * cos(α_j) * tan(α_j))
 
         push!(I, npvpq + npq + 4 * (k - 1) + 3)
         push!(J, npvpq + npq + 4 * (k - 1) + 3)
@@ -601,6 +608,6 @@ P_CSC(t, α, I_dc, x_t, Vm) = P_CSC_A(Vm, t, I_dc, α) + P_CSC_B(x_t, I_dc)
 
 F_CSC_1(t, α, I_dc, x_t, Vm, P_set) = P_CSC(t, α, I_dc, x_t, Vm) - P_set
 
-F_CSC_2(tᵢ, αᵢ, I_dc, x_tᵢ, Vmᵢ, tⱼ, αⱼ, x_tⱼ, Vmⱼ, R) =
-    P_CSC(tᵢ, αᵢ, I_dc, x_tᵢ, Vmᵢ) +
-    P_CSC(tⱼ, αⱼ, -I_dc, x_tⱼ, Vmⱼ) - R * I_dc^2
+F_CSC_2(tᵢ, αᵢ, I_dc_i, I_dc_j, x_tᵢ, Vmᵢ, tⱼ, αⱼ, x_tⱼ, Vmⱼ, R) =
+    P_CSC(tᵢ, αᵢ, I_dc_i, x_tᵢ, Vmᵢ) +
+    P_CSC(tⱼ, αⱼ, I_dc_j, x_tⱼ, Vmⱼ) - R * I_dc_i^2

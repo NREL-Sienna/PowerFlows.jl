@@ -1170,12 +1170,13 @@ Vm = data.bus_magnitude[:, 1]
 sys = _lcc_system()
 data = PowerFlowData(pf, sys; correct_bustypes = true)
 time_step = 1
-# solve_powerflow!(data; pf = pf, maxIter=5)
+solve_powerflow!(data; pf = pf, maxIter=5)
 
 lcc_p_set = data.P_set[:, time_step]
 lcc_x_t_i = data.x_t_i[:, time_step]
 lcc_x_t_j = data.x_t_j[:, time_step]
-lcc_I_dc = [0.1 for _ in lcc_p_set] # This is a placeholder, should be set to the actual DC current value
+lcc_I_dc_i = [0.1 for _ in lcc_p_set] # This is a placeholder, should be set to the actual DC current value
+lcc_I_dc_j = [-0.1 for _ in lcc_p_set] # This is a placeholder, should be set to the actual DC current value
 lcc_alpha_i = data.alpha_i[:, time_step]
 lcc_alpha_j = data.alpha_j[:, time_step]
 lcc_t_i = data.t_i[:, time_step]
@@ -1188,5 +1189,5 @@ n_lcc = length(lcc_p_set)
 
 Ybus_lcc = _ybus_lcc(
     Y, Vm, lcc_t_i, lcc_t_j, lcc_alpha_i, lcc_alpha_j,
-    lcc_I_dc, lcc_x_t_i, lcc_x_t_j, lcc_i, lcc_j,
+    lcc_I_dc_i, lcc_I_dc_j, lcc_x_t_i, lcc_x_t_j, lcc_i, lcc_j,
 )
