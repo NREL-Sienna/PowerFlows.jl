@@ -216,7 +216,7 @@ function PowerFlows._newton_powerflow(
         Va[pv] .-= dx[1:npv]
         Va[pq] .-= dx[(npv + 1):(npv + npq)]
         Vm[pq] .-= dx[(npv + npq + 1):(npv + 2 * npq)]
-        d_lcc = dx[(npv + 2 * npq + 1):(npv + 2 * npq + 4 * n_lcc)]
+        d_lcc = -dx[(npv + 2 * npq + 1):(npv + 2 * npq + 4 * n_lcc)]
         V .= Vm .* exp.(1im .* Va)
         Vm .= abs.(V)
         Va .= angle.(V)

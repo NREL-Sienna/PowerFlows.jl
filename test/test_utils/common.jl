@@ -389,9 +389,9 @@ function _lcc_system()
     lcc = TwoTerminalLCCLine(;
         name = "LCC",
         available = true,
-        arc = Arc(b2, b3),
+        arc = Arc(b3, b2),
         active_power_flow = 0.0,
-        r = 0.05,
+        r = 5,
         transfer_setpoint = 100,
         scheduled_dc_voltage = 230.0,
         rectifier_bridges = 1,
