@@ -563,6 +563,7 @@ end
 function _allocate_results_data(
     branch_names::Vector{String},
     buses::Vector{Int64},
+    sys_basepower::Float64,
     from_bus::Vector{Int64},
     to_bus::Vector{Int64},
     bus_magnitude::Vector{Float64},
@@ -580,12 +581,12 @@ function _allocate_results_data(
         bus_number = buses,
         Vm = bus_magnitude,
         θ = bus_angles,
-        P_gen = P_gen_vect,
-        P_load = P_load_vect,
-        P_net = P_gen_vect - P_load_vect,
-        Q_gen = Q_gen_vect,
-        Q_load = Q_load_vect,
-        Q_net = Q_gen_vect - Q_load_vect,
+        P_gen = sys_basepower .* P_gen_vect,
+        P_load = sys_basepower .* P_load_vect,
+        P_net = sys_basepower .* (P_gen_vect - P_load_vect),
+        Q_gen = sys_basepower .* Q_gen_vect,
+        Q_load = sys_basepower .* Q_load_vect,
+        Q_net = sys_basepower .* (Q_gen_vect - Q_load_vect),
     )
     DataFrames.sort!(bus_df, :bus_number)
 
@@ -593,10 +594,10 @@ function _allocate_results_data(
         line_name = branch_names,
         bus_from = from_bus,
         bus_to = to_bus,
-        P_from_to = arc_activepower_flow_from_to,
-        Q_from_to = arc_reactivepower_flow_from_to,
-        P_to_from = arc_activepower_flow_to_from,
-        Q_to_from = arc_reactivepower_flow_to_from,
+        P_from_to = sys_basepower .* arc_activepower_flow_from_to,
+        Q_from_to = sys_basepower .* arc_reactivepower_flow_from_to,
+        P_to_from = sys_basepower .* arc_activepower_flow_to_from,
+        Q_to_from = sys_basepower .* arc_reactivepower_flow_to_from,
         P_losses = zeros(length(branch_names)),
         Q_losses = zeros(length(branch_names)),
     )
@@ -662,6 +663,7 @@ function write_results(
         temp_dict = _allocate_results_data(
             arc_names,
             buses,
+            PSY.get_base_power(sys),
             from_bus,
             to_bus,
             data.bus_magnitude[:, i],
@@ -743,14 +745,18 @@ function write_results(
         line_name = arc_names,
         bus_from = from_bus,
         bus_to = to_bus,
-        P_from_to = data.arc_activepower_flow_from_to[:, time_step],
-        Q_from_to = data.arc_reactivepower_flow_from_to[:, time_step],
-        P_to_from = data.arc_activepower_flow_to_from[:, time_step],
-        Q_to_from = data.arc_reactivepower_flow_to_from[:, time_step],
-        P_losses = data.arc_activepower_flow_from_to[:, time_step] .+
-                   data.arc_activepower_flow_to_from[:, time_step],
-        Q_losses = data.arc_reactivepower_flow_from_to[:, time_step] .+
-                   data.arc_reactivepower_flow_to_from[:, time_step],
+        P_from_to = sys_basepower .* data.arc_activepower_flow_from_to[:, time_step],
+        Q_from_to = sys_basepower .* data.arc_reactivepower_flow_from_to[:, time_step],
+        P_to_from = sys_basepower .* data.arc_activepower_flow_to_from[:, time_step],
+        Q_to_from = sys_basepower .* data.arc_reactivepower_flow_to_from[:, time_step],
+        P_losses = sys_basepower .* (
+            data.arc_activepower_flow_from_to[:, time_step] .+
+            data.arc_activepower_flow_to_from[:, time_step]
+        ),
+        Q_losses = sys_basepower .* (
+            data.arc_reactivepower_flow_from_to[:, time_step] .+
+            data.arc_reactivepower_flow_to_from[:, time_step]
+        ),
     )
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
