@@ -461,10 +461,6 @@ function write_to_buffers!(
     bus_name_mapping = md["bus_name_mapping"]
 
     for bus in buses
-        bus_name = PSY.get_name(bus)
-        if startswith(strip(bus_name), "starbus")
-            continue
-        end
         I = bus_number_mapping[PSY.get_number(bus)]
         NAME = _psse_quote_string(bus_name_mapping[PSY.get_name(bus)])
         BASKV = PSY.get_base_voltage(bus)
@@ -1791,14 +1787,7 @@ function write_to_buffers!(
             name = name[(length(string(sienna_bus_number)) + 2):end]
         end
         NAME = _psse_quote_string(name)
-        MODE = PSY.get_control_mode(facts)
-        if MODE == PSY.FACTSOperationModes.OOS
-            MODE = 0
-        elseif MODE == PSY.FACTSOperationModes.NML
-            MODE = 1
-        else
-            MODE = 2
-        end
+        MODE = get(FACTS_MODE_MAP, PSY.get_control_mode(facts), 2)
         PDES = PSSE_DEFAULT
         QDES = PSSE_DEFAULT
         VSET = PSY.get_voltage_setpoint(facts)
@@ -1828,7 +1817,7 @@ function write_to_buffers!(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 FACTS Device Data
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Switched Shunt Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
