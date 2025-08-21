@@ -432,7 +432,11 @@ function _f_lcc(
     for k in 1:n
         p_1 = P_CSC(t_i[k], α_i[k], I_dc_i[k], x_t_i[k], Vm[i[k]])
         p_2 = P_CSC(t_j[k], α_j[k], I_dc_j[k], x_t_j[k], Vm[j[k]])
-        @show p_1, p_2
+
+        p_2_a = P_CSC_A(Vm[j[k]], x_t_j[k], I_dc_j[k], α_j[k]) 
+        p_2_b = P_CSC_B(x_t_j[k], I_dc_j[k])
+        @show t_i[k], t_j[k], α_i[k], α_j[k], I_dc_i[k], I_dc_j[k], x_t_i[k], x_t_j[k]
+        @show p_1, p_2, p_2_a, p_2_b
         F1 = p_1 - lcc_P_set[k]
         F2 = p_1 + p_2 - R[k] * I_dc_i[k]^2
         F3 = α_i[k] - 0.0
