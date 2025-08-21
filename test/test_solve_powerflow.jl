@@ -99,10 +99,15 @@ end
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
+    from_to = PNM.get_arc_tuple(line)
     PSY.set_available!(line, false)
     res = solve_powerflow(pf, sys; correct_bustypes = true)
-    @test res["flow_results"].P_from_to[4] == 0.0
-    @test res["flow_results"].P_to_from[4] == 0.0
+    for row in eachrow(res["flow_results"])
+        if (row["bus_from"], row["bus_to"]) == from_to
+            @test row["P_from_to"] == 0.0
+            @test row["P_to_from"] == 0.0
+        end
+    end
 end
 
 @testset "AC Power Flow 3-Bus Fixed FixedAdmittance testing" for ACSolver in

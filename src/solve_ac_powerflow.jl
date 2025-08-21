@@ -43,7 +43,6 @@ function solve_powerflow!(
 )
     # converged must be defined in the outer scope to be visible for return
     converged = false
-    time_step = 1
     with_units_base(system, PSY.UnitSystem.SYSTEM_BASE) do
         data = PowerFlowData(
             pf,
@@ -52,7 +51,7 @@ function solve_powerflow!(
             correct_bustypes = get(kwargs, :correct_bustypes, false),
         )
 
-        converged = _ac_powerflow(data, pf, time_step; kwargs...)
+        converged = solve_powerflow!(data; pf = pf, kwargs...)
 
         if converged
             write_powerflow_solution!(
@@ -62,7 +61,7 @@ function solve_powerflow!(
             )
             @info("PowerFlow solve converged, the results have been stored in the system")
         else
-            @error("The powerflow solver returned convergence = $(converged)")
+            @error("The powerflow solver returned convergence = $converged")
         end
     end
 
@@ -96,7 +95,7 @@ function solve_powerflow(
             correct_bustypes = get(kwargs, :correct_bustypes, false),
         )
 
-        converged = _ac_powerflow(data, pf, time_step; kwargs...)
+        converged = solve_powerflow!(data; pf = pf, kwargs...)
 
         if converged
             @info("PowerFlow solve converged, the results are exported in DataFrames")
@@ -201,7 +200,7 @@ function solve_powerflow!(
 
     data.converged .= ts_converged
 
-    return
+    return all(data.converged)
 end
 
 function _ac_powerflow(

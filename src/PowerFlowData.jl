@@ -147,6 +147,8 @@ const ACPowerFlowData = PowerFlowData{
 }
 get_arc_axis(pfd::ACPowerFlowData) =
     PNM.get_arc_axis(pfd.power_network_matrix.branch_admittance_from_to)
+get_bus_axis(pfd::ACPowerFlowData) =
+    PNM.get_bus_axis(pfd.power_network_matrix)
 
 const PTDFPowerFlowData = PowerFlowData{
     PNM.PTDF{
@@ -174,6 +176,8 @@ const vPTDFPowerFlowData = PowerFlowData{
 }
 get_arc_axis(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
     PNM.get_arc_axis(pfd.power_network_matrix)
+get_bus_axis(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
+    PNM.get_bus_axis(pfd.power_network_matrix)
 
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
@@ -186,6 +190,7 @@ const ABAPowerFlowData = PowerFlowData{
         Tuple{Dict{Int64, Int64}, Dict{Tuple{Int, Int}, Int64}}},
 }
 get_arc_axis(pfd::ABAPowerFlowData) = PNM.get_arc_axis(pfd.aux_network_matrix)
+get_bus_axis(pfd::ABAPowerFlowData) = PNM.get_bus_axis(pfd.aux_network_matrix)
 
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
 get_arc_lookup(pfd::PowerFlowData) = pfd.arc_lookup
