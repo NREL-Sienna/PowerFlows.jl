@@ -461,8 +461,12 @@ function write_to_buffers!(
     bus_name_mapping = md["bus_name_mapping"]
 
     for bus in buses
+        bus_name = PSY.get_name(bus)
+        if startswith(strip(bus_name), "starbus")
+            continue
+        end
         I = bus_number_mapping[PSY.get_number(bus)]
-        NAME = _psse_quote_string(bus_name_mapping[PSY.get_name(bus)])
+        NAME = _psse_quote_string(bus_name_mapping[bus_name])
         BASKV = PSY.get_base_voltage(bus)
         IDE = PSSE_BUS_TYPE_MAP[PSY.get_bustype(bus)]
         AREA = if isnothing(PSY.get_area(bus))
