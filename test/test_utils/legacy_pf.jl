@@ -430,11 +430,11 @@ function _f_lcc(
     n = length(R)
     F = Vector{Float64}(undef, 4 * n)
     for k in 1:n
-        F1 = F_CSC_1(t_i[k], α_i[k], I_dc_i[k], x_t_i[k], Vm[i[k]], lcc_P_set[k])
-        F2 = F_CSC_2(
-            t_i[k], α_i[k], I_dc_i[k], I_dc_j[k], x_t_i[k], Vm[i[k]],
-            t_j[k], α_j[k], x_t_j[k], Vm[j[k]], R[k],
-        )
+        p_1 = P_CSC(t_i[k], α_i[k], I_dc_i[k], x_t_i[k], Vm[i[k]])
+        p_2 = P_CSC(t_j[k], α_j[k], I_dc_j[k], x_t_j[k], Vm[j[k]])
+        @show p_1, p_2
+        F1 = p_1 - lcc_P_set[k]
+        F2 = p_1 + p_2 - R[k] * I_dc_i[k]^2
         F3 = α_i[k] - 0.0
         F4 = α_j[k] - π / 2
         F[4 * (k - 1) + 1] = F1
@@ -611,7 +611,7 @@ Q_CSC_A(Vm, t, I_dc) = Vm * t * sqrt(6) / π * I_dc
 
 Q_CSC_D(t, α, I_dc, x_t, Vm) = cos(α) * sign(I_dc) - x_t * I_dc / (sqrt(2) * t * Vm)
 
-Q_CSC_C(t, α, I_dc, x_t, Vm) = acos(clamp.(Q_CSC_D(t, α, I_dc, x_t, Vm), -1.0, 1.0))
+Q_CSC_C(t, α, I_dc, x_t, Vm) = acos(Q_CSC_D(t, α, I_dc, x_t, Vm))  # acos(clamp.(Q_CSC_D(t, α, I_dc, x_t, Vm), -1.0, 1.0))
 
 Q_CSC_B(t, α, I_dc, x_t, Vm) = sin(Q_CSC_C(t, α, I_dc, x_t, Vm))
 
@@ -629,7 +629,7 @@ P_CSC(t, α, I_dc, x_t, Vm) = P_CSC_A(Vm, t, I_dc, α) + P_CSC_B(x_t, I_dc)
     Q_CSC_A(Vm, t, I_dc) * (
         Q_CSC_B(t, α, I_dc, x_t, Vm) -
         cos(Q_CSC_C(t, α, I_dc, x_t, Vm)) * x_t * I_dc /
-        sqrt(1 - clamp.(Q_CSC_D(t, α, I_dc, x_t, Vm), -1.0, 1.0)^2) * sqrt(2) * t * Vm
+        sqrt(1 - Q_CSC_D(t, α, I_dc, x_t, Vm)^2) * sqrt(2) * t * Vm
     ) / Vm
 
 ∂P_∂t(Vm, t, I_dc, α) = P_CSC_A(Vm, t, I_dc, α) / t
@@ -640,12 +640,12 @@ P_CSC(t, α, I_dc, x_t, Vm) = P_CSC_A(Vm, t, I_dc, α) + P_CSC_B(x_t, I_dc)
     Q_CSC_A(Vm, t, I_dc) * (
         Q_CSC_B(t, α, I_dc, x_t, Vm) / t -
         cos(Q_CSC_C(t, α, I_dc, x_t, Vm)) * x_t * I_dc /
-        sqrt(1 - clamp.(Q_CSC_D(t, α, I_dc, x_t, Vm), -1.0, 1.0)^2) * sqrt(2) * t^2 * Vm
+        sqrt(1 - Q_CSC_D(t, α, I_dc, x_t, Vm)^2) * sqrt(2) * t^2 * Vm
     )
 
 ∂Q_∂α(t, α, I_dc, x_t, Vm) =
     Q_CSC_A(Vm, t, I_dc) * cos(Q_CSC_C(t, α, I_dc, x_t, Vm)) *
-    sin(α) * sign(I_dc) / sqrt(1 - clamp.(Q_CSC_D(t, α, I_dc, x_t, Vm), -1.0, 1.0)^2)
+    sin(α) * sign(I_dc) / sqrt(1 - Q_CSC_D(t, α, I_dc, x_t, Vm)^2)
 
 ∂F_∂u = P_CSC_A
 
@@ -653,11 +653,11 @@ P_CSC(t, α, I_dc, x_t, Vm) = P_CSC_A(Vm, t, I_dc, α) + P_CSC_B(x_t, I_dc)
 
 ∂F_∂α(Vm, t, I_dc, α) = -P_CSC_A(Vm, t, I_dc, α) * tan(α)
 
-F_CSC_1(t, α, I_dc, x_t, Vm, P_set) = P_CSC(t, α, I_dc, x_t, Vm) - P_set
+# F_CSC_1(t, α, I_dc, x_t, Vm, P_set) = P_CSC(t, α, I_dc, x_t, Vm) - P_set
 
-F_CSC_2(tᵢ, αᵢ, I_dc_i, I_dc_j, x_tᵢ, Vmᵢ, tⱼ, αⱼ, x_tⱼ, Vmⱼ, R) =
-    P_CSC(tᵢ, αᵢ, I_dc_i, x_tᵢ, Vmᵢ) +
-    P_CSC(tⱼ, αⱼ, I_dc_j, x_tⱼ, Vmⱼ) - R * I_dc_i^2
+# F_CSC_2(tᵢ, αᵢ, I_dc_i, I_dc_j, x_tᵢ, Vmᵢ, tⱼ, αⱼ, x_tⱼ, Vmⱼ, R) =
+#     P_CSC(tᵢ, αᵢ, I_dc_i, x_tᵢ, Vmᵢ) +
+#     P_CSC(tⱼ, αⱼ, I_dc_j, x_tⱼ, Vmⱼ) - R * I_dc_i^2
 
 # μ(α, I_dc, x_t, t, Vm) = acos(cos(α) - sqrt(2) * I_dc * x_t * t / Vm) - α
 
