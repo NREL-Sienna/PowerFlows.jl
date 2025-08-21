@@ -130,7 +130,7 @@ struct PowerFlowData{
     calculate_voltage_stability_factors::Bool
 
     # Added parameters for converter/transformer modeling
-    P_set::Union{Vector{Float64}, Nothing}            # Active power setpoint
+    lcc_P_set::Union{Vector{Float64}, Nothing}            # Active power setpoint
     R::Union{Vector{Float64}, Nothing}                # Resistance
 
     # Parameters for converter/side i
@@ -145,6 +145,20 @@ struct PowerFlowData{
 
     lcc_i::Union{Vector{Int}, Nothing}  # Indices of LCC rectifier side
     lcc_j::Union{Vector{Int}, Nothing}  # Indices of LCC inverter side
+
+    # vsc_P_set::Union{Vector{Float64}, Nothing}  # VSC active power setpoint
+
+    # vsc_i::Union{Vector{Int}, Nothing}  # Indices of VSC rectifier side
+    # vsc_j::Union{Vector{Int}, Nothing}  # Indices of VSC inverter side
+
+    # vsc_va_i::Union{Vector{Float64}, Nothing}  # VSC voltage angle at side i
+    # vsc_va_j::Union{Vector{Float64}, Nothing}  # VSC voltage angle at side j    
+
+    # vsc_vm_i::Union{Vector{Float64}, Nothing}  # VSC voltage magnitude at side i
+    # vsc_vm_j::Union{Vector{Float64}, Nothing}  # VSC voltage magnitude at side j
+
+    # vsc_z_i::Union{Vector{Float64}, Nothing}  # VSC impedance at side i
+    # vsc_z_j::Union{Vector{Float64}, Nothing}  # VSC impedance at side j
 end
 
 # aliases for specific type parameter combinations.

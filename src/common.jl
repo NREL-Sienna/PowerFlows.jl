@@ -521,6 +521,9 @@ function make_powerflowdata(
     lcc_i = [bus_lookup[x] for x in PSY.get_number.(PSY.get_from.(PSY.get_arc.(lcc)))]
     lcc_j = [bus_lookup[x] for x in PSY.get_number.(PSY.get_to.(PSY.get_arc.(lcc)))]
 
+    vsc = PSY.get_components(PSY.get_available, PSY.TwoTerminalVSCLine, sys)
+    # vsc_P_set
+
     return PowerFlowData(
         bus_lookup,
         branch_lookup,

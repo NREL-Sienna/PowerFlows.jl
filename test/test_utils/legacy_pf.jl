@@ -154,11 +154,11 @@ function PowerFlows._newton_powerflow(
     V = zeros(Complex{Float64}, length(Vm))
     V .= Vm .* exp.(1im .* Va)
 
-    lcc_p_set = data.P_set[:, time_step]
+    lcc_p_set = data.lcc_P_set[:, time_step]
     lcc_x_t_i = data.x_t_i[:, time_step]
     lcc_x_t_j = data.x_t_j[:, time_step]
-    lcc_I_dc_i = [0.01 for _ in lcc_p_set] # This is a placeholder, should be set to the actual DC current value
-    lcc_I_dc_j = [-0.01 for _ in lcc_p_set] # This is a placeholder, should be set to the actual DC current value
+    lcc_I_dc_i = data.lcc_P_set[:, time_step] #[0.01 for _ in lcc_p_set] # This is a placeholder, should be set to the actual DC current value
+    lcc_I_dc_j = -data.lcc_P_set[:, time_step]  #[-0.01 for _ in lcc_p_set] # This is a placeholder, should be set to the actual DC current value
     lcc_alpha_i = data.alpha_i[:, time_step]
     lcc_alpha_j = data.alpha_j[:, time_step]
     lcc_t_i = data.t_i[:, time_step]
@@ -190,9 +190,21 @@ function PowerFlows._newton_powerflow(
 
     @show F_lcc
 
+    display(Ybus)
+
     display(Ybus .+ Ybus_lcc)
 
-    mis = V .* conj.((Ybus .+ Ybus_lcc) * V) .- Sbus
+    I_ac_lcc = Ybus_lcc * V
+
+    I_ac_lcc_i = I_ac.(lcc_t_i, lcc_alpha_i, lcc_I_dc_i, lcc_x_t_i, Vm[lcc_i], Va[lcc_i])
+    I_ac_lcc_j = I_ac.(lcc_t_j, lcc_alpha_j, lcc_I_dc_j, lcc_x_t_j, Vm[lcc_j], Va[lcc_j])
+    I_ac_lcc[lcc_i] .= I_ac_lcc_i
+    I_ac_lcc[lcc_j] .= I_ac_lcc_j
+    @show I_ac_lcc_i
+    @show I_ac_lcc_j
+    @show I_ac_lcc
+
+    mis = V .* conj.((Ybus .+ Ybus_lcc) * V) .- Sbus .- V .* conj.(I_ac_lcc)
     F = [real(mis[pvpq]); imag(mis[pq]); F_lcc]
 
     size_J = length(F)
@@ -230,21 +242,27 @@ function PowerFlows._newton_powerflow(
         lcc_alpha_i .+= d_lcc[inds3]
         lcc_alpha_j .+= d_lcc[inds4]
 
-        # clamp!(lcc_t_i, 0.5, 1.5)
-        # clamp!(lcc_t_j, 0.5, 1.5)
+        clamp!(lcc_t_i, 0.5, 1.5)
+        clamp!(lcc_t_j, 0.5, 1.5)  # t_j is wrong (very high number)
 
         # lcc_alpha_i .= 0.0
         # lcc_alpha_j .= π / 4
 
-        I_ac_all = Ybus * V
-        @show I_ac_all
-        @show abs.(I_ac_all)
+        I_ac_lcc_i =
+            I_ac.(lcc_t_i, lcc_alpha_i, lcc_I_dc_i, lcc_x_t_i, Vm[lcc_i], Va[lcc_i])
+        I_ac_lcc_j =
+            I_ac.(lcc_t_j, lcc_alpha_j, lcc_I_dc_j, lcc_x_t_j, Vm[lcc_j], Va[lcc_j])
+        I_ac_lcc[lcc_i] .= I_ac_lcc_i
+        I_ac_lcc[lcc_j] .= I_ac_lcc_j
+        @show I_ac_lcc_i
+        @show I_ac_lcc_j
+        @show I_ac_lcc
 
-        I_ac = Ybus_lcc * V
+        I_ac_ = Ybus_lcc * V
         @show abs.(V)
-        @show I_ac
-        lcc_I_dc_i .= abs.(sqrt(6) / π .* I_ac[lcc_i]) .* sign.(real.(I_ac[lcc_i]))
-        lcc_I_dc_j .= abs.(sqrt(6) / π .* I_ac[lcc_j]) .* sign.(real.(I_ac[lcc_j]))
+        @show I_ac_
+        # lcc_I_dc_i .= abs.(sqrt(6) / π .* I_ac[lcc_i]) .* sign.(real.(I_ac[lcc_i]))
+        # lcc_I_dc_j .= abs.(sqrt(6) / π .* I_ac[lcc_j]) .* sign.(real.(I_ac[lcc_j]))
 
         @show lcc_I_dc_i, lcc_I_dc_j
 
@@ -258,12 +276,13 @@ function PowerFlows._newton_powerflow(
         # @show P_CSC(lcc_t_i, lcc_alpha_i, lcc_I_dc, lcc_x_t_i, Vm[data.lcc_i])
         # @show P_CSC(lcc_t_j, lcc_alpha_j, -lcc_I_dc, lcc_x_t_j, Vm[data.lcc_j])
 
-        F_lcc = _f_lcc(R, lcc_t_i, lcc_t_j, lcc_alpha_i, lcc_alpha_j, lcc_I_dc_i, lcc_I_dc_j,
-            lcc_x_t_i, lcc_x_t_j, lcc_p_set, Vm, data.lcc_i, data.lcc_j)
+        F_lcc =
+            _f_lcc(R, lcc_t_i, lcc_t_j, lcc_alpha_i, lcc_alpha_j, lcc_I_dc_i, lcc_I_dc_j,
+                lcc_x_t_i, lcc_x_t_j, lcc_p_set, Vm, data.lcc_i, data.lcc_j)
 
         @show F_lcc
 
-        mis = V .* conj.((Ybus .+ Ybus_lcc) * V) .- Sbus
+        mis = V .* conj.((Ybus .+ Ybus_lcc) * V) .- Sbus .- V .* conj.(I_ac_lcc)
         F .= [real(mis[pvpq]); imag(mis[pq]); F_lcc]
 
         @show real(mis[pvpq]), imag(mis[pq])
@@ -354,6 +373,7 @@ function _ybus_lcc(
         I_dc_j = lcc_I_dc_j[k]
 
         Y_i = Y_val(t_i, α_i, I_dc_i, x_i, Vm[i])
+        @show t_j, α_j, I_dc_j, x_j, Vm[j]
         Y_j = Y_val(t_j, α_j, I_dc_j, x_j, Vm[j])
 
         push!(I, i)
@@ -367,6 +387,31 @@ function _ybus_lcc(
     return Ybus_lcc
 end
 
+function _ybus_vsc(Ybus, vsc_i, vsc_j, vsc_z_i, vsc_z_j)
+    I = Int[]
+    J = Int[]
+    V = ComplexF32[]
+
+    for k in eachindex(vsc_i)
+        i = vsc_i[k]
+        j = vsc_j[k]
+        z_i = vsc_z_i[k]
+        z_j = vsc_z_j[k]
+
+        Y_i = 1 / z_i
+        Y_j = 1 / z_j
+
+        push!(I, i)
+        push!(J, i)
+        push!(V, Y_i)
+        push!(I, j)
+        push!(J, j)
+        push!(V, Y_j)
+    end
+    Ybus_vsc = sparse(I, J, V, size(Ybus, 1), size(Ybus, 2))
+    return Ybus_vsc
+end
+
 function _f_lcc(
     R::Vector{Float64},
     t_i::Vector{Float64},
@@ -377,7 +422,7 @@ function _f_lcc(
     I_dc_j::Vector{Float64},
     x_t_i::Vector{Float64},
     x_t_j::Vector{Float64},
-    P_set::Vector{Float64},
+    lcc_P_set::Vector{Float64},
     Vm::Vector{Float64},
     i::Vector{Int64},
     j::Vector{Int64},
@@ -385,7 +430,7 @@ function _f_lcc(
     n = length(R)
     F = Vector{Float64}(undef, 4 * n)
     for k in 1:n
-        F1 = F_CSC_1(t_i[k], α_i[k], I_dc_i[k], x_t_i[k], Vm[i[k]], P_set[k])
+        F1 = F_CSC_1(t_i[k], α_i[k], I_dc_i[k], x_t_i[k], Vm[i[k]], lcc_P_set[k])
         F2 = F_CSC_2(
             t_i[k], α_i[k], I_dc_i[k], I_dc_j[k], x_t_i[k], Vm[i[k]],
             t_j[k], α_j[k], x_t_j[k], Vm[j[k]], R[k],
@@ -436,7 +481,6 @@ function _legacy_J_lcc(
         t_j = lcc_t_j[k]
         I_dc_i = lcc_I_dc_i[k]
         I_dc_j = lcc_I_dc_j[k]
-
 
         # J_C_P_D
 
@@ -552,13 +596,16 @@ function _legacy_J_lcc(
     return sparse(I, J, V, size_J, size_J)
 end
 
-ϕ(α, I_dc, x_t, Vm) = acos(cos(α) * sign(I_dc) - (x_t * abs(I_dc) / (sqrt(2) * Vm)))
+#### LCC
+###################################
+
+ϕ(α, I_dc, x_t, t, Vm) = acos(cos(α) * sign(I_dc) - (x_t * I_dc / (sqrt(2) * Vm)))
 
 I_ac(t, α, I_dc, x_t, Vm, Va) =
-    t / Vm * sqrt(6) / π * abs(I_dc) * exp(-1im * ϕ(α, I_dc, x_t, Vm)) * Vm * exp(1im * Va)
+    t / Vm * sqrt(6) / π * I_dc * exp(-1im * ϕ(α, I_dc, x_t, t, Vm)) * Vm * exp(1im * Va) # check this!
 
 Y_val(t, α, I_dc, x_t, Vm) =
-    t / Vm * sqrt(6) / π * abs(I_dc) * exp(-1im * ϕ(α, I_dc, x_t, Vm))
+    t / Vm * sqrt(6) / π * I_dc * exp(-1im * ϕ(α, I_dc, x_t, t, Vm))
 
 Q_CSC_A(Vm, t, I_dc) = Vm * t * sqrt(6) / π * I_dc
 
@@ -611,3 +658,23 @@ F_CSC_1(t, α, I_dc, x_t, Vm, P_set) = P_CSC(t, α, I_dc, x_t, Vm) - P_set
 F_CSC_2(tᵢ, αᵢ, I_dc_i, I_dc_j, x_tᵢ, Vmᵢ, tⱼ, αⱼ, x_tⱼ, Vmⱼ, R) =
     P_CSC(tᵢ, αᵢ, I_dc_i, x_tᵢ, Vmᵢ) +
     P_CSC(tⱼ, αⱼ, I_dc_j, x_tⱼ, Vmⱼ) - R * I_dc_i^2
+
+# μ(α, I_dc, x_t, t, Vm) = acos(cos(α) - sqrt(2) * I_dc * x_t * t / Vm) - α
+
+# ϕ(α, μ) = acos(0.5 * cos(α) + 0.5 * cos(α + μ))
+
+# ϕ(α, I_dc, x_t, t, Vm) = ϕ(α, μ(α, I_dc, x_t, t, Vm))
+
+# VSC
+#####################
+
+P_VSC_ii(Vm_i, y_vsc_ii, ϕ_vsc_ii) = Vm_i^2 * y_vsc_ii * cos(ϕ_vsc_ii)
+P_VSC_iq(Vm_i, Vm_q, y_vsc_iq, δ_iq, ϕ_vsc_iq) =
+    Vm_i * Vm_q * y_vsc_iq * cos(ϕ_vsc_iq + δ_iq)
+P_VSC(Vm_i, Vm_q, y_vsc_ii, y_vsc_iq, ϕ_vsc_ii, δ_iq, ϕ_vsc_iq) =
+    P_VSC_ii(Vm_i, y_vsc_ii, ϕ_vsc_ii) + P_VSC_iq(Vm_i, Vm_q, y_vsc_iq, δ_iq, ϕ_vsc_iq)
+Q_VSC_ii(Vm_i, y_vsc_ii, ϕ_vsc_ii) = Vm_i^2 * y_vsc_ii * sin(ϕ_vsc_ii)
+Q_VSC_iq(Vm_i, Vm_q, y_vsc_iq, δ_iq, ϕ_vsc_iq) =
+    Vm_i * Vm_q * y_vsc_iq * sin(ϕ_vsc_iq + δ_iq)
+Q_VSC(Vm_i, Vm_q, y_vsc_ii, y_vsc_iq, ϕ_vsc_ii, δ_iq, ϕ_vsc_iq) =
+    Q_VSC_ii(Vm_i, y_vsc_ii, ϕ_vsc_ii) + Q_VSC_iq(Vm_i, Vm_q, y_vsc_iq, δ_iq, ϕ_vsc_iq)

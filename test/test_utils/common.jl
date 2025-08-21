@@ -428,3 +428,50 @@ function _lcc_system()
     add_component!(sys, lcc)
     return sys
 end
+
+function _vsc_system()
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+    b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.1, 0.0)
+    ld3 = _add_simple_load!(sys, b3, 60, 20)
+    l12 = _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
+    l13 = _add_simple_line!(sys, b1, b3, 5e-3, 5e-3, 1e-3)
+    s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
+
+    vsc = TwoTerminalVSCLine(;
+        name = "VSC",
+        available = true,
+        arc = Arc(b2, b3),
+        active_power_flow = 0.1,
+        rating = 1.0,
+        active_power_limits_from = (min = -1.0, max = 1.0),
+        active_power_limits_to = (min = -1.0, max = 1.0),
+        g = 0.0,
+        dc_current = 0.0,
+        reactive_power_from = 0.0,
+        dc_voltage_control_from = true,
+        ac_voltage_control_from = true,
+        dc_setpoint_from = 1.0,
+        ac_setpoint_from = 1.0,
+        converter_loss_from = LinearCurve(0.0),
+        max_dc_current_from = 10000.0,
+        rating_from = 100.0,
+        reactive_power_limits_from = (min = -10.0, max = 10.0),
+        power_factor_weighting_fraction_from = 1.0,
+        voltage_limits_from = (min = 0.5, max = 1.5),
+        reactive_power_to = 0.0,
+        dc_voltage_control_to = false,
+        ac_voltage_control_to = false,
+        dc_setpoint_to = 1.0,
+        ac_setpoint_to = 1.0,
+        converter_loss_to = LinearCurve(0.0),
+        max_dc_current_to = 1000.0,
+        rating_to = 100.0,
+        reactive_power_limits_to = (min = -1.0, max = 1.0),
+        power_factor_weighting_fraction_to = 1.0,
+        voltage_limits_to = (min = 0.5, max = 1.5),
+    )
+    add_component!(sys, vsc)
+    return sys
+end

@@ -1154,27 +1154,36 @@ include("./test_utils/legacy_pf.jl")
 
 pf = ACPowerFlow(LUACPowerFlow)
 
+########################
+
+# sys = _vsc_system()
+# data = PowerFlowData(pf, sys; correct_bustypes = true)
+# time_step = 1
+# solve_powerflow!(data; pf = pf, maxIter=5)
+
+##############################
+
 # sys2 = _lcc_system()
 
-sys2 = System("/Users/rbolgary/Library/CloudStorage/OneDrive-NREL/losses_project/case3_lcc.raw")
+# # sys2 = System("/Users/rbolgary/Library/CloudStorage/OneDrive-NREL/losses_project/case3_lcc.raw")
 
-remove_components!(sys2, TwoTerminalLCCLine)
-data = PowerFlowData(pf, sys2; correct_bustypes = true)
-Y = data.power_network_matrix.data
-Yft = data.power_network_matrix.yft
-Ytf = data.power_network_matrix.ytf
-solve_powerflow!(data; pf = pf, maxIter = 5)
+# remove_components!(sys2, TwoTerminalLCCLine)
+# data = PowerFlowData(pf, sys2; correct_bustypes = true)
+# Y = data.power_network_matrix.data
+# Yft = data.power_network_matrix.yft
+# Ytf = data.power_network_matrix.ytf
+# solve_powerflow!(data; pf = pf, maxIter = 5)
 
-V = data.bus_magnitude[:, 1] .* exp.(1im * data.bus_angles[:, 1])
+# V = data.bus_magnitude[:, 1] .* exp.(1im * data.bus_angles[:, 1])
 
-Vm = data.bus_magnitude[:, 1]
-Θ = data.bus_angles[:, 1]
+# Vm = data.bus_magnitude[:, 1]
+# Θ = data.bus_angles[:, 1]
 
-# sys = _lcc_system()
-sys = System("/Users/rbolgary/Library/CloudStorage/OneDrive-NREL/losses_project/case3_lcc.raw")
+sys = _lcc_system()
+# sys = System("/Users/rbolgary/Library/CloudStorage/OneDrive-NREL/losses_project/case3_lcc_rb.raw")
 data = PowerFlowData(pf, sys; correct_bustypes = true)
 time_step = 1
-solve_powerflow!(data; pf = pf, maxIter=5)
+solve_powerflow!(data; pf = pf, maxIter = 20)
 
 lcc_p_set = data.P_set[:, time_step]
 lcc_x_t_i = data.x_t_i[:, time_step]
@@ -1196,4 +1205,4 @@ Ybus_lcc = _ybus_lcc(
     lcc_I_dc_i, lcc_I_dc_j, lcc_x_t_i, lcc_x_t_j, lcc_i, lcc_j,
 )
 
-
+#####################
