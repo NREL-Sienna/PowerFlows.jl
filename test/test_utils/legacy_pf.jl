@@ -586,7 +586,7 @@ function _legacy_J_lcc(
 
         push!(I, npvpq + npq + 4 * (k - 1) + 2)
         push!(J, npvpq + npq + 4 * (k - 1) + 4)
-        push!(V, -Vm[j] * t_j * sqrt(6) / π * I_dc_i * cos(α_j) * tan(α_j))
+        push!(V, -Vm[j] * t_j * sqrt(6) / π * I_dc_j * cos(α_j) * tan(α_j))
 
         push!(I, npvpq + npq + 4 * (k - 1) + 3)
         push!(J, npvpq + npq + 4 * (k - 1) + 3)
