@@ -391,7 +391,7 @@ function _lcc_system()
         available = true,
         arc = Arc(b3, b2),
         active_power_flow = 0.0,
-        r = 5,
+        r = 5e-3,
         transfer_setpoint = 100,
         scheduled_dc_voltage = 230.0,
         rectifier_bridges = 1,
