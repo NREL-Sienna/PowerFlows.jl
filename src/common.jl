@@ -211,8 +211,7 @@ function make_dc_powerflowdata(
     calculate_loss_factors,
 )
     branch_type = Vector{DataType}(undef, length(branch_lookup))
-    for (ix, b) in zip(1:length(branch_lookup), PNM.get_ac_branches(sys))
-        println(ix, " ", b)
+    for (ix, b) in enumerate(PNM.get_ac_branches(sys))
         branch_type[ix] = typeof(b)
     end
     bus_reactivepower_bounds = Vector{Vector{Float64}}(undef, n_buses)
