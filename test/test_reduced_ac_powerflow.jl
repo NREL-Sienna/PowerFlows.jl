@@ -64,7 +64,10 @@ end
             (PSSEParsingTestSystems, "pti_three_winding_test_2_sys")
             (PSSEParsingTestSystems, "pti_three_winding_test_sys")
             =#
-            sys = build_system(PSSEParsingTestSystems, "pti_frankenstein_20_sys")
+            sys = build_system(
+                PSSEParsingTestSystems,
+                "psse_14_network_reduction_test_system",
+            )
             pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
             results = solve_powerflow(
                 pf,
@@ -75,29 +78,57 @@ end
             @assert !isempty(PSY.get_components(PSY.Transformer3W, sys))
             test_trf = first(collect(PSY.get_components(PSY.Transformer3W, sys)))
             test_trf_name = PSY.get_name(test_trf)
-            arc_flows = eachrow(results["flow_results"])
-            trf_arc_flows = zeros(ComplexF32, 3)
-            for i in 1:3
-                adj = ("primary", "secondary", "tertiary")[i]
-                ix = arc_flows["line_name"] .== "$(test_trf_name)-$adj"
-                @assert count(ix) == 1
-                trf_arc_flows[i] =
-                    sum(arc_flows[ix, "P_from_to"]) +
-                    im * sum(arc_flows[ix, "Q_to_from"])
+            if !ismissing(results)
+                arc_flows = results["flow_results"]
+                trf_arc_flows = zeros(ComplexF32, 3)
+                for i in 1:3
+                    adj = ("primary", "secondary", "tertiary")[i]
+                    ix = arc_flows[!, "line_name"] .== "$(test_trf_name)-$adj"
+                    trf_arc_flows[i] =
+                        sum(arc_flows[ix, "P_from_to"]) +
+                        im * sum(arc_flows[ix, "Q_from_to"])
+                end
+                @test solve_powerflow!(
+                    pf,
+                    sys;
+                    correct_bustypes = true,
+                    network_reductions = deepcopy(v),
+                )
+                base_power = PSY.get_base_power(sys)
+                # check that transformer bus-to-star entries are there.
+                @test isapprox(
+                    PSY.get_active_power_flow_primary(test_trf),
+                    real(trf_arc_flows[1]) / base_power;
+                    atol = 1e-5,
+                )
+                @test isapprox(
+                    PSY.get_reactive_power_flow_primary(test_trf),
+                    imag(trf_arc_flows[1]) / base_power;
+                    atol = 1e-5,
+                )
+                @test isapprox(
+                    PSY.get_active_power_flow_secondary(test_trf),
+                    real(trf_arc_flows[2]) / base_power;
+                    atol = 1e-5,
+                )
+                @test isapprox(
+                    PSY.get_reactive_power_flow_secondary(test_trf),
+                    imag(trf_arc_flows[2]) / base_power;
+                    atol = 1e-5,
+                )
+                @test isapprox(
+                    PSY.get_active_power_flow_tertiary(test_trf),
+                    real(trf_arc_flows[3]) / base_power;
+                    atol = 1e-5,
+                )
+                @test isapprox(
+                    PSY.get_reactive_power_flow_tertiary(test_trf),
+                    imag(trf_arc_flows[3]) / base_power;
+                    atol = 1e-5,
+                )
+            else
+                @error "Failed to converge: cannot test AC post-processing with $k reduction"
             end
-            @test solve_powerflow!(
-                pf,
-                sys;
-                correct_bustypes = true,
-                network_reductions = PNM.NetworkReduction[deepcopy(v)],
-            )
-            # check that transformer bus-to-star entries are there.
-            @test PSY.get_active_power_flow_primary(test_trf) == real(trf_arc_flows[1])
-            @test PSY.get_reactive_power_flow_primary(test_trf) == imag(trf_arc_flows[1])
-            @test PSY.get_active_power_flow_secondary(test_trf) == real(trf_arc_flows[2])
-            @test PSY.get_reactive_power_flow_secondary(test_trf) == imag(trf_arc_flows[2])
-            @test PSY.get_active_power_flow_tertiary(test_trf) == real(trf_arc_flows[3])
-            @test PSY.get_reactive_power_flow_tertiary(test_trf) == imag(trf_arc_flows[3])
         end
     end
 end

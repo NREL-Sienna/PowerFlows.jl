@@ -2,39 +2,6 @@ function _is_available_source(x, bus::PSY.ACBus)
     return PSY.get_available(x) && x.bus == bus && !isa(x, PSY.ElectricLoad)
 end
 
-# FIXME not actually called anywhere, which means we're not taking the constant load components into account.
-"""
-Obtain total load on bus b
-"""
-function _get_load_data(sys::PSY.System, b::PSY.ACBus)
-    active_power = 0.0
-    reactive_power = 0.0
-    for l in PSY.get_components(
-        x -> get_available(x) && (get_bus(x) == b),
-        _SingleComponentLoad,
-        sys,
-    )
-        active_power += PSY.get_active_power(l)
-        reactive_power += PSY.get_reactive_power(l)
-    end
-    for l in PSY.get_components(
-        x -> get_available(x) && (get_bus(x) == b),
-        PSY.StandardLoad,
-        sys,
-    )
-        vm = PSY.get_magnitude(b)
-        active_power +=
-            PSY.get_constant_active_power(l) +
-            PSY.get_current_active_power(l) * vm +
-            PSY.get_impedance_active_power(l) * vm^2
-        reactive_power +=
-            PSY.get_constant_reactive_power(l) +
-            PSY.get_current_reactive_power(l) * vm +
-            PSY.get_impedance_reactive_power(l) * vm^2
-    end
-    return active_power, reactive_power
-end
-
 """Returns a dictionary of bus index to power contribution at that bus from FixedAdmittance
 components, as a tuple of (active power, reactive power)."""
 function _calculate_fixed_admittance_powers(
@@ -407,9 +374,10 @@ function set_branch_flows_for_dict!(
 )
     # if these asserts trigger, we may need to check for reverse(arc) too.
     arc_lookup = get_arc_lookup(data)
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     for (arc, br) in d
-        @assert PNM.get_arc_tuple(br) == arc "disagreement between keys of " *
-                                             "$map_name and physical arcs at arc $arc"
+        @assert PNM.get_arc_tuple(br, nrd) == arc "disagreement between keys of " *
+                                                  "$map_name and physical arcs at arc $arc"
         @assert arc in keys(arc_lookup) "disagreement between keys of " *
                                         "$map_name and arc axis at arc $arc"
         arc_ix = arc_lookup[arc]
@@ -460,7 +428,7 @@ function write_powerflow_solution!(
             _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
             PSY.set_bustype!(bus, data_bustype)
         else
-            @warn "Buses $reduced_buses were reduced into bus $bus_name: skipping PV -> " *
+            @warn "Buses $reduced_buses were reduced into bus $bus_number: skipping PV -> " *
                   "PQ conversion checks and reactive power redistribution for those " *
                   "buses" maxlog = PF_MAX_LOG
         end
@@ -502,7 +470,7 @@ function write_powerflow_solution!(
                 PSY.set_angle!(bus, θ)
             end
         else
-            @warn "Buses $reduced_buses were reduced into bus $bus_name: skipping reactive" *
+            @warn "Buses $reduced_buses were reduced into bus $bus_number: skipping reactive" *
                   " power redistribution and leaving voltage fields unchanged for those" *
                   " buses" maxlog = PF_MAX_LOG
         end
