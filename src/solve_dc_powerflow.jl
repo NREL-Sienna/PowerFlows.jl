@@ -93,9 +93,9 @@ voltages for the input `PSY.System`.
 function solve_powerflow(
     ::T,
     sys::PSY.System;
-    correct_bustypes::Bool = false,
+    kargs...,
 ) where {T <: AbstractDCPowerFlow}
-    data = PowerFlowData(T(), sys; correct_bustypes = correct_bustypes)
+    data = PowerFlowData(T(), sys; kargs...)
     solve_powerflow!(data)
     return write_results(data, sys)
 end

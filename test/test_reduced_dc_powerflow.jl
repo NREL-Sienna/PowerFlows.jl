@@ -17,6 +17,14 @@ dc_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
             PF.solve_powerflow!(unreduced)
             @assert all(unreduced.converged)
             validate_reduced_powerflow(dc_pf, sys, v, unreduced)
+            results = PF.solve_powerflow(
+                dc_pf,
+                sys;
+                network_reductions = deepcopy(v),
+                correct_bustypes = true,
+            )
+            # no write-results-to-system solve_powerflow! for DC: should we add one?
+            # PF.solve_powerflow!(dc_pf, sys; network_reductions = deepcopy(v), correct_bustypes = true)
         end
     end
 end
