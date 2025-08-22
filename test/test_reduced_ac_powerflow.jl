@@ -44,3 +44,60 @@ end
         @test all(result.converged) broken = true
     end
 end
+
+@testset "system + powerflow solver calls" begin
+    for (k, v) in ac_reduction_types
+        @testset "$k reduction" begin
+            # systems in PSB with 3WT's:
+            #=
+            (PSSEParsingTestSystems, "psse_14_network_reduction_test_system")
+            (PSSEParsingTestSystems, "psse_14_tap_correction_test_system")
+            (PSSEParsingTestSystems, "psse_14_zero_impedance_branch_test_system")
+            (PSSEParsingTestSystems, "psse_4_zero_impedance_3wt_test_system")
+            (PSSEParsingTestSystems, "psse_ybus_14_test_system")
+            (PSSEParsingTestSystems, "pti_case10_voltage_winding_correction_sys")
+            (PSSEParsingTestSystems, "pti_case8_voltage_winding_correction_sys")
+            (PSSEParsingTestSystems, "pti_frankenstein_20_sys")
+            (PSSEParsingTestSystems, "pti_frankenstein_70_sys")
+            (PSSEParsingTestSystems, "pti_modified_case14_sys")
+            (PSSEParsingTestSystems, "pti_three_winding_mag_test_sys")
+            (PSSEParsingTestSystems, "pti_three_winding_test_2_sys")
+            (PSSEParsingTestSystems, "pti_three_winding_test_sys")
+            =#
+            sys = build_system(PSSEParsingTestSystems, "pti_frankenstein_20_sys")
+            pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
+            results = solve_powerflow(
+                pf,
+                sys;
+                correct_bustypes = true,
+                network_reductions = deepcopy(v),
+            )
+            @assert !isempty(PSY.get_components(PSY.Transformer3W, sys))
+            test_trf = first(collect(PSY.get_components(PSY.Transformer3W, sys)))
+            test_trf_name = PSY.get_name(test_trf)
+            arc_flows = eachrow(results["flow_results"])
+            trf_arc_flows = zeros(ComplexF32, 3)
+            for i in 1:3
+                adj = ("primary", "secondary", "tertiary")[i]
+                ix = arc_flows["line_name"] .== "$(test_trf_name)-$adj"
+                @assert count(ix) == 1
+                trf_arc_flows[i] =
+                    sum(arc_flows[ix, "P_from_to"]) +
+                    im * sum(arc_flows[ix, "Q_to_from"])
+            end
+            @test solve_powerflow!(
+                pf,
+                sys;
+                correct_bustypes = true,
+                network_reductions = PNM.NetworkReduction[deepcopy(v)],
+            )
+            # check that transformer bus-to-star entries are there.
+            @test PSY.get_active_power_flow_primary(test_trf) == real(trf_arc_flows[1])
+            @test PSY.get_reactive_power_flow_primary(test_trf) == imag(trf_arc_flows[1])
+            @test PSY.get_active_power_flow_secondary(test_trf) == real(trf_arc_flows[2])
+            @test PSY.get_reactive_power_flow_secondary(test_trf) == imag(trf_arc_flows[2])
+            @test PSY.get_active_power_flow_tertiary(test_trf) == real(trf_arc_flows[3])
+            @test PSY.get_reactive_power_flow_tertiary(test_trf) == imag(trf_arc_flows[3])
+        end
+    end
+end
