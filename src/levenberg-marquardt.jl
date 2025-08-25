@@ -8,10 +8,7 @@ function _newton_powerflow(
     kwargs...,
 )
     # setup: common code
-    residual = ACPowerFlowResidual(data, time_step)
-    x0 = improve_x0(pf, data, residual, time_step)
-    J = ACPowerFlowJacobian(data, time_step)
-    J(time_step)
+    residual, J, x0 = initialize_powerflow_variables(pf, data, time_step; kwargs...)
     converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
 

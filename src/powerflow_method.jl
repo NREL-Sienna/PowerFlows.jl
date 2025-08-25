@@ -203,7 +203,7 @@ function _trust_region_step(time_step::Int,
         stateVector.r .= residual.Rv
         residualSize = dot(residual.Rv, residual.Rv)
         linf = norm(residual.Rv, Inf)
-        @debug "sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed))), angle $(siground(theta))"
+        @debug "sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed)))"
         # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
         J(time_step)
         if autoscale
@@ -390,26 +390,11 @@ function _newton_powerflow(
     time_step::Int64;
     kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
     # setup: common code
-    residual = ACPowerFlowResidual(data, time_step)
-    x0 = improve_x0(pf, data, residual, time_step)
-    J = ACPowerFlowJacobian(data, time_step)
-    J(time_step)
+    residual, J, x0 = initialize_powerflow_variables(pf, data, time_step; kwargs...)
     converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
 
     if !converged
-        bus_types = @view get_bus_type(J.data)[:, time_step]
-        validate_vms::Bool = get(
-            kwargs,
-            :validate_voltages,
-            DEFAULT_VALIDATE_VOLTAGES,
-        )
-        validation_range::MinMax = get(
-            kwargs,
-            :vm_validation_range,
-            DEFAULT_VALIDATION_RANGE,
-        )
-        validate_vms && validate_voltages(x0, bus_types, validation_range, 0)
         linSolveCache = KLULinSolveCache(J.Jv)
         symbolic_factor!(linSolveCache, J.Jv)
         stateVector = StateVectorCache(x0, residual.Rv)
