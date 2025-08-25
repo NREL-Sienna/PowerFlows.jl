@@ -1560,7 +1560,7 @@ function write_to_buffers!(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Two-Terminal DC Transmission Line Data
+WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Voltage Source Converter (VSC) DC Transmission Line Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1638,6 +1638,8 @@ function write_to_buffers!(
         ALOSS1 = get(PSY.get_ext(vscline), "ALOSS_FROM", ALOSS1_org)
         MINLOSS1 = get(PSY.get_ext(vscline), "MINLOSS_FROM", psse_converter_loss_from)
         SMAX1 = PSY.get_rating_from(vscline)
+        # This logic is implemented to revert what is done in the PSY parser side:
+        # from_bus["SMAX"] == 0.0 ? PSSE_INFINITY : from_bus["SMAX"] / baseMVA
         SMAX1 = if SMAX1 == PSSE_INFINITY
             0.0
         else
@@ -1681,6 +1683,8 @@ function write_to_buffers!(
         ALOSS2 = get(PSY.get_ext(vscline), "ALOSS_TO", ALOSS2_org)
         MINLOSS2 = get(PSY.get_ext(vscline), "MINLOSS_TO", psse_converter_loss_to)
         SMAX2 = PSY.get_rating_from(vscline)
+        # This logic is implemented to revert what is done in the PSY parser side:
+        # to_bus["SMAX"] == 0.0 ? PSSE_INFINITY : to_bus["SMAX"] / baseMVA
         SMAX2 = if SMAX2 == PSSE_INFINITY
             0.0
         else
