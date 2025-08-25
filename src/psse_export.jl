@@ -1590,25 +1590,55 @@ function write_to_buffers!(
         vsc_line_name = string(split(PSY.get_name(vscline), "_")[end])
         NAME = _psse_quote_string(vsc_line_name)
         MDC = PSY.get_available(vscline) ? 1 : 0
-        RDC = get(PSY.get_ext(vscline), "RDC", PSSE_DEFAULT)
+        if PSY.get_dc_voltage_control_from(vscline) &&
+           !PSY.get_dc_voltage_control_to(vscline)
+            base_voltage = PSY.get_dc_setpoint_from(vscline)
+        else
+            base_voltage = PSY.get_dc_setpoint_to(vscline)
+        end
+        Zbase = base_voltage^2 / PSY.get_base_power(exporter.system)
+        RDC_org = PSY.get_g(vscline) != 0.0 ? (1 / PSY.get_g(vscline)) * Zbase : 0.0
+        RDC = get(PSY.get_ext(vscline), "RDC", RDC_org)
 
         IBUS1 = I
-        TYPE1 = get(PSY.get_ext(vscline), "TYPE_FROM", PSSE_DEFAULT)
-        MODE1 = PSY.get_available(vscline) ? 1 : 0
+        if PSY.get_dc_voltage_control_from(vscline) &&
+           !PSY.get_dc_voltage_control_to(vscline)
+            type1_org = 1
+            type2_org = 2
+        elseif !PSY.get_dc_voltage_control_from(vscline) &&
+               PSY.get_dc_voltage_control_to(vscline)
+            type1_org = 2
+            type2_org = 1
+        else
+            type1_org = 0
+            type2_org = 0
+        end
+        TYPE1 = get(PSY.get_ext(vscline), "TYPE_FROM", type1_org)
+        MODE1 = PSY.get_ac_voltage_control_from(vscline) ? 1 : 2
         DCSET1 = PSY.get_dc_setpoint_from(vscline)
         ACSET1 = PSY.get_ac_setpoint_from(vscline)
-        ALOSS1 = get(PSY.get_ext(vscline), "ALOSS_FROM", PSSE_DEFAULT)
         BLOSS1 =
             _psse_round_val(
                 PSY.get_proportional_term(
                     PSY.get_function_data(PSY.get_converter_loss_from(vscline)),
                 ) * 1e3 * PSY.get_base_power(exporter.system))
-        MINLOSS1 = get(PSY.get_ext(vscline), "MINLOSS_FROM", PSSE_DEFAULT)
+        psse_converter_loss_from =
+            _psse_round_val(BLOSS1 * abs(PSY.get_dc_current(vscline)))
+        ALOSS1_org = _psse_round_val(
+            abs(
+                psse_converter_loss_from -
+                PSY.get_constant_term(
+                    PSY.get_function_data(PSY.get_converter_loss_from(vscline)),
+                ) * 1e3 * PSY.get_base_power(exporter.system),
+            ),
+        )
+        ALOSS1 = get(PSY.get_ext(vscline), "ALOSS_FROM", ALOSS1_org)
+        MINLOSS1 = get(PSY.get_ext(vscline), "MINLOSS_FROM", psse_converter_loss_from)
         SMAX1 = PSY.get_rating_from(vscline)
         SMAX1 = if SMAX1 == PSSE_INFINITY
             0.0
         else
-            SMAX1 * PSY.get_base_power(exporter.system)
+            _psse_round_val(SMAX1 * PSY.get_base_power(exporter.system))
         end
         IMAX1 = PSY.get_max_dc_current_from(vscline)
         IMAX1 = if IMAX1 == PSSE_INFINITY
@@ -1623,25 +1653,35 @@ function write_to_buffers!(
         MINQ1 =
             PSY.get_reactive_power_limits_from(vscline).min *
             PSY.get_base_power(exporter.system)
-        REMOT1 = get(PSY.get_ext(vscline), "REMOT_FROM", PSSE_DEFAULT)
-        RMPCT1 = get(PSY.get_ext(vscline), "RMPCT_FROM", PSSE_DEFAULT)
+        REMOT1 = get(PSY.get_ext(vscline), "REMOT_FROM", 0)
+        RMPCT1 = get(PSY.get_ext(vscline), "RMPCT_FROM", 100.0)
+
         IBUS2 = J
-        TYPE2 = get(PSY.get_ext(vscline), "TYPE_TO", PSSE_DEFAULT)
-        MODE2 = PSY.get_available(vscline) ? 1 : 0
+        TYPE2 = get(PSY.get_ext(vscline), "TYPE_TO", type2_org)
+        MODE2 = PSY.get_ac_voltage_control_to(vscline) ? 1 : 2
         DCSET2 = PSY.get_dc_setpoint_to(vscline)
         ACSET2 = PSY.get_ac_setpoint_to(vscline)
-        ALOSS2 = get(PSY.get_ext(vscline), "ALOSS_TO", PSSE_DEFAULT)
         BLOSS2 =
             _psse_round_val(
                 PSY.get_proportional_term(
                     PSY.get_function_data(PSY.get_converter_loss_to(vscline)),
                 ) * 1e3 * PSY.get_base_power(exporter.system))
-        MINLOSS2 = get(PSY.get_ext(vscline), "MINLOSS_TO", PSSE_DEFAULT)
+        psse_converter_loss_to = _psse_round_val(BLOSS2 * abs(PSY.get_dc_current(vscline)))
+        ALOSS2_org = _psse_round_val(
+            abs(
+                psse_converter_loss_to -
+                PSY.get_constant_term(
+                    PSY.get_function_data(PSY.get_converter_loss_to(vscline)),
+                ) * 1e3 * PSY.get_base_power(exporter.system),
+            ),
+        )
+        ALOSS2 = get(PSY.get_ext(vscline), "ALOSS_TO", ALOSS2_org)
+        MINLOSS2 = get(PSY.get_ext(vscline), "MINLOSS_TO", psse_converter_loss_to)
         SMAX2 = PSY.get_rating_from(vscline)
         SMAX2 = if SMAX2 == PSSE_INFINITY
             0.0
         else
-            SMAX2 * PSY.get_base_power(exporter.system)
+            _psse_round_val(SMAX2 * PSY.get_base_power(exporter.system))
         end
         IMAX2 = PSY.get_max_dc_current_from(vscline)
         IMAX2 = if IMAX2 == PSSE_INFINITY
@@ -1656,8 +1696,8 @@ function write_to_buffers!(
         MINQ2 =
             PSY.get_reactive_power_limits_to(vscline).min *
             PSY.get_base_power(exporter.system)
-        REMOT2 = get(PSY.get_ext(vscline), "REMOT_TO", PSSE_DEFAULT)
-        RMPCT2 = get(PSY.get_ext(vscline), "RMPCT_TO", PSSE_DEFAULT)
+        REMOT2 = get(PSY.get_ext(vscline), "REMOT_TO", 0)
+        RMPCT2 = get(PSY.get_ext(vscline), "RMPCT_TO", 100.0)
 
         @fastprintdelim_unroll(io, false, NAME, MDC, RDC)
         fastprintln_psse_default_ownership(io)
