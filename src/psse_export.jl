@@ -1472,11 +1472,14 @@ function write_to_buffers!(
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
         dcline_name = string(get(PSY.get_ext(dcline), "psse_name", PSY.get_name(dcline)))
-        NAME = _psse_quote_string(dcline_name)
+        NAME = _is_valid_psse_name(dcline_name) ? dcline_name : first(dcline_name, 12)
+        NAME = _psse_quote_string(NAME)
         MDC = Int(PSY.get_power_mode(dcline))
         RDC =
-            PSY.get_r(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
-            PSY.get_base_power(exporter.system)
+            _psse_round_val(
+                PSY.get_r(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
+                PSY.get_base_power(exporter.system),
+            )
         SETVL = PSY.get_transfer_setpoint(dcline)
         VSCHD = PSY.get_scheduled_dc_voltage(dcline)
         VCMOD = PSY.get_switch_mode_voltage(dcline)
@@ -1746,22 +1749,19 @@ function write_to_buffers!(
         )
     end
 
-    written_tables = get!(exporter.components_cache, "written_icd_tables") do
-        Set{Int}()
-    end
-
+    unique_icd_entries = OrderedDict()
     for icd in icd_entries
         I = PSY.get_table_number(icd)
-        I in written_tables && continue
+        unique_icd_entries[I] = icd
+    end
 
-        push!(written_tables, I)
+    for (I, icd) in unique_icd_entries
         points = PSY.get_points(PSY.get_impedance_correction_curve(icd))
         fastprint(io, I)
+        fastprint(io, " ")
         for p in points
-            fastprint(io, ",   ")
-            fastprint(io, p.x)
-            fastprint(io, ",")
-            fastprint(io, p.y)
+            fastprintdelim(io, p.x)
+            fastprintdelim(io, p.y)
         end
         fastprintln(io, "")
     end
