@@ -320,6 +320,18 @@ function _map_psse_container_names(container_names::Vector{String})
     return mapping
 end
 
+"""
+Setting a value of zero 0.0 when having a value greater than or equal to INFINITE_BOUND
+reverses the operation done in the PSY parsing side, according to PSSE Manual.
+"""
+function _fix_3w_transformer_rating(rate)
+    return if isa(rate, String)
+        0.0
+    else
+        (isa(rate, Number) && rate >= INFINITE_BOUND ? 0.0 : rate)
+    end
+end
+
 "WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Case Identification Data"
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1024,10 +1036,9 @@ function write_to_buffers!(
                     0.0,
                     0.0
                 end
-            # Setting a value of zero 0.0 when having a value greater than or equal to INFINITE_BOUND
-            # is the reverse operation of what's done in the PSY parsing side.
             RATEA =
                 RATEA >= INFINITE_BOUND ? 0.0 : RATEA / PSY.get_base_power(exporter.system)
+
             GI, BI = 0.0, 0.0
             GJ, BJ = 0.0, 0.0
 
@@ -1042,9 +1053,9 @@ function write_to_buffers!(
                     _value_or_default(PSY.get_rating_b(branch), PSSE_DEFAULT),
                     _value_or_default(PSY.get_rating_c(branch), PSSE_DEFAULT)
                 end
-            RATEA = (isa(RATEA, Number) && RATEA >= INFINITE_BOUND) ? 0.0 : RATEA
-            RATEB = (isa(RATEB, Number) && RATEB >= INFINITE_BOUND) ? 0.0 : RATEB
-            RATEC = (isa(RATEC, Number) && RATEC >= INFINITE_BOUND) ? 0.0 : RATEC
+            (RATEA, RATEB, RATEC) =
+                (_fix_3w_transformer_rating(x) for x in (RATEA, RATEB, RATEC))
+
             B = PSY.get_b(branch).from * 2
             GI, BI = 0.0, PSY.get_b(branch).from
             GJ, BJ = 0.0, PSY.get_b(branch).to
@@ -1764,7 +1775,7 @@ function write_to_buffers!(
     for (I, icd) in unique_icd_entries
         points = PSY.get_points(PSY.get_impedance_correction_curve(icd))
         fastprint(io, I)
-        fastprint(io, " ")
+        fastprint(io, ", ")
         for p in points
             fastprintdelim(io, p.x)
             fastprintdelim(io, p.y)
