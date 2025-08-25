@@ -1849,6 +1849,7 @@ function write_to_buffers!(
         VSREF = get(PSY.get_ext(facts), "VSREF", 0)
         REMOT = get(PSY.get_ext(facts), "REMOT", 0)
         MNAME = get(PSY.get_ext(facts), "MNAME", PSSE_DEFAULT)
+        MNAME = _psse_quote_string(String(MNAME))
 
         @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
             VSET, SHMX, TRMX, VTMN, VTMX, VSMX, IMX, LINX, RMPCT, OWNER,
@@ -1888,16 +1889,17 @@ function write_to_buffers!(
     for shunt in switched_shunts
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
-        MODSW = get(PSY.get_ext(shunt), "MODSW", PSSE_DEFAULT)
-        ADJM = get(PSY.get_ext(shunt), "ADJM", PSSE_DEFAULT)
+        MODSW = get(PSY.get_ext(shunt), "MODSW", 1)
+        ADJM = get(PSY.get_ext(shunt), "ADJM", 0)
         STAT = PSY.get_available(shunt) ? 1 : 0
         VSWHI = PSY.get_admittance_limits(shunt).max
         VSWLO = PSY.get_admittance_limits(shunt).min
-        SWREM = get(PSY.get_ext(shunt), "SWREM", PSSE_DEFAULT)
-        RMPCT = get(PSY.get_ext(shunt), "RMPCT", PSSE_DEFAULT)
+        SWREM = get(PSY.get_ext(shunt), "SWREM", 0)
+        RMPCT = get(PSY.get_ext(shunt), "RMPCT", 100.0)
         RMIDNT = get(PSY.get_ext(shunt), "RMIDNT", PSSE_DEFAULT)
         RMIDNT = _psse_quote_string(String(RMIDNT))
-        BINIT = imag(PSY.get_Y(shunt)) * PSY.get_base_power(exporter.system)
+        BINIT =
+            _psse_round_val(imag(PSY.get_Y(shunt)) * PSY.get_base_power(exporter.system))
 
         steps = PSY.get_number_of_steps(shunt)
         increases = PSY.get_Y_increase(shunt)
@@ -1906,7 +1908,7 @@ function write_to_buffers!(
         B_vals = []
         for (N, B) in zip(steps, increases)
             push!(N_vals, N)
-            push!(B_vals, imag(B) * PSY.get_base_power(exporter.system))
+            push!(B_vals, _psse_round_val(imag(B) * PSY.get_base_power(exporter.system)))
         end
 
         while length(N_vals) < 8
