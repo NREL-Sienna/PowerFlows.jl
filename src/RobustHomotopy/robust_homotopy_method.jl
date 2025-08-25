@@ -2,7 +2,6 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)
-
     residual, J, x = initialize_powerflow_variables(pf, data, time_step; kwargs...)
     Δt_k = get(kwargs, :Δt_k, DEFAULT_Δt_k)
     homHess = HomotopyHessian(data, residual, J, time_step)
@@ -74,7 +73,8 @@ function _second_order_newton(homHess::HomotopyHessian,
         )
         F_val = F_value(homHess, t_k, x, time_step)
         # TODO jump in tolerance. F_val ~ sum of squares, so...
-        converged = last_tk ? (norm(homHess.pfResidual.Rv, Inf) < tol) : (abs(F_val) < tol^2)
+        converged =
+            last_tk ? (norm(homHess.pfResidual.Rv, Inf) < tol) : (abs(F_val) < tol^2)
         i += 1
         if converged
             info_helper(homHess, t_k, F_val, "converged")

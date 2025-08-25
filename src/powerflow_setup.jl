@@ -133,11 +133,11 @@ function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
     data.bus_angles[data.valid_ix, time_step] .= p_inj
 end
 
-function initialize_powerflow_variables(pf::ACPowerFlow{T},
+function initialize_powerflow_variables(pf::ACPowerFlow{<:ACPowerFlowSolverType},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...,
-) where {T <: ACPowerFlowSolverType} 
+)
     residual = ACPowerFlowResidual(data, time_step)
     x0 = improve_x0(pf, data, residual, time_step)
     if OVERRIDE_x0 && :x0 in keys(kwargs)
