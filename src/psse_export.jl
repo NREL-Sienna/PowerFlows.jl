@@ -1825,30 +1825,30 @@ function write_to_buffers!(
     for facts in facts_devices
         sienna_bus_number = PSY.get_number(PSY.get_bus(facts))
         I = md["bus_number_mapping"][sienna_bus_number]
-        J = get(PSY.get_ext(facts), "J", PSSE_DEFAULT)
+        J = get(PSY.get_ext(facts), "J", 0)
         name = PSY.get_name(facts)
         if startswith(name, string(sienna_bus_number) * "_")
             name = name[(length(string(sienna_bus_number)) + 2):end]
         end
         NAME = _psse_quote_string(name)
         MODE = get(FACTS_MODE_MAP, PSY.get_control_mode(facts), 2)
-        PDES = PSSE_DEFAULT
-        QDES = PSSE_DEFAULT
+        PDES = get(PSY.get_ext(facts), "PDES", 0.0)
+        QDES = get(PSY.get_ext(facts), "QDES", 0.0)
         VSET = PSY.get_voltage_setpoint(facts)
         SHMX = PSY.get_max_shunt_current(facts)
-        TRMX = PSSE_DEFAULT
-        VTMX = PSSE_DEFAULT
-        VTMN = PSSE_DEFAULT
-        VSMX = PSSE_DEFAULT
-        IMX = PSSE_DEFAULT
-        LINX = PSSE_DEFAULT
+        TRMX = get(PSY.get_ext(facts), "TRMX", PSSE_INFINITY)
+        VTMX = get(PSY.get_ext(facts), "VTMX", 1.1)
+        VTMN = get(PSY.get_ext(facts), "VTMN", 0.9)
+        VSMX = get(PSY.get_ext(facts), "VSMX", 1.0)
+        IMX = get(PSY.get_ext(facts), "IMX", 0.0)
+        LINX = get(PSY.get_ext(facts), "LINX", 0.05)
         RMPCT = PSY.get_reactive_power_required(facts)
         OWNER = PSSE_DEFAULT
-        SET1 = PSSE_DEFAULT
-        SET2 = PSSE_DEFAULT
-        VSREF = PSSE_DEFAULT
-        REMOT = PSSE_DEFAULT
-        MNAME = PSSE_DEFAULT
+        SET1 = get(PSY.get_ext(facts), "SET1", 0.0)
+        SET2 = get(PSY.get_ext(facts), "SET2", 0.0)
+        VSREF = get(PSY.get_ext(facts), "VSREF", 0)
+        REMOT = get(PSY.get_ext(facts), "REMOT", 0)
+        MNAME = get(PSY.get_ext(facts), "MNAME", PSSE_DEFAULT)
 
         @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
             VSET, SHMX, TRMX, VTMN, VTMX, VSMX, IMX, LINX, RMPCT, OWNER,
