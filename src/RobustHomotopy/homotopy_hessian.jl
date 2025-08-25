@@ -71,9 +71,6 @@ function homotopy_x0!(x0::Vector{Float64}, data::ACPowerFlowData, time_step::Int
     return x0
 end
 
-# pf, kwargs, and x are here so that we can call initialize_powerflow_variables,
-# We could instead move that function call outside of this constructor, and pass in
-# pfResidual and J.
 function HomotopyHessian(data::ACPowerFlowData,
     pfResidual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,

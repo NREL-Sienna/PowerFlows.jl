@@ -203,7 +203,7 @@ function _trust_region_step(time_step::Int,
         stateVector.r .= residual.Rv
         residualSize = dot(residual.Rv, residual.Rv)
         linf = norm(residual.Rv, Inf)
-        @debug "sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed))), angle $(siground(theta))"
+        @debug "sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed)))"
         # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
         J(time_step)
         if autoscale
