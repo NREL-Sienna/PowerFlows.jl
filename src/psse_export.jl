@@ -9,6 +9,10 @@ const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.ISOLATED => 4,
 )
 const PSSE_BRANCH_SPECIAL_CHARACTERS = ["&", "@", "*"]
+const DISCRETE_BRANCH_MAP = Dict(
+    PSY.DiscreteControlledBranchType.SWITCH => "*",
+    PSY.DiscreteControlledBranchType.BREAKER => "@",
+)
 
 # Each of the groups in the PSS/3 v33 standard
 const PSSE_GROUPS_33 = [
@@ -1001,13 +1005,9 @@ function write_to_buffers!(
 
         if branch isa PSY.DiscreteControlledACBranch
             branch_type = PSY.get_discrete_branch_type(branch)
-            special_char = Dict(
-                PSY.DiscreteControlledBranchType.SWITCH => "*",
-                PSY.DiscreteControlledBranchType.BREAKER => "@",
-            )
 
-            if haskey(special_char, branch_type)
-                char = special_char[branch_type]
+            if haskey(DISCRETE_BRANCH_MAP, branch_type)
+                char = DISCRETE_BRANCH_MAP[branch_type]
                 CKT = if occursin("_", BASE_CKT)
                     replace(BASE_CKT, "_" => char)
                 else
@@ -1024,6 +1024,8 @@ function write_to_buffers!(
                     0.0,
                     0.0
                 end
+            # Setting a value of zero 0.0 when having a value greater than or equal to INFINITE_BOUND
+            # is the reverse operation of what's done in the PSY parsing side.
             RATEA =
                 RATEA >= INFINITE_BOUND ? 0.0 : RATEA / PSY.get_base_power(exporter.system)
             GI, BI = 0.0, 0.0
@@ -1471,7 +1473,7 @@ function write_to_buffers!(
     for (dcline, (from_n, to_n)) in dclines_with_numbers
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
-        dcline_name = string(get(PSY.get_ext(dcline), "psse_name", PSY.get_name(dcline)))
+        dcline_name = PSY.get_name(dcline)
         NAME = _is_valid_psse_name(dcline_name) ? dcline_name : first(dcline_name, 12)
         NAME = _psse_quote_string(NAME)
         MDC = Int(PSY.get_power_mode(dcline))
