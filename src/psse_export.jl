@@ -1484,8 +1484,8 @@ function write_to_buffers!(
         DELTI = get(PSY.get_ext(dcline), "DELTI", 0.0)
         METER = PSSE_DEFAULT
         DCVMIN = PSY.get_min_compounding_voltage(dcline)
-        CCCITMX = PSSE_DEFAULT
-        CCCACC = PSSE_DEFAULT
+        CCCITMX = get(PSY.get_ext(dcline), "CCCITMX", 20)
+        CCCACC = get(PSY.get_ext(dcline), "CCCACC", 1.0)
         IPR = I
         NBR = PSY.get_rectifier_bridges(dcline)
         ANMXR = _psse_round_val(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).max))
