@@ -1476,7 +1476,9 @@ function write_to_buffers!(
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
         dcline_name = PSY.get_name(dcline)
-        NAME = _is_valid_psse_name(dcline_name) ? dcline_name : first(dcline_name, 12)
+        # Using first() in this case will trigger an error since some DC lines have same
+        # rectifier bus number, and extracting the first 12 chars will return same DC line names.
+        NAME = _is_valid_psse_name(dcline_name) ? dcline_name : last(dcline_name, 12)
         NAME = _psse_quote_string(NAME)
         MDC = Int(PSY.get_power_mode(dcline))
         RDC =
