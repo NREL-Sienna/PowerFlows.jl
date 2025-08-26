@@ -1605,7 +1605,7 @@ function write_to_buffers!(
         end
         Zbase = base_voltage^2 / PSY.get_base_power(exporter.system)
         RDC_org = PSY.get_g(vscline) != 0.0 ? (1 / PSY.get_g(vscline)) * Zbase : 0.0
-        RDC = get_ext_default(vscline, "RDC", RDC_org)
+        RDC = get_ext_key_or_default(vscline, "RDC", RDC_org)
 
         IBUS1 = I
         if PSY.get_dc_voltage_control_from(vscline) &&
