@@ -14,6 +14,35 @@ const DISCRETE_BRANCH_MAP = Dict(
     PSY.DiscreteControlledBranchType.BREAKER => "@",
 )
 
+# Winding categories to map IC data to the transformer windings
+const WINDING_CATEGORIES = [
+    (PSY.WindingCategory.PRIMARY_WINDING, "1"),
+    (PSY.WindingCategory.SECONDARY_WINDING, "2"),
+    (PSY.WindingCategory.TERTIARY_WINDING, "3"),
+]
+
+# Accessor functions for each winding category
+const WINDING_ACCESSORS = Dict(
+    PSY.WindingCategory.PRIMARY_WINDING => (
+        get_base_voltage = PSY.get_base_voltage_primary,
+        get_turns_ratio = PSY.get_primary_turns_ratio,
+        get_angle = PSY.get_α_primary,
+        get_rating = PSY.get_rating_primary,
+    ),
+    PSY.WindingCategory.SECONDARY_WINDING => (
+        get_base_voltage = PSY.get_base_voltage_secondary,
+        get_turns_ratio = PSY.get_secondary_turns_ratio,
+        get_angle = PSY.get_α_secondary,
+        get_rating = PSY.get_rating_secondary,
+    ),
+    PSY.WindingCategory.TERTIARY_WINDING => (
+        get_base_voltage = PSY.get_base_voltage_tertiary,
+        get_turns_ratio = PSY.get_tertiary_turns_ratio,
+        get_angle = PSY.get_α_tertiary,
+        get_rating = PSY.get_rating_tertiary,
+    ),
+)
+
 # Each of the groups in the PSS/3 v33 standard
 const PSSE_GROUPS_33 = [
     "Case Identification Data",
@@ -1205,9 +1234,9 @@ function write_to_buffers!(
     for (transformer, bus_tuple) in
         vcat(transformers_with_numbers, transformers_3w_with_numbers)
         # Get common fields of both 2W and 3W transformers
-        CW = get(PSY.get_ext(transformer), "CW", 1)
-        CZ = get(PSY.get_ext(transformer), "CZ", 1)
-        CM = get(PSY.get_ext(transformer), "CM", 1)
+        CW = get(PSY.get_ext(transformer), "CW", PSSE_DEFAULT)
+        CZ = get(PSY.get_ext(transformer), "CZ", PSSE_DEFAULT)
+        CM = get(PSY.get_ext(transformer), "CM", PSSE_DEFAULT)
         NMETR = get(PSY.get_ext(transformer), "NMETR", PSSE_DEFAULT)
         MAG1 = get(PSY.get_ext(transformer), "MAG1", PSSE_DEFAULT)
         MAG2 = get(PSY.get_ext(transformer), "MAG2", PSSE_DEFAULT)
@@ -1327,98 +1356,45 @@ function write_to_buffers!(
             VMSTAR = get(PSY.get_ext(transformer), "VMSTAR", PSSE_DEFAULT)
             ANSTAR = get(PSY.get_ext(transformer), "ANSTAR", PSSE_DEFAULT)
 
-            # Primary winding data
-            NOMV1 = PSY.get_base_voltage_primary(transformer)
-            WINDV1 = PSY.get_primary_turns_ratio(transformer) * NOMV1
-            ANG1 = if (transformer isa PSY.PhaseShiftingTransformer3W)
-                _psse_round_val(rad2deg(PSY.get_α_primary(transformer)))
-            else
-                0.0
-            end
-            RAT1 = PSY.get_rating_primary(transformer)
-            RATA1 = get(PSY.get_ext(transformer), "RATA1", RAT1)
-            RATB1 = get(PSY.get_ext(transformer), "RATB1", RAT1)
-            RATC1 = get(PSY.get_ext(transformer), "RATC1", RAT1)
-            RATA1, RATB1, RATC1 = (_psse_round_val(x) for x in (RATA1, RATB1, RATC1))
-            COD1 = get(PSY.get_ext(transformer), "COD1", PSSE_DEFAULT)
-            CONT1 = get(PSY.get_ext(transformer), "CONT1", PSSE_DEFAULT)
-            RMA1 = get(PSY.get_ext(transformer), "RMA1", PSSE_DEFAULT)
-            RMI1 = get(PSY.get_ext(transformer), "RMI1", PSSE_DEFAULT)
-            VMA1 = get(PSY.get_ext(transformer), "VMA1", PSSE_DEFAULT)
-            VMI1 = get(PSY.get_ext(transformer), "VMI1", PSSE_DEFAULT)
-            NTP1 = get(PSY.get_ext(transformer), "NTP1", PSSE_DEFAULT)
-            TAB1 = 0
-            for icd_tr in supp_attr
-                if PSY.get_transformer_winding(icd_tr) ==
-                   PSY.WindingCategory.PRIMARY_WINDING
-                    TAB1 = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
+            winding_data = []
+            for (category, prefix) in WINDING_CATEGORIES
+                acc = WINDING_ACCESSORS[category]
+                NOMV = acc.get_base_voltage(transformer)
+                WINDV = acc.get_turns_ratio(transformer) * NOMV
+                ANG = if (transformer isa PSY.PhaseShiftingTransformer3W)
+                    _psse_round_val(rad2deg(acc.get_angle(transformer)))
+                else
+                    0.0
                 end
-            end
-            CR1 = get(PSY.get_ext(transformer), "CR1", PSSE_DEFAULT)
-            CX1 = get(PSY.get_ext(transformer), "CX1", PSSE_DEFAULT)
-            CNXA1 = get(PSY.get_ext(transformer), "CNXA1", PSSE_DEFAULT)
-
-            # Secondary winding data
-            NOMV2 = PSY.get_base_voltage_secondary(transformer)
-            WINDV2 = PSY.get_secondary_turns_ratio(transformer) * NOMV2
-            ANG2 = if (transformer isa PSY.PhaseShiftingTransformer3W)
-                _psse_round_val(rad2deg(PSY.get_α_secondary(transformer)))
-            else
-                0.0
-            end
-            RAT2 = PSY.get_rating_secondary(transformer)
-            RATA2 = get(PSY.get_ext(transformer), "RATA2", RAT2)
-            RATB2 = get(PSY.get_ext(transformer), "RATB2", RAT2)
-            RATC2 = get(PSY.get_ext(transformer), "RATC2", RAT2)
-            RATA2, RATB2, RATC2 = (_psse_round_val(x) for x in (RATA2, RATB2, RATC2))
-            COD2 = get(PSY.get_ext(transformer), "COD2", PSSE_DEFAULT)
-            CONT2 = get(PSY.get_ext(transformer), "CONT2", PSSE_DEFAULT)
-            RMA2 = get(PSY.get_ext(transformer), "RMA2", PSSE_DEFAULT)
-            RMI2 = get(PSY.get_ext(transformer), "RMI2", PSSE_DEFAULT)
-            VMA2 = get(PSY.get_ext(transformer), "VMA2", PSSE_DEFAULT)
-            VMI2 = get(PSY.get_ext(transformer), "VMI2", PSSE_DEFAULT)
-            NTP2 = get(PSY.get_ext(transformer), "NTP2", PSSE_DEFAULT)
-            TAB2 = 0
-            for icd_tr in supp_attr
-                if PSY.get_transformer_winding(icd_tr) ==
-                   PSY.WindingCategory.SECONDARY_WINDING
-                    TAB2 = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
+                RAT = acc.get_rating(transformer)
+                RATA = get(PSY.get_ext(transformer), "RATA$prefix", RAT)
+                RATB = get(PSY.get_ext(transformer), "RATB$prefix", RAT)
+                RATC = get(PSY.get_ext(transformer), "RATC$prefix", RAT)
+                RATA, RATB, RATC = (_psse_round_val(x) for x in (RATA, RATB, RATC))
+                COD = get(PSY.get_ext(transformer), "COD$prefix", PSSE_DEFAULT)
+                CONT = get(PSY.get_ext(transformer), "CONT$prefix", PSSE_DEFAULT)
+                RMA = get(PSY.get_ext(transformer), "RMA$prefix", PSSE_DEFAULT)
+                RMI = get(PSY.get_ext(transformer), "RMI$prefix", PSSE_DEFAULT)
+                VMA = get(PSY.get_ext(transformer), "VMA$prefix", PSSE_DEFAULT)
+                VMI = get(PSY.get_ext(transformer), "VMI$prefix", PSSE_DEFAULT)
+                NTP = get(PSY.get_ext(transformer), "NTP$prefix", PSSE_DEFAULT)
+                TAB = 0
+                for icd_tr in supp_attr
+                    if PSY.get_transformer_winding(icd_tr) == category
+                        TAB = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
+                    end
                 end
+                CR = get(PSY.get_ext(transformer), "CR$prefix", PSSE_DEFAULT)
+                CX = get(PSY.get_ext(transformer), "CX$prefix", PSSE_DEFAULT)
+                CNXA = get(PSY.get_ext(transformer), "CNXA$prefix", PSSE_DEFAULT)
+                push!(
+                    winding_data,
+                    (
+                        WINDV, NOMV, ANG, RATA, RATB, RATC, COD, CONT,
+                        RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
+                    ),
+                )
             end
-            CR2 = get(PSY.get_ext(transformer), "CR2", PSSE_DEFAULT)
-            CX2 = get(PSY.get_ext(transformer), "CX2", PSSE_DEFAULT)
-            CNXA2 = get(PSY.get_ext(transformer), "CNXA2", PSSE_DEFAULT)
-
-            # Tertiary winding data
-            NOMV3 = PSY.get_base_voltage_tertiary(transformer)
-            WINDV3 = PSY.get_tertiary_turns_ratio(transformer) * NOMV3
-            ANG3 = if (transformer isa PSY.PhaseShiftingTransformer3W)
-                _psse_round_val(rad2deg(PSY.get_α_tertiary(transformer)))
-            else
-                0.0
-            end
-            RAT3 = PSY.get_rating_tertiary(transformer)
-            RATA3 = get(PSY.get_ext(transformer), "RATA3", RAT3)
-            RATB3 = get(PSY.get_ext(transformer), "RATB3", RAT3)
-            RATC3 = get(PSY.get_ext(transformer), "RATC3", RAT3)
-            RATA3, RATB3, RATC3 = (_psse_round_val(x) for x in (RATA3, RATB3, RATC3))
-            COD3 = get(PSY.get_ext(transformer), "COD3", PSSE_DEFAULT)
-            CONT3 = get(PSY.get_ext(transformer), "CONT3", PSSE_DEFAULT)
-            RMA3 = get(PSY.get_ext(transformer), "RMA3", PSSE_DEFAULT)
-            RMI3 = get(PSY.get_ext(transformer), "RMI3", PSSE_DEFAULT)
-            VMA3 = get(PSY.get_ext(transformer), "VMA3", PSSE_DEFAULT)
-            VMI3 = get(PSY.get_ext(transformer), "VMI3", PSSE_DEFAULT)
-            NTP3 = get(PSY.get_ext(transformer), "NTP3", PSSE_DEFAULT)
-            TAB3 = 0
-            for icd_tr in supp_attr
-                if PSY.get_transformer_winding(icd_tr) ==
-                   PSY.WindingCategory.TERTIARY_WINDING
-                    TAB3 = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
-                end
-            end
-            CR3 = get(PSY.get_ext(transformer), "CR3", PSSE_DEFAULT)
-            CX3 = get(PSY.get_ext(transformer), "CX3", PSSE_DEFAULT)
-            CNXA3 = get(PSY.get_ext(transformer), "CNXA3", PSSE_DEFAULT)
 
             @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
                 MAG1, MAG2, NMETR, NAME, STAT)
@@ -1429,17 +1405,12 @@ function write_to_buffers!(
                 X2_3, SBAS2_3, R3_1, X3_1, SBAS3_1, VMSTAR, ANSTAR
             )
 
-            @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1, RATA1,
-                RATB1, RATC1, COD1, CONT1, RMA1, RMI1, VMA1, VMI1, NTP1, TAB1, CR1, CX1,
-                CNXA1)
-
-            @fastprintdelim_unroll(io, true, WINDV2, NOMV2, ANG2, RATA2,
-                RATB2, RATC2, COD2, CONT2, RMA2, RMI2, VMA2, VMI2, NTP2, TAB2, CR2, CX2,
-                CNXA2)
-
-            @fastprintdelim_unroll(io, true, WINDV3, NOMV3, ANG3, RATA3,
-                RATB3, RATC3, COD3, CONT3, RMA3, RMI3, VMA3, VMI3, NTP3, TAB3, CR3, CX3,
-                CNXA3)
+            for wd in winding_data
+                @fastprintdelim_unroll(io, true,
+                    wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
+                    wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17]
+                )
+            end
         else
             error("Unsupported transformer bus tuple length: $(length(bus_tuple))")
         end
