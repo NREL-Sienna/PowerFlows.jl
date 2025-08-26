@@ -438,6 +438,14 @@ function _is_valid_psse_name(name::String)
     return true  # Does the allowance for special characters cover *any* special characters?
 end
 
+function get_ext_key_or_default(component, key, default = PSSE_DEFAULT)
+    ext = PSY.get_ext(component)
+    if isnothing(ext)
+        return default
+    end
+    return get(ext, key, default)
+end
+
 """
 Given a vector of Sienna bus names, create a dictionary from Sienna bus name to
 PSS/E-compatible bus name. Guarantees determinism and minimal changes.
@@ -943,15 +951,15 @@ function write_to_buffers!(
             component_name = PSY.get_name(generator),
         )
         VS = PSY.get_magnitude(PSY.get_bus(generator))
-        IREG = get(PSY.get_ext(generator), "IREG", PSSE_DEFAULT)
+        IREG = get_ext_key_or_default(generator, "IREG")
         MBASE = PSY.get_base_power(generator)
-        ZR = get(PSY.get_ext(generator), "r", PSSE_DEFAULT)
-        ZX = get(PSY.get_ext(generator), "x", PSSE_DEFAULT)
-        RT = get(PSY.get_ext(generator), "rt", PSSE_DEFAULT)
-        XT = get(PSY.get_ext(generator), "xt", PSSE_DEFAULT)
-        GTAP = get(PSY.get_ext(generator), "GTAP", PSSE_DEFAULT)
+        ZR = get_ext_key_or_default(generator, "r")
+        ZX = get_ext_key_or_default(generator, "x")
+        RT = get_ext_key_or_default(generator, "rt")
+        XT = get_ext_key_or_default(generator, "xt")
+        GTAP = get_ext_key_or_default(generator, "GTAP")
         STAT = PSY.get_available(generator) ? 1 : 0
-        RMPCT = get(PSY.get_ext(generator), "RMPCT", PSSE_DEFAULT)
+        RMPCT = get_ext_key_or_default(generator, "RMPCT")
         active_power_limits =
             with_units_base(
                 () -> begin
@@ -986,8 +994,8 @@ function write_to_buffers!(
             field_name = "PB",
             component_name = PSY.get_name(generator),
         )
-        WMOD = get(PSY.get_ext(generator), "WMOD", PSSE_DEFAULT)
-        WPF = get(PSY.get_ext(generator), "WPF", PSSE_DEFAULT)
+        WMOD = get_ext_key_or_default(generator, "WMOD")
+        WPF = get_ext_key_or_default(generator, "WPF")
 
         @fastprintdelim_unroll(io, false, I, ID, PG, QG, QT, QB,
             VS, IREG, MBASE, ZR, ZX,
@@ -1039,8 +1047,8 @@ function write_to_buffers!(
         BASE_CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
         BASE_CKT = _psse_quote_string(BASE_CKT)
         ST = PSY.get_available(branch) ? 1 : 0
-        MET = get(PSY.get_ext(branch), "MET", PSSE_DEFAULT)
-        LEN = get(PSY.get_ext(branch), "LEN", PSSE_DEFAULT)
+        MET = get_ext_key_or_default(branch, "MET")
+        LEN = get_ext_key_or_default(branch, "LEN")
         R = PSY.get_r(branch)
         X = PSY.get_x(branch)
 
@@ -1234,16 +1242,17 @@ function write_to_buffers!(
     for (transformer, bus_tuple) in
         vcat(transformers_with_numbers, transformers_3w_with_numbers)
         # Get common fields of both 2W and 3W transformers
-        CW = get(PSY.get_ext(transformer), "CW", PSSE_DEFAULT)
-        CZ = get(PSY.get_ext(transformer), "CZ", PSSE_DEFAULT)
-        CM = get(PSY.get_ext(transformer), "CM", PSSE_DEFAULT)
-        NMETR = get(PSY.get_ext(transformer), "NMETR", PSSE_DEFAULT)
-        MAG1 = get(PSY.get_ext(transformer), "MAG1", PSSE_DEFAULT)
-        MAG2 = get(PSY.get_ext(transformer), "MAG2", PSSE_DEFAULT)
+        CW = get_ext_key_or_default(transformer, "CW")
+        CZ = get_ext_key_or_default(transformer, "CZ")
+        CM = get_ext_key_or_default(transformer, "CM")
+        NMETR = get_ext_key_or_default(transformer, "NMETR")
+        MAG1 = get_ext_key_or_default(transformer, "MAG1")
+        MAG2 = get_ext_key_or_default(transformer, "MAG2")
         supp_attr = PSY.get_supplemental_attributes(transformer)
-        VECGRP = get(PSY.get_ext(transformer), "VECGRP", PSSE_DEFAULT)
+        VECGRP = _psse_quote_string(get_ext_key_or_default(transformer, "VECGRP"))
 
-        if length(bus_tuple) == 2  # Handle both 2-winding transformer fields
+        winding_number = length(bus_tuple)
+        if winding_number == 2  # Handle both 2-winding transformer fields
             from_n, to_n = bus_tuple
             I = bus_number_mapping[from_n]
             J = bus_number_mapping[to_n]
@@ -1255,34 +1264,45 @@ function write_to_buffers!(
             CKT = _psse_quote_string(CKT)
             NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
             STAT = PSY.get_available(transformer) ? 1 : 0
-            NOMV1 = get(
-                PSY.get_ext(transformer),
+            NOMV1 = get_ext_key_or_default(
+                transformer,
                 "NOMV1",
                 PSY.get_base_voltage(PSY.get_from(PSY.get_arc(transformer))),
             )
-            NOMV2 = get(
-                PSY.get_ext(transformer),
+            NOMV2 = get_ext_key_or_default(
+                transformer,
                 "NOMV2",
                 PSY.get_base_voltage(PSY.get_to(PSY.get_arc(transformer))),
             )
-            SBASE1_2 =
-                get(PSY.get_ext(transformer), "SBASE1-2", PSY.get_base_power(transformer))
-            WINDV2 = get(
-                PSY.get_ext(transformer),
+            SBASE1_2 = get_ext_key_or_default(
+                transformer,
+                "SBASE1-2",
+                PSY.get_base_power(transformer),
+            )
+            WINDV2 = get_ext_key_or_default(
+                transformer,
                 "WINDV2",
                 PSY.get_base_voltage_secondary(transformer),
             )
             if hasproperty(transformer, :tap)
                 WINDV1 = PSY.get_tap(transformer) * WINDV2
             else
-                WINDV1 = get(
-                    PSY.get_ext(transformer),
+                WINDV1 = get_ext_key_or_default(
+                    transformer,
                     "WINDV1",
                     PSY.get_base_voltage_primary(transformer),
                 )
             end
-            R1_2 = get(PSY.get_ext(transformer), "R1-2", PSY.get_r(transformer))
-            X1_2 = get(PSY.get_ext(transformer), "X1-2", PSY.get_x(transformer))
+            R1_2 = get_ext_key_or_default(
+                transformer,
+                "R1-2",
+                PSY.get_r(transformer),
+            )
+            X1_2 = get_ext_key_or_default(
+                transformer,
+                "X1-2",
+                PSY.get_x(transformer),
+            )
 
             ANG1 = if (transformer isa PSY.PhaseShiftingTransformer)
                 rad2deg(PSY.get_α(transformer))
@@ -1296,17 +1316,17 @@ function write_to_buffers!(
                     _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
                 end
             RATA1, RATB1, RATC1 = (_psse_round_val(x) for x in (RATA1, RATB1, RATC1))
-            COD1 = get(PSY.get_ext(transformer), "COD1", PSSE_DEFAULT)
-            CONT1 = get(PSY.get_ext(transformer), "CONT1", PSSE_DEFAULT)
-            RMA1 = get(PSY.get_ext(transformer), "RMA1", PSSE_DEFAULT)
-            RMI1 = get(PSY.get_ext(transformer), "RMI1", PSSE_DEFAULT)
-            VMA1 = get(PSY.get_ext(transformer), "VMA1", PSSE_DEFAULT)
-            VMI1 = get(PSY.get_ext(transformer), "VMI1", PSSE_DEFAULT)
-            NTP1 = get(PSY.get_ext(transformer), "NTP1", PSSE_DEFAULT)
+            COD1 = get_ext_key_or_default(transformer, "COD1")
+            CONT1 = get_ext_key_or_default(transformer, "CONT1")
+            RMA1 = get_ext_key_or_default(transformer, "RMA1")
+            RMI1 = get_ext_key_or_default(transformer, "RMI1")
+            VMA1 = get_ext_key_or_default(transformer, "VMA1")
+            VMI1 = get_ext_key_or_default(transformer, "VMI1")
+            NTP1 = get_ext_key_or_default(transformer, "NTP1")
             TAB1 = !isempty(supp_attr) ? PSY.get_table_number(supp_attr[1]) : 0
-            CR1 = get(PSY.get_ext(transformer), "CR1", PSSE_DEFAULT)
-            CX1 = get(PSY.get_ext(transformer), "CX1", PSSE_DEFAULT)
-            CNXA1 = get(PSY.get_ext(transformer), "CNXA1", PSSE_DEFAULT)
+            CR1 = get_ext_key_or_default(transformer, "CR1")
+            CX1 = get_ext_key_or_default(transformer, "CX1")
+            CNXA1 = get_ext_key_or_default(transformer, "CNXA1")
 
             @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
                 MAG1, MAG2, NMETR, NAME, STAT)
@@ -1321,7 +1341,7 @@ function write_to_buffers!(
 
             @fastprintdelim_unroll(io, true, WINDV2, NOMV2)
 
-        elseif length(bus_tuple) == 3 # Handle 3-winding transformer fields
+        elseif winding_number == 3 # Handle 3-winding transformer fields
             p, s, t = bus_tuple
             I = bus_number_mapping[p]
             J = bus_number_mapping[s]
@@ -1344,17 +1364,17 @@ function write_to_buffers!(
                 STAT = PSY.get_available(transformer) ? 1 : 0
             end
 
-            R1_2 = get(PSY.get_ext(transformer), "R1-2", PSSE_DEFAULT)
-            X1_2 = get(PSY.get_ext(transformer), "X1-2", PSSE_DEFAULT)
+            R1_2 = get_ext_key_or_default(transformer, "R1-2", PSY.get_r_12(transformer))
+            X1_2 = get_ext_key_or_default(transformer, "X1-2", PSY.get_x_12(transformer))
             SBASE1_2 = PSY.get_base_power_12(transformer)
-            R2_3 = get(PSY.get_ext(transformer), "R2-3", PSSE_DEFAULT)
-            X2_3 = get(PSY.get_ext(transformer), "X2-3", PSSE_DEFAULT)
+            R2_3 = get_ext_key_or_default(transformer, "R2-3", PSY.get_r_23(transformer))
+            X2_3 = get_ext_key_or_default(transformer, "X2-3", PSY.get_x_23(transformer))
             SBAS2_3 = PSY.get_base_power_23(transformer)
-            R3_1 = get(PSY.get_ext(transformer), "R3-1", PSSE_DEFAULT)
-            X3_1 = get(PSY.get_ext(transformer), "X3-1", PSSE_DEFAULT)
+            R3_1 = get_ext_key_or_default(transformer, "R3-1", PSY.get_r_13(transformer))
+            X3_1 = get_ext_key_or_default(transformer, "X3-1", PSY.get_x_13(transformer))
             SBAS3_1 = PSY.get_base_power_13(transformer)
-            VMSTAR = get(PSY.get_ext(transformer), "VMSTAR", PSSE_DEFAULT)
-            ANSTAR = get(PSY.get_ext(transformer), "ANSTAR", PSSE_DEFAULT)
+            VMSTAR = get_ext_key_or_default(transformer, "VMSTAR")
+            ANSTAR = get_ext_key_or_default(transformer, "ANSTAR")
 
             winding_data = []
             for (category, prefix) in WINDING_CATEGORIES
@@ -1367,26 +1387,26 @@ function write_to_buffers!(
                     0.0
                 end
                 RAT = acc.get_rating(transformer)
-                RATA = get(PSY.get_ext(transformer), "RATA$prefix", RAT)
-                RATB = get(PSY.get_ext(transformer), "RATB$prefix", RAT)
-                RATC = get(PSY.get_ext(transformer), "RATC$prefix", RAT)
+                RATA = get_ext_key_or_default(transformer, "RATA$prefix", RAT)
+                RATB = get_ext_key_or_default(transformer, "RATB$prefix", RAT)
+                RATC = get_ext_key_or_default(transformer, "RATC$prefix", RAT)
                 RATA, RATB, RATC = (_psse_round_val(x) for x in (RATA, RATB, RATC))
-                COD = get(PSY.get_ext(transformer), "COD$prefix", PSSE_DEFAULT)
-                CONT = get(PSY.get_ext(transformer), "CONT$prefix", PSSE_DEFAULT)
-                RMA = get(PSY.get_ext(transformer), "RMA$prefix", PSSE_DEFAULT)
-                RMI = get(PSY.get_ext(transformer), "RMI$prefix", PSSE_DEFAULT)
-                VMA = get(PSY.get_ext(transformer), "VMA$prefix", PSSE_DEFAULT)
-                VMI = get(PSY.get_ext(transformer), "VMI$prefix", PSSE_DEFAULT)
-                NTP = get(PSY.get_ext(transformer), "NTP$prefix", PSSE_DEFAULT)
+                COD = get_ext_key_or_default(transformer, "COD$prefix")
+                CONT = get_ext_key_or_default(transformer, "CONT$prefix")
+                RMA = get_ext_key_or_default(transformer, "RMA$prefix")
+                RMI = get_ext_key_or_default(transformer, "RMI$prefix")
+                VMA = get_ext_key_or_default(transformer, "VMA$prefix")
+                VMI = get_ext_key_or_default(transformer, "VMI$prefix")
+                NTP = get_ext_key_or_default(transformer, "NTP$prefix")
                 TAB = 0
                 for icd_tr in supp_attr
                     if PSY.get_transformer_winding(icd_tr) == category
                         TAB = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
                     end
                 end
-                CR = get(PSY.get_ext(transformer), "CR$prefix", PSSE_DEFAULT)
-                CX = get(PSY.get_ext(transformer), "CX$prefix", PSSE_DEFAULT)
-                CNXA = get(PSY.get_ext(transformer), "CNXA$prefix", PSSE_DEFAULT)
+                CR = get_ext_key_or_default(transformer, "CR$prefix")
+                CX = get_ext_key_or_default(transformer, "CX$prefix")
+                CNXA = get_ext_key_or_default(transformer, "CNXA$prefix")
                 push!(
                     winding_data,
                     (
@@ -1468,11 +1488,11 @@ function write_to_buffers!(
         VSCHD = PSY.get_scheduled_dc_voltage(dcline)
         VCMOD = PSY.get_switch_mode_voltage(dcline)
         RCOMP = PSY.get_compounding_resistance(dcline)
-        DELTI = get(PSY.get_ext(dcline), "DELTI", PSSE_DEFAULT)
+        DELTI = get_ext_key_or_default(dcline, "DELTI")
         METER = PSSE_DEFAULT
         DCVMIN = PSY.get_min_compounding_voltage(dcline)
-        CCCITMX = get(PSY.get_ext(dcline), "CCCITMX", PSSE_DEFAULT)
-        CCCACC = get(PSY.get_ext(dcline), "CCCACC", PSSE_DEFAULT)
+        CCCITMX = get_ext_key_or_default(dcline, "CCCITMX")
+        CCCACC = get_ext_key_or_default(dcline, "CCCACC")
         IPR = I
         NBR = PSY.get_rectifier_bridges(dcline)
         ANMXR = _psse_round_val(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).max))
@@ -1489,10 +1509,10 @@ function write_to_buffers!(
         TMXR = PSY.get_rectifier_tap_limits(dcline).max
         TMNR = PSY.get_rectifier_tap_limits(dcline).min
         STPR = PSY.get_rectifier_tap_step(dcline)
-        ICR = get(PSY.get_ext(dcline), "ICR", PSSE_DEFAULT)
-        IFR = get(PSY.get_ext(dcline), "IFR", PSSE_DEFAULT)
-        ITR = get(PSY.get_ext(dcline), "ITR", PSSE_DEFAULT)
-        IDR = get(PSY.get_ext(dcline), "IDR", PSSE_DEFAULT)
+        ICR = get_ext_key_or_default(dcline, "ICR")
+        IFR = get_ext_key_or_default(dcline, "IFR")
+        ITR = get_ext_key_or_default(dcline, "ITR")
+        IDR = get_ext_key_or_default(dcline, "IDR")
         XCAPR =
             PSY.get_rectifier_capacitor_reactance(dcline) *
             PSY.get_rectifier_base_voltage(dcline)^2 /
@@ -1515,10 +1535,10 @@ function write_to_buffers!(
         TMXI = PSY.get_inverter_tap_limits(dcline).max
         TMNI = PSY.get_inverter_tap_limits(dcline).min
         STPI = PSY.get_inverter_tap_step(dcline)
-        ICI = get(PSY.get_ext(dcline), "ICI", PSSE_DEFAULT)
-        IFI = get(PSY.get_ext(dcline), "IFI", PSSE_DEFAULT)
-        ITI = get(PSY.get_ext(dcline), "ITI", PSSE_DEFAULT)
-        IDI = get(PSY.get_ext(dcline), "IDI", PSSE_DEFAULT)
+        ICI = get_ext_key_or_default(dcline, "ICI")
+        IFI = get_ext_key_or_default(dcline, "IFI")
+        ITI = get_ext_key_or_default(dcline, "ITI")
+        IDI = get_ext_key_or_default(dcline, "IDI")
         XCAPI =
             PSY.get_inverter_capacitor_reactance(dcline) *
             PSY.get_inverter_base_voltage(dcline)^2 /
@@ -1585,7 +1605,7 @@ function write_to_buffers!(
         end
         Zbase = base_voltage^2 / PSY.get_base_power(exporter.system)
         RDC_org = PSY.get_g(vscline) != 0.0 ? (1 / PSY.get_g(vscline)) * Zbase : 0.0
-        RDC = get(PSY.get_ext(vscline), "RDC", RDC_org)
+        RDC = get_ext_default(vscline, "RDC", RDC_org)
 
         IBUS1 = I
         if PSY.get_dc_voltage_control_from(vscline) &&
@@ -1600,7 +1620,7 @@ function write_to_buffers!(
             type1_org = 0
             type2_org = 0
         end
-        TYPE1 = get(PSY.get_ext(vscline), "TYPE_FROM", type1_org)
+        TYPE1 = get_ext_key_or_default(vscline, "TYPE_FROM", type1_org)
         MODE1 = PSY.get_ac_voltage_control_from(vscline) ? 1 : 2
         DCSET1 = PSY.get_dc_setpoint_from(vscline)
         ACSET1 = PSY.get_ac_setpoint_from(vscline)
@@ -1619,8 +1639,8 @@ function write_to_buffers!(
                 ) * 1e3 * PSY.get_base_power(exporter.system),
             ),
         )
-        ALOSS1 = get(PSY.get_ext(vscline), "ALOSS_FROM", ALOSS1_org)
-        MINLOSS1 = get(PSY.get_ext(vscline), "MINLOSS_FROM", psse_converter_loss_from)
+        ALOSS1 = get_ext_key_or_default(vscline, "ALOSS_FROM", ALOSS1_org)
+        MINLOSS1 = get_ext_key_or_default(vscline, "MINLOSS_FROM", psse_converter_loss_from)
         SMAX1 = PSY.get_rating_from(vscline)
         # This logic is implemented to revert what is done in the PSY parser side:
         # from_bus["SMAX"] == 0.0 ? PSSE_INFINITY : from_bus["SMAX"] / baseMVA
@@ -1642,11 +1662,11 @@ function write_to_buffers!(
         MINQ1 =
             PSY.get_reactive_power_limits_from(vscline).min *
             PSY.get_base_power(exporter.system)
-        REMOT1 = get(PSY.get_ext(vscline), "REMOT_FROM", PSSE_DEFAULT)
-        RMPCT1 = get(PSY.get_ext(vscline), "RMPCT_FROM", PSSE_DEFAULT0)
+        REMOT1 = get_ext_key_or_default(vscline, "REMOT_FROM")
+        RMPCT1 = get_ext_key_or_default(vscline, "RMPCT_FROM")
 
         IBUS2 = J
-        TYPE2 = get(PSY.get_ext(vscline), "TYPE_TO", type2_org)
+        TYPE2 = get_ext_key_or_default(vscline, "TYPE_TO", type2_org)
         MODE2 = PSY.get_ac_voltage_control_to(vscline) ? 1 : 2
         DCSET2 = PSY.get_dc_setpoint_to(vscline)
         ACSET2 = PSY.get_ac_setpoint_to(vscline)
@@ -1664,8 +1684,8 @@ function write_to_buffers!(
                 ) * 1e3 * PSY.get_base_power(exporter.system),
             ),
         )
-        ALOSS2 = get(PSY.get_ext(vscline), "ALOSS_TO", ALOSS2_org)
-        MINLOSS2 = get(PSY.get_ext(vscline), "MINLOSS_TO", psse_converter_loss_to)
+        ALOSS2 = get_ext_key_or_default(vscline, "ALOSS_TO", ALOSS2_org)
+        MINLOSS2 = get_ext_key_or_default(vscline, "MINLOSS_TO", psse_converter_loss_to)
         SMAX2 = PSY.get_rating_from(vscline)
         # This logic is implemented to revert what is done in the PSY parser side:
         # to_bus["SMAX"] == 0.0 ? PSSE_INFINITY : to_bus["SMAX"] / baseMVA
@@ -1687,8 +1707,8 @@ function write_to_buffers!(
         MINQ2 =
             PSY.get_reactive_power_limits_to(vscline).min *
             PSY.get_base_power(exporter.system)
-        REMOT2 = get(PSY.get_ext(vscline), "REMOT_TO", PSSE_DEFAULT)
-        RMPCT2 = get(PSY.get_ext(vscline), "RMPCT_TO", PSSE_DEFAULT)
+        REMOT2 = get_ext_key_or_default(vscline, "REMOT_TO")
+        RMPCT2 = get_ext_key_or_default(vscline, "RMPCT_TO")
 
         @fastprintdelim_unroll(io, false, NAME, MDC, RDC)
         fastprintln_psse_default_ownership(io)
@@ -1813,30 +1833,30 @@ function write_to_buffers!(
     for facts in facts_devices
         sienna_bus_number = PSY.get_number(PSY.get_bus(facts))
         I = md["bus_number_mapping"][sienna_bus_number]
-        J = get(PSY.get_ext(facts), "J", PSSE_DEFAULT)
+        J = get_ext_key_or_default(facts, "J")
         name = PSY.get_name(facts)
         if startswith(name, string(sienna_bus_number) * "_")
             name = name[(length(string(sienna_bus_number)) + 2):end]
         end
         NAME = _psse_quote_string(name)
         MODE = get(FACTS_MODE_MAP, PSY.get_control_mode(facts), 2)
-        PDES = get(PSY.get_ext(facts), "PDES", PSSE_DEFAULT)
-        QDES = get(PSY.get_ext(facts), "QDES", PSSE_DEFAULT)
+        PDES = get_ext_key_or_default(facts, "PDES")
+        QDES = get_ext_key_or_default(facts, "QDES")
         VSET = PSY.get_voltage_setpoint(facts)
         SHMX = PSY.get_max_shunt_current(facts)
-        TRMX = get(PSY.get_ext(facts), "TRMX", PSSE_INFINITY)
-        VTMX = get(PSY.get_ext(facts), "VTMX", PSSE_DEFAULT)
-        VTMN = get(PSY.get_ext(facts), "VTMN", PSSE_DEFAULT)
-        VSMX = get(PSY.get_ext(facts), "VSMX", PSSE_DEFAULT)
-        IMX = get(PSY.get_ext(facts), "IMX", PSSE_DEFAULT)
-        LINX = get(PSY.get_ext(facts), "LINX", PSSE_DEFAULT)
+        TRMX = get_ext_key_or_default(facts, "TRMX", PSSE_INFINITY)
+        VTMX = get_ext_key_or_default(facts, "VTMX")
+        VTMN = get_ext_key_or_default(facts, "VTMN")
+        VSMX = get_ext_key_or_default(facts, "VSMX")
+        IMX = get_ext_key_or_default(facts, "IMX")
+        LINX = get_ext_key_or_default(facts, "LINX")
         RMPCT = PSY.get_reactive_power_required(facts)
         OWNER = PSSE_DEFAULT
-        SET1 = get(PSY.get_ext(facts), "SET1", PSSE_DEFAULT)
-        SET2 = get(PSY.get_ext(facts), "SET2", PSSE_DEFAULT)
-        VSREF = get(PSY.get_ext(facts), "VSREF", PSSE_DEFAULT)
-        REMOT = get(PSY.get_ext(facts), "REMOT", PSSE_DEFAULT)
-        MNAME = get(PSY.get_ext(facts), "MNAME", PSSE_DEFAULT)
+        SET1 = get_ext_key_or_default(facts, "SET1")
+        SET2 = get_ext_key_or_default(facts, "SET2")
+        VSREF = get_ext_key_or_default(facts, "VSREF")
+        REMOT = get_ext_key_or_default(facts, "REMOT")
+        MNAME = get_ext_key_or_default(facts, "MNAME")
         MNAME = _psse_quote_string(String(MNAME))
 
         @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
@@ -1877,14 +1897,14 @@ function write_to_buffers!(
     for shunt in switched_shunts
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
-        MODSW = get(PSY.get_ext(shunt), "MODSW", PSSE_DEFAULT)
-        ADJM = get(PSY.get_ext(shunt), "ADJM", PSSE_DEFAULT)
+        MODSW = get_ext_key_or_default(shunt, "MODSW")
+        ADJM = get_ext_key_or_default(shunt, "ADJM")
         STAT = PSY.get_available(shunt) ? 1 : 0
         VSWHI = PSY.get_admittance_limits(shunt).max
         VSWLO = PSY.get_admittance_limits(shunt).min
-        SWREM = get(PSY.get_ext(shunt), "SWREM", PSSE_DEFAULT)
-        RMPCT = get(PSY.get_ext(shunt), "RMPCT", PSSE_DEFAULT)
-        RMIDNT = get(PSY.get_ext(shunt), "RMIDNT", PSSE_DEFAULT)
+        SWREM = get_ext_key_or_default(shunt, "SWREM")
+        RMPCT = get_ext_key_or_default(shunt, "RMPCT")
+        RMIDNT = get_ext_key_or_default(shunt, "RMIDNT")
         RMIDNT = _psse_quote_string(String(RMIDNT))
         BINIT =
             _psse_round_val(imag(PSY.get_Y(shunt)) * PSY.get_base_power(exporter.system))
