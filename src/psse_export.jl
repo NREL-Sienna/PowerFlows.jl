@@ -895,13 +895,7 @@ function write_to_buffers!(
             )
         PG, QG = with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
             gen_name = PSY.get_name(generator)
-            if generator isa PSY.SynchronousCondenser
-                pg = 0.0
-                qg = PSY.get_reactive_power(generator)
-            else
-                pg = PSY.get_active_power(generator)
-                qg = PSY.get_reactive_power(generator)
-            end
+            pg, qg = get_active_and_reactive_power_from_generator(generator)
 
             if endswith(gen_name, "_FR")
                 # From end: positive for power flowing out into the DC system
@@ -961,10 +955,6 @@ function write_to_buffers!(
         active_power_limits =
             with_units_base(
                 () -> begin
-                    if generator isa PSY.SynchronousCondenser
-                        return (min = 0.0, max = 0.0)
-                    end
-
                     limits = get_active_power_limits_for_power_flow(generator)
                     gen_name = PSY.get_name(generator)
                     if endswith(gen_name, "_FR") || endswith(gen_name, "_TO")

@@ -40,6 +40,10 @@ get_active_power_limits_for_power_flow(gen::PSY.Device) = PSY.get_active_power_l
 
 get_active_power_limits_for_power_flow(::PSY.Source) = (min = -Inf, max = Inf)
 
+function get_active_power_limits_for_power_flow(gen::PSY.SynchronousCondenser)
+    return (min = 0.0, max = 0.0)
+end
+
 function get_active_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
     val = PSY.get_active_power(gen)
     return (min = val, max = val)
@@ -51,6 +55,22 @@ get_active_power_limits_for_power_flow(gen::PSY.RenewableDispatch) =
 # TODO verify whether this is the correct behavior for Storage, (a) for redistribution and (b) for exporting
 get_active_power_limits_for_power_flow(gen::PSY.Storage) =
     (min = 0.0, max = PSY.get_output_active_power_limits(gen).max)
+
+"""
+Return the active and reactive power generation from a generator component.
+It's pg=0 as default for synchronous condensers since there's no field in the component for active power.
+"""
+function get_active_and_reactive_power_from_generator(gen::PSY.SynchronousCondenser)
+    pg = 0.0
+    qg = PSY.get_reactive_power(gen)
+    return pg, qg
+end
+
+function get_active_and_reactive_power_from_generator(gen)
+    pg = PSY.get_active_power(gen)
+    qg = PSY.get_reactive_power(gen)
+    return pg, qg
+end
 
 function _get_injections!(
     bus_activepower_injection::Vector{Float64},
