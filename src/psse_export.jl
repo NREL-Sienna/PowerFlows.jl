@@ -299,7 +299,8 @@ convert_empty_stringvec = Base.Fix1(convert_empty, Vector{String})
 _psse_quote_string(s::String) = "'$s'"
 
 # Rounds a value up to 4 decimals, to avoid large approximations in file
-_psse_round_val(val) = isa(val, String) ? val : round(val; digits = 4)
+_psse_round_val(val::String) = val
+_psse_round_val(val::Number) = round(val; digits = 4)
 
 branch_to_bus_numbers(branch) =
     PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch)))::Tuple{Int, Int}
@@ -664,10 +665,7 @@ function write_to_buffers!(
     check_33(exporter)
 
     loads = get!(exporter.components_cache, "loads") do
-        static_loads = collect(PSY.get_components(PSY.StaticLoad, exporter.system))
-        controllable_loads =
-            collect(PSY.get_components(PSY.ControllableLoad, exporter.system))
-        sort!(unique(vcat(static_loads, controllable_loads)); by = PSY.get_name)
+        sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system)); by = PSY.get_name)
     end
     load_name_mapping = get!(exporter.components_cache, "load_name_mapping") do
         create_component_ids(
