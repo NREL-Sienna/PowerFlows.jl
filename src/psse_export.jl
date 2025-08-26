@@ -777,6 +777,9 @@ function _make_gens_from_hvdc(
             0.0, 0.0, 0.0,
         ),
         base_power = PSY.get_base_power(exporter.system),
+        ext = Dict{String, Any}(
+            "HVDC_END" => suffix, 
+        )
     )
 end
 
@@ -886,28 +889,23 @@ function write_to_buffers!(
         end
         mapping
     end
+    base_power = PSY.get_base_power(exporter.system)
+
     for generator in generators
         sienna_bus_number = PSY.get_number(PSY.get_bus(generator))
+        hvdc_end = get_ext_key_or_default(generator, "HVDC_END", nothing)
         I = md["bus_number_mapping"][sienna_bus_number]
         ID =
             _psse_quote_string(
                 generator_name_mapping[(sienna_bus_number, PSY.get_name(generator))],
             )
         PG, QG = with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-            gen_name = PSY.get_name(generator)
             pg, qg = get_active_and_reactive_power_from_generator(generator)
-
-            if endswith(gen_name, "_FR")
-                # From end: positive for power flowing out into the DC system
-                pg = pg
-                base_power = PSY.get_base_power(exporter.system)
-                pg *= base_power
-                qg *= base_power
-            elseif endswith(gen_name, "_TO")
-                # To end: negative for power flowing in into the AC system
-                pg = -pg
-                base_power = PSY.get_base_power(exporter.system)
-                pg *= base_power
+            # From end: positive for power flowing out into the DC system
+            # To end: negative for power flowing in into the AC system
+            gen_sign = hvdc_end == "TO" ? -1.0 : 1.0
+            if hvdc_end !== nothing
+                pg *= gen_sign * base_power
                 qg *= base_power
             end
 
@@ -916,9 +914,7 @@ function write_to_buffers!(
         reactive_power_limits = with_units_base(
             () -> begin
                 limits = get_reactive_power_limits_for_power_flow(generator)
-                gen_name = PSY.get_name(generator)
-                if endswith(gen_name, "_FR") || endswith(gen_name, "_TO")
-                    base_power = PSY.get_base_power(exporter.system)
+                if hvdc_end !== nothing
                     scaled_limits = (
                         min = limits.min * base_power,
                         max = limits.max * base_power,
@@ -957,8 +953,7 @@ function write_to_buffers!(
                 () -> begin
                     limits = get_active_power_limits_for_power_flow(generator)
                     gen_name = PSY.get_name(generator)
-                    if endswith(gen_name, "_FR") || endswith(gen_name, "_TO")
-                        base_power = PSY.get_base_power(exporter.system)
+                    if hvdc_end !== nothing
                         scaled_limits = (
                             min = limits.min * base_power,
                             max = limits.max * base_power,
