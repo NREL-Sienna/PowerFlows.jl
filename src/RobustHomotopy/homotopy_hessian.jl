@@ -45,6 +45,7 @@ function F_value(hess::HomotopyHessian, t_k::Float64, x::Vector{Float64}, time_s
     return F_value
 end
 
+# slightly confusing that I have the field grad, and the argument grad.
 function gradient_value!(grad::Vector{Float64},
     hess::HomotopyHessian,
     t_k::Float64,
