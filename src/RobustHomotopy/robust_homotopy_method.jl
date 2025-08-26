@@ -107,8 +107,7 @@ function _second_order_newton_step(homHess::HomotopyHessian,
     φ_0 = F_val
     dφ_0 = dot(homHess.grad, δ)
     (α_star, F_val) = BackTracking()(ϕ, 1.0, φ_0, dφ_0)
-    
-    
+
     if !last_step && norm(δ * α_star) < INSUFFICIENT_CHANGE_IN_X
         # stop case 2: slow progress.
         info_helper(homHess, t_k, F_val, "slow progress")
