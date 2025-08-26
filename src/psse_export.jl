@@ -1209,8 +1209,8 @@ function write_to_buffers!(
         CZ = get(PSY.get_ext(transformer), "CZ", 1)
         CM = get(PSY.get_ext(transformer), "CM", 1)
         NMETR = get(PSY.get_ext(transformer), "NMETR", PSSE_DEFAULT)
-        MAG1 = get(PSY.get_ext(transformer), "MAG1", 0.0)
-        MAG2 = get(PSY.get_ext(transformer), "MAG2", 0.0)
+        MAG1 = get(PSY.get_ext(transformer), "MAG1", PSSE_DEFAULT)
+        MAG2 = get(PSY.get_ext(transformer), "MAG2", PSSE_DEFAULT)
         supp_attr = PSY.get_supplemental_attributes(transformer)
         VECGRP = get(PSY.get_ext(transformer), "VECGRP", PSSE_DEFAULT)
 
@@ -1262,22 +1262,22 @@ function write_to_buffers!(
             end
             RATA1, RATB1, RATC1 =
                 with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-                    _value_or_default(PSY.get_rating(transformer), 0.00),
-                    _value_or_default(PSY.get_rating_b(transformer), 0.00),
-                    _value_or_default(PSY.get_rating_c(transformer), 0.00)
+                    _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
+                    _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
+                    _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
                 end
             RATA1, RATB1, RATC1 = (_psse_round_val(x) for x in (RATA1, RATB1, RATC1))
-            COD1 = get(PSY.get_ext(transformer), "COD1", 0)
-            CONT1 = get(PSY.get_ext(transformer), "CONT1", 0)
-            RMA1 = get(PSY.get_ext(transformer), "RMA1", 1.1)
-            RMI1 = get(PSY.get_ext(transformer), "RMI1", 0.9)
-            VMA1 = get(PSY.get_ext(transformer), "VMA1", 1.1)
-            VMI1 = get(PSY.get_ext(transformer), "VMI1", 0.9)
-            NTP1 = get(PSY.get_ext(transformer), "NTP1", 33)
+            COD1 = get(PSY.get_ext(transformer), "COD1", PSSE_DEFAULT)
+            CONT1 = get(PSY.get_ext(transformer), "CONT1", PSSE_DEFAULT)
+            RMA1 = get(PSY.get_ext(transformer), "RMA1", PSSE_DEFAULT)
+            RMI1 = get(PSY.get_ext(transformer), "RMI1", PSSE_DEFAULT)
+            VMA1 = get(PSY.get_ext(transformer), "VMA1", PSSE_DEFAULT)
+            VMI1 = get(PSY.get_ext(transformer), "VMI1", PSSE_DEFAULT)
+            NTP1 = get(PSY.get_ext(transformer), "NTP1", PSSE_DEFAULT)
             TAB1 = !isempty(supp_attr) ? PSY.get_table_number(supp_attr[1]) : 0
-            CR1 = get(PSY.get_ext(transformer), "CR1", 0.0)
-            CX1 = get(PSY.get_ext(transformer), "CX1", 0.0)
-            CNXA1 = get(PSY.get_ext(transformer), "CNXA1", 0.0)
+            CR1 = get(PSY.get_ext(transformer), "CR1", PSSE_DEFAULT)
+            CX1 = get(PSY.get_ext(transformer), "CX1", PSSE_DEFAULT)
+            CNXA1 = get(PSY.get_ext(transformer), "CNXA1", PSSE_DEFAULT)
 
             @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
                 MAG1, MAG2, NMETR, NAME, STAT)
@@ -1315,17 +1315,17 @@ function write_to_buffers!(
                 STAT = PSY.get_available(transformer) ? 1 : 0
             end
 
-            R1_2 = get(PSY.get_ext(transformer), "R1-2", 0.0)
-            X1_2 = get(PSY.get_ext(transformer), "X1-2", 1.0)
+            R1_2 = get(PSY.get_ext(transformer), "R1-2", PSSE_DEFAULT)
+            X1_2 = get(PSY.get_ext(transformer), "X1-2", PSSE_DEFAULT)
             SBASE1_2 = PSY.get_base_power_12(transformer)
-            R2_3 = get(PSY.get_ext(transformer), "R2-3", 0.0)
-            X2_3 = get(PSY.get_ext(transformer), "X2-3", 1.0)
+            R2_3 = get(PSY.get_ext(transformer), "R2-3", PSSE_DEFAULT)
+            X2_3 = get(PSY.get_ext(transformer), "X2-3", PSSE_DEFAULT)
             SBAS2_3 = PSY.get_base_power_23(transformer)
-            R3_1 = get(PSY.get_ext(transformer), "R3-1", 0.0)
-            X3_1 = get(PSY.get_ext(transformer), "X3-1", 1.0)
+            R3_1 = get(PSY.get_ext(transformer), "R3-1", PSSE_DEFAULT)
+            X3_1 = get(PSY.get_ext(transformer), "X3-1", PSSE_DEFAULT)
             SBAS3_1 = PSY.get_base_power_13(transformer)
-            VMSTAR = get(PSY.get_ext(transformer), "VMSTAR", 1.0)
-            ANSTAR = get(PSY.get_ext(transformer), "ANSTAR", 0.0)
+            VMSTAR = get(PSY.get_ext(transformer), "VMSTAR", PSSE_DEFAULT)
+            ANSTAR = get(PSY.get_ext(transformer), "ANSTAR", PSSE_DEFAULT)
 
             # Primary winding data
             NOMV1 = PSY.get_base_voltage_primary(transformer)
@@ -1340,13 +1340,13 @@ function write_to_buffers!(
             RATB1 = get(PSY.get_ext(transformer), "RATB1", RAT1)
             RATC1 = get(PSY.get_ext(transformer), "RATC1", RAT1)
             RATA1, RATB1, RATC1 = (_psse_round_val(x) for x in (RATA1, RATB1, RATC1))
-            COD1 = get(PSY.get_ext(transformer), "COD1", 0)
-            CONT1 = get(PSY.get_ext(transformer), "CONT1", 0)
-            RMA1 = get(PSY.get_ext(transformer), "RMA1", 1.1)
-            RMI1 = get(PSY.get_ext(transformer), "RMI1", 0.9)
-            VMA1 = get(PSY.get_ext(transformer), "VMA1", 1.1)
-            VMI1 = get(PSY.get_ext(transformer), "VMI1", 0.9)
-            NTP1 = get(PSY.get_ext(transformer), "NTP1", 33)
+            COD1 = get(PSY.get_ext(transformer), "COD1", PSSE_DEFAULT)
+            CONT1 = get(PSY.get_ext(transformer), "CONT1", PSSE_DEFAULT)
+            RMA1 = get(PSY.get_ext(transformer), "RMA1", PSSE_DEFAULT)
+            RMI1 = get(PSY.get_ext(transformer), "RMI1", PSSE_DEFAULT)
+            VMA1 = get(PSY.get_ext(transformer), "VMA1", PSSE_DEFAULT)
+            VMI1 = get(PSY.get_ext(transformer), "VMI1", PSSE_DEFAULT)
+            NTP1 = get(PSY.get_ext(transformer), "NTP1", PSSE_DEFAULT)
             TAB1 = 0
             for icd_tr in supp_attr
                 if PSY.get_transformer_winding(icd_tr) ==
@@ -1354,9 +1354,9 @@ function write_to_buffers!(
                     TAB1 = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
                 end
             end
-            CR1 = get(PSY.get_ext(transformer), "CR1", 0.0)
-            CX1 = get(PSY.get_ext(transformer), "CX1", 0.0)
-            CNXA1 = get(PSY.get_ext(transformer), "CNXA1", 0.0)
+            CR1 = get(PSY.get_ext(transformer), "CR1", PSSE_DEFAULT)
+            CX1 = get(PSY.get_ext(transformer), "CX1", PSSE_DEFAULT)
+            CNXA1 = get(PSY.get_ext(transformer), "CNXA1", PSSE_DEFAULT)
 
             # Secondary winding data
             NOMV2 = PSY.get_base_voltage_secondary(transformer)
@@ -1371,13 +1371,13 @@ function write_to_buffers!(
             RATB2 = get(PSY.get_ext(transformer), "RATB2", RAT2)
             RATC2 = get(PSY.get_ext(transformer), "RATC2", RAT2)
             RATA2, RATB2, RATC2 = (_psse_round_val(x) for x in (RATA2, RATB2, RATC2))
-            COD2 = get(PSY.get_ext(transformer), "COD2", 0)
-            CONT2 = get(PSY.get_ext(transformer), "CONT2", 0)
-            RMA2 = get(PSY.get_ext(transformer), "RMA2", 1.1)
-            RMI2 = get(PSY.get_ext(transformer), "RMI2", 0.9)
-            VMA2 = get(PSY.get_ext(transformer), "VMA2", 1.1)
-            VMI2 = get(PSY.get_ext(transformer), "VMI2", 0.9)
-            NTP2 = get(PSY.get_ext(transformer), "NTP2", 33)
+            COD2 = get(PSY.get_ext(transformer), "COD2", PSSE_DEFAULT)
+            CONT2 = get(PSY.get_ext(transformer), "CONT2", PSSE_DEFAULT)
+            RMA2 = get(PSY.get_ext(transformer), "RMA2", PSSE_DEFAULT)
+            RMI2 = get(PSY.get_ext(transformer), "RMI2", PSSE_DEFAULT)
+            VMA2 = get(PSY.get_ext(transformer), "VMA2", PSSE_DEFAULT)
+            VMI2 = get(PSY.get_ext(transformer), "VMI2", PSSE_DEFAULT)
+            NTP2 = get(PSY.get_ext(transformer), "NTP2", PSSE_DEFAULT)
             TAB2 = 0
             for icd_tr in supp_attr
                 if PSY.get_transformer_winding(icd_tr) ==
@@ -1385,9 +1385,9 @@ function write_to_buffers!(
                     TAB2 = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
                 end
             end
-            CR2 = get(PSY.get_ext(transformer), "CR2", 0.0)
-            CX2 = get(PSY.get_ext(transformer), "CX2", 0.0)
-            CNXA2 = get(PSY.get_ext(transformer), "CNXA2", 0.0)
+            CR2 = get(PSY.get_ext(transformer), "CR2", PSSE_DEFAULT)
+            CX2 = get(PSY.get_ext(transformer), "CX2", PSSE_DEFAULT)
+            CNXA2 = get(PSY.get_ext(transformer), "CNXA2", PSSE_DEFAULT)
 
             # Tertiary winding data
             NOMV3 = PSY.get_base_voltage_tertiary(transformer)
@@ -1402,13 +1402,13 @@ function write_to_buffers!(
             RATB3 = get(PSY.get_ext(transformer), "RATB3", RAT3)
             RATC3 = get(PSY.get_ext(transformer), "RATC3", RAT3)
             RATA3, RATB3, RATC3 = (_psse_round_val(x) for x in (RATA3, RATB3, RATC3))
-            COD3 = get(PSY.get_ext(transformer), "COD3", 0)
-            CONT3 = get(PSY.get_ext(transformer), "CONT3", 0)
-            RMA3 = get(PSY.get_ext(transformer), "RMA3", 1.1)
-            RMI3 = get(PSY.get_ext(transformer), "RMI3", 0.9)
-            VMA3 = get(PSY.get_ext(transformer), "VMA3", 1.1)
-            VMI3 = get(PSY.get_ext(transformer), "VMI3", 0.9)
-            NTP3 = get(PSY.get_ext(transformer), "NTP3", 33)
+            COD3 = get(PSY.get_ext(transformer), "COD3", PSSE_DEFAULT)
+            CONT3 = get(PSY.get_ext(transformer), "CONT3", PSSE_DEFAULT)
+            RMA3 = get(PSY.get_ext(transformer), "RMA3", PSSE_DEFAULT)
+            RMI3 = get(PSY.get_ext(transformer), "RMI3", PSSE_DEFAULT)
+            VMA3 = get(PSY.get_ext(transformer), "VMA3", PSSE_DEFAULT)
+            VMI3 = get(PSY.get_ext(transformer), "VMI3", PSSE_DEFAULT)
+            NTP3 = get(PSY.get_ext(transformer), "NTP3", PSSE_DEFAULT)
             TAB3 = 0
             for icd_tr in supp_attr
                 if PSY.get_transformer_winding(icd_tr) ==
@@ -1416,9 +1416,9 @@ function write_to_buffers!(
                     TAB3 = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
                 end
             end
-            CR3 = get(PSY.get_ext(transformer), "CR3", 0.0)
-            CX3 = get(PSY.get_ext(transformer), "CX3", 0.0)
-            CNXA3 = get(PSY.get_ext(transformer), "CNXA3", 0.0)
+            CR3 = get(PSY.get_ext(transformer), "CR3", PSSE_DEFAULT)
+            CX3 = get(PSY.get_ext(transformer), "CX3", PSSE_DEFAULT)
+            CNXA3 = get(PSY.get_ext(transformer), "CNXA3", PSSE_DEFAULT)
 
             @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
                 MAG1, MAG2, NMETR, NAME, STAT)
@@ -1497,11 +1497,11 @@ function write_to_buffers!(
         VSCHD = PSY.get_scheduled_dc_voltage(dcline)
         VCMOD = PSY.get_switch_mode_voltage(dcline)
         RCOMP = PSY.get_compounding_resistance(dcline)
-        DELTI = get(PSY.get_ext(dcline), "DELTI", 0.0)
+        DELTI = get(PSY.get_ext(dcline), "DELTI", PSSE_DEFAULT)
         METER = PSSE_DEFAULT
         DCVMIN = PSY.get_min_compounding_voltage(dcline)
-        CCCITMX = get(PSY.get_ext(dcline), "CCCITMX", 20)
-        CCCACC = get(PSY.get_ext(dcline), "CCCACC", 1.0)
+        CCCITMX = get(PSY.get_ext(dcline), "CCCITMX", PSSE_DEFAULT)
+        CCCACC = get(PSY.get_ext(dcline), "CCCACC", PSSE_DEFAULT)
         IPR = I
         NBR = PSY.get_rectifier_bridges(dcline)
         ANMXR = _psse_round_val(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).max))
@@ -1518,9 +1518,9 @@ function write_to_buffers!(
         TMXR = PSY.get_rectifier_tap_limits(dcline).max
         TMNR = PSY.get_rectifier_tap_limits(dcline).min
         STPR = PSY.get_rectifier_tap_step(dcline)
-        ICR = get(PSY.get_ext(dcline), "ICR", 0)
-        IFR = get(PSY.get_ext(dcline), "IFR", 0)
-        ITR = get(PSY.get_ext(dcline), "ITR", 0)
+        ICR = get(PSY.get_ext(dcline), "ICR", PSSE_DEFAULT)
+        IFR = get(PSY.get_ext(dcline), "IFR", PSSE_DEFAULT)
+        ITR = get(PSY.get_ext(dcline), "ITR", PSSE_DEFAULT)
         IDR = get(PSY.get_ext(dcline), "IDR", PSSE_DEFAULT)
         XCAPR =
             PSY.get_rectifier_capacitor_reactance(dcline) *
@@ -1544,9 +1544,9 @@ function write_to_buffers!(
         TMXI = PSY.get_inverter_tap_limits(dcline).max
         TMNI = PSY.get_inverter_tap_limits(dcline).min
         STPI = PSY.get_inverter_tap_step(dcline)
-        ICI = get(PSY.get_ext(dcline), "ICI", 0)
-        IFI = get(PSY.get_ext(dcline), "IFI", 0)
-        ITI = get(PSY.get_ext(dcline), "ITI", 0)
+        ICI = get(PSY.get_ext(dcline), "ICI", PSSE_DEFAULT)
+        IFI = get(PSY.get_ext(dcline), "IFI", PSSE_DEFAULT)
+        ITI = get(PSY.get_ext(dcline), "ITI", PSSE_DEFAULT)
         IDI = get(PSY.get_ext(dcline), "IDI", PSSE_DEFAULT)
         XCAPI =
             PSY.get_inverter_capacitor_reactance(dcline) *
@@ -1671,8 +1671,8 @@ function write_to_buffers!(
         MINQ1 =
             PSY.get_reactive_power_limits_from(vscline).min *
             PSY.get_base_power(exporter.system)
-        REMOT1 = get(PSY.get_ext(vscline), "REMOT_FROM", 0)
-        RMPCT1 = get(PSY.get_ext(vscline), "RMPCT_FROM", 100.0)
+        REMOT1 = get(PSY.get_ext(vscline), "REMOT_FROM", PSSE_DEFAULT)
+        RMPCT1 = get(PSY.get_ext(vscline), "RMPCT_FROM", PSSE_DEFAULT0)
 
         IBUS2 = J
         TYPE2 = get(PSY.get_ext(vscline), "TYPE_TO", type2_org)
@@ -1716,8 +1716,8 @@ function write_to_buffers!(
         MINQ2 =
             PSY.get_reactive_power_limits_to(vscline).min *
             PSY.get_base_power(exporter.system)
-        REMOT2 = get(PSY.get_ext(vscline), "REMOT_TO", 0)
-        RMPCT2 = get(PSY.get_ext(vscline), "RMPCT_TO", 100.0)
+        REMOT2 = get(PSY.get_ext(vscline), "REMOT_TO", PSSE_DEFAULT)
+        RMPCT2 = get(PSY.get_ext(vscline), "RMPCT_TO", PSSE_DEFAULT)
 
         @fastprintdelim_unroll(io, false, NAME, MDC, RDC)
         fastprintln_psse_default_ownership(io)
@@ -1842,29 +1842,29 @@ function write_to_buffers!(
     for facts in facts_devices
         sienna_bus_number = PSY.get_number(PSY.get_bus(facts))
         I = md["bus_number_mapping"][sienna_bus_number]
-        J = get(PSY.get_ext(facts), "J", 0)
+        J = get(PSY.get_ext(facts), "J", PSSE_DEFAULT)
         name = PSY.get_name(facts)
         if startswith(name, string(sienna_bus_number) * "_")
             name = name[(length(string(sienna_bus_number)) + 2):end]
         end
         NAME = _psse_quote_string(name)
         MODE = get(FACTS_MODE_MAP, PSY.get_control_mode(facts), 2)
-        PDES = get(PSY.get_ext(facts), "PDES", 0.0)
-        QDES = get(PSY.get_ext(facts), "QDES", 0.0)
+        PDES = get(PSY.get_ext(facts), "PDES", PSSE_DEFAULT)
+        QDES = get(PSY.get_ext(facts), "QDES", PSSE_DEFAULT)
         VSET = PSY.get_voltage_setpoint(facts)
         SHMX = PSY.get_max_shunt_current(facts)
         TRMX = get(PSY.get_ext(facts), "TRMX", PSSE_INFINITY)
-        VTMX = get(PSY.get_ext(facts), "VTMX", 1.1)
-        VTMN = get(PSY.get_ext(facts), "VTMN", 0.9)
-        VSMX = get(PSY.get_ext(facts), "VSMX", 1.0)
-        IMX = get(PSY.get_ext(facts), "IMX", 0.0)
-        LINX = get(PSY.get_ext(facts), "LINX", 0.05)
+        VTMX = get(PSY.get_ext(facts), "VTMX", PSSE_DEFAULT)
+        VTMN = get(PSY.get_ext(facts), "VTMN", PSSE_DEFAULT)
+        VSMX = get(PSY.get_ext(facts), "VSMX", PSSE_DEFAULT)
+        IMX = get(PSY.get_ext(facts), "IMX", PSSE_DEFAULT)
+        LINX = get(PSY.get_ext(facts), "LINX", PSSE_DEFAULT)
         RMPCT = PSY.get_reactive_power_required(facts)
         OWNER = PSSE_DEFAULT
-        SET1 = get(PSY.get_ext(facts), "SET1", 0.0)
-        SET2 = get(PSY.get_ext(facts), "SET2", 0.0)
-        VSREF = get(PSY.get_ext(facts), "VSREF", 0)
-        REMOT = get(PSY.get_ext(facts), "REMOT", 0)
+        SET1 = get(PSY.get_ext(facts), "SET1", PSSE_DEFAULT)
+        SET2 = get(PSY.get_ext(facts), "SET2", PSSE_DEFAULT)
+        VSREF = get(PSY.get_ext(facts), "VSREF", PSSE_DEFAULT)
+        REMOT = get(PSY.get_ext(facts), "REMOT", PSSE_DEFAULT)
         MNAME = get(PSY.get_ext(facts), "MNAME", PSSE_DEFAULT)
         MNAME = _psse_quote_string(String(MNAME))
 
@@ -1906,13 +1906,13 @@ function write_to_buffers!(
     for shunt in switched_shunts
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
-        MODSW = get(PSY.get_ext(shunt), "MODSW", 1)
-        ADJM = get(PSY.get_ext(shunt), "ADJM", 0)
+        MODSW = get(PSY.get_ext(shunt), "MODSW", PSSE_DEFAULT)
+        ADJM = get(PSY.get_ext(shunt), "ADJM", PSSE_DEFAULT)
         STAT = PSY.get_available(shunt) ? 1 : 0
         VSWHI = PSY.get_admittance_limits(shunt).max
         VSWLO = PSY.get_admittance_limits(shunt).min
-        SWREM = get(PSY.get_ext(shunt), "SWREM", 0)
-        RMPCT = get(PSY.get_ext(shunt), "RMPCT", 100.0)
+        SWREM = get(PSY.get_ext(shunt), "SWREM", PSSE_DEFAULT)
+        RMPCT = get(PSY.get_ext(shunt), "RMPCT", PSSE_DEFAULT)
         RMIDNT = get(PSY.get_ext(shunt), "RMIDNT", PSSE_DEFAULT)
         RMIDNT = _psse_quote_string(String(RMIDNT))
         BINIT =
