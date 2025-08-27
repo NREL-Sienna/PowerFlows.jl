@@ -778,8 +778,8 @@ function _make_gens_from_hvdc(
         ),
         base_power = PSY.get_base_power(exporter.system),
         ext = Dict{String, Any}(
-            "HVDC_END" => suffix, 
-        )
+            "HVDC_END" => suffix,
+        ),
     )
 end
 
