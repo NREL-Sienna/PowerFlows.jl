@@ -38,6 +38,18 @@ flows and angles, as well as these ones.
 - `bus_reactivepower_withdrawals::Matrix{Float64}`:
         "(b, t)" matrix containing the bus reactive power withdrawals. b:
         number of buses, t: number of time period.
+- `bus_activepower_constant_current_withdrawals::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus active power constant current
+        withdrawals. b: number of buses, t: number of time period.
+- `bus_reactivepower_constant_current_withdrawals::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus reactive power constant current
+        withdrawals. b: number of buses, t: number of time period.
+- `bus_activepower_constant_impedance_withdrawals::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus active power constant impedance
+        withdrawals. b: number of buses, t: number of time period.
+- `bus_reactivepower_constant_impedance_withdrawals::Matrix{Float64}`:  
+        "(b, t)" matrix containing the bus reactive power constant impedance
+        withdrawals. b: number of buses, t: number of time period.
 - `bus_reactivepower_bounds::Matrix{Float64}`:
         "(b, t)" matrix containing upper and lower bounds for the reactive supply at each
         bus at each time period.
@@ -88,6 +100,10 @@ struct PowerFlowData{
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
     bus_reactivepower_withdrawals::Matrix{Float64}
+    bus_activepower_constant_current_withdrawals::Matrix{Float64}
+    bus_reactivepower_constant_current_withdrawals::Matrix{Float64}
+    bus_activepower_constant_impedance_withdrawals::Matrix{Float64}
+    bus_reactivepower_constant_impedance_withdrawals::Matrix{Float64}
     bus_reactivepower_bounds::Matrix{Vector{Float64}}
     generator_slack_participation_factors::Union{
         Vector{Dict{Tuple{DataType, String}, Float64}},
@@ -110,6 +126,8 @@ struct PowerFlowData{
     converged::Vector{Bool}
     loss_factors::Union{Matrix{Float64}, Nothing}
     calculate_loss_factors::Bool
+    voltage_stability_factors::Union{Matrix{Float64}, Nothing}
+    calculate_voltage_stability_factors::Bool
 end
 
 # aliases for specific type parameter combinations.
@@ -167,7 +185,36 @@ get_branch_lookup(pfd::PowerFlowData) = pfd.branch_lookup
 get_bus_activepower_injection(pfd::PowerFlowData) = pfd.bus_activepower_injection
 get_bus_reactivepower_injection(pfd::PowerFlowData) = pfd.bus_reactivepower_injection
 get_bus_activepower_withdrawals(pfd::PowerFlowData) = pfd.bus_activepower_withdrawals
+get_bus_activepower_constant_current_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_activepower_constant_current_withdrawals
+get_bus_activepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_activepower_constant_impedance_withdrawals
 get_bus_reactivepower_withdrawals(pfd::PowerFlowData) = pfd.bus_reactivepower_withdrawals
+get_bus_reactivepower_constant_current_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_reactivepower_constant_current_withdrawals
+get_bus_reactivepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_reactivepower_constant_impedance_withdrawals
+
+function get_bus_activepower_total_withdrawals(pfd::PowerFlowData, ix::Int, time_step::Int)
+    return pfd.bus_activepower_withdrawals[ix, time_step] +
+           pfd.bus_activepower_constant_current_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step] +
+           pfd.bus_activepower_constant_impedance_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step]^2
+end
+
+function get_bus_reactivepower_total_withdrawals(
+    pfd::PowerFlowData,
+    ix::Int,
+    time_step::Int,
+)
+    return pfd.bus_reactivepower_withdrawals[ix, time_step] +
+           pfd.bus_reactivepower_constant_current_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step] +
+           pfd.bus_reactivepower_constant_impedance_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step]^2
+end
+
 get_bus_reactivepower_bounds(pfd::PowerFlowData) = pfd.bus_reactivepower_bounds
 get_bus_slack_participation_factors(pfd::PowerFlowData) =
     pfd.bus_slack_participation_factors
@@ -193,12 +240,20 @@ get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 supports_multi_period(::PowerFlowData) = true
 get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
+get_calculate_loss_factors(pfd::PowerFlowData) = pfd.calculate_loss_factors
+get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
+get_calculate_voltage_stability_factors(pfd::PowerFlowData) =
+    pfd.calculate_voltage_stability_factors
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
     pfd.bus_reactivepower_injection .= 0.0
     pfd.bus_activepower_withdrawals .= 0.0
+    pfd.bus_activepower_constant_current_withdrawals .= 0.0
+    pfd.bus_activepower_constant_impedance_withdrawals .= 0.0
     pfd.bus_reactivepower_withdrawals .= 0.0
+    pfd.bus_reactivepower_constant_current_withdrawals .= 0.0
+    pfd.bus_reactivepower_constant_impedance_withdrawals .= 0.0
     return
 end
 
@@ -219,6 +274,7 @@ function _calculate_neighbors(
     return neighbors
 end
 
+# TODO: add a function in PNM for this.
 function error_if_has_network_reduction_data(m::PNM.PowerNetworkMatrix)
     if length(PNM.get_reverse_bus_search_map(m.network_reduction_data)) > 0
         throw(
@@ -259,9 +315,10 @@ function PowerFlowData(
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     check_connectivity::Bool = true,
-    correct_bustypes = false)
+    correct_bustypes::Bool = false)
     calculate_loss_factors = pf.calculate_loss_factors
     generator_slack_participation_factors = pf.generator_slack_participation_factors
+    calculate_voltage_stability_factors = pf.calculate_voltage_stability_factors
     # assign timestep_names
     # timestep names are then allocated in a dictionary to map matrix columns
     if time_steps != 0
@@ -279,6 +336,7 @@ function PowerFlowData(
         sys;
         check_connectivity = check_connectivity,
         make_branch_admittance_matrices = true,
+        include_constant_impedance_loads = false,
     )
     error_if_has_network_reduction_data(power_network_matrix)
 
@@ -310,6 +368,12 @@ function PowerFlowData(
     else
         loss_factors = nothing
     end
+    if calculate_voltage_stability_factors
+        voltage_stability_factors =
+            Matrix{Float64}(undef, (n_buses, length(timestep_names)))
+    else
+        voltage_stability_factors = nothing
+    end
     if get_robust_power_flow(pf)
         aux_network_matrix = PNM.ABA_Matrix(sys)
     else
@@ -331,8 +395,10 @@ function PowerFlowData(
         converged,
         loss_factors,
         calculate_loss_factors,
-        correct_bustypes,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
         generator_slack_participation_factors,
+        correct_bustypes,
     )
 end
 
@@ -390,6 +456,9 @@ function PowerFlowData(
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -403,8 +472,11 @@ function PowerFlowData(
         valid_ix,
         converged,
         loss_factors,
-        correct_bustypes,
         calculate_loss_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
+        correct_bustypes,
     )
 end
 
@@ -460,10 +532,13 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[1]
     branch_lookup = power_network_matrix.lookup[2]
-    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
+    valid_ix = setdiff(1:n_buses, PNM.get_ref_bus_position(power_network_matrix))
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -477,8 +552,11 @@ function PowerFlowData(
         valid_ix,
         converged,
         loss_factors,
-        correct_bustypes,
         calculate_loss_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
+        correct_bustypes,
     )
 end
 
@@ -533,10 +611,13 @@ function PowerFlowData(
 
     bus_lookup = power_network_matrix.lookup[2]
     branch_lookup = power_network_matrix.lookup[1]
-    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
+    valid_ix = setdiff(1:n_buses, PNM.get_ref_bus_position(power_network_matrix))
     converged = fill(false, time_steps)
     loss_factors = nothing
     calculate_loss_factors = false
+    generator_slack_participation_factors = nothing
+    voltage_stability_factors = nothing
+    calculate_voltage_stability_factors = false
     return make_dc_powerflowdata(
         sys,
         time_steps,
@@ -550,8 +631,11 @@ function PowerFlowData(
         valid_ix,
         converged,
         loss_factors,
-        correct_bustypes,
         calculate_loss_factors,
+        voltage_stability_factors,
+        calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
+        correct_bustypes,
     )
 end
 

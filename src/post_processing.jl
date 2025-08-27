@@ -124,12 +124,28 @@ Obtain total load on bus b
 function _get_load_data(sys::PSY.System, b::PSY.ACBus)
     active_power = 0.0
     reactive_power = 0.0
-    for l in PSY.get_components(x -> !isa(x, PSY.FixedAdmittance), PSY.ElectricLoad, sys)
-        !PSY.get_available(l) && continue
-        if (l.bus == b)
-            active_power += get_total_p(l)
-            reactive_power += get_total_q(l)
-        end
+    for l in PSY.get_components(
+        x -> get_available(x) && (get_bus(x) == b),
+        _SingleComponentLoad,
+        sys,
+    )
+        active_power += PSY.get_active_power(l)
+        reactive_power += PSY.get_reactive_power(l)
+    end
+    for l in PSY.get_components(
+        x -> get_available(x) && (get_bus(x) == b),
+        PSY.StandardLoad,
+        sys,
+    )
+        vm = PSY.get_magnitude(b)
+        active_power +=
+            PSY.get_constant_active_power(l) +
+            PSY.get_current_active_power(l) * vm +
+            PSY.get_impedance_active_power(l) * vm^2
+        reactive_power +=
+            PSY.get_constant_reactive_power(l) +
+            PSY.get_current_reactive_power(l) * vm +
+            PSY.get_impedance_reactive_power(l) * vm^2
     end
     return active_power, reactive_power
 end
@@ -525,15 +541,15 @@ function write_powerflow_solution!(
     return
 end
 
-# returns list of branches names and buses numbers: ABA case
-function _get_branches_buses(data::ABAPowerFlowData)
+# returns list of arc tuples and buses numbers: ABA case
+function _get_arcs_buses(data::ABAPowerFlowData)
     return axes(data.aux_network_matrix)[2], axes(data.aux_network_matrix)[1]
 end
 
-# returns list of branches names and buses numbers: PTDF and virtual PTDF case
-function _get_branches_buses(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData})
-    return PNM.get_branch_ax(data.power_network_matrix),
-    PNM.get_bus_ax(data.power_network_matrix)
+# returns list of arc tuples and buses numbers: PTDF and virtual PTDF case
+function _get_arcs_buses(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData})
+    return PNM.get_arc_axis(data.power_network_matrix),
+    PNM.get_bus_axis(data.power_network_matrix)
 end
 
 function _allocate_results_data(
@@ -599,15 +615,16 @@ function write_results(
 
     ### non time-dependent variables
 
-    # get bus and branches
-    branches, buses = _get_branches_buses(data)
+    # get bus and arcs
+    arcs, buses = _get_arcs_buses(data)
 
     branch_lookup = get_branch_lookup(data)
-    # get branches from/to buses
-    from_bus = first.(branches)
-    to_bus = last.(branches)
+    # get arcs from/to buses
+    from_bus = first.(arcs)
+    to_bus = last.(arcs)
 
-    branch_names = fill("", length(branches))
+    # FIXME what if there's a network reduction?
+    branch_names = fill("", length(arcs))
     branch_lookup = get_branch_lookup(data)
     for br in PSY.get_components(PSY.ACTransmission, sys)
         if br isa PSY.Transformer3W

@@ -13,6 +13,7 @@ using DataStructures
 import SparseArrays
 import SparseArrays: SparseMatrixCSC, sparse, sprandn, sprand
 import Random
+import PROPACK
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder
@@ -42,19 +43,27 @@ include("test_utils/legacy_pf.jl")
 const AC_SOLVERS_TO_TEST = (
     LUACPowerFlow,
     NewtonRaphsonACPowerFlow,
-    TrustRegionACPowerFlow)
+    TrustRegionACPowerFlow,
+    LevenbergMarquardtACPowerFlow,
+    RobustHomotopyPowerFlow,
+)
 
 LOG_FILE = "power-flows.log"
 
 const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl"
 # "test_dc_powerflow.jl",
+# "test_distributed_slack.jl",
+# "test_homotopy_hessian.jl",
 # "test_iterative_methods.jl",
 # "test_klu_linear_solver_cache.jl",
+# "test_loss_factors.jl",
 # "test_multiperiod_ac_powerflow.jl",
 # "test_multiperiod_dc_powerflow.jl",
 # "test_powerflow_data.jl",
 # "test_psse_export.jl",
+# "test_robust_powerflow.jl",
 # "test_solve_powerflow.jl",
+# "test_state_indexing_helpers.jl",
 ]
 
 LOG_LEVELS = Dict(

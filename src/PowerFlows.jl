@@ -6,6 +6,8 @@ export PowerFlowData
 export DCPowerFlow
 export NewtonRaphsonACPowerFlow
 export TrustRegionACPowerFlow
+export LevenbergMarquardtACPowerFlow
+export RobustHomotopyPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
 export PTDFDCPowerFlow
@@ -23,15 +25,18 @@ import DataFrames
 import PowerSystems
 import PowerSystems: System, with_units_base
 import LinearAlgebra
+import LinearAlgebra: norm, dot, ldiv!
 import LinearAlgebra: norm, dot
+import JSON3
 import KLU
 import SparseArrays
 import InfrastructureSystems
 import PowerNetworkMatrices
-import SparseArrays: SparseMatrixCSC, SparseVector, sparse, sparsevec
-import JSON3
+import SparseArrays: SparseMatrixCSC, SparseVector, sparse, sparsevec, AbstractSparseMatrix
+import StaticArrays: MVector
 import DataStructures: OrderedDict
 import Dates
+
 const IS = InfrastructureSystems
 const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
@@ -48,6 +53,15 @@ include("state_indexing_helpers.jl")
 include("ac_power_flow_residual.jl")
 include("ac_power_flow_jacobian.jl")
 include("solve_ac_powerflow.jl")
+include("powerflow_setup.jl")
 include("powerflow_method.jl")
+include("levenberg-marquardt.jl")
 include("post_processing.jl")
+include("RobustHomotopy/HessianSolver/hessian_solver.jl")
+include("RobustHomotopy/HessianSolver/KLU_hessian_solver.jl")
+include("RobustHomotopy/HessianSolver/fixed_structure_CHOLMOD.jl")
+include("RobustHomotopy/HessianSolver/cholesky_solver.jl")
+include("RobustHomotopy/homotopy_hessian.jl")
+include("RobustHomotopy/wolfe_conditions.jl")
+include("RobustHomotopy/robust_homotopy_method.jl")
 end

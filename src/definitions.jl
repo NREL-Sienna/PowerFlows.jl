@@ -35,6 +35,8 @@ const DEFAULT_λ_0 = 0.000001 # starting damping factor. TODO could start smalle
 # input is mix of powers (100 MW), voltages (0.8-1.2), and angles (-π/4 to π/4).
 const DEFAULT_MAX_TEST_λs = 20 # give up after increasing damping factor 20 times.
 
+const DEFAULT_Δt_k = 0.2
+
 const AC_PF_KW = []
 
 const PSSE_DEFAULT_EXPORT_NAME = "export"
@@ -50,8 +52,19 @@ const MinMax = NamedTuple{(:min, :max), Tuple{Float64, Float64}}
 const DEFAULT_VALIDATION_RANGE = (min = 0.5, max = 1.5)
 # const MAX_INDS_TO_PRINT = 10
 
+
 const FACTS_MODE_MAP = Dict(
     PSY.FACTSOperationModes.OOS => 0,
     PSY.FACTSOperationModes.NML => 1,
     PSY.FACTSOperationModes.BYP => 2,
 )
+
+const OVERWRITE_NON_CONVERGED = true # overwrite non-converged time steps with NaN values
+
+# robust homotopy method constants
+const β = 10.0^-3
+const INSUFFICIENT_CHANGE_IN_X = 10^(-11)
+const GRAD_ZERO = 2 * eps()
+# cholesky solver specific
+const VTypes = SparseArrays.CHOLMOD.VRealTypes
+const ITypes = SparseArrays.CHOLMOD.ITypes

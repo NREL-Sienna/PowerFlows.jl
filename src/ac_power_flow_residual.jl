@@ -56,10 +56,10 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     for (ix, bt) in zip(1:n_buses, bus_type)
         P_net[ix] =
             data.bus_activepower_injection[ix, time_step] -
-            data.bus_activepower_withdrawals[ix, time_step]
+            get_bus_activepower_total_withdrawals(data, ix, time_step)
         Q_net[ix] =
             data.bus_reactivepower_injection[ix, time_step] -
-            data.bus_reactivepower_withdrawals[ix, time_step]
+            get_bus_reactivepower_total_withdrawals(data, ix, time_step)
         P_net_set[ix] = P_net[ix]
 
         bt ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
@@ -181,9 +181,9 @@ function _setpq(
 )
     # Set the active and reactive power injections at the bus
     data.bus_activepower_injection[ix, time_step] =
-        P_net[ix] + data.bus_activepower_withdrawals[ix, time_step]
+        P_net[ix] + get_bus_activepower_total_withdrawals(data, ix, time_step)
     data.bus_reactivepower_injection[ix, time_step] =
-        Q_net[ix] + data.bus_reactivepower_withdrawals[ix, time_step]
+        Q_net[ix] + get_bus_reactivepower_total_withdrawals(data, ix, time_step)
 end
 
 # dispatching on Val for performance reasons.
@@ -235,8 +235,8 @@ end
 
 function _set_state_variables_at_bus!(
     ix::Int,
-    ::Vector{Float64},
-    ::Vector{Float64},
+    P_net::Vector{Float64},
+    Q_net::Vector{Float64},
     ::Vector{Float64},
     ::Float64,
     StateVector::Vector{Float64},
@@ -244,8 +244,28 @@ function _set_state_variables_at_bus!(
     time_step::Int64,
     ::Val{PSY.ACBusTypes.PQ})
     # When bustype == PQ PSY.ACBus, state variables are Voltage Magnitude and Voltage Angle
-    data.bus_magnitude[ix, time_step] = StateVector[2 * ix - 1]
+    # delta_vm = (vm_1 = data.bus_magnitude[ix, time_step]) - StateVector[2 * ix - 1]
+    vm_1 = data.bus_magnitude[ix, time_step]
+    vm_2 = StateVector[2 * ix - 1]
+    data.bus_magnitude[ix, time_step] = vm_2
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
+    # update P_net and Q_net for ZIP loads
+    P_net[ix] +=
+        data.bus_activepower_constant_current_withdrawals[ix, time_step] * (vm_1 - vm_2) +
+        data.bus_activepower_constant_impedance_withdrawals[ix, time_step] *
+        (vm_1^2 - vm_2^2)
+    Q_net[ix] +=
+        data.bus_reactivepower_constant_current_withdrawals[ix, time_step] * (vm_1 - vm_2) +
+        data.bus_reactivepower_constant_impedance_withdrawals[ix, time_step] *
+        (vm_1^2 - vm_2^2)
+    # set the active and reactive power injections at the bus
+    _setpq(
+        ix,
+        P_net,
+        Q_net,
+        data,
+        time_step,
+    )
 end
 
 """
@@ -294,17 +314,45 @@ function _update_residual_values!(
 
         for (ix, bt, p_bus_slack) in
             zip(subnetwork_buses, bus_types[subnetwork_buses], P_slack)
-            _set_state_variables_at_bus!(
-                ix,
-                P_net,
-                Q_net,
-                P_net_set,
-                p_bus_slack,
-                x,
-                data,
-                time_step,
-                Val(bt),
-            )
+            # creating Val(bt) at runtime is slow, requires allocating: split into cases
+            # explicitly, so instead it's Val(compile-time constant).
+            if bt == PSY.ACBusTypes.PQ
+                _set_state_variables_at_bus!(
+                    ix,
+                    P_net,
+                    Q_net,
+                    P_net_set,
+                    p_bus_slack,
+                    x,
+                    data,
+                    time_step,
+                    Val(PSY.ACBusTypes.PQ),
+                )
+            elseif bt == PSY.ACBusTypes.PV
+                _set_state_variables_at_bus!(
+                    ix,
+                    P_net,
+                    Q_net,
+                    P_net_set,
+                    p_bus_slack,
+                    x,
+                    data,
+                    time_step,
+                    Val(PSY.ACBusTypes.PV),
+                )
+            elseif bt == PSY.ACBusTypes.REF
+                _set_state_variables_at_bus!(
+                    ix,
+                    P_net,
+                    Q_net,
+                    P_net_set,
+                    p_bus_slack,
+                    x,
+                    data,
+                    time_step,
+                    Val(PSY.ACBusTypes.REF),
+                )
+            end
         end
     end
 

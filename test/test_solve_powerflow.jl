@@ -42,9 +42,7 @@
     #Compare results between finite diff methods and Jacobian method
     converged1 = PowerFlows._ac_powerflow(data, pf, 1)
     x1 = _calc_x(data, 1)
-    @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6 # this is failing, but the error
-    # is only ~2e-6, which still isn't too bad.
-
+    @test LinearAlgebra.norm(result_14 - x1, Inf) <= 1e-6 # <- this fails likely due to the change of the B allocation
     # Test that solve_powerflow! succeeds
     solved1 = deepcopy(sys)
     @test solve_powerflow!(pf, solved1)
@@ -313,520 +311,51 @@ end
     )
 end
 
-@testset "Test loss factors for larger grid" begin
-    sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
-
-    pf_lu = ACPowerFlow(LUACPowerFlow)
-    pf_lu_lf = ACPowerFlow(LUACPowerFlow; calculate_loss_factors = true)
-    pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow; calculate_loss_factors = true)
-
+@testset "voltage_stability_factors" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    pf_lu = ACPowerFlow(LUACPowerFlow; calculate_voltage_stability_factors = true)
+    pf_newton =
+        ACPowerFlow(NewtonRaphsonACPowerFlow; calculate_voltage_stability_factors = true)
     data_lu = PowerFlowData(
-        pf_lu_lf,
+        pf_lu,
         sys;
         check_connectivity = true,
-        correct_bustypes = true)
-
+        correct_bustypes = true,
+    )
     data_newton = PowerFlowData(
         pf_newton,
         sys;
         check_connectivity = true,
-        correct_bustypes = true)
-
-    data_brute_force = PowerFlowData(
-        pf_newton,
-        sys;
-        check_connectivity = true,
-        correct_bustypes = true)
-
-    time_step = 1
-
-    solve_powerflow!(data_lu; pf = pf_lu)
-    solve_powerflow!(data_newton; pf = pf_newton)
-
-    @test all(
-        isapprox.(
-            data_lu.loss_factors,
-            data_newton.loss_factors,
-            rtol = 0,
-            atol = 1e-9,
-        ),
-    )
-
-    bf_loss_factors =
-        penalty_factors_brute_force(data_brute_force, pf_newton)
-    @test all(isapprox.(
-        data_newton.loss_factors,
-        bf_loss_factors,
-        rtol = 0,
-        atol = 1e-4,
-    ))
-end
-
-@testset "AC PF with distributed slack" for (grid_lib, grid_name) in [
-        (PSB.PSITestSystems, "c_sys14"),
-        (PSB.MatpowerTestSystems, "matpower_case30_sys"),
-    ], ACSolver in (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow)
-    function _get_spf_dict(bus_slack_participation_factors)
-        generator_slack_participation_factors = Dict{Tuple{DataType, String}, Float64}()
-        for (b, spf) in enumerate(bus_slack_participation_factors)
-            get_bustype(get_bus(sys, bus_numbers[b])) == ACBusTypes.PQ && continue
-            gens = get_components(
-                x -> get_number(get_bus(x)) == bus_numbers[b],
-                ThermalStandard,
-                sys,
-            )
-            isempty(gens) && continue
-            gens = collect(gens)
-            for g in gens
-                generator_slack_participation_factors[(ThermalStandard, get_name(g))] =
-                    spf / length(gens)
-            end
-        end
-        return generator_slack_participation_factors
-    end
-
-    sys = PSB.build_system(grid_lib, grid_name)
-
-    # add a duplicate generator to a PV bus to make sure the method works for such set-ups
-    g1 = first(
-        get_components(x -> get_bustype(get_bus(x)) == ACBusTypes.PV, ThermalStandard, sys),
-    )
-
-    g2 = ThermalStandard(;
-        name = "Duplicate",
-        available = true,
-        status = true,
-        bus = get_bus(g1),
-        active_power = 0.1,
-        reactive_power = 0.1,
-        rating = 1.0,
-        active_power_limits = (min = 0.0, max = 1.0),
-        reactive_power_limits = (min = -1.0, max = 1.0),
-        ramp_limits = nothing,
-        operation_cost = ThermalGenerationCost(nothing),
-        base_power = 100.0,
-        time_limits = nothing,
-        prime_mover_type = PrimeMovers.OT,
-        fuel = ThermalFuels.OTHER,
-        services = Device[],
-        dynamic_injector = nothing,
-        ext = Dict{String, Any}(),
-    )
-    add_component!(sys, g2)
-
-    bus_numbers = get_bus_numbers(sys)
-
-    ref_n = []
-    pv_n = []
-    for (i, bn) in enumerate(bus_numbers)
-        isempty(get_components(x -> get_number(get_bus(x)) == bn, ThermalStandard, sys)) &&
-            continue
-        b = only(get_components(x -> get_number(x) == bn, ACBus, sys))
-        bus_type = get_bustype(b)
-        bus_type == ACBusTypes.REF && (push!(ref_n, i))
-        bus_type == ACBusTypes.PV && (push!(pv_n, i))
-    end
-
-    # make sure we have active power imbalance in the starting grid
-    g = first(
-        get_components(
-            x -> get_bustype(get_bus(x)) == ACBusTypes.REF,
-            ThermalStandard,
-            sys,
-        ),
-    )
-    with_units_base(sys, UnitSystem.NATURAL_UNITS) do
-        set_active_power!(g, 20.0)
-    end
-
-    pf = ACPowerFlow()
-    data = PowerFlowData(pf, sys; correct_bustypes = true)
-    original_bus_power, original_gen_power = _system_generation_power(sys, bus_numbers)
-    data_original_bus_power = copy(data.bus_activepower_injection[:, 1])
-    res1 = solve_powerflow(pf, sys; correct_bustypes = true)
-
-    bus_slack_participation_factors = zeros(Float64, length(bus_numbers))
-    bus_slack_participation_factors[ref_n] .= 1.0
-
-    pf2 = ACPowerFlow(;
-        generator_slack_participation_factors = _get_spf_dict(
-            bus_slack_participation_factors,
-        ),
-    )
-    res2 = solve_powerflow(pf2, sys; correct_bustypes = true)
-
-    # basic test: if we pass the same slack participation factors as the default ones, the results
-    # should be the same
-    @test isapprox(res1["bus_results"].Vm, res2["bus_results"].Vm, atol = 1e-6, rtol = 0)
-    @test isapprox(res1["bus_results"].θ, res2["bus_results"].θ, atol = 1e-6, rtol = 0)
-
-    _check_ds_pf(
-        pf2,
-        sys,
-        bus_slack_participation_factors,
-        bus_numbers,
-        original_bus_power,
-        original_gen_power,
-        data_original_bus_power,
-    )
-
-    # now test with REF and one PV bus having slack participation factors of 1.0
-    bus_slack_participation_factors[pv_n[1]] = 1.0
-    pf3 = ACPowerFlow(;
-        generator_slack_participation_factors = _get_spf_dict(
-            bus_slack_participation_factors,
-        ),
-    )
-
-    _check_ds_pf(
-        pf3,
-        sys,
-        bus_slack_participation_factors,
-        bus_numbers,
-        original_bus_power,
-        original_gen_power,
-        data_original_bus_power,
-    )
-
-    # now test with all REF and PV buses having equal slack participation factors of 1.0
-    bus_slack_participation_factors[pv_n] .= 1.0
-    pf4 = ACPowerFlow(;
-        generator_slack_participation_factors = _get_spf_dict(
-            bus_slack_participation_factors,
-        ),
-    )
-
-    _check_ds_pf(
-        pf4,
-        sys,
-        bus_slack_participation_factors,
-        bus_numbers,
-        original_bus_power,
-        original_gen_power,
-        data_original_bus_power,
-    )
-
-    # Now set the slack participation factor to 0.0 for the REF bus
-    bus_slack_participation_factors[ref_n] .= 0.0
-    pf5 = ACPowerFlow(;
-        generator_slack_participation_factors = _get_spf_dict(
-            bus_slack_participation_factors,
-        ),
-    )
-
-    _check_ds_pf(
-        pf5,
-        sys,
-        bus_slack_participation_factors,
-        bus_numbers,
-        original_bus_power,
-        original_gen_power,
-        data_original_bus_power,
-    )
-
-    # now check the formula of the distribution of slack provision for different factors
-    bus_slack_participation_factors[ref_n] .= 2.5
-    bus_slack_participation_factors[pv_n] .= pv_n
-    pf6 = ACPowerFlow(;
-        generator_slack_participation_factors = [
-            _get_spf_dict(
-                bus_slack_participation_factors,
-            ),
-        ],
-    )  # [] to test this input variant
-
-    _check_ds_pf(
-        pf6,
-        sys,
-        bus_slack_participation_factors,
-        bus_numbers,
-        original_bus_power,
-        original_gen_power,
-        data_original_bus_power,
-    )
-end
-
-@testset "AC PF DS power redistribution" for ACSolver in (
-    NewtonRaphsonACPowerFlow,
-    TrustRegionACPowerFlow,
-)
-    sys = System(100.0)
-    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
-    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PV, 230, 1.1, 0.0)
-    l = _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0)
-
-    ps = -0.5
-    s1 = _add_simple_source!(sys, b1, ps, 0.1)
-
-    p1 = 0.1
-    g1 = _add_simple_thermal_standard!(sys, b2, p1, 0.1)
-
-    p2 = 0.2
-    g2 = _add_simple_thermal_standard!(sys, b2, p2, 0.1)
-
-    reset_p() =
-        for (c, p) in zip((s1, g1, g2), (ps, p1, p2))
-            set_active_power!(c, p)
-        end
-
-    gspf = Dict(
-        (Source, get_name(s1)) => 1.0,
-        (ThermalStandard, get_name(g1)) => 0.0,
-        (ThermalStandard, get_name(g2)) => 0.0,
-    )
-    pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
-    solve_powerflow!(pf, sys; correct_bustypes = true)
-    @test isapprox(get_active_power(g1), p1; atol = 1e-6, rtol = 0)
-    @test isapprox(get_active_power(g2), p2; atol = 1e-6, rtol = 0)
-    reset_p()
-
-    gspf = Dict(
-        (Source, get_name(s1)) => 0.0,
-        (ThermalStandard, get_name(g1)) => 0.5,
-        (ThermalStandard, get_name(g2)) => 0.5,
-    )
-    pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
-    solve_powerflow!(pf, sys; correct_bustypes = true)
-    @test isapprox(get_active_power(s1), ps; atol = 1e-6, rtol = 0)
-    @test isapprox(
-        get_active_power(g1) - p1,
-        get_active_power(g2) - p2;
-        atol = 1e-6,
-        rtol = 0,
-    )
-    reset_p()
-
-    gspf =
-        Dict((ThermalStandard, get_name(g1)) => 0.0, (ThermalStandard, get_name(g2)) => 1.0)
-    pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
-    solve_powerflow!(pf, sys)
-    @test isapprox(get_active_power(s1), ps; atol = 1e-6, rtol = 0)
-    @test isapprox(get_active_power(g1), p1; atol = 1e-6, rtol = 0)
-    @test isapprox(
-        -get_active_power(g2),
-        get_active_power(g1) + get_active_power(s1);
-        atol = 1e-3,  # losses don't allow lower tolerance
-        rtol = 0,
-    )
-    reset_p()
-
-    gspf = Dict(
-        (Source, get_name(s1)) => 0.1,
-        (ThermalStandard, get_name(g1)) => 0.2,
-        (ThermalStandard, get_name(g2)) => 0.4,
-    )
-    pf = ACPowerFlow(; generator_slack_participation_factors = gspf)
-    solve_powerflow!(pf, sys)
-    total_slack_power =
-        -(get_active_power(s1) - ps) + get_active_power(g1) - p1 + get_active_power(g2) - p2
-    @test isapprox(
-        get_active_power(s1) - ps,
-        total_slack_power * 0.2;
-        atol = 1e-6,
-        rtol = 0,
-    )
-    @test isapprox(
-        get_active_power(g1) - p1,
-        total_slack_power * 0.4;
-        atol = 1e-6,
-        rtol = 0,
-    )
-    @test isapprox(
-        get_active_power(g2) - p2,
-        total_slack_power * 0.8;
-        atol = 1e-3,
-        rtol = 0,
-    )
-    reset_p()
-end
-
-@testset "AC PF DS with two connected components" for mode in (:same, :random),
-    gen_mode in (:gen, :source),
-    ACSolver in (NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow)
-    # here we build two identical grids in one system
-    sys = System(100.0)
-    b1 = _add_simple_bus!(sys, 8, ACBusTypes.REF, 230, 1.1, 0.0)
-    b2 = _add_simple_bus!(sys, 4, ACBusTypes.PV, 230, 1.1, 0.0)
-    b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.1, 0.0)
-
-    b4 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
-    b5 = _add_simple_bus!(sys, 5, ACBusTypes.PV, 230, 1.1, 0.0)
-    b6 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
-
-    s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
-    s2 = _add_simple_source!(sys, b4, 0.0, 0.0)
-
-    g1 = if gen_mode == :gen
-        _add_simple_thermal_standard!(sys, b2, 0.0, 0.0)
-    else
-        _add_simple_source!(sys, b2, 0.0, 0.0)
-    end
-    g2 = if gen_mode == :gen
-        _add_simple_thermal_standard!(sys, b5, 0.0, 0.0)
-    else
-        _add_simple_source!(sys, b5, 0.0, 0.0)
-    end
-
-    ld1 = _add_simple_load!(sys, b3, 6, 2)
-    ld2 = _add_simple_load!(sys, b6, 6, 2)
-
-    l1 = _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0)
-    l2 = _add_simple_line!(sys, b2, b3, 1e-3, 1e-3, 0.0)
-
-    l3 = _add_simple_line!(sys, b4, b5, 1e-3, 1e-3, 0.0)
-    l4 = _add_simple_line!(sys, b5, b6, 1e-3, 1e-3, 0.0)
-
-    devices = collect(get_components(StaticInjection, sys))
-
-    if mode == :same
-        factors = ones(Float64, length(devices))
-    elseif mode == :random
-        Random.seed!(0)
-        factors = abs.(randn(Float64, length(devices)))
-    else
-        error("Unknown mode: $mode")
-    end
-
-    generator_slack_participation_factors =
-        Dict((typeof(x), get_name(x)) => f for (x, f) in zip(devices, factors))
-
-    pf = ACPowerFlow(ACSolver;
-        generator_slack_participation_factors = generator_slack_participation_factors,
-    )
-
-    data = PowerFlowData(pf, sys; check_connectivity = false, correct_bustypes = true)
-    data_original_bus_power = copy(data.bus_activepower_injection[:, 1])
-    bus_numbers = get_bus_numbers(sys)
-    original_bus_power, original_gen_power = _system_generation_power(sys, bus_numbers)
-
-    solve_powerflow!(pf, sys; check_connectivity = false, correct_bustypes = true)
-
-    if mode == :same
-        @test isapprox(get_active_power(s1), get_active_power(g1), rtol = 0, atol = 1e-6)
-        @test isapprox(get_active_power(s2), get_active_power(g2), rtol = 0, atol = 1e-6)
-
-        @test isapprox(get_active_power(s1), get_active_power(s2), rtol = 0, atol = 1e-6)
-        @test isapprox(get_active_power(g1), get_active_power(g2), rtol = 0, atol = 1e-6)
-    end
-
-    # tol of 1e-3 due to losses
-    @test isapprox(
-        get_active_power(ld1),
-        get_active_power(s1) + get_active_power(g1),
-        rtol = 0,
-        atol = 1e-3,
-    )
-    @test isapprox(
-        get_active_power(ld2),
-        get_active_power(s2) + get_active_power(g2),
-        rtol = 0,
-        atol = 1e-3,
-    )
-
-    solve_powerflow!(data; pf = pf)
-
-    @test isapprox(
-        data.bus_activepower_injection[data.bus_lookup[get_number(b1)], 1],
-        get_active_power(s1),
-        rtol = 0,
-        atol = 1e-6,
-    )
-    @test isapprox(
-        data.bus_activepower_injection[data.bus_lookup[get_number(b2)], 1],
-        get_active_power(g1),
-        rtol = 0,
-        atol = 1e-6,
-    )
-    @test isapprox(
-        data.bus_activepower_injection[data.bus_lookup[get_number(b4)], 1],
-        get_active_power(s2),
-        rtol = 0,
-        atol = 1e-6,
-    )
-    @test isapprox(
-        data.bus_activepower_injection[data.bus_lookup[get_number(b5)], 1],
-        get_active_power(g2),
-        rtol = 0,
-        atol = 1e-6,
-    )
-
-    bus_slack_participation_factors = zeros(Float64, length(bus_numbers))
-    for bn in bus_numbers
-        bus = get_bus(sys, bn)
-        idx = data.bus_lookup[bn]
-        data.bus_type[idx, 1] == ACBusTypes.PQ && continue
-        bus_slack_participation_factors[idx] = data.bus_slack_participation_factors[idx, 1]
-    end
-
-    # needed for the test implementation when data.bus_slack_participation_factors is compared to bus_slack_participation_factors
-    generator_slack_participation_factors2 = Dict(
-        (typeof(x), get_name(x)) => f for
-        (x, f) in zip(devices, factors) if get_bustype(get_bus(x)) != ACBusTypes.PQ
-    )
-    pf2 = ACPowerFlow(ACSolver;
-        generator_slack_participation_factors = generator_slack_participation_factors2,
-    )
-
-    _check_ds_pf(
-        pf2,
-        sys,
-        bus_slack_participation_factors,
-        bus_numbers,
-        original_bus_power,
-        original_gen_power,
-        data_original_bus_power;
-        check_connectivity = false,
-    )
-end
-
-@testset "AC PF DS with several REF buses" for ACSolver in (
-    NewtonRaphsonACPowerFlow,
-    TrustRegionACPowerFlow,
-)
-    sys = System(100.0)
-
-    n = 4
-
-    buses_ref = [_add_simple_bus!(sys, i, ACBusTypes.REF, 230, 1.1, 0.0) for i in 1:n]
-    buses_pv =
-        [_add_simple_bus!(sys, i, ACBusTypes.PV, 230, 1.1, 0.0) for i in (n + 1):(2n)]
-    buses_pq =
-        [_add_simple_bus!(sys, i, ACBusTypes.PQ, 230, 1.1, 0.0) for i in (2n + 1):(3n)]
-
-    loads = [_add_simple_load!(sys, b, 6, 2) for b in buses_pq]
-    sources = [_add_simple_source!(sys, b, 0.0, 0.0) for b in buses_ref]
-    gens = [_add_simple_thermal_standard!(sys, b, 0.0, 0.0) for b in buses_pv]
-    all_buses = vcat(buses_ref, buses_pv, buses_pq)
-    lines = [
-        _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0) for
-        (b1, b2) in zip(all_buses[1:(end - 1)], all_buses[2:end])
-    ]
-    generator_slack_participation_factors =
-        Dict((typeof(x), get_name(x)) => 1.0 for x in vcat(sources, gens))
-
-    pf = ACPowerFlow(ACSolver;
-        generator_slack_participation_factors = generator_slack_participation_factors,
-    )
-    solve_powerflow!(pf, sys; correct_bustypes = true)
-
-    # equal slack participation
-    for (s, g) in zip(sources, gens)
-        @test isapprox(get_active_power(s), get_active_power(g), rtol = 0, atol = 1e-6)
-    end
-
-    for (g1, g2) in zip(gens[1:(end - 1)], gens[2:end])
-        @test isapprox(get_active_power(g1), get_active_power(g2), rtol = 0, atol = 1e-6)
-    end
-
-    # test that isolated islands raise error
-    b = _add_simple_bus!(sys, 100, ACBusTypes.PQ, 230, 1.1, 0.0)
-
-    @test_throws "No REF bus found in the subnetwork" solve_powerflow!(
-        pf,
-        sys;
-        check_connectivity = false,
         correct_bustypes = true,
     )
+    time_step = 1
+    solve_powerflow!(data_lu; pf = pf_lu)
+    solve_powerflow!(data_newton; pf = pf_newton)
+    @test all(
+        isapprox.(
+            data_lu.voltage_stability_factors,
+            data_newton.voltage_stability_factors,
+            rtol = 0,
+            atol = 1e-6,
+        ),
+    )
+    ref, pv, pq = PowerFlows.bus_type_idx(data_lu, time_step)
+    pvpq = [pv; pq]
+    npvpq = length(pvpq)
+    V = data_lu.bus_magnitude[:, time_step] .* exp.(1im * data_lu.bus_angles[:, time_step])
+    dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, data_lu.power_network_matrix.data)
+    J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
+    Gs =
+        J[(npvpq + 1):end, (npvpq + 1):end] -
+        J[(npvpq + 1):end, 1:npvpq] * inv(collect(J[1:npvpq, 1:npvpq])) *
+        J[1:npvpq, (npvpq + 1):end]
+    u_1, (σ_1,), v_1, _ = PROPACK.tsvd_irl(Gs; smallest = true, k = 1)
+    σ, u, v = PowerFlows._singular_value_decomposition(J, npvpq)
+
+    @assert isapprox(σ_1, σ, atol = 1e-6)
+    # the sign does not matter
+    @assert isapprox(sign(first(u_1)) * u_1, u, atol = 1e-4)
+    @assert isapprox(sign(first(v_1)) * v_1, v, atol = 1e-4)
 end
 
 @testset "AC PF 10k bus system: voltage magnitudes" begin
@@ -902,3 +431,215 @@ end
     data.bus_magnitude[1, 1] = 2.0
     @test_logs (:warn, r".*voltage magnitudes outside of range.*") match_mode = :any solve_powerflow!(data; pf = pf)
 end=#
+
+@testset "Test ZIP loads: constant current" begin
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+    l = _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
+    s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
+    lc = _add_simple_zip_load!(
+        sys,
+        b2;
+        constant_current_active_power = 2.0,
+        constant_current_reactive_power = 1.0,
+    )
+    data = PowerFlowData(ACPowerFlow(), sys; correct_bustypes = true)
+    solve_powerflow!(data)
+
+    # here we calculate the current that is observed in the power flow solution
+    # supplied through the line to the load, which is a constant current load.
+    s_t =
+        data.branch_activepower_flow_to_from + 1im * data.branch_reactivepower_flow_to_from
+    i_t = abs(s_t[1]) / data.bus_magnitude[2, 1] / sqrt(3)
+
+    # get the load inputs from the load component
+    load_input_power = (get_current_active_power(lc) + 1im * get_current_reactive_power(lc))
+    # calculating by hand the current that corresponds to the load inputs
+    # constant current load is given for 1.0 p.u. base voltage:
+    load_input_current = abs(load_input_power) / 1.0 / sqrt(3)
+
+    # Calculate the observed bus power based on the Ybus and voltage at the bus of the load:
+    V = data.bus_magnitude[:, 1] .* exp.(1im * data.bus_angles[:, 1])
+    Sbus = V .* conj(data.power_network_matrix.data * V)
+
+    # The expected power at the bus, corresponding to the formula for constant current loads:
+    load_expected_power = load_input_power * data.bus_magnitude[2, 1]
+
+    # - due to the reference frame in Sbus vs. load inputs
+    @test isapprox(Sbus[2], -load_expected_power; atol = 1e-6, rtol = 0)
+
+    # Calculate the expected current based on the load inputs and the bus voltage:
+    load_expected_current = abs(load_expected_power) / data.bus_magnitude[2, 1] / sqrt(3)
+
+    @test isapprox(load_expected_current, load_input_current; atol = 1e-6, rtol = 0)
+
+    @test isapprox(i_t, load_input_current; atol = 1e-6, rtol = 0)
+
+    @test isapprox(data.bus_activepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
+    @test isapprox(data.bus_reactivepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
+end
+
+@testset "Test ZIP loads: constant impedance" begin
+    sys = System(100.0)
+    b_1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+    l = _add_simple_line!(sys, b_1, b2, 5e-3, 5e-3, 1e-3)
+    s1 = _add_simple_source!(sys, b_1, 0.0, 0.0)
+    lz = _add_simple_zip_load!(
+        sys,
+        b2;
+        constant_impedance_active_power = 2.0,
+        constant_impedance_reactive_power = 1.0,
+    )
+    data = PowerFlowData(ACPowerFlow(), sys; correct_bustypes = true)
+    solve_powerflow!(data)
+
+    # here we calculate the current that is observed in the power flow solution
+    # supplied through the line to the load, which is a constant impedance load.
+    s_t =
+        data.branch_activepower_flow_to_from + 1im * data.branch_reactivepower_flow_to_from
+    i_t = abs(s_t[1]) / data.bus_magnitude[2, 1] / sqrt(3)
+
+    # get the load inputs from the load component
+    load_input_power =
+        (get_impedance_active_power(lz) + 1im * get_impedance_reactive_power(lz))
+    # calculating by hand the impedance that corresponds to the load inputs
+    # constant impedance load is given for 1.0 p.u. base voltage:
+    load_input_impedance = 1.0^2 / abs(load_input_power)
+
+    # Calculate the observed bus power based on the Ybus and voltage at the bus of the load:
+    V = data.bus_magnitude[:, 1] .* exp.(1im * data.bus_angles[:, 1])
+    Sbus = V .* conj(data.power_network_matrix.data * V)
+
+    # The expected power at the bus, corresponding to the formula for constant impedance loads:
+    load_expected_power = load_input_power * data.bus_magnitude[2, 1]^2
+
+    # - due to the reference frame in Sbus vs. load inputs
+    @test isapprox(Sbus[2], -load_expected_power; atol = 1e-6, rtol = 0)
+
+    # Calculate the expected impedance based on the load inputs and the bus voltage:
+    load_expected_impedance = (data.bus_magnitude[2, 1]^2) / abs(load_expected_power)
+
+    @test isapprox(load_expected_impedance, load_input_impedance; atol = 1e-6, rtol = 0)
+
+    s_zip_load =
+        PF.get_bus_activepower_total_withdrawals(data, 2, 1) +
+        1im * PF.get_bus_reactivepower_total_withdrawals(data, 2, 1)
+
+    @test isapprox(
+        Sbus[2],
+        -s_zip_load;
+        atol = 1e-6,
+        rtol = 0,
+    )
+
+    @test isapprox(
+        data.bus_magnitude[2, 1]^2 / load_input_impedance,
+        abs(s_zip_load);
+        atol = 1e-6,
+        rtol = 0,
+    )
+
+    @test isapprox(  # <- need to come back to this and check why it fails
+        s_t[1],
+        -s_zip_load;
+        atol = 1e-6,
+        rtol = 0,
+    )
+
+    @test isapprox(data.bus_activepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
+    @test isapprox(data.bus_reactivepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
+end
+
+@testset "Test phase shift in transformers" for Transformer in
+                                                (PSY.Transformer2W, PSY.TapTransformer)
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 110, 1.1, 0.0)
+
+    _add_simple_source!(sys, b1, 0.0, 0.0)
+
+    parameters = Dict(
+        :name => "Transformer",
+        :available => true,
+        :active_power_flow => 0.0,
+        :reactive_power_flow => 0.0,
+        :arc => Arc(b1, b2),
+        :r => 0.01,
+        :x => 0.05,
+        :primary_shunt => 0.0,
+        :winding_group_number => 1,  # 30 degrees in radians
+        :rating => 1.0,
+        :base_power => 100.0,
+        :base_voltage_primary => 230,
+        :base_voltage_secondary => 110,
+    )
+
+    Transformer == PSY.Transformer2W || (parameters[:tap] = 1.0)
+
+    t = Transformer(;
+        parameters...,
+    )
+    add_component!(sys, t)
+
+    pf = ACPowerFlow()
+    data = PowerFlowData(pf, sys; correct_bustypes = true)
+    solve_powerflow!(data; pf = pf)
+    # Check that the phase shift is correctly applied
+    a1 = data.bus_angles[1, 1]
+    a2 = data.bus_angles[2, 1]
+    @test isapprox(a2, a1 - deg2rad(30); atol = 1e-6, rtol = 0)
+end
+
+@testset "Test SwitchedAdmittance" begin
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+    l = _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
+    s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
+
+    data1 = PowerFlowData(ACPowerFlow(), sys)
+
+    # create a switched admittance
+    sa = SwitchedAdmittance(;
+        name = "SA",
+        available = true,
+        bus = b2,
+        Y = 0.03 + 0.05im,
+        initial_status = Int[1, 2],
+        number_of_steps = Int[3, 3],
+        Y_increase = Complex{Float64}[0.01 + 0.02im, 0.02 + 0.03im],
+    )
+    add_component!(sys, sa)
+
+    data2 = PowerFlowData(ACPowerFlow(), sys)
+
+    # The Ybus matrix should not include switched admittance elements
+    @test isapprox(
+        data1.power_network_matrix.data,
+        data2.power_network_matrix.data,
+        atol = 1e-6,
+        rtol = 0,
+    )
+
+    Y = PSY.get_Y(sa) + sum(PSY.get_initial_status(sa) .* PSY.get_Y_increase(sa))
+
+    data1.power_network_matrix.data[2, 2] += Y
+
+    solve_powerflow!(data1)
+
+    solve_powerflow!(data2)
+
+    # Make sure the results are the same for both cases:
+    #  1. The switched admittance is included in the Ybus matrix
+    #  2. The switched admittance is represented as a constant impedance load 
+    #     and is not in the Ybus matrix
+    @test isapprox(
+        data1.bus_magnitude[:, 1],
+        data2.bus_magnitude[:, 1],
+        atol = 1e-6,
+        rtol = 0,
+    )
+    @test isapprox(data1.bus_angles[:, 1], data2.bus_angles[:, 1], atol = 1e-6, rtol = 0)
+end

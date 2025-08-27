@@ -340,3 +340,58 @@ function _add_simple_line!(
     add_component!(sys, line)
     return line
 end
+
+"""
+    Simplified function to create and add a standard load to the system with the given parameters.
+"""
+function _add_simple_zip_load!(
+    sys::System,
+    bus::ACBus;
+    constant_power_active_power::Float64 = 0.0,
+    constant_power_reactive_power::Float64 = 0.0,
+    constant_current_active_power::Float64 = 0.0,
+    constant_current_reactive_power::Float64 = 0.0,
+    constant_impedance_active_power::Float64 = 0.0,
+    constant_impedance_reactive_power::Float64 = 0.0,
+)
+    zip_load = StandardLoad(;
+        name = _check_name(sys, "zip_load_$(get_number(bus))", StandardLoad),
+        available = true,
+        bus = bus,
+        base_power = 10.0,
+        constant_active_power = constant_power_active_power,
+        constant_reactive_power = constant_power_reactive_power,
+        current_active_power = constant_current_active_power,
+        current_reactive_power = constant_current_reactive_power,
+        impedance_active_power = constant_impedance_active_power,
+        impedance_reactive_power = constant_impedance_reactive_power,
+        max_constant_active_power = 0.0,
+        max_constant_reactive_power = 0.0,
+        max_impedance_active_power = 0.0,
+        max_impedance_reactive_power = 0.0,
+        max_current_active_power = 0.0,
+        max_current_reactive_power = 0.0,
+    )
+    add_component!(sys, zip_load)
+    return zip_load
+end
+
+function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
+    injections = CSV.read(
+        joinpath(MAIN_DIR, "test", "test_data", "c_sys14_injections.csv"),
+        DataFrame;
+        header = 0,
+    )
+    withdrawals = CSV.read(
+        joinpath(MAIN_DIR, "test", "test_data", "c_sys14_withdrawals.csv"),
+        DataFrame;
+        header = 0,
+    )
+    # allocate data from csv
+    injs = Matrix(injections)
+    withs = Matrix(withdrawals)
+
+    data.bus_activepower_injection .= deepcopy(injs[:, 1:time_steps])
+    data.bus_activepower_withdrawals .= deepcopy(withs[:, 1:time_steps])
+    return nothing
+end

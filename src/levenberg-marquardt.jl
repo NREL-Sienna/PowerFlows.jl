@@ -1,40 +1,46 @@
-"""Driver for the LevenbergMaquardtACPowerFlow method: sets up the data 
+"""Driver for the LevenbergMarquardtACPowerFlow method: sets up the data 
 structures (e.g. residual), runs the powerflow method via calling `_run_powerflow_method` 
 on them, then handles post-processing (e.g. loss factors)."""
 function _newton_powerflow(
-    pf::ACPowerFlow{LevenbergMaquardtACPowerFlow},
+    pf::ACPowerFlow{LevenbergMarquardtACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
-    kwargs...)
+    kwargs...,
+)
+    # setup: common code
     residual = ACPowerFlowResidual(data, time_step)
-    x0 = calculate_x0(data, time_step)
+    x0 = improve_x0(pf, data, residual, time_step)
     J = ACPowerFlowJacobian(data, time_step)
-    # check if we need to iterate at all: maybe x0 is a solution.
-    if _initial_residual!(residual, x0, pf, data, time_step; kwargs...)
-        @info("The LevenbergMaquardtACPowerFlow solver converged after 0 iterations.")
-        loss_factors_helper!(data, x0, residual, J, time_step)
-        return true
-    end
+    J(time_step)
+    converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
+    i = 0
 
-    converged, i = _run_powerflow_method(
-        time_step,
-        x0,
-        residual,
-        J;
-        kwargs...,
-    )
+    if !converged
+        converged, i = _run_powerflow_method(
+            time_step,
+            x0,
+            residual,
+            J;
+            kwargs...,
+        )
+    end
 
     if converged
-        @info("The LevenbergMaquardtACPowerFlow solver converged after $i iterations.")
-        loss_factors_helper!(data, x0, residual, J, time_step)
+        @info("The LevenbergMarquardtACPowerFlow solver converged after $i iterations.")
+        if get_calculate_loss_factors(data)
+            _calculate_loss_factors(data, J.Jv, time_step)
+        end
+        if get_calculate_voltage_stability_factors(data)
+            _calculate_voltage_stability_factors(data, J.Jv, time_step)
+        end
         return true
     end
-    @error("The LevenbergMaquardtACPowerFlow solver failed to converge.")
+    @error("The LevenbergMarquardtACPowerFlow solver failed to converge.")
     return false
 end
 
 # could add DAMPING_INCR and DAMPING_DECR too.
-"""Runs the full `LevenbergMaquardtACPowerFlow`.
+"""Runs the full `LevenbergMarquardtACPowerFlow`.
 # Keyword arguments:
 - `maxIterations::Int`: maximum iterations. Default: $DEFAULT_NR_MAX_ITER.
 - `tol::Float64`: tolerance. The iterative search ends when `norm(abs.(residual)) < tol`.
@@ -68,7 +74,7 @@ function _run_powerflow_method(
     if isnan(λ)
         @error "λ is NaN"
     elseif i == maxIterations
-        @error "The LevenbergMaquardtACPowerFlow solver didn't coverge in $maxIterations iterations."
+        @error "The LevenbergMarquardtACPowerFlow solver didn't coverge in $maxIterations iterations."
     end
     return converged, i
 end
