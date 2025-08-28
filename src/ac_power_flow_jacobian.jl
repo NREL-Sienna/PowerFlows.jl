@@ -319,7 +319,8 @@ function _update_jacobian_matrix_values!(
     # Ibus = zeros(ComplexF64, num_buses)
 
     num_buses = size(data.bus_type, 1)
-    # WARNING: this reinterpret means indices from Jv.colptr or Jv.rowval are 2x too big!
+    # entries in Ybus are complex, while those in Jv are real: just work with complex.
+    # WARNING: this means indices from Jv.colptr or Jv.rowval are 2x too big for J_nonzeros!
     J_nonzeros = reinterpret(ComplexF64, SparseArrays.nonzeros(Jv))
     Yb_nonzeros = SparseArrays.nonzeros(Yb)
     # step 0: do equivalent of ∂S/∂θ .= Ybus, ∂S/∂V .= Ybus.
@@ -327,16 +328,15 @@ function _update_jacobian_matrix_values!(
     Yb_colptr = Yb.colptr
     Yb_rows = SparseArrays.rowvals(Yb)
     for col in 1:num_buses
-        Yb_val_range = Yb.colptr[col]:(Yb_colptr[col + 1] - 1)
+        N = Yb_colptr[col + 1] - Yb_colptr[col]
+
+        # overwrite column of Jv corresponding to ∂S/∂V with column of Ybus.
         J_Vm_start = div(J_colptr[2 * col - 1] + 1, 2)
-        J_Vm_val_range = Yb_val_range .+ (J_Vm_start - Yb_val_range.start)
-        Yb_col_view = @view Yb_nonzeros[Yb_val_range]
-        J_Vm_view = @view J_nonzeros[J_Vm_val_range]
-        copy!(J_Vm_view, Yb_col_view)
+        copyto!(J_nonzeros, J_Vm_start, Yb_col_view, Yb.colptr[col], N)
+
+        # overwrite column of Jv corresponding to ∂S/∂V with column of Ybus.
         J_Va_start = div(J_colptr[2 * col] + 1, 2)
-        J_Va_val_range = Yb_val_range .+ (J_Va_start - Yb_val_range.start)
-        J_Va_view = @view J_nonzeros[J_Va_val_range]
-        copy!(J_Va_view, Yb_col_view)
+        copyto!(J_nonzeros, J_Va_start, Yb_col_view, Yb.colptr[col], N)
     end
     # step 1: their "pass 1"
     for col in 1:num_buses
