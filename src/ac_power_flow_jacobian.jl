@@ -321,26 +321,31 @@ function _update_jacobian_matrix_values!(
     num_buses = size(data.bus_type, 1)
     # entries in Ybus are complex, while those in Jv are real: just work with complex.
     # WARNING: this means indices from Jv.colptr or Jv.rowval are 2x too big for J_nonzeros!
+    # if Julia handled the divide-by-2 indexing arithmetic internally, this would be:
+    # J_complex = reinterpret(ComplexF64, Jv)
+    # J_{Vm/Va}_val_range = nzrange(J_complex, {2*col - 1 / 2*col})
+    # but it doesn't, so we calculate the start and shift Ybus's nzrange.
+    # PERF: compare straight loops [do step 1, 2 each in one pass] vs broadcasting
     J_nonzeros = reinterpret(ComplexF64, SparseArrays.nonzeros(Jv))
     Yb_nonzeros = SparseArrays.nonzeros(Yb)
     # step 0: do equivalent of ∂S/∂θ .= Ybus, ∂S/∂V .= Ybus.
     J_colptr = Jv.colptr
-    Yb_colptr = Yb.colptr
     Yb_rows = SparseArrays.rowvals(Yb)
     for col in 1:num_buses
-        N = Yb_colptr[col + 1] - Yb_colptr[col]
+        col_nonzeros = SparseArrays.nzrange(Yb, col)
+        N = length(col_nonzeros)
 
         # overwrite column of Jv corresponding to ∂S/∂V with column of Ybus.
         J_Vm_start = div(J_colptr[2 * col - 1] + 1, 2)
-        copyto!(J_nonzeros, J_Vm_start, Yb_col_view, Yb.colptr[col], N)
+        copyto!(J_nonzeros, J_Vm_start, Yb_nonzeros, col_nonzeros.start, N)
 
         # overwrite column of Jv corresponding to ∂S/∂V with column of Ybus.
         J_Va_start = div(J_colptr[2 * col] + 1, 2)
-        copyto!(J_nonzeros, J_Va_start, Yb_col_view, Yb.colptr[col], N)
+        copyto!(J_nonzeros, J_Va_start, Yb_nonzeros, col_nonzeros.start, N)
     end
     # step 1: their "pass 1"
     for col in 1:num_buses
-        Yb_val_range = Yb_colptr[col]:(Yb_colptr[col + 1] - 1)
+        Yb_val_range = SparseArrays.nzrange(Yb, col)
         # Ibus[Yb_rows[Yb_val_range]] .+= Yb_nonzeros[Yb_val_range] .* V[col]
         for k in Yb_val_range
             Ibus[Yb_rows[k]] += Yb_nonzeros[k] * V[col]
@@ -356,9 +361,9 @@ function _update_jacobian_matrix_values!(
     # step 2: their "pass 2," with a little extra for the cols where input is power.
     for col in 1:num_buses
         bus_type = get_bus_type(data)[col, time_step]
-        Yb_val_range = Yb_colptr[col]:(Yb_colptr[col + 1] - 1)
+        Yb_val_range = SparseArrays.nzrange(Yb, col)
         bus_inds = @view Yb_rows[Yb_val_range]
-        ind = searchsortedfirst(bus_inds, col)
+        ind = searchsortedfirst(bus_inds, col) # this is the diagonal term, where to = from.
         J_Vm_start = div(J_colptr[2 * col - 1] + 1, 2)
         J_Vm_val_range = Yb_val_range .+ (J_Vm_start - Yb_val_range.start)
         J_Vm_vals = @view J_nonzeros[J_Vm_val_range]
