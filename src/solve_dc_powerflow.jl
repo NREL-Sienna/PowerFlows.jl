@@ -13,9 +13,9 @@ function solve_powerflow!(
     # get net power injections
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
     # evaluate flows
-    data.branch_activepower_flow_from_to .=
+    data.arc_activepower_flow_from_to .=
         data.power_network_matrix.data' * power_injection
-    data.branch_activepower_flow_to_from .= -data.branch_activepower_flow_from_to
+    data.arc_activepower_flow_to_from .= -data.arc_activepower_flow_from_to
     # evaluate bus angles
     p_inj = power_injection[data.valid_ix, :]
     solve!(solver_cache, p_inj)
@@ -37,9 +37,9 @@ function solve_powerflow!(
     solver_cache = KLULinSolveCache(data.aux_network_matrix.data)
     full_factor!(solver_cache, data.aux_network_matrix.data)
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
-    data.branch_activepower_flow_from_to .=
+    data.arc_activepower_flow_from_to .=
         my_mul_mt(data.power_network_matrix, power_injection)
-    data.branch_activepower_flow_to_from .= -data.branch_activepower_flow_from_to
+    data.arc_activepower_flow_to_from .= -data.arc_activepower_flow_from_to
     p_inj = power_injection[data.valid_ix, :]
     solve!(solver_cache, p_inj)
     data.bus_angles[data.valid_ix, :] .= p_inj
@@ -68,8 +68,8 @@ function solve_powerflow!(
     p_inj = power_injection[data.valid_ix, :]
     solve!(solver_cache, p_inj)
     data.bus_angles[data.valid_ix, :] .= p_inj
-    data.branch_activepower_flow_from_to .= data.aux_network_matrix.data' * data.bus_angles
-    data.branch_activepower_flow_to_from .= -data.branch_activepower_flow_from_to
+    data.arc_activepower_flow_from_to .= data.aux_network_matrix.data' * data.bus_angles
+    data.arc_activepower_flow_to_from .= -data.arc_activepower_flow_from_to
     data.converged .= true
     return
 end
@@ -93,9 +93,9 @@ voltages for the input `PSY.System`.
 function solve_powerflow(
     ::T,
     sys::PSY.System;
-    correct_bustypes::Bool = false,
+    kargs...,
 ) where {T <: AbstractDCPowerFlow}
-    data = PowerFlowData(T(), sys; correct_bustypes = correct_bustypes)
+    data = PowerFlowData(T(), sys; kargs...)
     solve_powerflow!(data)
     return write_results(data, sys)
 end

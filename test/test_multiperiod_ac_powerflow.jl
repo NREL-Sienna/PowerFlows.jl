@@ -50,23 +50,23 @@ end
     @test isapprox(data_lu.bus_magnitude, data_test.bus_magnitude, atol = 1e-9)
     @test isapprox(data_lu.bus_angles, data_test.bus_angles, atol = 1e-9)
     @test isapprox(
-        data_lu.branch_activepower_flow_from_to,
-        data_test.branch_activepower_flow_from_to,
+        data_lu.arc_activepower_flow_from_to,
+        data_test.arc_activepower_flow_from_to,
         atol = 1e-9,
     )
     @test isapprox(
-        data_lu.branch_activepower_flow_to_from,
-        data_test.branch_activepower_flow_to_from,
+        data_lu.arc_activepower_flow_to_from,
+        data_test.arc_activepower_flow_to_from,
         atol = 1e-9,
     )
     @test isapprox(
-        data_lu.branch_reactivepower_flow_from_to,
-        data_test.branch_reactivepower_flow_from_to,
+        data_lu.arc_reactivepower_flow_from_to,
+        data_test.arc_reactivepower_flow_from_to,
         atol = 1e-9,
     )
     @test isapprox(
-        data_lu.branch_reactivepower_flow_to_from,
-        data_test.branch_reactivepower_flow_to_from,
+        data_lu.arc_reactivepower_flow_to_from,
+        data_test.arc_reactivepower_flow_to_from,
         atol = 1e-9,
     )
 end
