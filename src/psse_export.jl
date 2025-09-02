@@ -993,6 +993,30 @@ function write_to_buffers!(
 end
 
 """
+Collects all AC branches (Line, MonitoredLine, DiscreteControlledACBranch) from the system,
+sorts them by their bus numbers, and returns a vector of tuples (branch, bus_numbers).
+
+# Arguments
+- `exporter::PSSEExporter`: The exporter containing the system.
+
+# Returns
+- `Vector{Tuple{<:PSY.Branch, Tuple}}`: Each tuple contains a branch and its associated bus numbers.
+"""
+function get_branches_with_numbers(exporter::PSSEExporter)
+    lines = collect(PSY.get_components(PSY.Line, exporter.system))
+    mon_lines = collect(PSY.get_components(PSY.MonitoredLine, exporter.system))
+    discrete_ac_branches =
+        collect(PSY.get_components(PSY.DiscreteControlledACBranch, exporter.system))
+
+    # Merge all branch variables into a single vector
+    branches = vcat(lines, mon_lines, discrete_ac_branches)
+    # Sort branches by their bus numbers to order them at exporting
+    sort!(branches; by = branch_to_bus_numbers)
+    # Pair each branch with its bus numbers
+    return [(branch, branch_to_bus_numbers(branch)) for branch in branches]
+end
+
+"""
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Non-Transformer Branch Data
 """
 function write_to_buffers!(
@@ -1004,16 +1028,7 @@ function write_to_buffers!(
     check_33(exporter)
 
     branches_with_numbers = get!(exporter.components_cache, "branches") do
-        branches = sort!(
-            collect(
-                PSY.get_components(
-                    Union{PSY.Line, PSY.MonitoredLine, PSY.DiscreteControlledACBranch},
-                    exporter.system,
-                ),
-            );
-            by = branch_to_bus_numbers,
-        )
-        [(branch, branch_to_bus_numbers(branch)) for branch in branches]
+        get_branches_with_numbers(exporter)
     end
 
     branch_name_mapping = get!(exporter.components_cache, "branch_name_mapping") do
@@ -1046,7 +1061,7 @@ function write_to_buffers!(
                     char * BASE_CKT
                 end
             else
-                warn("Unknown dicrete branch type $branch_type for branch $branch")
+                warn("Unknown discrete branch type $branch_type for branch $branch")
                 CKT = BASE_CKT
             end
             B = 0.0
@@ -1671,7 +1686,7 @@ function write_to_buffers!(
         )
         ALOSS2 = get_ext_key_or_default(vscline, "ALOSS_TO", ALOSS2_org)
         MINLOSS2 = get_ext_key_or_default(vscline, "MINLOSS_TO", psse_converter_loss_to)
-        SMAX2 = PSY.get_rating_from(vscline)
+        SMAX2 = PSY.get_rating_to(vscline)
         # This logic is implemented to revert what is done in the PSY parser side:
         # to_bus["SMAX"] == 0.0 ? PSSE_INFINITY : to_bus["SMAX"] / baseMVA
         SMAX2 = if SMAX2 == PSSE_INFINITY
@@ -1679,7 +1694,7 @@ function write_to_buffers!(
         else
             _psse_round_val(SMAX2 * PSY.get_base_power(exporter.system))
         end
-        IMAX2 = PSY.get_max_dc_current_from(vscline)
+        IMAX2 = PSY.get_max_dc_current_to(vscline)
         IMAX2 = if IMAX2 == PSSE_INFINITY
             0.0
         else
