@@ -1,4 +1,4 @@
-@testset "hessian" begin
+@testset "RH method: hessian" begin
     time_step = 1
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
@@ -38,7 +38,7 @@
     @test all(isapprox(r, ratios[1]; rtol = 0.2) for r in ratios)
 end
 
-@testset "sparse structure" begin
+@testset "RH method: sparse structure" begin
     # hessian's sparse structure shouldn't change.
     time_step = 1
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
@@ -60,7 +60,7 @@ end
     @test hess.Hv.rowval == rowval && hess.Hv.colptr == colptr
 end
 
-@testset "gradient" begin
+@testset "RH method: gradient" begin
     time_step = 1
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
