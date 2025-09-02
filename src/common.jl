@@ -66,7 +66,8 @@ function _get_injections!(
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
             # yet to implement control mode etc. for FACTS devices.
             if source isa PSY.FACTSControlDevice
-                bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power_required(source)
+                bus_reactivepower_injection[bus_ix] +=
+                    PSY.get_reactive_power_required(source)
             else
                 bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power(source)
             end
