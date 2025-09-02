@@ -18,6 +18,7 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     }
     enhanced_flat_start::Bool
     robust_power_flow::Bool
+    skip_redistribution::Bool
 end
 
 ACPowerFlow{ACSolver}(;
@@ -32,6 +33,7 @@ ACPowerFlow{ACSolver}(;
     } = nothing,
     enhanced_flat_start::Bool = true,
     robust_power_flow::Bool = false,
+    skip_redistribution::Bool = false,
 ) where {ACSolver <: ACPowerFlowSolverType} =
     ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
@@ -41,6 +43,7 @@ ACPowerFlow{ACSolver}(;
         generator_slack_participation_factors,
         enhanced_flat_start,
         robust_power_flow,
+        skip_redistribution,
     )
 
 ACPowerFlow(
@@ -56,6 +59,7 @@ ACPowerFlow(
     } = nothing,
     enhanced_flat_start::Bool = true,
     robust_power_flow::Bool = false,
+    skip_redistribution::Bool = false,
 ) = ACPowerFlow{ACSolver}(
     check_reactive_power_limits,
     exporter,
@@ -64,6 +68,7 @@ ACPowerFlow(
     generator_slack_participation_factors,
     enhanced_flat_start,
     robust_power_flow,
+    skip_redistribution,
 )
 
 get_enhanced_flat_start(pf::ACPowerFlow{ACSolver}) where {ACSolver} =
