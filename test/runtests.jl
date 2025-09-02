@@ -39,6 +39,7 @@ include("test_utils/common.jl")
 include("test_utils/psse_results_compare.jl")
 include("test_utils/penalty_factors_brute_force.jl")
 include("test_utils/legacy_pf.jl")
+include("test_utils/validate_reduced_powerflow.jl")
 
 const AC_SOLVERS_TO_TEST = (
     LUACPowerFlow,
@@ -61,6 +62,8 @@ const DISABLED_TEST_FILES = [  # Can generate with ls -1 test | grep "test_.*.jl
 # "test_multiperiod_dc_powerflow.jl",
 # "test_powerflow_data.jl",
 # "test_psse_export.jl",
+# "test_reduced_ac_powerflow.jl",
+# "test_reduced_dc_powerflow.jl",
 # "test_robust_powerflow.jl",
 # "test_solve_powerflow.jl",
 # "test_state_indexing_helpers.jl",

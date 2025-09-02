@@ -90,8 +90,8 @@ function _enhanced_flat_start(
     time_step::Int64,
 )
     newx0 = copy(x0)
-    for subnetwork in values(data.power_network_matrix.subnetworks)
-        subnetwork_indices = [data.bus_lookup[ix] for ix in subnetwork]
+    for subnetwork_bus_axes in values(data.power_network_matrix.subnetwork_axes)
+        subnetwork_indices = [data.bus_lookup[ix] for ix in subnetwork_bus_axes[1]]
         ref_bus = [
             i for
             i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.REF

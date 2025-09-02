@@ -67,3 +67,6 @@ const GRAD_ZERO = 2 * eps()
 # cholesky solver specific
 const VTypes = SparseArrays.CHOLMOD.VRealTypes
 const ITypes = SparseArrays.CHOLMOD.ITypes
+
+# force arc names to be unique when reporting power flow results.
+const FORCE_UNIQUE_NAMES = true

@@ -99,10 +99,15 @@ end
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
+    from_to = PNM.get_arc_tuple(line)
     PSY.set_available!(line, false)
     res = solve_powerflow(pf, sys; correct_bustypes = true)
-    @test res["flow_results"].P_from_to[4] == 0.0
-    @test res["flow_results"].P_to_from[4] == 0.0
+    for row in eachrow(res["flow_results"])
+        if (row["bus_from"], row["bus_to"]) == from_to
+            @test row["P_from_to"] == 0.0
+            @test row["P_to_from"] == 0.0
+        end
+    end
 end
 
 @testset "AC Power Flow 3-Bus Fixed FixedAdmittance testing" for ACSolver in
@@ -450,7 +455,7 @@ end=#
     # here we calculate the current that is observed in the power flow solution
     # supplied through the line to the load, which is a constant current load.
     s_t =
-        data.branch_activepower_flow_to_from + 1im * data.branch_reactivepower_flow_to_from
+        data.arc_activepower_flow_to_from + 1im * data.arc_reactivepower_flow_to_from
     i_t = abs(s_t[1]) / data.bus_magnitude[2, 1] / sqrt(3)
 
     # get the load inputs from the load component
@@ -498,7 +503,7 @@ end
     # here we calculate the current that is observed in the power flow solution
     # supplied through the line to the load, which is a constant impedance load.
     s_t =
-        data.branch_activepower_flow_to_from + 1im * data.branch_reactivepower_flow_to_from
+        data.arc_activepower_flow_to_from + 1im * data.arc_reactivepower_flow_to_from
     i_t = abs(s_t[1]) / data.bus_magnitude[2, 1] / sqrt(3)
 
     # get the load inputs from the load component
