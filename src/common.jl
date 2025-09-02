@@ -7,9 +7,6 @@ exports. Redirects to `PSY.get_reactive_power_limits` in all but special cases.
 get_reactive_power_limits_for_power_flow(gen::PSY.Device) =
     PSY.get_reactive_power_limits(gen)
 
-# FIXME temporary workaround for FACTSControlDevice
-get_reactive_power_limits_for_power_flow(::PSY.FACTSControlDevice) = (min = -Inf, max = Inf)
-
 function get_reactive_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
     val = PSY.get_reactive_power(gen)
     return (min = val, max = val)
@@ -128,6 +125,7 @@ function _get_reactive_power_bound!(
 )
     for source in PSY.get_components(PSY.StaticInjection, sys)
         isa(source, PSY.ElectricLoad) && continue
+        isa(source, PSY.FACTSControlDevice) && continue # FIXME: FACTS devices.
         !PSY.get_available(source) && continue
         bus = PSY.get_bus(source)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
@@ -142,6 +140,7 @@ function _get_reactive_power_bound!(
             bus_reactivepower_bounds[bus_ix] = (-Inf, Inf)
         end
     end
+    return
 end
 
 function _initialize_bus_data!(
@@ -187,17 +186,14 @@ function _initialize_bus_data!(
         temp_bus_types[bus_no] = bt
     end
 
-    bus_type_priorities = Dict{PSY.ACBusTypes, Int}(
-        PSY.ACBusTypes.REF => 3,
-        PSY.ACBusTypes.PV => 2,
-        PSY.ACBusTypes.PQ => 1,
-    )
+    # FIXME handle combining buses more intelligently.
+    # perhaps move some of this logic into PNM
     for (bus_no, reduced_bus_nos) in bus_reduction_map
         # pick the "highest" bus type among the reduced buses, where REF > PV > PQ.
         corrected_bus_types =
             [temp_bus_types[reduced_bus_no] for reduced_bus_no in reduced_bus_nos]
         push!(corrected_bus_types, temp_bus_types[bus_no])
-        combined_bus_type = findmax(bt -> bus_type_priorities[bt], corrected_bus_types)[1]
+        combined_bus_type = findmax(bt -> BUS_TYPE_PRIORITIES[bt], corrected_bus_types)[1]
         ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, bus_no)
         bus_type[ix] = combined_bus_type
         # TODO: combine the angles/magnitudes, between the reduced buses?

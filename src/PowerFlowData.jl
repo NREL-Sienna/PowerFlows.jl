@@ -286,6 +286,7 @@ function _calculate_neighbors(
     return neighbors
 end
 
+# NOTE: remove this once network reductions are fully implemented
 function network_reduction_message(
     nrs::Vector{PNM.NetworkReduction},
     m::PowerFlowEvaluationModel,
@@ -321,8 +322,6 @@ NOTE: use it for AC power flow computations.
 - `timestep_names::Vector{String}`:
         names of the time periods defines by the argument "time_steps". Default
         value = String[].
-- `check_connectivity::Bool`:
-        Perform connectivity check on the network matrix. Default value = true.
 
 WARNING: functions for the evaluation of the multi-period AC PF still to be implemented.
 """
@@ -332,7 +331,6 @@ function PowerFlowData(
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true,
     correct_bustypes::Bool = false)
     network_reduction_message(network_reductions, pf)
     calculate_loss_factors = pf.calculate_loss_factors
@@ -354,7 +352,6 @@ function PowerFlowData(
     power_network_matrix = PNM.Ybus(
         sys;
         network_reductions = network_reductions,
-        check_connectivity = check_connectivity,
         make_branch_admittance_matrices = true,
         include_constant_impedance_loads = false,
     )
@@ -428,8 +425,6 @@ NOTE: use it for DC power flow computations.
 - `timestep_names::Vector{String}`:
         names of the time periods defines by the argument "time_steps". Default
         value = String[].
-- `check_connectivity::Bool`:
-        Perform connectivity check on the network matrix. Default value = true.
 """
 function PowerFlowData(
     ::DCPowerFlow,
@@ -437,7 +432,6 @@ function PowerFlowData(
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true,
     correct_bustypes = false)
     network_reduction_message(network_reductions, DCPowerFlow())
     # assign timestep_names
@@ -512,7 +506,6 @@ function PowerFlowData(
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true,
     correct_bustypes = false)
     network_reduction_message(network_reductions, PTDFDCPowerFlow())
     # assign timestep_names
@@ -587,7 +580,6 @@ function PowerFlowData(
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true,
     correct_bustypes = false)
     network_reduction_message(network_reductions, vPTDFDCPowerFlow())
     # assign timestep_names
@@ -641,7 +633,6 @@ Create an appropriate `PowerFlowContainer` for the given `PowerFlowEvaluationMod
 - `sys::PSY.System`: the system from which to initialize the power flow container
 - `time_steps::Int`: number of time periods to consider (default is `1`)
 - `timestep_names::Vector{String}`: names of the time periods defines by the argument "time_steps". Default value is `String[]`.
-- `check_connectivity::Bool`: Perform connectivity check on the network matrix. Default value is `true`.
 """
 function make_power_flow_container end
 

@@ -36,7 +36,6 @@
     data = PowerFlows.PowerFlowData(
         pf,
         sys;
-        check_connectivity = true,
         correct_bustypes = true,
     )
     #Compare results between finite diff methods and Jacobian method
@@ -68,7 +67,6 @@
     data = PowerFlows.PowerFlowData(
         pf,
         sys;
-        check_connectivity = true,
         correct_bustypes = true,
     )
     converged2 = PowerFlows._ac_powerflow(data, pf, 1; check_reactive_power_limits = true)
@@ -272,7 +270,6 @@ end
     data = PowerFlowData(
         pf_default,
         sys;
-        check_connectivity = true,
         correct_bustypes = true)
 
     time_step = 1
@@ -324,13 +321,11 @@ end
     data_lu = PowerFlowData(
         pf_lu,
         sys;
-        check_connectivity = true,
         correct_bustypes = true,
     )
     data_newton = PowerFlowData(
         pf_newton,
         sys;
-        check_connectivity = true,
         correct_bustypes = true,
     )
     time_step = 1
