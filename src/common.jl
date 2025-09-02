@@ -45,7 +45,6 @@ get_active_power_limits_for_power_flow(gen::PSY.RenewableDispatch) =
 get_active_power_limits_for_power_flow(gen::PSY.Storage) =
     (min = 0.0, max = PSY.get_output_active_power_limits(gen).max)
 
-
 """
 Return the active and reactive power generation from a generator component.
 It's pg=0 as default for synchronous condensers since there's no field in the component for active power.
@@ -68,7 +67,6 @@ _get_bus_ix(
     bus_number::Int,
 ) =
     bus_lookup[get(reverse_bus_search_map, bus_number, bus_number)]
-
 
 function _get_injections!(
     bus_activepower_injection::Vector{Float64},
