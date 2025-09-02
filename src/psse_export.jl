@@ -500,6 +500,12 @@ function write_to_buffers!(
     buses = get!(exporter.components_cache, "buses") do
         sort!(collect(PSY.get_components(PSY.ACBus, exporter.system)); by = PSY.get_number)
     end
+    tr3w_starbuses =
+        PSY.get_name.(
+            PSY.get_star_bus.(
+                PSY.get_components(PSY.ThreeWindingTransformer, exporter.system)
+            )
+        )
     old_bus_numbers = PSY.get_number.(buses)
 
     if !exporter.md_valid
@@ -516,7 +522,7 @@ function write_to_buffers!(
 
     for bus in buses
         bus_name = PSY.get_name(bus)
-        if startswith(strip(bus_name), "starbus")
+        if bus_name in tr3w_starbuses
             continue
         end
         I = bus_number_mapping[PSY.get_number(bus)]
