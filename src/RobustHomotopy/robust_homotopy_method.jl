@@ -100,10 +100,14 @@ function _second_order_newton_step(homHess::HomotopyHessian,
     solve!(hSolver, δ)
     δ .*= -1
 
-    # PERF: the line search is taking up 80%+ of the time in _second_order_newton_step
-    # evidently I need a better (or better optimized) line search.
-    # (The line search is non-allocating, except for the @warn message.)
-    α_star = line_search(x, time_step, homHess, t_k, δ)
+    # Create objective function
+    ϕ = α -> F_value(homHess, t_k, x + α * δ, time_step)
+
+    # Perform line search
+    φ_0 = F_val
+    dφ_0 = dot(homHess.grad, δ)
+    (α_star, F_val) = BackTracking()(ϕ, 1.0, φ_0, dφ_0)
+
     if !last_step && norm(δ * α_star) < INSUFFICIENT_CHANGE_IN_X
         # stop case 2: slow progress.
         info_helper(homHess, t_k, F_val, "slow progress")

@@ -45,6 +45,7 @@ function F_value(hess::HomotopyHessian, t_k::Float64, x::Vector{Float64}, time_s
     return F_value
 end
 
+# slightly confusing that I have the field grad, and the argument grad.
 function gradient_value!(grad::Vector{Float64},
     hess::HomotopyHessian,
     t_k::Float64,
@@ -158,61 +159,14 @@ function _update_hessian_matrix_values!(
     SparseArrays.nonzeros(Hv) .= 0.0
     for i in 1:num_buses
         bt_i = data.bus_type[i, time_step]
-        bus_neighbors = data.neighbors[i]
+        Pi_θiθi, Qi_θiθi = 0.0, 0.0
+        Pi_Viθi, Qi_Viθi = 0.0, 0.0
+        has_θi = (bt_i == PSY.ACBusTypes.PQ) || (bt_i == PSY.ACBusTypes.PV)
         for k in data.neighbors[i]
-            if i == k
-                # ∂²Δ{Pᵢ, Qᵢ}/∂²θᵢ: PQ and PV
-                if (bt_i == PSY.ACBusTypes.PQ) || (bt_i == PSY.ACBusTypes.PV)
-                    Pi_θiθi =
-                        Vm[i] * sum( # = -Vm[i] * Qi_Viθi
-                            Vm[l] * (
-                                -real(Yb[i, l]) * cos(θ[i] - θ[l])
-                                -
-                                imag(Yb[i, l]) * sin(θ[i] - θ[l])
-                            ) for l in bus_neighbors if l != i
-                        )
-                    Qi_θiθi =
-                        Vm[i] * sum( # = Vm[i] * Pi_Viθi
-                            Vm[l] * (
-                                -real(Yb[i, l]) * sin(θ[i] - θ[l])
-                                +
-                                imag(Yb[i, l]) * cos(θ[i] - θ[l])
-                            ) for l in bus_neighbors if l != i
-                        )
-                    θiθis = Pi_θiθi * F_value[2 * i - 1] + Qi_θiθi * F_value[2 * i]
-                    Hv[2 * i, 2 * i] += θiθis
-                end
-                # ∂²Δ{Pᵢ, Qᵢ}/∂Vᵢ∂θᵢ and ∂²Δ{Pᵢ, Qᵢ}/∂²Vᵢ: PQ only.
-                if bt_i == PSY.ACBusTypes.PQ
-                    Pi_Viθi = sum(
-                        Vm[l] * (
-                            -real(Yb[i, l]) * sin(θ[i] - θ[l])
-                            +
-                            imag(Yb[i, l]) * cos(θ[i] - θ[l])
-                        ) for l in bus_neighbors if l != i
-                    )
-                    Qi_Viθi = sum(
-                        Vm[l] * (
-                            real(Yb[i, l]) * cos(θ[i] - θ[l])
-                            +
-                            imag(Yb[i, l]) * sin(θ[i] - θ[l])
-                        ) for l in bus_neighbors if l != i
-                    )
-                    Pi_ViVi = 2 * real(Yb[i, i])
-                    Qi_ViVi = -2 * imag(Yb[i, i])
-
-                    ViVis = Pi_ViVi * F_value[2 * i - 1] + Qi_ViVi * F_value[2 * i]
-                    Viθis = Pi_Viθi * F_value[2 * i - 1] + Qi_Viθi * F_value[2 * i]
-
-                    Hv[2 * i - 1, 2 * i - 1] += ViVis
-                    Hv[2 * i, 2 * i - 1] += Viθis
-                    Hv[2 * i - 1, 2 * i] += Viθis
-                end
-            else
+            if i != k
                 bt_k = data.bus_type[k, time_step]
                 Gik, Bik = real(Yb[i, k]), imag(Yb[i, k])
                 has_θk = (bt_k == PSY.ACBusTypes.PQ) || (bt_k == PSY.ACBusTypes.PV)
-                has_θi = (bt_i == PSY.ACBusTypes.PQ) || (bt_i == PSY.ACBusTypes.PV)
                 # the partials where all 3 indices are different vanish
                 # naively count 8 with 2 distinct indices: {∂Vₖ, ∂θₖ} x {∂Vₖ, ∂θₖ, ∂Vᵢ, ∂θᵢ}
                 # but can reduce to 6: ∂²/∂Vₖ∂θₖ = ∂²/∂θₖ∂Vₖ, and ∂²Δ{Pᵢ, Qᵢ}/∂²Vₖ is 0.
@@ -250,8 +204,7 @@ function _update_hessian_matrix_values!(
                     Hv[2 * k - 1, 2 * k] += θkVks
                     Hv[2 * k, 2 * k - 1] += θkVks
                 end
-                if has_θk && has_θi
-                    # ∂²Δ{Pᵢ, Qᵢ}/∂θₖ∂θᵢ
+                if has_θi
                     Pi_θkθi =
                         Vm[i] * Vm[k] * (
                             Gik * cos(θ[i] - θ[k]) +
@@ -263,12 +216,17 @@ function _update_hessian_matrix_values!(
                             -
                             Bik * cos(θ[i] - θ[k])
                         )
-                    θiθks = Pi_θkθi * F_value[2 * i - 1] + Qi_θkθi * F_value[2 * i]
-                    Hv[2 * i, 2 * k] += θiθks
-                    Hv[2 * k, 2 * i] += θiθks
+                    # contribution towards sum in ∂²Δ{Pᵢ, Qᵢ}/∂θᵢ∂θᵢ
+                    Pi_θiθi -= Pi_θkθi
+                    Qi_θiθi -= Qi_θkθi
+                    if has_θk
+                        # ∂²Δ{Pᵢ, Qᵢ}/∂θₖ∂θᵢ
+                        θiθks = Pi_θkθi * F_value[2 * i - 1] + Qi_θkθi * F_value[2 * i]
+                        Hv[2 * i, 2 * k] += θiθks
+                        Hv[2 * k, 2 * i] += θiθks
+                    end
                 end
-                if bt_i == PSY.ACBusTypes.PQ && has_θk
-                    # ∂²Δ{Pᵢ, Qᵢ}/∂θₖ∂Vᵢ
+                if bt_i == PSY.ACBusTypes.PQ
                     Pi_θkVi = Vm[k] * ( # = Vm[k] * Qi_VkVi 
                         Gik * sin(θ[i] - θ[k])
                         -
@@ -279,9 +237,15 @@ function _update_hessian_matrix_values!(
                         -
                         Bik * sin(θ[i] - θ[k])
                     )
-                    Viθks = Pi_θkVi * F_value[2 * i - 1] + Qi_θkVi * F_value[2 * i]
-                    Hv[2 * i - 1, 2 * k] += Viθks
-                    Hv[2 * k, 2 * i - 1] += Viθks
+                    # contribution towards sum in ∂²Δ{Pᵢ, Qᵢ}/∂θᵢ∂Vᵢ
+                    Pi_Viθi -= Pi_θkVi
+                    Qi_Viθi -= Qi_θkVi
+                    if has_θk
+                        # ∂²Δ{Pᵢ, Qᵢ}/∂θₖ∂Vᵢ
+                        Viθks = Pi_θkVi * F_value[2 * i - 1] + Qi_θkVi * F_value[2 * i]
+                        Hv[2 * i - 1, 2 * k] += Viθks
+                        Hv[2 * k, 2 * i - 1] += Viθks
+                    end
                 end
                 if bt_k == PSY.ACBusTypes.PQ && has_θi
                     # ∂²Δ{Pᵢ, Qᵢ}/∂Vₖ∂θᵢ
@@ -308,6 +272,27 @@ function _update_hessian_matrix_values!(
                     Hv[2 * k - 1, 2 * i - 1] += ViVks
                 end
             end
+        end
+        # now, do the diagonal terms that depend only on i: these are sums [except for ∂²Vᵢ],
+        # but we've been accumulating the sums as we go.
+
+        # ∂²Δ{Pᵢ, Qᵢ}/∂²θᵢ: PQ and PV
+        if has_θi
+            θiθis = Pi_θiθi * F_value[2 * i - 1] + Qi_θiθi * F_value[2 * i]
+            Hv[2 * i, 2 * i] += θiθis
+        end
+
+        # ∂²Δ{Pᵢ, Qᵢ}/∂Vᵢ∂θᵢ and ∂²Δ{Pᵢ, Qᵢ}/∂²Vᵢ: PQ only.
+        if bt_i == PSY.ACBusTypes.PQ
+            Viθis = Pi_Viθi * F_value[2 * i - 1] + Qi_Viθi * F_value[2 * i]
+            Hv[2 * i, 2 * i - 1] += Viθis
+            Hv[2 * i - 1, 2 * i] += Viθis
+
+            Pi_ViVi = 2 * real(Yb[i, i])
+            Qi_ViVi = -2 * imag(Yb[i, i])
+
+            ViVis = Pi_ViVi * F_value[2 * i - 1] + Qi_ViVi * F_value[2 * i]
+            Hv[2 * i - 1, 2 * i - 1] += ViVis
         end
     end
     return
