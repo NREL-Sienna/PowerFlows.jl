@@ -53,16 +53,24 @@ function _get_injections!(
     sys::PSY.System,
 )
     for source in PSY.get_components(PSY.StaticInjection, sys)
-        isa(source, PSY.ElectricLoad) && continue
-        isa(source, PSY.FACTSControlDevice) && continue # FIXME temporary workaround.
         !PSY.get_available(source) && continue
-        bus = PSY.get_bus(source)
-        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-        # see issue #1463 in PSY
-        if !isa(source, PSY.SynchronousCondenser)
+        if contributes_active_power(source) &&
+           active_power_contribution_type(source) == PowerContributionType.INJECTION
+            bus = PSY.get_bus(source)
+            bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
             bus_activepower_injection[bus_ix] += PSY.get_active_power(source)
         end
-        bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power(source)
+        if contributes_reactive_power(source) &&
+           reactive_power_contribution_type(source) == PowerContributionType.INJECTION
+            bus = PSY.get_bus(source)
+            bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+            # yet to implement control mode etc. for FACTS devices.
+            if source isa PSY.FACTSControlDevice
+                bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power_required(source)
+            else
+                bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power(source)
+            end
+        end
     end
     return
 end
@@ -78,23 +86,31 @@ function _get_withdrawals!(
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
 )
-    for l in PSY.get_components(_SingleComponentLoad, sys)
+    # constant power withdrawals
+    for l in PSY.get_components(PSY.StaticInjection, sys)
         PSY.get_available(l) || continue
-        bus = PSY.get_bus(l)
-        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-        bus_activepower_withdrawals[bus_ix] += PSY.get_active_power(l)
-        bus_reactivepower_withdrawals[bus_ix] += PSY.get_reactive_power(l)
+        if contributes_active_power(l) &&
+           active_power_contribution_type(l) == PowerContributionType.WITHDRAWAL
+            bus = PSY.get_bus(l)
+            bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+            bus_activepower_withdrawals[bus_ix] += PSY.get_active_power(l)
+        end
+        if contributes_reactive_power(l) &&
+           reactive_power_contribution_type(l) == PowerContributionType.WITHDRAWAL
+            bus = PSY.get_bus(l)
+            bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+            bus_reactivepower_withdrawals[bus_ix] += PSY.get_reactive_power(l)
+        end
     end
+    # constant current and constant impedance withdrawals
     for l in PSY.get_components(PSY.StandardLoad, sys)
         PSY.get_available(l) || continue
         bus = PSY.get_bus(l)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-        bus_activepower_withdrawals[bus_ix] += PSY.get_constant_active_power(l)
         bus_activepower_constant_current_withdrawals[bus_ix] +=
             PSY.get_current_active_power(l)
         bus_activepower_constant_impedance_withdrawals[bus_ix] +=
             PSY.get_impedance_active_power(l)
-        bus_reactivepower_withdrawals[bus_ix] += PSY.get_constant_reactive_power(l)
         bus_reactivepower_constant_current_withdrawals[bus_ix] +=
             PSY.get_current_reactive_power(l)
         bus_reactivepower_constant_impedance_withdrawals[bus_ix] +=
