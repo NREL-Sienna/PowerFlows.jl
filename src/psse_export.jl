@@ -751,6 +751,13 @@ function _warn_finite_default(val; field_name, component_name)
     return newval
 end
 
+"""
+Create a synthetic generator (`PSY.ThermalStandard`) representing one end of a TwoTerminalGenericHVDCLine
+for export purposes. The generator is initialized with parameters reflecting the HVDC line's state. 
+# Notes
+    - The generator's name is constructed as "<hvdc_line_name>_<suffix>".
+    - The `ext` field includes `"HVDC_END"` to indicate the end ("FR"/"TO").
+"""
 function _make_gens_from_hvdc(
     hvdc_line,
     suffix,
@@ -781,6 +788,48 @@ function _make_gens_from_hvdc(
             "HVDC_END" => suffix,
         ),
     )
+end
+
+"""
+Update the parameters of synthetic generators created from HVDC lines,
+so they reflect the current setpoints and limits of the HVDC devices in the system.
+"""
+function _update_gens_from_hvdc!(
+    synthetic_gens::Vector{PSY.ThermalStandard},
+    gen_to_hvdc_map::Dict{
+        PSY.ThermalStandard,
+        Tuple{PSY.TwoTerminalGenericHVDCLine, String},
+    },
+    exporter,
+)
+    for gen in synthetic_gens
+        hvdc_line, suffix = gen_to_hvdc_map[gen]
+        bus = if suffix == "FR"
+            PSY.get_from(PSY.get_arc(hvdc_line))
+        else
+            PSY.get_to(PSY.get_arc(hvdc_line))
+        end
+        gen.available = PSY.get_available(hvdc_line) ? 1 : 0
+        gen.status = gen.available == 1
+        gen.bus = bus
+        gen.active_power = PSY.get_active_power_flow(hvdc_line)
+        gen.rating = if suffix == "FR"
+            PSY.get_active_power_limits_from(hvdc_line).max
+        else
+            PSY.get_active_power_limits_to(hvdc_line).max
+        end
+        gen.active_power_limits = if suffix == "FR"
+            PSY.get_active_power_limits_from(hvdc_line)
+        else
+            PSY.get_active_power_limits_to(hvdc_line)
+        end
+        gen.reactive_power_limits = if suffix == "FR"
+            PSY.get_reactive_power_limits_from(hvdc_line)
+        else
+            PSY.get_reactive_power_limits_to(hvdc_line)
+        end
+        gen.base_power = PSY.get_base_power(exporter.system)
+    end
 end
 
 """
@@ -828,41 +877,46 @@ function write_to_buffers!(
         # Add TwoTerminalGenericHVDCLine components as generators at each end
         hvdc_lines =
             collect(PSY.get_components(PSY.TwoTerminalGenericHVDCLine, exporter.system))
+        # Store synthetic generator instances
+        synthetic_gens = Vector{PSY.ThermalStandard}()
+        gen_to_hvdc_map =
+            Dict{PSY.ThermalStandard, Tuple{PSY.TwoTerminalGenericHVDCLine, String}}()
+
         if !isempty(hvdc_lines)
             @warn "Found $(length(hvdc_lines)) TwoTerminalGenericHVDCLine components. These will be exported as generators at each end of the DC line."
-
             for hvdc_line in hvdc_lines
                 from_bus = PSY.get_from(PSY.get_arc(hvdc_line))
                 to_bus = PSY.get_to(PSY.get_arc(hvdc_line))
 
-                push!(
-                    temp_gens,
-                    _make_gens_from_hvdc(
-                        hvdc_line, "FR", from_bus,
-                        PSY.get_active_power_flow(hvdc_line),
-                        PSY.get_active_power_limits_from(hvdc_line).max,
-                        PSY.get_active_power_limits_from(hvdc_line),
-                        PSY.get_reactive_power_limits_from(hvdc_line),
-                        exporter,
-                    ),
+                gen_fr = _make_gens_from_hvdc(
+                    hvdc_line, "FR", from_bus,
+                    PSY.get_active_power_flow(hvdc_line),
+                    PSY.get_active_power_limits_from(hvdc_line).max,
+                    PSY.get_active_power_limits_from(hvdc_line),
+                    PSY.get_reactive_power_limits_from(hvdc_line),
+                    exporter,
                 )
-
-                push!(
-                    temp_gens,
-                    _make_gens_from_hvdc(
-                        hvdc_line, "TO", to_bus,
-                        PSY.get_active_power_flow(hvdc_line),
-                        PSY.get_active_power_limits_to(hvdc_line).max,
-                        PSY.get_active_power_limits_to(hvdc_line),
-                        PSY.get_reactive_power_limits_to(hvdc_line),
-                        exporter,
-                    ),
+                gen_to = _make_gens_from_hvdc(
+                    hvdc_line, "TO", to_bus,
+                    PSY.get_active_power_flow(hvdc_line),
+                    PSY.get_active_power_limits_to(hvdc_line).max,
+                    PSY.get_active_power_limits_to(hvdc_line),
+                    PSY.get_reactive_power_limits_to(hvdc_line),
+                    exporter,
                 )
+                push!(synthetic_gens, gen_fr)
+                push!(synthetic_gens, gen_to)
+                gen_to_hvdc_map[gen_fr] = (hvdc_line, "FR")
+                gen_to_hvdc_map[gen_to] = (hvdc_line, "TO")
             end
         end
 
-        return sort!(temp_gens; by = x -> PSY.get_number(PSY.get_bus(x)))
+        # Before each export, update the synthetic generators
+        _update_gens_from_hvdc!(synthetic_gens, gen_to_hvdc_map, exporter)
+        # Add synthetic generators to temp_gens
+        append!(temp_gens, synthetic_gens)
     end
+
     generator_name_mapping = get!(exporter.components_cache, "generator_name_mapping") do
         generators_by_bus = Dict{Int, Vector{Tuple{String, Int}}}()
         for (i, generator) in enumerate(generators)
@@ -881,7 +935,7 @@ function write_to_buffers!(
                 gen_name = gens_on_bus[1][1]
                 mapping[(bus_num, gen_name)] = "1"
             else
-                # Multiple generators on bus get sequential IDs "1", "2", "3", etc.
+                # The mapping ensures that each generator (with synthetic ones) on a bus gets a unique sequential ID
                 for (idx, (gen_name, _)) in enumerate(gens_on_bus)
                     mapping[(bus_num, gen_name)] = string(idx)
                 end
@@ -889,8 +943,17 @@ function write_to_buffers!(
         end
         mapping
     end
-    base_power = PSY.get_base_power(exporter.system)
 
+    # Sorting of generators after including synthetic gens from the generic HVDC.
+    sort!(
+        generators;
+        by = x -> (
+            PSY.get_number(PSY.get_bus(x)),
+            generator_name_mapping[(PSY.get_number(PSY.get_bus(x)), PSY.get_name(x))],
+        ),
+    )
+
+    base_power = PSY.get_base_power(exporter.system)
     for generator in generators
         sienna_bus_number = PSY.get_number(PSY.get_bus(generator))
         hvdc_end = get_ext_key_or_default(generator, "HVDC_END", nothing)
