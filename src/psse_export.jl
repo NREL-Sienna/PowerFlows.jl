@@ -497,15 +497,22 @@ function write_to_buffers!(
     md = exporter.md_dict
     check_33(exporter)
 
-    buses = get!(exporter.components_cache, "buses") do
-        sort!(collect(PSY.get_components(PSY.ACBus, exporter.system)); by = PSY.get_number)
-    end
     tr3w_starbuses =
         PSY.get_name.(
             PSY.get_star_bus.(
                 PSY.get_components(PSY.ThreeWindingTransformer, exporter.system)
             )
         )
+    buses = get!(exporter.components_cache, "buses") do
+        sort!(
+            [
+                bus for bus in collect(PSY.get_components(PSY.ACBus, exporter.system))
+                if !(PSY.get_name(bus) in tr3w_starbuses)
+            ];
+            by = PSY.get_number,
+        )
+    end
+
     old_bus_numbers = PSY.get_number.(buses)
 
     if !exporter.md_valid
@@ -522,9 +529,6 @@ function write_to_buffers!(
 
     for bus in buses
         bus_name = PSY.get_name(bus)
-        if bus_name in tr3w_starbuses
-            continue
-        end
         I = bus_number_mapping[PSY.get_number(bus)]
         NAME = _psse_quote_string(bus_name_mapping[bus_name])
         BASKV = PSY.get_base_voltage(bus)
