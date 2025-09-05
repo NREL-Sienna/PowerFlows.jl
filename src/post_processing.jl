@@ -365,7 +365,7 @@ end
 
 function set_branch_flows_for_dict!(
     d::Union{
-        Dict{Tuple{Int, Int}, PSY.Branch},
+        Dict{Tuple{Int, Int}, PSY.ACTransmission},
         Dict{Tuple{Int, Int}, Tuple{PSY.ThreeWindingTransformer, Int}},
     },
     data::ACPowerFlowData,
