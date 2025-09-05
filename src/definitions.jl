@@ -49,3 +49,14 @@ const DEFAULT_VALIDATION_RANGE = (min = 0.5, max = 1.5)
 # const MAX_INDS_TO_PRINT = 10
 
 const OVERWRITE_NON_CONVERGED = true # overwrite non-converged time steps with NaN values
+
+# robust homotopy method constants
+const β = 10.0^-3
+const INSUFFICIENT_CHANGE_IN_X = 10^(-11)
+const GRAD_ZERO = 2 * eps()
+# cholesky solver specific
+const VTypes = SparseArrays.CHOLMOD.VRealTypes
+const ITypes = SparseArrays.CHOLMOD.ITypes
+
+# force arc names to be unique when reporting power flow results.
+const FORCE_UNIQUE_NAMES = true
