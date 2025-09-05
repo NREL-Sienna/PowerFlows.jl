@@ -7,8 +7,9 @@ const LARGE_RESIDUAL = 10 # threshold for "bad initial guess": default
 
 const ISAPPROX_ZERO_TOLERANCE = 1e-6
 
-const DEFAULT_NR_MAX_ITER::Int64 = 30   # default maxIterations for the NR power flow
-const DEFAULT_NR_TOL::Float64 = 1e-9 # default tolerance for the NR power flow
+const DEFAULT_NR_MAX_ITER::Int64 = 50 # default maxIterations for the NR power flow
+const OVERRIDE_x0 = true
+const DEFAULT_NR_TOL::Float64 = 1e-9 # default tolerance for the NR power flow 
 const DEFAULT_REFINEMENT_THRESHOLD = 5e-2 # do refinement if relative error > 5%.
 const DEFAULT_REFINEMENT_MAX_ITER = 10 # how many times to try iterative refinement
 const DEFAULT_REFINEMENT_EPS::Float64 = 1e-6 # when to stop iterative refinement.
@@ -26,13 +27,9 @@ const DEFAULT_AUTOSCALE = false # correct for scaling of the system
 
 const PF_MAX_LOG = 10
 # only used for Levenberg-Maquardt
-const BIG_λ_THRESHOLD = 100.0
-# 2.0 and 3.0 , or 1.5 and 5.0 for big problems; 
-const DAMPING_INCR = 1.5 # no improvement => increasing damping by this factor.
-const DAMPING_DECR = 5.0 # yes improvement => decrease damping by this factor.
-const DEFAULT_λ_0 = 0.000001 # starting damping factor. TODO could start smaller. Not well-scaled:
+const DEFAULT_λ_0 = 1e-5
 # input is mix of powers (100 MW), voltages (0.8-1.2), and angles (-π/4 to π/4).
-const DEFAULT_MAX_TEST_λs = 20 # give up after increasing damping factor 20 times.
+const DEFAULT_MAX_TEST_λs = 50 # give up after increasing damping factor 50 times.
 
 const DEFAULT_Δt_k = 0.2
 
