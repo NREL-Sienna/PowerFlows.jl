@@ -55,8 +55,6 @@ function _run_powerflow_method(
     while i < maxIterations && !converged && !isnan(λ)
         λ = update_damping_factor!(x, residual, J, time_step, maxTestλs)
         converged = !isnan(λ) && norm(residual.Rv, Inf) < tol
-        println("lambda = ",λ)
-        println("Iteration = ",i)
         i += 1
     end
     if isnan(λ)
