@@ -1236,8 +1236,6 @@ function _psse_transformer_names(
 end
 
 """
-Currently only supports two-winding transformers
-
 WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Data
 """
 function write_to_buffers!(
