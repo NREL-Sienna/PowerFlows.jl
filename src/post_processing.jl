@@ -340,62 +340,6 @@ function _reactive_power_redistribution_pv(
     return
 end
 
-# TODO these next 4 functions really belong in PSY...
-function _set_power_flow!(br::PSY.ACTransmission, flow::Complex)
-    PSY.set_active_power_flow!(br, real(flow))
-    PSY.set_reactive_power_flow!(br, imag(flow))
-    return
-end
-
-function _set_power_flow!(tp::Tuple{PSY.ThreeWindingTransformer, Int}, flow::Complex)
-    (trf, winding) = tp
-    if winding == 1
-        PSY.set_active_power_flow_primary!(trf, real(flow))
-        PSY.set_reactive_power_flow_primary!(trf, imag(flow))
-    elseif winding == 2
-        PSY.set_active_power_flow_secondary!(trf, real(flow))
-        PSY.set_reactive_power_flow_secondary!(trf, imag(flow))
-    elseif winding == 3
-        PSY.set_active_power_flow_tertiary!(trf, real(flow))
-        PSY.set_reactive_power_flow_tertiary!(trf, imag(flow))
-    else
-        error("Invalid winding number: $winding")
-    end
-    return
-end
-
-function _set_complex_voltage!(bus::PSY.ACBus, V::Complex)
-    PSY.set_magnitude!(bus, abs(V))
-    PSY.set_angle!(bus, angle(V))
-    return
-end
-
-_get_complex_voltage(bus::PSY.ACBus) =
-    PSY.get_magnitude(bus) * exp(1im * PSY.get_angle(bus))
-
-function _set_segment_flow!(
-    segment::Union{PSY.ACTransmission, Tuple{PSY.ThreeWindingTransformer, Int}},
-    V_from::ComplexF64,
-    V_to::ComplexF64,
-)
-    (y11, y12, _, _) = PNM.ybus_branch_entries(segment)
-    I_from = y11 * V_from + y12 * V_to
-    S_from = V_from * conj(I_from)
-    _set_power_flow!(segment, S_from)
-    return
-end
-
-function _set_segment_flow!(
-    segment::Set{PSY.ACTransmission},
-    V_from::ComplexF64,
-    V_to::ComplexF64,
-)
-    for br in segment
-        _set_segment_flow!(br, V_from, V_to)
-    end
-    return
-end
-
 function _set_series_voltages_and_flows!(
     sys::PSY.System,
     segment_seq::Vector{Any},
@@ -457,10 +401,10 @@ function _set_series_voltages_and_flows!(
 
         current_bus = PSY.get_component(PSY.ACBus, sys, temp_bus_map[current_bus_no])
         current_V = (i == length(segment_seq)) ? V_endpoints[2] : x[i]
-        _set_complex_voltage!(current_bus, current_V) # set voltage at bus i
+        set_voltage!(current_bus, current_V) # set voltage at bus i
 
         (V_from, V_to) = reversed ? (current_V, prev_V) : (prev_V, current_V)
-        _set_segment_flow!(segment, V_from, V_to) # set flow at segment between i-1 and i.
+        calculate_segment_flow!(segment, V_from, V_to) # set flow at segment between i-1 and i.
 
         prev_bus_no = current_bus_no
         if i < length(segment_seq)
@@ -492,7 +436,7 @@ function set_branch_flows_for_dict!(
         arc_ix = arc_lookup[arc]
         p_branch = data.arc_activepower_flow_from_to[arc_ix, time_step]
         q_branch = data.arc_reactivepower_flow_from_to[arc_ix, time_step]
-        _set_power_flow!(br, p_branch + im * q_branch)
+        set_power_flow!(br, p_branch + im * q_branch)
     end
 end
 
@@ -635,8 +579,8 @@ function write_powerflow_solution!(
         (bus_from_no, bus_to_no) = equiv_arc
         (bus_from, bus_to) = (PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_from_no]),
             PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_to_no]))
-        (V_from, V_to) = (bus_from, bus_to) .|> _get_complex_voltage
-        _set_segment_flow!(parallel_branches, V_from, V_to)
+        (V_from, V_to) = (bus_from, bus_to) .|> get_complex_voltage
+        calculate_segment_flow!(parallel_branches, V_from, V_to)
     end
     return
 end

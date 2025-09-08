@@ -43,6 +43,7 @@ const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
 
 include("common.jl")
+include("powersystems_utils.jl")
 include("definitions.jl")
 include("powerflow_types.jl")
 include("PowerFlowData.jl")
