@@ -22,9 +22,12 @@ end
 contributes_active_power(::PSY.StaticInjection) = true
 active_power_contribution_type(::PSY.StaticInjection) = PowerContributionType.INJECTION
 # carve out the exceptions: we handle constant impedance/current loads separately
+contributes_active_power(::Union{PSY.FixedAdmittance, PSY.SwitchedAdmittance}) = false
+# the getter is named differently, `get_constant_active_power`, so handle separately
+contributes_active_power(::Union{PSY.StandardLoad, PSY.InterruptibleStandardLoad}) = false
+# withdraws active power, but getter is named differently: `get_active_power_losses`
 contributes_active_power(::PSY.SynchronousCondenser) = false
-contributes_active_power(::PSY.FixedAdmittance) = false
-contributes_active_power(::PSY.SwitchedAdmittance) = false
+# not fully supported yet.
 contributes_active_power(::PSY.FACTSControlDevice) = false
 # loads withdraw power.
 active_power_contribution_type(::PSY.ElectricLoad) = PowerContributionType.WITHDRAWAL
@@ -49,9 +52,12 @@ end
 contributes_reactive_power(::PSY.StaticInjection) = true
 reactive_power_contribution_type(::PSY.StaticInjection) = PowerContributionType.INJECTION
 # handle constant impedance loads separately
-contributes_reactive_power(::PSY.FixedAdmittance) = false
-contributes_reactive_power(::PSY.SwitchedAdmittance) = false
+contributes_reactive_power(::Union{PSY.FixedAdmittance, PSY.SwitchedAdmittance}) = false
+# the getter is named differently, `get_constant_reactive_power`, so handle separately
+contributes_reactive_power(::Union{PSY.StandardLoad, PSY.InterruptibleStandardLoad}) = false
 # interconnecting converters do not support reactive power
 contributes_reactive_power(::PSY.InterconnectingConverter) = false
+# not fully supported yet.
+contributes_reactive_power(::PSY.FACTSControlDevice) = false
 # loads withdraw reactive power
 reactive_power_contribution_type(::PSY.ElectricLoad) = PowerContributionType.WITHDRAWAL

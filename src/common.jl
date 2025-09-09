@@ -103,11 +103,14 @@ function _get_withdrawals!(
             bus_reactivepower_withdrawals[bus_ix] += PSY.get_reactive_power(l)
         end
     end
-    # constant current and constant impedance withdrawals
-    for l in PSY.get_components(PSY.StandardLoad, sys)
+    # handle StandardLoad: they have constant current and constant impedance withdrawals,
+    # and the getter for constant power is named differently (get_constant_active_power)
+    for l in PSY.get_components(Union{PSY.StandardLoad, PSY.InterruptibleStandardLoad}, sys)
         PSY.get_available(l) || continue
         bus = PSY.get_bus(l)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+        bus_activepower_withdrawals[bus_ix] += PSY.get_constant_active_power(l)
+        bus_reactivepower_withdrawals[bus_ix] += PSY.get_constant_reactive_power(l)
         bus_activepower_constant_current_withdrawals[bus_ix] +=
             PSY.get_current_active_power(l)
         bus_activepower_constant_impedance_withdrawals[bus_ix] +=
@@ -117,6 +120,7 @@ function _get_withdrawals!(
         bus_reactivepower_constant_impedance_withdrawals[bus_ix] +=
             PSY.get_impedance_reactive_power(l)
     end
+    # FixedAdmittance components are already included in the Ybus matrix.
     for sa in PSY.get_components(PSY.SwitchedAdmittance, sys)
         PSY.get_available(sa) || continue
         bus = PSY.get_bus(sa)
@@ -129,6 +133,14 @@ function _get_withdrawals!(
         # (we could use +=real(conj(Y)) and +=imag(conj(Y)) as well).
         bus_activepower_constant_impedance_withdrawals[bus_ix] += real(Y)
         bus_reactivepower_constant_impedance_withdrawals[bus_ix] -= imag(Y)
+    end
+    for sc in PSY.get_components(PSY.SynchronousCondenser, sys)
+        PSY.get_available(sc) || continue
+        bus = PSY.get_bus(sc)
+        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+        bus_activepower_withdrawals[bus_ix] += PSY.get_active_power_losses(sc)
+        # reactive power handled already:
+        # contributes_reactive_power(PSY.SynchronousCondenser) is true.
     end
     return
 end
@@ -444,6 +456,11 @@ function must_be_PV(sys::System)
     end
     # PSSe counts buses with switched shunts as PV, so we do the same here.
     for gen in PSY.get_components(PSY.SwitchedAdmittance, sys)
+        if PSY.get_available(gen)
+            push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
+        end
+    end
+    for gen in PSY.get_components(PSY.SynchronousCondenser, sys)
         if PSY.get_available(gen)
             push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
         end
