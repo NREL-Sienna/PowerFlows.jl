@@ -146,8 +146,8 @@ function compare_voltages(
     bus = PSY.get_component(PSY.ACBus, sys, bus_name)
     reduced_Vm = PSY.get_magnitude(bus)
     reduced_Va = PSY.get_angle(bus)
-    @test isapprox(unreduced_Vm, reduced_Vm; atol = 1e-3)
-    @test isapprox(unreduced_Va, reduced_Va; atol = 1e-3)
+    @test isapprox(unreduced_Vm, reduced_Vm; atol = 1e-6)
+    @test isapprox(unreduced_Va, reduced_Va; atol = 1e-6)
 end
 
 function compare_power_flows(

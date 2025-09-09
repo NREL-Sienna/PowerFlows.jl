@@ -342,12 +342,12 @@ end
 
 function _set_series_voltages_and_flows!(
     sys::PSY.System,
-    segment_seq::Vector{Any},
-    equiv_arc::Tuple{Int, Int},
+    segment_sequence::Vector{Any},
+    equivalent_arc::Tuple{Int, Int},
     V_endpoints::Tuple{ComplexF64, ComplexF64},
     temp_bus_map::Dict{Int, String},
 )
-    chain_len = size(segment_seq, 1)
+    chain_len = size(segment_sequence, 1)
     nbuses = chain_len + 1
     # we find the voltages at interior nodes by solving Av = b, where A is tri-diagonal.
     # diagonal elements of A are: y_11 of "out" branch + y_22 of "in" branch.
@@ -355,9 +355,9 @@ function _set_series_voltages_and_flows!(
     d = zeros(ComplexF64, nbuses - 2)
     dl, du = zeros(ComplexF64, nbuses - 3), zeros(ComplexF64, nbuses - 3)
     b = zeros(ComplexF64, nbuses - 2)
-    expected_from = equiv_arc[1]
+    expected_from = equivalent_arc[1]
     y21_first, y12_last = zero(ComplexF64), zero(ComplexF64)
-    for (i, segment) in enumerate(segment_seq)
+    for (i, segment) in enumerate(segment_sequence)
         # make sure segments are all oriented in the same direction.
         (segment_from, segment_to) = PNM.get_arc_tuple(segment)
         reversed = (segment_from != expected_from)
@@ -389,25 +389,25 @@ function _set_series_voltages_and_flows!(
     b[1] -= y21_first * V_endpoints[1]
     b[end] -= y12_last * V_endpoints[2]
     x = A \ b
-    prev_bus_no, current_bus_no = equiv_arc[1], -1
+    prev_bus_no, current_bus_no = equivalent_arc[1], -1
     prev_V, current_V = V_endpoints[1], zero(ComplexF64)
     # set the voltages at the interior nodes.
     # number the buses in series in order: 0, 1, 2, ... nbuses-1
     # current here is i, prev is i-1.
-    for (i, segment) in enumerate(segment_seq)
+    for (i, segment) in enumerate(segment_sequence)
         (segment_from, segment_to) = PNM.get_arc_tuple(segment)
         reversed = segment_from != prev_bus_no
         current_bus_no = reversed ? segment_from : segment_to
 
         current_bus = PSY.get_component(PSY.ACBus, sys, temp_bus_map[current_bus_no])
-        current_V = (i == length(segment_seq)) ? V_endpoints[2] : x[i]
+        current_V = (i == length(segment_sequence)) ? V_endpoints[2] : x[i]
         set_voltage!(current_bus, current_V) # set voltage at bus i
 
         (V_from, V_to) = reversed ? (current_V, prev_V) : (prev_V, current_V)
         calculate_segment_flow!(segment, V_from, V_to) # set flow at segment between i-1 and i.
 
         prev_bus_no = current_bus_no
-        if i < length(segment_seq)
+        if i < length(segment_sequence)
             prev_V = x[i]
         end
     end
@@ -457,48 +457,20 @@ function write_powerflow_solution!(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
 
-    # FIXME once redistribution is working again, could remove skip_redistribution.
-    if !pf.skip_redistribution
-        source_buses = can_be_PV(sys)
-        for (bus_number, reduced_buses) in PNM.get_bus_reduction_map(nrd)
-            if length(reduced_buses) == 0
-                # no reduction.
-                bus_name = temp_bus_map[bus_number]
-                bus = PSY.get_component(PSY.ACBus, sys, bus_name)
-                system_bustype = PSY.get_bustype(bus)
-                ix = get_bus_lookup(data)[bus_number]
-                data_bustype = data.bus_type[ix, time_step]
-                (system_bustype == data_bustype) && continue
-                # assumption: no sources => bus type must've been changed during initialization
-                # due to the correct_bustypes option, not due to reactive power limits.
-                !(bus_number in source_buses) && continue
-                @assert system_bustype == PSY.ACBusTypes.PV
-                @assert data_bustype == PSY.ACBusTypes.PQ
-                Q_gen = data.bus_reactivepower_injection[ix, time_step]
-                @debug "Updating bus $(PSY.get_name(bus)) reactive power and type to PQ due " *
-                       "to check_reactive_power_limits: $Q_gen"
-                _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
-                PSY.set_bustype!(bus, data_bustype)
-            else
-                @warn "Buses $reduced_buses were reduced into bus $bus_number: skipping PV -> " *
-                      "PQ conversion checks and reactive power redistribution for those " *
-                      "buses" maxlog = PF_MAX_LOG
-            end
-        end
-    end
-
     gspf = if isnothing(data.generator_slack_participation_factors)
         nothing
     else
         data.generator_slack_participation_factors[time_step]
     end
 
+    # FIXME once redistribution is working again, could remove skip_redistribution.
+    bus_lookup = get_bus_lookup(data)
     for (bus_number, reduced_buses) in PNM.get_bus_reduction_map(nrd)
         if length(reduced_buses) == 0
             # no reduction.
             bus_name = temp_bus_map[bus_number]
             bus = PSY.get_component(PSY.ACBus, sys, bus_name)
-            ix = get_bus_lookup(data)[bus_number]
+            ix = bus_lookup[bus_number]
             bustype = data.bus_type[ix, time_step] # may not be the same as bus.bustype!
             if bustype != PSY.get_bustype(bus)
                 @warn "Changing system bus type at bus $(PSY.get_name(bus)) to match " *
