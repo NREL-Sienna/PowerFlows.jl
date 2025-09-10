@@ -52,8 +52,7 @@ function _get_injections!(
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
 )
-    for source in PSY.get_components(PSY.StaticInjection, sys)
-        !PSY.get_available(source) && continue
+    for source in PSY.get_available_components(PSY.StaticInjection, sys)
         if contributes_active_power(source) &&
            active_power_contribution_type(source) == PowerContributionType.INJECTION
             bus = PSY.get_bus(source)
@@ -88,8 +87,7 @@ function _get_withdrawals!(
     sys::PSY.System,
 )
     # constant power withdrawals
-    for l in PSY.get_components(PSY.StaticInjection, sys)
-        PSY.get_available(l) || continue
+    for l in PSY.get_available_components(PSY.StaticInjection, sys)
         if contributes_active_power(l) &&
            active_power_contribution_type(l) == PowerContributionType.WITHDRAWAL
             bus = PSY.get_bus(l)
@@ -105,8 +103,10 @@ function _get_withdrawals!(
     end
     # handle StandardLoad: they have constant current and constant impedance withdrawals,
     # and the getter for constant power is named differently (get_constant_active_power)
-    for l in PSY.get_components(Union{PSY.StandardLoad, PSY.InterruptibleStandardLoad}, sys)
-        PSY.get_available(l) || continue
+    for l in PSY.get_available_components(
+        Union{PSY.StandardLoad, PSY.InterruptibleStandardLoad},
+        sys,
+    )
         bus = PSY.get_bus(l)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         bus_activepower_withdrawals[bus_ix] += PSY.get_constant_active_power(l)
@@ -121,8 +121,7 @@ function _get_withdrawals!(
             PSY.get_impedance_reactive_power(l)
     end
     # FixedAdmittance components are already included in the Ybus matrix.
-    for sa in PSY.get_components(PSY.SwitchedAdmittance, sys)
-        PSY.get_available(sa) || continue
+    for sa in PSY.get_available_components(PSY.SwitchedAdmittance, sys)
         bus = PSY.get_bus(sa)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         Y = PSY.get_Y(sa) + sum(PSY.get_initial_status(sa) .* PSY.get_Y_increase(sa))
@@ -134,8 +133,7 @@ function _get_withdrawals!(
         bus_activepower_constant_impedance_withdrawals[bus_ix] += real(Y)
         bus_reactivepower_constant_impedance_withdrawals[bus_ix] -= imag(Y)
     end
-    for sc in PSY.get_components(PSY.SynchronousCondenser, sys)
-        PSY.get_available(sc) || continue
+    for sc in PSY.get_available_components(PSY.SynchronousCondenser, sys)
         bus = PSY.get_bus(sc)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         bus_activepower_withdrawals[bus_ix] += PSY.get_active_power_losses(sc)
@@ -152,10 +150,9 @@ function _get_reactive_power_bound!(
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
 )
-    for source in PSY.get_components(PSY.StaticInjection, sys)
+    for source in PSY.get_available_components(PSY.StaticInjection, sys)
         isa(source, PSY.ElectricLoad) && continue
         isa(source, PSY.FACTSControlDevice) && continue # FIXME: FACTS devices.
-        !PSY.get_available(source) && continue
         bus = PSY.get_bus(source)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         reactive_power_limits = get_reactive_power_limits_for_power_flow(source)
@@ -449,21 +446,15 @@ end
 """Return set of all bus numbers that must be PV: i.e. have an available generator."""
 function must_be_PV(sys::System)
     gen_buses = Set{Int}()
-    for gen in PSY.get_components(PSY.Generator, sys)
-        if PSY.get_available(gen)
-            push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
-        end
+    for gen in PSY.get_available_components(PSY.Generator, sys)
+        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
     end
     # PSSe counts buses with switched shunts as PV, so we do the same here.
-    for gen in PSY.get_components(PSY.SwitchedAdmittance, sys)
-        if PSY.get_available(gen)
-            push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
-        end
+    for gen in PSY.get_available_components(PSY.SwitchedAdmittance, sys)
+        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
     end
-    for gen in PSY.get_components(PSY.SynchronousCondenser, sys)
-        if PSY.get_available(gen)
-            push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
-        end
+    for gen in PSY.get_available_components(PSY.SynchronousCondenser, sys)
+        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
     end
     return gen_buses
 end
@@ -472,10 +463,8 @@ end
 or certain voltage regulation devices."""
 function can_be_PV(sys::System)
     source_buses = must_be_PV(sys)
-    for source in PSY.get_components(PSY.Source, sys)
-        if PSY.get_available(source)
-            push!(source_buses, PSY.get_number(PSY.get_bus(source)))
-        end
+    for source in PSY.get_available_components(PSY.Source, sys)
+        push!(source_buses, PSY.get_number(PSY.get_bus(source)))
     end
     return source_buses
 end

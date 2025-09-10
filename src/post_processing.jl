@@ -16,8 +16,7 @@ function _calculate_fixed_admittance_powers(
     bus_lookup = get_bus_lookup(data)
 
     busIxToFAPower = Dict{Int64, Tuple{Float64, Float64}}()
-    for l in PSY.get_components(PSY.FixedAdmittance, sys)
-        !PSY.get_available(l) && continue
+    for l in PSY.get_available_components(PSY.FixedAdmittance, sys)
         b = PSY.get_bus(l)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(b))
         Vm_squared =
