@@ -168,8 +168,9 @@ function _initialize_bus_data!(
         temp_bus_map[bus_no] = bus_name
         if (bt == PSY.ACBusTypes.PV || bt == PSY.ACBusTypes.REF) && !(bus_no in possible_PV)
             if correct_bustypes
-                @info "Bus $bus_name (number $bus_no) changed from PV to PQ: no available " *
-                      "sources at that bus." maxlog = PF_MAX_LOG
+                @warn "No available sources at bus $bus_name  of bus type 2 (PV). " *
+                      "Treating that bus as PQ for purposes of the power flow." maxlog =
+                    PF_MAX_LOG
                 bt = PSY.ACBusTypes.PQ
             else
                 throw(
