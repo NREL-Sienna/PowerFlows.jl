@@ -340,6 +340,23 @@ function _reactive_power_redistribution_pv(
     return
 end
 
+"""
+Calculate series voltages at buses removed in degree 2 reduction.
+Method: number the nodes in the series segment 0, 1, ..., n. Number the segments by
+their concluding node: 1, 2, ... n. The currents in the segments are given by:
+[y^i_ff y^i_ft; y^i_tf y^i_tt] * [V_{i-1}; V_i] = [I_{i-1, i}; I_{i, i-1}]
+where I'm using upper indices to denote the segment number.
+There are no loads or generators at the internal nodes, so I_{i, i+1} + I_{i, i-1} = 0.
+Substitute the above expressions for the currents and group by V_i:
+y^i_{tf} V_{i-1} + (y_{tt}^i + y_{ff}^{i+1}) V_i + y_{ft}^{i+1} V_{i+1} = 0
+For i = 1 and i = n-1, move the terms involving V_0 and V_n [known] to the other side.
+This gives a tridiagonal system for x = [V_1, ..., V_{n-1}]:
+A * x = [-y^1_{tf} * V_0, 0, ..., 0, -y^{n}_{ft} * V_n]
+where A has diagonal entries y_{tt}^i + y_{ff}^{i+1}, subdiagonal
+entries y_{tf}^{i+1}, and superdiagonal entries y_{ft}^i.
+
+In the below, I use y_11 instead of y_ff, y_12 instead of y_ft, etc.
+"""
 function _set_series_voltages_and_flows!(
     sys::PSY.System,
     segment_sequence::Vector{Any},
