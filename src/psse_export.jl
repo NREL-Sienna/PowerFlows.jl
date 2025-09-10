@@ -1315,13 +1315,11 @@ function write_to_buffers!(
         CZ = get_ext_key_or_default(transformer, "CZ")
         CM = get_ext_key_or_default(transformer, "CM")
         NMETR = get_ext_key_or_default(transformer, "NMETR")
-        MAG1 = get_ext_key_or_default(transformer, "MAG1")
-        MAG2 = get_ext_key_or_default(transformer, "MAG2")
         supp_attr = PSY.get_supplemental_attributes(transformer)
         VECGRP = _psse_quote_string(get_ext_key_or_default(transformer, "VECGRP"))
 
         winding_number = length(bus_tuple)
-        if winding_number == 2  # Handle both 2-winding transformer fields
+        if winding_number == 2  # Handle 2-winding transformer fields
             from_n, to_n = bus_tuple
             I = bus_number_mapping[from_n]
             J = bus_number_mapping[to_n]
@@ -1331,6 +1329,16 @@ function write_to_buffers!(
                 CKT = CKT[2:end]
             end
             CKT = _psse_quote_string(CKT)
+            MAG1 = get_ext_key_or_default(
+                transformer,
+                "MAG1",
+                real(PSY.get_primary_shunt(transformer)),
+            )
+            MAG2 = get_ext_key_or_default(
+                transformer,
+                "MAG2",
+                imag(PSY.get_primary_shunt(transformer)),
+            )
             NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
             STAT = PSY.get_available(transformer) ? 1 : 0
             NOMV1 = get_ext_key_or_default(
@@ -1353,15 +1361,11 @@ function write_to_buffers!(
                 "WINDV2",
                 PSY.get_base_voltage_secondary(transformer),
             )
-            if hasproperty(transformer, :tap)
-                WINDV1 = PSY.get_tap(transformer) * WINDV2
-            else
-                WINDV1 = get_ext_key_or_default(
-                    transformer,
-                    "WINDV1",
-                    PSY.get_base_voltage_primary(transformer),
-                )
-            end
+            WINDV1 = get_ext_key_or_default(
+                transformer,
+                "WINDV1",
+                PSY.get_base_voltage_primary(transformer),
+            )
             R1_2 = get_ext_key_or_default(
                 transformer,
                 "R1-2",
@@ -1372,6 +1376,10 @@ function write_to_buffers!(
                 "X1-2",
                 PSY.get_x(transformer),
             )
+            COD1 = get_ext_key_or_default(transformer, "COD1")
+            RMA1 = get_ext_key_or_default(transformer, "RMA1")
+            RMI1 = get_ext_key_or_default(transformer, "RMI1")
+            NTP1 = get_ext_key_or_default(transformer, "NTP1")
 
             ANG1 = if (transformer isa PSY.PhaseShiftingTransformer)
                 rad2deg(PSY.get_α(transformer))
@@ -1385,13 +1393,9 @@ function write_to_buffers!(
                     _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
                 end
             RATA1, RATB1, RATC1 = (_psse_round_val(x) for x in (RATA1, RATB1, RATC1))
-            COD1 = get_ext_key_or_default(transformer, "COD1")
             CONT1 = get_ext_key_or_default(transformer, "CONT1")
-            RMA1 = get_ext_key_or_default(transformer, "RMA1")
-            RMI1 = get_ext_key_or_default(transformer, "RMI1")
             VMA1 = get_ext_key_or_default(transformer, "VMA1")
             VMI1 = get_ext_key_or_default(transformer, "VMI1")
-            NTP1 = get_ext_key_or_default(transformer, "NTP1")
             TAB1 = !isempty(supp_attr) ? PSY.get_table_number(supp_attr[1]) : 0
             CR1 = get_ext_key_or_default(transformer, "CR1")
             CX1 = get_ext_key_or_default(transformer, "CX1")
@@ -1419,6 +1423,8 @@ function write_to_buffers!(
             if startswith(CKT, "_")
                 CKT = CKT[2:end]
             end
+            MAG1 = get_ext_key_or_default(transformer, "MAG1", PSY.get_g(transformer))
+            MAG2 = get_ext_key_or_default(transformer, "MAG2", PSY.get_b(transformer))
             CKT = _psse_quote_string(CKT)
             NAME = transformer_3w_name_mapping[PSY.get_name(transformer)]
             NAME = _psse_quote_string(NAME)
