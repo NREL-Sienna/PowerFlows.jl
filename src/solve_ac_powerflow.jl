@@ -29,7 +29,7 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 solve_powerflow!(pf, sys)
 
 # Passing kwargs
-solve_powerflow!(pf, sys; correct_bustypes = false)
+solve_powerflow!(pf, sys; correct_bustypes = true)
 
 # Passing keyword arguments
 solve_powerflow!(pf, sys; maxIterations=100)

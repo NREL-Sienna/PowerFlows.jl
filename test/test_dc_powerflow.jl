@@ -7,7 +7,7 @@
     idx = sortperm(buses; by = x -> PSY.get_number(x))
 
     # get sorted indices for branches
-    branches = collect(PSY.get_components(PSY.get_available, PSY.ACBranch, sys))
+    branches = collect(PSY.get_available_components(PSY.ACBranch, sys))
     from_bus = [PSY.get_number(PSY.get_arc(x).from) for x in branches]
     idx2 = sortperm(from_bus)
 

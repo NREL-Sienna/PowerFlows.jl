@@ -292,6 +292,7 @@ function _calculate_neighbors(
     return neighbors
 end
 
+# NOTE: remove this once network reductions are fully implemented
 function network_reduction_message(
     nrs::Vector{PNM.NetworkReduction},
     m::PowerFlowEvaluationModel,
