@@ -1122,6 +1122,10 @@ function write_to_buffers!(
         LEN = get_ext_key_or_default(branch, "LEN")
         R = PSY.get_r(branch)
         X = PSY.get_x(branch)
+        GI = get_ext_key_or_default(branch, "GI")
+        BI = get_ext_key_or_default(branch, "BI")
+        GJ = get_ext_key_or_default(branch, "GJ")
+        BJ = get_ext_key_or_default(branch, "BJ")
 
         if branch isa PSY.DiscreteControlledACBranch
             branch_type = PSY.get_discrete_branch_type(branch)
@@ -1147,9 +1151,6 @@ function write_to_buffers!(
             RATEA =
                 RATEA >= INFINITE_BOUND ? 0.0 : RATEA / PSY.get_base_power(exporter.system)
 
-            GI, BI = 0.0, 0.0
-            GJ, BJ = 0.0, 0.0
-
             @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B,
                 RATEA, RATEB, RATEC, GI, BI,
                 GJ, BJ, ST, MET, LEN)
@@ -1164,9 +1165,7 @@ function write_to_buffers!(
             (RATEA, RATEB, RATEC) =
                 (_fix_3w_transformer_rating(x) for x in (RATEA, RATEB, RATEC))
 
-            B = PSY.get_b(branch).from * 2
-            GI, BI = 0.0, PSY.get_b(branch).from
-            GJ, BJ = 0.0, PSY.get_b(branch).to
+            B = PSY.get_b(branch).from + PSY.get_b(branch).to
 
             @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B,
                 RATEA, RATEB, RATEC, GI, BI,
