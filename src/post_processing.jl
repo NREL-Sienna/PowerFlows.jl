@@ -1,5 +1,7 @@
 function _is_available_source(x, bus::PSY.ACBus)
-    return PSY.get_available(x) && x.bus == bus && !isa(x, PSY.ElectricLoad)
+    # FIXME temporary workaround for FACTSControlDevice
+    return PSY.get_available(x) && x.bus == bus && !isa(x, PSY.ElectricLoad) &&
+           !isa(x, PSY.FACTSControlDevice)
 end
 
 """Returns a dictionary of bus index to power contribution at that bus from FixedAdmittance
@@ -14,8 +16,7 @@ function _calculate_fixed_admittance_powers(
     bus_lookup = get_bus_lookup(data)
 
     busIxToFAPower = Dict{Int64, Tuple{Float64, Float64}}()
-    for l in PSY.get_components(PSY.FixedAdmittance, sys)
-        !PSY.get_available(l) && continue
+    for l in PSY.get_available_components(PSY.FixedAdmittance, sys)
         b = PSY.get_bus(l)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(b))
         Vm_squared =
@@ -434,22 +435,17 @@ end
 """Set the power flow in the arcs that remain after network reduction. Called on the 
 `direct_branch_map` and `transformer3W_map` dictionaries."""
 function set_branch_flows_for_dict!(
-    d::Union{
-        Dict{Tuple{Int, Int}, PSY.ACTransmission},
-        Dict{Tuple{Int, Int}, Tuple{PSY.ThreeWindingTransformer, Int}},
-    },
-    data::ACPowerFlowData,
+    d::Dict{Tuple{Int, Int}, Any},
     time_step::Int,
-    map_name::String,
 )
     # if these asserts trigger, we may need to check for reverse(arc) too.
     arc_lookup = get_arc_lookup(data)
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     for (arc, br) in d
         @assert PNM.get_arc_tuple(br, nrd) == arc "disagreement between keys of " *
-                                                  "$map_name and physical arcs at arc $arc"
+                                                  "map and physical arcs at arc $arc"
         @assert arc in keys(arc_lookup) "disagreement between keys of " *
-                                        "$map_name and arc axis at arc $arc"
+                                        "map and arc axis at arc $arc"
         arc_ix = arc_lookup[arc]
         p_branch = data.arc_activepower_flow_from_to[arc_ix, time_step]
         q_branch = data.arc_reactivepower_flow_from_to[arc_ix, time_step]
@@ -532,18 +528,15 @@ function write_powerflow_solution!(
         end
     end
 
-    # all arcs in these maps still exist in the reduced network.
-    set_branch_flows_for_dict!(
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
+    both_branch_types = merge(
         PNM.get_direct_branch_map(nrd),
-        data,
-        time_step,
-        "direct_branch_map",
+        PNM.get_transformer3W_map(nrd),
     )
     set_branch_flows_for_dict!(
-        PNM.get_transformer3W_map(nrd),
+        both_branch_types,
         data,
         time_step,
-        "transformer3W_map",
     )
 
     # calculate the bus voltages at buses removed in degree 2 reduction.

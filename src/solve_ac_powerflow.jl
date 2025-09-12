@@ -15,7 +15,6 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 - `kwargs...`: Additional keyword arguments.
 
 ## Keyword Arguments
-- `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
 - 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
 - `tol`: Infinite norm of residuals under which convergence is declared. Default is `1e-9`.
 - `maxIterations`: Maximum number of Newton-Raphson iterations. Default is `30`.
@@ -30,7 +29,7 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 solve_powerflow!(pf, sys)
 
 # Passing kwargs
-solve_powerflow!(pf, sys; check_connectivity=false)
+solve_powerflow!(pf, sys; correct_bustypes = true)
 
 # Passing keyword arguments
 solve_powerflow!(pf, sys; maxIterations=100)
@@ -123,7 +122,6 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 - `kwargs...`: Additional keyword arguments.
 
 # Keyword Arguments
-- `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
 - 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
 - `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `data.timestep_map`.
 
