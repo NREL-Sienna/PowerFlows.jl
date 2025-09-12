@@ -74,7 +74,6 @@
     x2 = _calc_x(data, 1)
     @test LinearAlgebra.norm(result_14 - x2, Inf) >= 1e-6
     @test 1.08 <= x2[15] <= 1.09
-
 end
 
 @testset "AC Power Flow 14-Bus Line Configurations" begin
