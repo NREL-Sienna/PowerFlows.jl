@@ -198,6 +198,82 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
     return nothing
 end
 
+function _create_jacobian_matrix_structure_lcc(data::ACPowerFlowData, rows::Vector{Int32},
+    columns::Vector{Int32},
+    values::Vector{Float64},
+    num_buses::Int)
+    for (i, (fb, tb)) in enumerate(zip(data.lcc.rectifier_bus, data.lcc.inverter_bus))
+        push!(rows, 2 * fb - 1)
+        push!(columns, 2 * fb - 1)
+        push!(values, 0.0)
+
+        push!(rows, 2 * fb)
+        push!(columns, 2 * fb - 1)
+        push!(values, 0.0)
+
+        push!(rows, 2 * fb - 1)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 1)
+        push!(values, 0.0)
+
+        push!(rows, 2 * fb - 1)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 3)
+        push!(values, 0.0)
+
+        push!(rows, 2 * fb)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 1)
+        push!(values, 0.0)
+
+        push!(rows, 2 * fb)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 3)
+        push!(values, 0.0)
+
+        push!(rows, num_buses * 2 + (i - 1) * 4 + 1)
+        push!(columns, 2 * fb - 1)
+        push!(values, 0.0)
+
+        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
+        push!(columns, 2 * fb - 1)
+        push!(values, 0.0)
+
+        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
+        push!(columns, 2 * tb - 1)
+        push!(values, 0.0)
+
+        push!(rows, num_buses * 2 + (i - 1) * 4 + 1)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 1)
+        push!(values, 0.0)
+
+        push!(rows, num_buses * 2 + (i - 1) * 4 + 1)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 3)
+        push!(values, 0.0)
+
+        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 1)
+        push!(values, 0.0)
+
+        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 2)
+        push!(values, 0.0)
+
+        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 3)
+        push!(values, 0.0)
+
+        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 4)
+        push!(values, 0.0)
+
+        push!(rows, num_buses * 2 + (i - 1) * 4 + 3)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 3)
+        push!(values, 1.0)
+
+        push!(rows, num_buses * 2 + (i - 1) * 4 + 4)
+        push!(columns, num_buses * 2 + (i - 1) * 4 + 4)
+        push!(values, 1.0)
+    end
+    return
+end
+
 """
     _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64) -> SparseMatrixCSC{Float64, Int32}
 
@@ -254,11 +330,12 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
     values = Float64[]  # V
 
     num_buses = first(size(data.bus_type))
+    num_lccs = size(data.lcc.p_set, 1)
 
     num_lines = length(get_arc_lookup(data))
-    sizehint!(rows, 4 * num_lines)
-    sizehint!(columns, 4 * num_lines)
-    sizehint!(values, 4 * num_lines)
+    sizehint!(rows, 4 * num_lines + 15 * num_lccs)
+    sizehint!(columns, 4 * num_lines + 15 * num_lccs)
+    sizehint!(values, 4 * num_lines + 15 * num_lccs)
 
     for bus_from in 1:num_buses
         row_from_p = 2 * bus_from - 1  # Row index for the value that is related to active power
@@ -283,6 +360,7 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
             )
         end
     end
+    _create_jacobian_matrix_structure_lcc(data, rows, columns, values, num_buses)
     Jv0 = SparseArrays.sparse(rows, columns, values)
     return Jv0
 end
@@ -380,6 +458,105 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     return
 end
 
+function _set_entries_for_lcc(data::ACPowerFlowData,
+    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    num_buses::Int,
+    time_step::Int)
+    for i in eachindex(data.lcc.rectifier_bus)
+        fb = data.lcc.rectifier_bus[i]
+        tb = data.lcc.inverter_bus[i]
+
+        if data.bus_type[fb, time_step] == PSY.ACBusTypes.PQ
+            Jv[2 * fb - 1, 2 * fb - 1] +=
+                data.lcc.rectifier_tap[i, time_step] * sqrt(6) / π *
+                data.lcc.rectifier_i_dc[i, time_step] *
+                cos(data.lcc.rectifier_delay_angle[i, time_step])
+            Jv[2 * fb, 2 * fb - 1] += _calculate_dQ_dV_lcc(
+                data.lcc.rectifier_tap[i, time_step],
+                data.lcc.rectifier_i_dc[i, time_step],
+                data.lcc.rectifier_transformer_reactance[i],
+                data.bus_magnitude[fb, time_step],
+                data.lcc.rectifier_phi[i, time_step],
+            )
+        end
+
+        if data.bus_type[fb, time_step] == PSY.ACBusTypes.PV ||
+           data.bus_type[fb, time_step] == PSY.ACBusTypes.PQ
+            Jv[2 * fb - 1, num_buses * 2 + (i - 1) * 4 + 1] =
+                data.bus_magnitude[fb, time_step] * sqrt(6) / π *
+                data.lcc.rectifier_i_dc[i, time_step] *
+                cos(data.lcc.rectifier_delay_angle[i, time_step])
+            Jv[2 * fb - 1, num_buses * 2 + (i - 1) * 4 + 3] =
+                -data.bus_magnitude[fb, time_step] * data.lcc.rectifier_tap[i, time_step] *
+                sqrt(6) / π * data.lcc.rectifier_i_dc[i, time_step] *
+                cos(data.lcc.rectifier_delay_angle[i, time_step]) *
+                tan(data.lcc.rectifier_delay_angle[i, time_step])
+        end
+
+        if data.bus_type[fb, time_step] == PSY.ACBusTypes.PQ
+            Jv[2 * fb, num_buses * 2 + (i - 1) * 4 + 1] = _calculate_dQ_dt_lcc(
+                data.lcc.rectifier_tap[i, time_step],
+                data.lcc.rectifier_i_dc[i, time_step],
+                data.lcc.rectifier_transformer_reactance[i],
+                data.bus_magnitude[fb, time_step],
+                data.lcc.rectifier_phi[i, time_step],
+            )
+            Jv[2 * fb, num_buses * 2 + (i - 1) * 4 + 3] = _calculate_dQ_dα_lcc(
+                data.lcc.rectifier_tap[i, time_step],
+                data.lcc.rectifier_i_dc[i, time_step],
+                data.lcc.rectifier_transformer_reactance[i],
+                data.bus_magnitude[fb, time_step],
+                data.lcc.rectifier_phi[i, time_step],
+                data.lcc.rectifier_delay_angle[i, time_step],
+            )
+            Jv[num_buses * 2 + (i - 1) * 4 + 1, 2 * fb - 1] =
+                data.lcc.rectifier_tap[i] * sqrt(6) / π *
+                data.lcc.rectifier_i_dc[i, time_step] *
+                cos(data.lcc.rectifier_delay_angle[i, time_step])
+            Jv[num_buses * 2 + (i - 1) * 4 + 2, 2 * fb - 1] =
+                data.lcc.rectifier_tap[i] * sqrt(6) / π *
+                data.lcc.rectifier_i_dc[i, time_step] *
+                cos(data.lcc.rectifier_delay_angle[i, time_step])
+        end
+
+        if data.bus_type[tb, time_step] == PSY.ACBusTypes.PQ
+            Jv[num_buses * 2 + (i - 1) * 4 + 2, 2 * tb - 1] =
+                data.lcc.inverter_tap[i] * sqrt(6) / π *
+                data.lcc.inverter_i_dc[i, time_step] *
+                cos(data.lcc.inverter_extinction_angle[i, time_step])
+        end
+
+        Jv[num_buses * 2 + (i - 1) * 4 + 1, num_buses * 2 + (i - 1) * 4 + 1] =
+            data.bus_magnitude[fb, time_step] * sqrt(6) / π *
+            data.lcc.rectifier_i_dc[i, time_step] *
+            cos(data.lcc.rectifier_delay_angle[i, time_step])
+        Jv[num_buses * 2 + (i - 1) * 4 + 1, num_buses * 2 + (i - 1) * 4 + 3] =
+            -data.bus_magnitude[fb, time_step] * data.lcc.rectifier_tap[i, time_step] *
+            sqrt(6) / π * data.lcc.rectifier_i_dc[i, time_step] *
+            cos(data.lcc.rectifier_delay_angle[i, time_step]) *
+            tan(data.lcc.rectifier_delay_angle[i, time_step])
+        Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 1] =
+            data.bus_magnitude[fb, time_step] * sqrt(6) / π *
+            data.lcc.rectifier_i_dc[i, time_step] *
+            cos(data.lcc.rectifier_delay_angle[i, time_step])
+        Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 2] =
+            data.bus_magnitude[tb, time_step] * sqrt(6) / π *
+            data.lcc.inverter_i_dc[i, time_step] *
+            cos(data.lcc.inverter_extinction_angle[i, time_step])
+        Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 3] =
+            -data.bus_magnitude[fb, time_step] * data.lcc.rectifier_tap[i, time_step] *
+            sqrt(6) / π * data.lcc.rectifier_i_dc[i, time_step] *
+            cos(data.lcc.rectifier_delay_angle[i, time_step]) *
+            tan(data.lcc.rectifier_delay_angle[i, time_step])
+        Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 4] =
+            -data.bus_magnitude[tb, time_step] * data.lcc.inverter_tap[i, time_step] *
+            sqrt(6) / π * data.lcc.inverter_i_dc[i, time_step] *
+            cos(data.lcc.inverter_extinction_angle[i, time_step]) *
+            tan(data.lcc.inverter_extinction_angle[i, time_step])
+    end
+    return
+end
+
 """Used to update Jv based on the bus voltages, angles, etc. in data."""
 function _update_jacobian_matrix_values!(
     Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
@@ -467,6 +644,7 @@ function _update_jacobian_matrix_values!(
             Jv[row_from_q, col_from_va] = -1.0
         end
     end
+    _set_entries_for_lcc(data, Jv, num_buses, time_step)
     return
 end
 

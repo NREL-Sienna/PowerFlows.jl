@@ -15,6 +15,34 @@ abstract type SystemPowerFlowContainer <: PowerFlowContainer end
 
 get_system(container::SystemPowerFlowContainer) = container.system
 
+struct LCCParameters
+    arc::Vector{PSY.Arc}
+    p_set::Matrix{Float64}
+
+    rectifier_i_dc::Matrix{Float64}
+    inverter_i_dc::Matrix{Float64}
+
+    dc_line_resistance::Vector{Float64}
+
+    rectifier_tap::Matrix{Float64}
+    inverter_tap::Matrix{Float64}
+
+    rectifier_delay_angle::Matrix{Float64}     # α
+    inverter_extinction_angle::Matrix{Float64} # γ
+
+    rectifier_phi::Matrix{Float64}
+    inverter_phi::Matrix{Float64}
+
+    rectifier_bus::Vector{Int}
+    inverter_bus::Vector{Int}
+
+    rectifier_transformer_reactance::Vector{Float64}
+    inverter_transformer_reactance::Vector{Float64}
+
+    rectifier_min_alpha::Vector{Float64}
+    inverter_min_gamma::Vector{Float64}
+end
+
 """
 Structure containing all the data required for the evaluation of the power
 flows and angles, as well as these ones.
@@ -130,6 +158,7 @@ struct PowerFlowData{
     calculate_loss_factors::Bool
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
     calculate_voltage_stability_factors::Bool
+    lcc::Union{LCCParameters, Nothing}
 end
 
 # aliases for specific type parameter combinations.
@@ -256,6 +285,95 @@ get_calculate_loss_factors(pfd::PowerFlowData) = pfd.calculate_loss_factors
 get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
 get_calculate_voltage_stability_factors(pfd::PowerFlowData) =
     pfd.calculate_voltage_stability_factors
+get_lcc_p_set(pfd::PowerFlowData) = pfd.lcc.p_set
+get_lcc_dc_line_resistance(pfd::PowerFlowData) = pfd.lcc.dc_line_resistance
+get_lcc_rectifier_tap(pfd::PowerFlowData) = pfd.lcc.rectifier_tap
+get_lcc_inverter_tap(pfd::PowerFlowData) = pfd.lcc.inverter_tap
+get_lcc_rectifier_delay_angle(pfd::PowerFlowData) = pfd.lcc.rectifier_delay_angle
+get_lcc_inverter_extinction_angle(pfd::PowerFlowData) = pfd.lcc.inverter_extinction_angle
+get_lcc_rectifier_phi(pfd::PowerFlowData) = pfd.lcc.rectifier_phi
+get_lcc_inverter_phi(pfd::PowerFlowData) = pfd.lcc.inverter_phi
+get_lcc_rectifier_bus(pfd::PowerFlowData) = pfd.lcc.rectifier_bus
+get_lcc_inverter_bus(pfd::PowerFlowData) = pfd.lcc.inverter_bus
+get_lcc_rectifier_transformer_reactance(pfd::PowerFlowData) =
+    pfd.lcc.rectifier_transformer_reactance
+get_lcc_inverter_transformer_reactance(pfd::PowerFlowData) =
+    pfd.lcc.inverter_transformer_reactance
+get_lcc_rectifier_min_alpha(pfd::PowerFlowData) = pfd.lcc.rectifier_min_alpha
+get_lcc_inverter_min_gamma(pfd::PowerFlowData) = pfd.lcc.inverter_min_gamma
+get_lcc_rectifier_i_dc(pfd::PowerFlowData) = pfd.lcc.rectifier_i_dc
+get_lcc_inverter_i_dc(pfd::PowerFlowData) = pfd.lcc.inverter_i_dc
+
+function LCCParameters(
+    sys::PSY.System,
+    bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
+    time_steps::Int,
+)
+    lccs = PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys)
+    n_lccs = length(lccs)
+    lcc_p_set = zeros(Float64, n_lccs, time_steps)
+    lcc_rectifier_i_dc = zeros(Float64, n_lccs, time_steps)
+    lcc_inverter_i_dc = zeros(Float64, n_lccs, time_steps)
+    lcc_dc_line_resistance = zeros(Float64, n_lccs)
+    lcc_rectifier_tap = ones(Float64, n_lccs, time_steps)
+    lcc_inverter_tap = ones(Float64, n_lccs, time_steps)
+    lcc_rectifier_delay_angle = zeros(Float64, n_lccs, time_steps)
+    lcc_inverter_extinction_angle = zeros(Float64, n_lccs, time_steps)
+    lcc_rectifier_phi = zeros(Float64, n_lccs, time_steps)
+    lcc_inverter_phi = zeros(Float64, n_lccs, time_steps)
+    lcc_rectifier_bus = zeros(Int, n_lccs)
+    lcc_inverter_bus = zeros(Int, n_lccs)
+    lcc_rectifier_transformer_reactance = zeros(Float64, n_lccs)
+    lcc_inverter_transformer_reactance = zeros(Float64, n_lccs)
+    lcc_rectifier_min_alpha = zeros(Float64, n_lccs)
+    lcc_inverter_min_gamma = zeros(Float64, n_lccs)
+
+    lccs = PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys)
+    _get_lcc_bus_ix =
+        (bus) -> _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+    if !isempty(lccs)
+        base_power = PSY.get_base_power(sys)
+        # todo: if current set point, transform into p set point
+        # lcc_p_set = I_dc_A * V_dc_V / system_base_MVA
+        lcc_p_set .= abs.(PSY.get_transfer_setpoint.(lccs) ./ base_power) # only one direction is supported, no reverse flow possible
+        lcc_rectifier_i_dc .= lcc_p_set
+        lcc_inverter_i_dc .= -lcc_p_set # maybe remove the inverter current and just use I_dc
+        lcc_dc_line_resistance .=
+            PSY.get_r.(lccs) .+ PSY.get_rectifier_rc.(lccs) .+ PSY.get_inverter_rc.(lccs)
+        lcc_rectifier_tap[:, 1] .= PSY.get_rectifier_tap_setting.(lccs)
+        lcc_inverter_tap[:, 1] .= PSY.get_inverter_tap_setting.(lccs)
+        lcc_rectifier_delay_angle[:, 1] .= PSY.get_rectifier_delay_angle.(lccs)
+        lcc_inverter_extinction_angle[:, 1] .= PSY.get_inverter_extinction_angle.(lccs)
+        lcc_rectifier_bus .= _get_lcc_bus_ix.(PSY.get_from.(PSY.get_arc.(lccs)))
+        lcc_inverter_bus .= _get_lcc_bus_ix.(PSY.get_to.(PSY.get_arc.(lccs)))
+        lcc_rectifier_transformer_reactance .= PSY.get_rectifier_xc.(lccs)
+        lcc_inverter_transformer_reactance .= PSY.get_inverter_xc.(lccs)
+        lcc_rectifier_min_alpha .=
+            [x.min for x in PSY.get_rectifier_delay_angle_limits.(lccs)]
+        lcc_inverter_min_gamma .=
+            [x.min for x in PSY.get_inverter_extinction_angle_limits.(lccs)]
+    end
+    return LCCParameters(
+        PSY.get_arc.(lccs),
+        lcc_p_set,
+        lcc_rectifier_i_dc,
+        lcc_inverter_i_dc,
+        lcc_dc_line_resistance,
+        lcc_rectifier_tap,
+        lcc_inverter_tap,
+        lcc_rectifier_delay_angle,
+        lcc_inverter_extinction_angle,
+        lcc_rectifier_phi,
+        lcc_inverter_phi,
+        lcc_rectifier_bus,
+        lcc_inverter_bus,
+        lcc_rectifier_transformer_reactance,
+        lcc_inverter_transformer_reactance,
+        lcc_rectifier_min_alpha,
+        lcc_inverter_min_gamma,
+    )
+end
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0

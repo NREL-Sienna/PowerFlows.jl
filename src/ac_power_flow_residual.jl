@@ -39,6 +39,7 @@ and net bus reactive power injections.
 """
 function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     n_buses = first(size(data.bus_type))
+    n_lccs = size(data.lcc.p_set, 1)
     P_net = Vector{Float64}(undef, n_buses)
     Q_net = Vector{Float64}(undef, n_buses)
 
@@ -100,7 +101,7 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     return ACPowerFlowResidual(
         data,
         _update_residual_values!,
-        Vector{Float64}(undef, 2 * n_buses),
+        Vector{Float64}(undef, 2 * n_buses + 4 * n_lccs),
         P_net,
         Q_net,
         P_net_set,
@@ -305,6 +306,8 @@ function _update_residual_values!(
 )
     # update P_net, Q_net, data.bus_angles, data.bus_magnitude based on X
     Yb = data.power_network_matrix.data
+    Yb_facts = data.power_network_matrix.data_facts
+    num_lcc = size(data.lcc.p_set, 1)
     bus_types = view(data.bus_type, :, time_step)
 
     for (ref_bus, subnetwork_buses) in subnetworks
@@ -356,6 +359,14 @@ function _update_residual_values!(
         end
     end
 
+    if num_lcc > 0
+        data.lcc.rectifier_tap[:, time_step] = x[(end - 4 * num_lcc + 1):4:end]
+        data.lcc.inverter_tap[:, time_step] = x[(end - 4 * num_lcc + 2):4:end]
+        data.lcc.rectifier_delay_angle[:, time_step] = x[(end - 4 * num_lcc + 3):4:end]
+        data.lcc.inverter_extinction_angle[:, time_step] = x[(end - 4 * num_lcc + 4):4:end]
+        _update_ybus_lcc!(Yb_facts, data, time_step)
+    end
+
     # compute active, reactive power balances using the just updated values.
     Vm = view(data.bus_magnitude, :, time_step)
     θ = view(data.bus_angles, :, time_step)
@@ -380,8 +391,32 @@ function _update_residual_values!(
             end
         end
     end
-    F[1:2:end] .-= P_net
-    F[2:2:end] .-= Q_net
+
+    F[1:2:(end - 4 * num_lcc)] .-= P_net
+    F[2:2:(end - 4 * num_lcc)] .-= Q_net
+
+    if num_lcc > 0
+        P_lcc_from =
+            Vm[data.lcc.rectifier_bus, time_step] .* data.lcc.rectifier_tap[:, time_step] .*
+            sqrt(6) / π .* data.lcc.rectifier_i_dc[:, time_step] .*
+            cos.(data.lcc.rectifier_delay_angle[:, time_step]) .-
+            sqrt(3 / 2) * sqrt(6) / π .* data.lcc.rectifier_transformer_reactance .*
+            data.lcc.rectifier_i_dc[:, time_step] .^ 2
+        P_lcc_to =
+            Vm[data.lcc.inverter_bus, time_step] .* data.lcc.inverter_tap[:, time_step] .*
+            sqrt(6) / π .* data.lcc.inverter_i_dc[:, time_step] .*
+            cos.(data.lcc.inverter_extinction_angle[:, time_step]) .-
+            sqrt(3 / 2) * sqrt(6) / π .* data.lcc.inverter_transformer_reactance .*
+            data.lcc.inverter_i_dc[:, time_step] .^ 2
+        F[(end - 4 * num_lcc + 1):4:end] .= P_lcc_from .- data.lcc.p_set[:, time_step]
+        F[(end - 4 * num_lcc + 2):4:end] .=
+            P_lcc_from .+ P_lcc_to .-
+            data.lcc.dc_line_resistance .* data.lcc.rectifier_i_dc[:, time_step] .^ 2
+        F[(end - 4 * num_lcc + 3):4:end] .=
+            data.lcc.rectifier_delay_angle[:, time_step] .- data.lcc.rectifier_min_alpha
+        F[(end - 4 * num_lcc + 4):4:end] .=
+            data.lcc.inverter_extinction_angle[:, time_step] .- data.lcc.inverter_min_gamma
+    end
     return
 end
 

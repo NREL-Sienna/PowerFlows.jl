@@ -467,6 +467,7 @@ function make_powerflowdata(
     calculate_voltage_stability_factors = nothing,
     generator_slack_participation_factors = nothing,
     correct_bustypes::Bool = false,
+    lcc_p_set = nothing,
 )
     n_buses = length(bus_lookup)
     n_arcs = length(arc_lookup)
@@ -581,6 +582,8 @@ function make_powerflowdata(
     arc_activepower_flow_to_from = zeros(Float64, n_arcs, time_steps)
     arc_reactivepower_flow_to_from = zeros(Float64, n_arcs, time_steps)
 
+    lcc = LCCParameters(sys, bus_lookup, reverse_bus_search_map, time_steps)
+
     return PowerFlowData(
         bus_lookup,
         arc_lookup,
@@ -612,6 +615,7 @@ function make_powerflowdata(
         calculate_loss_factors,
         voltage_stability_factors,
         calculate_voltage_stability_factors,
+        lcc,
     )
 end
 
@@ -655,3 +659,113 @@ wdot(wx::Vector{Float64}, x::Vector{Float64}, wy::Vector{Float64}, y::Vector{Flo
 wnorm(w::Vector{Float64}, x::Vector{Float64}) = norm(w .* x)
 """For pretty printing floats in debugging messages."""
 siground(x::Float64) = round(x; sigdigits = 3)
+
+"""
+    _calculate_ϕ_lcc(α::Float64, I_dc::Float64, x_t::Float64, Vm::Float64) -> Float64
+
+Compute the phase angle ϕ for LCC converter calculations.
+"""
+function _calculate_ϕ_lcc(α::Float64, I_dc::Float64, x_t::Float64, Vm::Float64)::Float64
+    return acos(clamp(sign(I_dc) * (cos(α) - (x_t * I_dc) / (sqrt(2) * Vm)), -1.0, 1.0))
+end
+
+"""
+    _calculate_y_lcc(t::Float64, I_dc::Float64, Vm::Float64, ϕ::Float64) -> ComplexF64
+
+Compute the admittance value Y for LCC converter calculations.
+"""
+function _calculate_y_lcc(t::Float64, I_dc::Float64, Vm::Float64, ϕ::Float64)::ComplexF64
+    return -t / Vm * sqrt(6) / π * sign(I_dc) * I_dc * exp(-1im * ϕ)
+end
+
+"""
+    _calculate_dQ_dV_lcc(t::Float64, I_dc::Float64, x_t::Float64, Vm::Float64, ϕ::Float64) -> Float64
+
+Compute the derivative of reactive power Q with respect to voltage magnitude Vm for LCC converter calculations.
+"""
+function _calculate_dQ_dV_lcc(
+    t::Float64,
+    I_dc::Float64,
+    x_t::Float64,
+    Vm::Float64,
+    ϕ::Float64,
+)::Float64
+    return Vm * t * sqrt(6) / π * I_dc * sign(I_dc) *
+           (
+               sin(ϕ) -
+               cos(ϕ) * x_t * sign(I_dc) * I_dc / (sqrt(2) * Vm * t * sqrt(1 - cos(ϕ)^2))
+           )
+end
+
+"""
+    _calculate_dQ_dt_lcc(t::Float64, I_dc::Float64, x_t::Float64, Vm::Float64, ϕ::Float64) -> Float64
+
+Compute the derivative of reactive power Q with respect to transformer tap t for LCC converter calculations.
+"""
+function _calculate_dQ_dt_lcc(
+    t::Float64,
+    I_dc::Float64,
+    x_t::Float64,
+    Vm::Float64,
+    ϕ::Float64,
+)::Float64
+    return Vm * t * sqrt(6) / π * I_dc * sign(I_dc) *
+           (
+               sin(ϕ) / t -
+               cos(ϕ) * x_t * sign(I_dc) * I_dc / (sqrt(2) * Vm * t^2 * sqrt(1 - cos(ϕ)^2))
+           )
+end
+
+"""
+    _calculate_dQ_dα_lcc(t::Float64, I_dc::Float64, x_t::Float64, Vm::Float64, ϕ::Float64, α::Float64) -> Float64
+
+Compute the derivative of reactive power Q with respect to firing/extinction angle α for LCC converter calculations.
+"""
+function _calculate_dQ_dα_lcc(
+    t::Float64,
+    I_dc::Float64,
+    x_t::Float64,
+    Vm::Float64,
+    ϕ::Float64,
+    α::Float64,
+)::Float64
+    return Vm * t * sqrt(6) / π * I_dc * cos(ϕ) * sin(α) / sqrt(1 - cos(ϕ)^2)
+end
+
+function _update_ybus_lcc!(ybus_facts, data, time_step)
+    for i in eachindex(data.lcc.rectifier_bus)
+        data.lcc.rectifier_phi[i, time_step] = _calculate_ϕ_lcc(
+            data.lcc.rectifier_delay_angle[i, time_step],
+            data.lcc.rectifier_i_dc[i, time_step],
+            data.lcc.rectifier_transformer_reactance[i],
+            data.bus_magnitude[data.lcc.rectifier_bus[i], time_step],
+        )
+        data.lcc.inverter_phi[i, time_step] = _calculate_ϕ_lcc(
+            data.lcc.inverter_extinction_angle[i, time_step],
+            data.lcc.inverter_i_dc[i, time_step],
+            data.lcc.inverter_transformer_reactance[i],
+            data.bus_magnitude[data.lcc.inverter_bus[i], time_step],
+        )
+        ybus_facts[data.lcc.rectifier_bus[i], data.lcc.rectifier_bus[i]] = _calculate_y_lcc(
+            data.lcc.rectifier_tap[i, time_step],
+            data.lcc.rectifier_i_dc[i, time_step],
+            data.bus_magnitude[data.lcc.rectifier_bus[i], time_step],
+            data.lcc.rectifier_phi[i, time_step],
+        )
+        ybus_facts[data.lcc.inverter_bus[i], data.lcc.inverter_bus[i]] = _calculate_y_lcc(
+            data.lcc.inverter_tap[i, time_step],
+            data.lcc.inverter_i_dc[i, time_step],
+            data.bus_magnitude[data.lcc.inverter_bus[i], time_step],
+            data.lcc.inverter_phi[i, time_step],
+        )
+        data.power_network_matrix.branch_admittance_from_to[
+            data.lcc.arc[i],
+            data.lcc.arc[i].from,
+        ] = ybus_facts[data.lcc.rectifier_bus[i], data.lcc.rectifier_bus[i]]
+        data.power_network_matrix.branch_admittance_to_from[
+            data.lcc.arc[i],
+            data.lcc.arc[i].to,
+        ] = ybus_facts[data.lcc.inverter_bus[i], data.lcc.inverter_bus[i]]
+    end
+    return
+end
