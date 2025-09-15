@@ -186,6 +186,7 @@ function _initialize_bus_data!(
     temp_bus_types = Dict{Int, PSY.ACBusTypes}()
     sizehint!(temp_bus_types, length(bus_numbers))
     temp_bus_map = Dict{Int, String}()
+    sizehint!(temp_bus_map, length(bus_numbers))
     for bus in PSY.get_components(PSY.ACBus, sys)
         bt = PSY.get_bustype(bus)
         bus_no = PSY.get_number(bus)

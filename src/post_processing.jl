@@ -341,32 +341,101 @@ function _reactive_power_redistribution_pv(
     return
 end
 
-function _set_branch_flow!(br::PSY.Branch, flow::Complex)
-    PSY.set_active_power_flow!(br, real(flow))
-    PSY.set_reactive_power_flow!(br, imag(flow))
-    return
-end
+"""
+Calculate series voltages at buses removed in degree 2 reduction.
+Method: number the nodes in the series segment 0, 1, ..., n. Number the segments by
+their concluding node: 1, 2, ... n. The currents in the segments are given by:
+[y^i_ff y^i_ft; y^i_tf y^i_tt] * [V_{i-1}; V_i] = [I_{i-1, i}; I_{i, i-1}]
+where I'm using upper indices to denote the segment number.
+There are no loads or generators at the internal nodes, so I_{i, i+1} + I_{i, i-1} = 0.
+Substitute the above expressions for the currents and group by V_i:
+y^i_{tf} V_{i-1} + (y_{tt}^i + y_{ff}^{i+1}) V_i + y_{ft}^{i+1} V_{i+1} = 0
+For i = 1 and i = n-1, move the terms involving V_0 and V_n [known] to the other side.
+This gives a tridiagonal system for x = [V_1, ..., V_{n-1}]:
+A * x = [-y^1_{tf} * V_0, 0, ..., 0, -y^{n}_{ft} * V_n]
+where A has diagonal entries y_{tt}^i + y_{ff}^{i+1}, subdiagonal
+entries y_{tf}^{i+1}, and superdiagonal entries y_{ft}^i.
 
-function _set_branch_flow!(tp::Tuple{PSY.ThreeWindingTransformer, Int}, flow::Complex)
-    (trf, winding) = tp
-    if winding == 1
-        PSY.set_active_power_flow_primary!(trf, real(flow))
-        PSY.set_reactive_power_flow_primary!(trf, imag(flow))
-    elseif winding == 2
-        PSY.set_active_power_flow_secondary!(trf, real(flow))
-        PSY.set_reactive_power_flow_secondary!(trf, imag(flow))
-    elseif winding == 3
-        PSY.set_active_power_flow_tertiary!(trf, real(flow))
-        PSY.set_reactive_power_flow_tertiary!(trf, imag(flow))
-    else
-        error("Invalid winding number: $winding")
+In the below, I use y_11 instead of y_ff, y_12 instead of y_ft, etc.
+"""
+function _set_series_voltages_and_flows!(
+    sys::PSY.System,
+    segment_sequence::Vector{Any},
+    equivalent_arc::Tuple{Int, Int},
+    V_endpoints::Tuple{ComplexF64, ComplexF64},
+    temp_bus_map::Dict{Int, String},
+)
+    chain_len = size(segment_sequence, 1)
+    nbuses = chain_len + 1
+    # we find the voltages at interior nodes by solving Av = b, where A is tri-diagonal.
+    # diagonal elements of A are: y_11 of "out" branch + y_22 of "in" branch.
+    # above/below diagonal elements are y_12/y_21 of the interior segments
+    d = zeros(ComplexF64, nbuses - 2)
+    dl, du = zeros(ComplexF64, nbuses - 3), zeros(ComplexF64, nbuses - 3)
+    b = zeros(ComplexF64, nbuses - 2)
+    expected_from = equivalent_arc[1]
+    y21_first, y12_last = zero(ComplexF64), zero(ComplexF64)
+    for (i, segment) in enumerate(segment_sequence)
+        # make sure segments are all oriented in the same direction.
+        (segment_from, segment_to) = PNM.get_arc_tuple(segment)
+        reversed = (segment_from != expected_from)
+        @assert (!reversed) || (segment_to == expected_from)
+        if !reversed
+            (y11, y12, y21, y22) = PNM.ybus_branch_entries(segment)
+        else
+            (y11, y12, y21, y22) = reverse(PNM.ybus_branch_entries(segment))
+            (segment_from, segment_to) = (segment_to, segment_from)
+        end
+        if i != 1 && i != chain_len
+            du[i - 1] += y12
+            dl[i - 1] += y21
+        end
+        if i != 1
+            d[i - 1] += y11
+        else
+            y21_first = y21
+        end
+        if i != chain_len
+            d[i] += y22
+        else
+            y12_last = y12
+        end
+        expected_from = segment_to
+    end
+    A = LinearAlgebra.Tridiagonal(dl, d, du)
+    # if only 2 segments, these two contributions hit the same entry. thus -= c, not = -c.
+    b[1] -= y21_first * V_endpoints[1]
+    b[end] -= y12_last * V_endpoints[2]
+    x = A \ b
+    prev_bus_no, current_bus_no = equivalent_arc[1], -1
+    prev_V, current_V = V_endpoints[1], zero(ComplexF64)
+    # set the voltages at the interior nodes.
+    # number the buses in series in order: 0, 1, 2, ... nbuses-1
+    # current here is i, prev is i-1.
+    for (i, segment) in enumerate(segment_sequence)
+        (segment_from, segment_to) = PNM.get_arc_tuple(segment)
+        reversed = segment_from != prev_bus_no
+        current_bus_no = reversed ? segment_from : segment_to
+
+        current_bus = PSY.get_component(PSY.ACBus, sys, temp_bus_map[current_bus_no])
+        current_V = (i == length(segment_sequence)) ? V_endpoints[2] : x[i]
+        set_voltage!(current_bus, current_V) # set voltage at bus i
+
+        (V_from, V_to) = reversed ? (current_V, prev_V) : (prev_V, current_V)
+        calculate_segment_flow!(segment, V_from, V_to) # set flow at segment between i-1 and i.
+
+        prev_bus_no = current_bus_no
+        if i < length(segment_sequence)
+            prev_V = x[i]
+        end
     end
     return
 end
 
+"""Set the power flow in the arcs that remain after network reduction. Called on the 
+`direct_branch_map` and `transformer3W_map` dictionaries."""
 function set_branch_flows_for_dict!(
     d::Dict{Tuple{Int, Int}, Any},
-    data::ACPowerFlowData,
     time_step::Int,
 )
     # if these asserts trigger, we may need to check for reverse(arc) too.
@@ -380,7 +449,7 @@ function set_branch_flows_for_dict!(
         arc_ix = arc_lookup[arc]
         p_branch = data.arc_activepower_flow_from_to[arc_ix, time_step]
         q_branch = data.arc_reactivepower_flow_from_to[arc_ix, time_step]
-        _set_branch_flow!(br, p_branch + im * q_branch)
+        set_power_flow!(br, p_branch + im * q_branch)
     end
 end
 
@@ -389,47 +458,17 @@ Updates system voltages and powers with power flow results
 """
 function write_powerflow_solution!(
     sys::PSY.System,
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
     data::ACPowerFlowData,
     max_iterations::Int,
     time_step::Int = 1,
 )
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
-    if !isempty(PNM.get_reductions(nrd))
-        @error "Reduced branches and buses will not have their flow and voltage fields updated, respectively. " *
-               "(Recovering these parameters for parallel and degree 2 reductions will be supported soon.)"
-    end
 
     # getting bus by number is slow, O(n), so use names instead.
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
-
-    source_buses = can_be_PV(sys)
-    for (bus_number, reduced_buses) in PNM.get_bus_reduction_map(nrd)
-        if length(reduced_buses) == 0
-            # no reduction.
-            bus_name = temp_bus_map[bus_number]
-            bus = PSY.get_component(PSY.ACBus, sys, bus_name)
-            system_bustype = PSY.get_bustype(bus)
-            ix = get_bus_lookup(data)[bus_number]
-            data_bustype = data.bus_type[ix, time_step]
-            (system_bustype == data_bustype) && continue
-            # assumption: no sources => bus type must've been changed during initialization
-            # due to the correct_bustypes option, not due to reactive power limits.
-            !(bus_number in source_buses) && continue
-            @assert system_bustype == PSY.ACBusTypes.PV
-            @assert data_bustype == PSY.ACBusTypes.PQ
-            Q_gen = data.bus_reactivepower_injection[ix, time_step]
-            @debug "Updating bus $(PSY.get_name(bus)) reactive power and type to PQ due " *
-                   "to check_reactive_power_limits: $Q_gen"
-            _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
-            PSY.set_bustype!(bus, data_bustype)
-        else
-            @warn "Buses $reduced_buses were reduced into bus $bus_number: skipping PV -> " *
-                  "PQ conversion checks and reactive power redistribution for those " *
-                  "buses" maxlog = PF_MAX_LOG
-        end
-    end
 
     gspf = if isnothing(data.generator_slack_participation_factors)
         nothing
@@ -437,30 +476,46 @@ function write_powerflow_solution!(
         data.generator_slack_participation_factors[time_step]
     end
 
+    # FIXME once redistribution is working again, could remove skip_redistribution.
+    bus_lookup = get_bus_lookup(data)
     for (bus_number, reduced_buses) in PNM.get_bus_reduction_map(nrd)
         if length(reduced_buses) == 0
             # no reduction.
             bus_name = temp_bus_map[bus_number]
             bus = PSY.get_component(PSY.ACBus, sys, bus_name)
-            ix = get_bus_lookup(data)[bus_number]
-            if bus.bustype == PSY.ACBusTypes.REF
+            ix = bus_lookup[bus_number]
+            bustype = data.bus_type[ix, time_step] # may not be the same as bus.bustype!
+            if bustype != PSY.get_bustype(bus)
+                @warn "Changing system bus type at bus $(PSY.get_name(bus)) to match " *
+                      "power flow bus type." maxlog = PF_MAX_LOG
+                PSY.set_bustype!(bus, bustype)
+            end
+            if bustype == PSY.ACBusTypes.REF && !pf.skip_redistribution
                 P_gen = data.bus_activepower_injection[ix, time_step]
                 Q_gen = data.bus_reactivepower_injection[ix, time_step]
                 _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations, gspf)
-            elseif bus.bustype == PSY.ACBusTypes.PV
+            elseif bustype == PSY.ACBusTypes.PV
                 Q_gen = data.bus_reactivepower_injection[ix, time_step]
                 bus.angle = data.bus_angles[ix, time_step]
                 # If the PV bus has a nonzero slack participation factor,
                 # then not only reactive power but also active power could have been changed
                 # in the power flow calculation. This requires the same
                 # active and reactive power redistribution step as for the REF bus.
-                if data.bus_slack_participation_factors[ix, time_step] != 0.0
+                if data.bus_slack_participation_factors[ix, time_step] != 0.0 &&
+                   !pf.skip_redistribution
                     P_gen = data.bus_activepower_injection[ix, time_step]
-                    _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations, gspf)
-                else
+                    _power_redistribution_ref(
+                        sys,
+                        P_gen,
+                        Q_gen,
+                        bus,
+                        max_iterations,
+                        gspf,
+                    )
+                elseif !pf.skip_redistribution
                     _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
                 end
-            elseif bus.bustype == PSY.ACBusTypes.PQ
+            elseif bustype == PSY.ACBusTypes.PQ
                 Vm = data.bus_magnitude[ix, time_step]
                 θ = data.bus_angles[ix, time_step]
                 PSY.set_magnitude!(bus, Vm)
@@ -483,6 +538,32 @@ function write_powerflow_solution!(
         data,
         time_step,
     )
+
+    # calculate the bus voltages at buses removed in degree 2 reduction.
+    bus_lookup = get_bus_lookup(data)
+    for (equivalent_arc, segments) in PNM.get_series_branch_map(nrd)
+        (bus_from, bus_to) = equivalent_arc
+        (ix_from, ix_to) = (bus_lookup[bus_from], bus_lookup[bus_to])
+        Vm_endpoints = (data.bus_magnitude[ix_from], data.bus_magnitude[ix_to])
+        Va_endpoints = (data.bus_angles[ix_from], data.bus_angles[ix_to])
+        V_endpoints = Vm_endpoints .* exp.(im .* Va_endpoints)
+        _set_series_voltages_and_flows!(
+            sys,
+            segments,
+            equivalent_arc,
+            V_endpoints,
+            temp_bus_map,
+        )
+    end
+
+    # note: this assumes all bus voltages have been written to the system objects already.
+    for (equiv_arc, parallel_branches) in PNM.get_parallel_branch_map(nrd)
+        (bus_from_no, bus_to_no) = equiv_arc
+        (bus_from, bus_to) = (PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_from_no]),
+            PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_to_no]))
+        (V_from, V_to) = (bus_from, bus_to) .|> get_complex_voltage
+        calculate_segment_flow!(parallel_branches, V_from, V_to)
+    end
     return
 end
 

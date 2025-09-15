@@ -55,6 +55,7 @@ function solve_powerflow!(
         if converged
             write_powerflow_solution!(
                 system,
+                pf,
                 data,
                 get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER),
             )
@@ -185,6 +186,9 @@ function solve_powerflow!(
 
     # write branch flows
     # TODO if Yft, Ytf change between time steps, this must be moved inside the loop!
+    # NOTE PNM's structs use ComplexF32, while the system objects store Float64's.
+    #      so if you set the system bus angles/voltages to match these fields, then repeat 
+    #      this math using the system voltages, you'll see differences in the flows, ~1e-4.
     ts_V =
         data.bus_magnitude[:, sorted_time_steps] .*
         exp.(1im .* data.bus_angles[:, sorted_time_steps])
