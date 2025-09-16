@@ -28,19 +28,33 @@ const WINDING_ACCESSORS = Dict(
         get_turns_ratio = PSY.get_primary_turns_ratio,
         get_angle = PSY.get_α_primary,
         get_rating = PSY.get_rating_primary,
+        get_group_number = PSY.get_primary_group_number,
     ),
     PSY.WindingCategory.SECONDARY_WINDING => (
         get_base_voltage = PSY.get_base_voltage_secondary,
         get_turns_ratio = PSY.get_secondary_turns_ratio,
         get_angle = PSY.get_α_secondary,
         get_rating = PSY.get_rating_secondary,
+        get_group_number = PSY.get_secondary_group_number,
     ),
     PSY.WindingCategory.TERTIARY_WINDING => (
         get_base_voltage = PSY.get_base_voltage_tertiary,
         get_turns_ratio = PSY.get_tertiary_turns_ratio,
         get_angle = PSY.get_α_tertiary,
         get_rating = PSY.get_rating_tertiary,
+        get_group_number = PSY.get_tertiary_group_number,
     ),
+)
+
+# Winding categories representing different types of transformer windings
+const WINDING_GROUP_NUMBER_TO_DEGREES = Dict(
+    -99 => PSSE_DEFAULT,   # UNDEFINED, export as default
+    0 => 0,              # GROUP_0: 0 Degrees
+    1 => -30,            # GROUP_1: -30 Degrees
+    5 => -150,           # GROUP_5: -150 Degrees
+    6 => 180,            # GROUP_6: 180 Degrees
+    7 => 150,            # GROUP_7: 150 Degrees
+    11 => 30,             # GROUP_11: 30 Degrees
 )
 
 # Each of the groups in the PSS/3 v33 standard
@@ -1284,8 +1298,33 @@ function write_to_buffers!(
                 md["bus_number_mapping"],
                 transformer_ckt_mapping,
             )
+            control_objective_mapping = OrderedDict{String, Any}()
+            winding_group_category_mapping = OrderedDict{String, Any}()
+            for (transformer, _) in transformers_with_numbers
+                name = PSY.get_name(transformer)
+                # Control objective mapping (only store if UNDEFINED)
+                if transformer isa PSY.TapTransformer ||
+                   transformer isa PSY.PhaseShiftingTransformer
+                    cod1 = PSY.get_control_objective(transformer)
+                    if cod1 ==
+                       PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+                        control_objective_mapping[name] = cod1.value
+                    end
+                end
+                # Winding group category mapping (only store if UNDEFINED)
+                if transformer isa PSY.TapTransformer || transformer isa PSY.Transformer2W
+                    ang1 = PSY.get_winding_group_number(transformer)
+                    if ang1 == PSY.WindingGroupNumber.UNDEFINED
+                        winding_group_category_mapping[name] = ang1.value
+                    end
+                end
+            end
+            md["transformer_control_objective_mapping"] = control_objective_mapping
+            md["winding_group_category_mapping"] = winding_group_category_mapping
         else
             md["transformer_name_mapping"] = OrderedDict{String, String}()
+            md["transformer_control_objective_mapping"] = OrderedDict{String, Any}()
+            md["winding_group_category_mapping"] = OrderedDict{String, Any}()
         end
 
         # Handle 3W transformers separately if needed
@@ -1375,15 +1414,38 @@ function write_to_buffers!(
                 "X1-2",
                 PSY.get_x(transformer),
             )
-            COD1 = get_ext_key_or_default(transformer, "COD1")
+            if transformer isa PSY.TapTransformer ||
+               transformer isa PSY.PhaseShiftingTransformer
+                cod1_val = get_ext_key_or_default(
+                    transformer,
+                    "COD1",
+                    PSY.get_control_objective(transformer),
+                )
+                if cod1_val isa
+                   PSY.TransformerControlObjectiveModule.TransformerControlObjective
+                    cod1_val =
+                        if cod1_val ==
+                           PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+                            get_ext_key_or_default(transformer, "COD1")
+                        else
+                            cod1_val.value
+                        end
+                end
+                COD1 = cod1_val
+            else
+                COD1 = get_ext_key_or_default(transformer, "COD1")
+            end
             RMA1 = get_ext_key_or_default(transformer, "RMA1")
             RMI1 = get_ext_key_or_default(transformer, "RMI1")
             NTP1 = get_ext_key_or_default(transformer, "NTP1")
 
-            ANG1 = if (transformer isa PSY.PhaseShiftingTransformer)
-                rad2deg(PSY.get_α(transformer))
+            if (transformer isa PSY.PhaseShiftingTransformer)
+                ANG1 = rad2deg(PSY.get_α(transformer))
+            elseif (transformer isa PSY.Transformer2W || transformer isa PSY.TapTransformer)
+                ANG1 = PSY.get_winding_group_number(transformer).value
+                ANG1 = get(WINDING_GROUP_NUMBER_TO_DEGREES, ANG1, PSSE_DEFAULT)
             else
-                0.0
+                ANG1 = 0.0
             end
             RATA1, RATB1, RATC1 =
                 with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
@@ -1455,8 +1517,12 @@ function write_to_buffers!(
                 acc = WINDING_ACCESSORS[category]
                 NOMV = acc.get_base_voltage(transformer)
                 WINDV = acc.get_turns_ratio(transformer) * NOMV
-                ANG = if (transformer isa PSY.PhaseShiftingTransformer3W)
+                ANG = if transformer isa PSY.PhaseShiftingTransformer3W
                     _psse_round_val(rad2deg(acc.get_angle(transformer)))
+                elseif transformer isa PSY.Transformer3W
+                    group_number = acc.get_group_number(transformer)
+                    group_value = group_number.value
+                    get(WINDING_GROUP_NUMBER_TO_DEGREES, group_value, PSSE_DEFAULT)
                 else
                     0.0
                 end
