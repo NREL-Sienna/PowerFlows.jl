@@ -32,7 +32,7 @@
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
-    pf = ACPowerFlow{ACSolver}()
+    pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
     data = PowerFlows.PowerFlowData(
         pf,
         sys;
@@ -175,7 +175,7 @@ end
     pf_gen_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_gen_results.csv")
 
     # FIXME: remove skip_redistribution once redistribution is working properly.
-    pf = ACPowerFlow{ACSolver}(; skip_redistribution = true)
+    pf = ACPowerFlow(; skip_redistribution = true)
 
     pf1 = solve_powerflow!(pf, system; correct_bustypes = true)
     @test pf1

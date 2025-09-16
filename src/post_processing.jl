@@ -436,6 +436,7 @@ end
 `direct_branch_map` and `transformer3W_map` dictionaries."""
 function set_branch_flows_for_dict!(
     d::Dict{Tuple{Int, Int}, Any},
+    data::ACPowerFlowData,
     time_step::Int,
 )
     # if these asserts trigger, we may need to check for reverse(arc) too.
