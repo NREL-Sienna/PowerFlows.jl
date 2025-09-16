@@ -76,16 +76,17 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         PSY.DiscreteControlledACBranch,
         PSY.FACTSControlDevice,
         PSY.FixedAdmittance,
+        PSY.InterruptibleStandardLoad,
         PSY.Line,
         PSY.LoadZone,
-        # PSY.PhaseShiftingTransformer,
-        # PSY.PhaseShiftingTransformer3W,
-        # PSY.StandardLoad,
+        PSY.PhaseShiftingTransformer,
+        PSY.PhaseShiftingTransformer3W,
+        PSY.StandardLoad,
         PSY.SwitchedAdmittance,
         PSY.TapTransformer,
         PSY.ThermalStandard,
-        # PSY.Transformer2W,
-        # PSY.Transformer3W,
+        PSY.Transformer2W,
+        PSY.Transformer3W,
         PSY.TwoTerminalLCCLine,
         PSY.TwoTerminalVSCLine,
     ],
@@ -100,7 +101,14 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         :x,
         :tap,
         :rating,
-        :control_objective,
+        :primary_star_arc,
+        :secondary_star_arc,
+        :tertiary_star_arc,
+        :primary_turns_ratio,
+        :secondary_turns_ratio,
+        :tertiary_turns_ratio,
+        :angle,
+        :magnitude,
     ]),
     exclude_fields_for_type = Dict(
         PSY.ThermalStandard => Set([
@@ -265,6 +273,21 @@ function test_power_flow(
         Q_from_to = reactive_power_tol, Q_losses = reactive_power_tol)
 end
 
+function test_power_flow(
+    pf::DCPowerFlow,
+    sys1::System,
+    sys2::System,
+)
+    result1 = solve_powerflow(pf, sys1; correct_bustypes = true)
+    result2 = solve_powerflow(pf, sys2; correct_bustypes = true)
+    @test compare_df_within_tolerance("bus_results", result1["1"]["bus_results"],
+        result2["1"]["bus_results"], POWERFLOW_COMPARISON_TOLERANCE)
+    @test compare_df_within_tolerance("flow_results",
+        sort(result1["1"]["flow_results"], names(result1["1"]["flow_results"])[2:end]),
+        sort(result2["1"]["flow_results"], names(result2["1"]["flow_results"])[2:end]),
+        POWERFLOW_COMPARISON_TOLERANCE; line_name = nothing)
+end
+
 # Exercise PowerSystems' ability to parse a PSS/E System from a filename and a metadata dict
 function read_system_with_metadata(raw_path, metadata_path)
     md = JSON3.read(metadata_path, Dict)
@@ -307,7 +330,6 @@ function test_psse_round_trip(
     scenario_name::AbstractString,
     export_location::AbstractString;
     do_power_flow_test = true,
-    exclude_reactive_flow = false,
 )
     raw_path, metadata_path =
         get_psse_export_paths(joinpath(export_location, scenario_name))
@@ -321,7 +343,7 @@ function test_psse_round_trip(
     sys2 = read_system_with_metadata(raw_path, metadata_path)
     @test compare_systems_loosely(sys, sys2)
     do_power_flow_test &&
-        test_power_flow(pf, sys, sys2; exclude_reactive_flow = exclude_reactive_flow)
+        test_power_flow(pf, sys, sys2)
 end
 
 "Test that the two raw files are exactly identical and the two metadata files parse to identical JSON"
@@ -356,16 +378,10 @@ function test_psse_export_strict_equality(
 end
 
 function load_test_system()
-    # TODO commit to either providing this file or not requiring it
-    # data_dir = joinpath(dirname(dirname(dirname(pathof(PowerFlows)))), "pf_data")
-    # sys_file = joinpath(data_dir, "twofortybus", "Marenas", "system_240[32].json")
-    sys_file = "/Users/mvelasqu/Documents/CASE_STUDIES/case16_sys/case16_sys.raw"
-    if !isfile(sys_file)
-        @warn "Skipping test with $(basename(sys_file)), file does not exist"
-        return
-    end
+    sys_name = "pti_case16_complete_sys"
+
     sys = with_logger(SimpleLogger(Error)) do
-        System(sys_file)
+        build_system(PSSEParsingTestSystems, sys_name; force_build = true)
     end
     set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
     return sys
@@ -380,7 +396,7 @@ end
     @test compare_systems_loosely(sys, deepcopy(sys))
 end
 
-@testset "PSSE Exporter with psse_case16_sys.raw, v33" for folder_name in ["case16_dcpf"]
+@testset "PSSE Exporter with case16_sys.raw, v33" for folder_name in ["case16_sys.raw"]
     sys = load_test_system()
     pf = DCPowerFlow()
     isnothing(sys) && return
@@ -392,14 +408,13 @@ end
     export_location = joinpath(test_psse_export_dir, "v33", folder_name)
 
     exporter = PSSEExporter(sys, :v33, export_location; write_comments = true)
-    test_psse_round_trip(pf, sys, exporter, "basic", export_location;
-        exclude_reactive_flow = true)
+    test_psse_round_trip(pf, sys, exporter, "basic", export_location)
 
     # Exporting the exact same thing again should result in the exact same files
-    # write_export(exporter, "basic2")
-    # test_psse_export_strict_equality(
-    #     get_psse_export_paths(joinpath(export_location, "basic"))...,
-    #     get_psse_export_paths(joinpath(export_location, "basic2"))...)
+    write_export(exporter, "basic2")
+    test_psse_export_strict_equality(
+        get_psse_export_paths(joinpath(export_location, "basic"))...,
+        get_psse_export_paths(joinpath(export_location, "basic2"))...)
 end
 
 # @testset "PSSE Exporter with system_240[32].json, v33" for (ACSolver, folder_name) in (
