@@ -47,7 +47,6 @@ function solve_powerflow!(
         data = PowerFlowData(
             pf,
             system;
-            check_connectivity = get(kwargs, :check_connectivity, true),
             correct_bustypes = get(kwargs, :correct_bustypes, false),
             network_reductions = get(kwargs, :network_reductions, PNM.NetworkReduction[]),
         )
@@ -92,7 +91,6 @@ function solve_powerflow(
         data = PowerFlowData(
             pf,
             system;
-            check_connectivity = get(kwargs, :check_connectivity, true),
             correct_bustypes = get(kwargs, :correct_bustypes, false),
             network_reductions = get(kwargs, :network_reductions, PNM.NetworkReduction[]),
         )

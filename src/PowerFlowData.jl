@@ -149,6 +149,8 @@ get_arc_axis(pfd::ACPowerFlowData) =
     PNM.get_arc_axis(pfd.power_network_matrix.branch_admittance_from_to)
 get_bus_axis(pfd::ACPowerFlowData) =
     PNM.get_bus_axis(pfd.power_network_matrix)
+get_network_reduction_data(pfd::ACPowerFlowData) =
+    PNM.get_network_reduction_data(pfd.power_network_matrix)
 
 const PTDFPowerFlowData = PowerFlowData{
     PNM.PTDF{
@@ -178,6 +180,8 @@ get_arc_axis(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
     PNM.get_arc_axis(pfd.power_network_matrix)
 get_bus_axis(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
     PNM.get_bus_axis(pfd.power_network_matrix)
+get_network_reduction_data(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
+    PNM.get_network_reduction_data(pfd.power_network_matrix)
 
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
@@ -191,6 +195,8 @@ const ABAPowerFlowData = PowerFlowData{
 }
 get_arc_axis(pfd::ABAPowerFlowData) = PNM.get_arc_axis(pfd.aux_network_matrix)
 get_bus_axis(pfd::ABAPowerFlowData) = PNM.get_bus_axis(pfd.aux_network_matrix)
+get_network_reduction_data(pfd::ABAPowerFlowData) =
+    PNM.get_network_reduction_data(pfd.aux_network_matrix)
 
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
 get_arc_lookup(pfd::PowerFlowData) = pfd.arc_lookup
@@ -332,7 +338,6 @@ function PowerFlowData(
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true,
     correct_bustypes::Bool = false)
     network_reduction_message(network_reductions, pf)
     calculate_loss_factors = pf.calculate_loss_factors
@@ -354,7 +359,6 @@ function PowerFlowData(
     power_network_matrix = PNM.Ybus(
         sys;
         network_reductions = network_reductions,
-        check_connectivity = check_connectivity,
         make_branch_admittance_matrices = true,
         include_constant_impedance_loads = false,
     )
@@ -437,7 +441,6 @@ function PowerFlowData(
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true,
     correct_bustypes = false)
     network_reduction_message(network_reductions, DCPowerFlow())
     # assign timestep_names
@@ -512,7 +515,6 @@ function PowerFlowData(
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true,
     correct_bustypes = false)
     network_reduction_message(network_reductions, PTDFDCPowerFlow())
     # assign timestep_names
@@ -587,7 +589,6 @@ function PowerFlowData(
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true,
     correct_bustypes = false)
     network_reduction_message(network_reductions, vPTDFDCPowerFlow())
     # assign timestep_names

@@ -703,8 +703,16 @@ function write_to_buffers!(
         I = md["bus_number_mapping"][sienna_bus_number]
         ID = _psse_quote_string(load_name_mapping[(sienna_bus_number, PSY.get_name(load))])
         STATUS = PSY.get_available(load) ? 1 : 0
-        AREA = _permissive_parse_int(PSY.get_name(PSY.get_area(PSY.get_bus(load))))
-        ZONE = _permissive_parse_int(PSY.get_name(PSY.get_load_zone(PSY.get_bus(load))))
+        if !isnothing(PSY.get_area(PSY.get_bus(load)))
+            AREA = _permissive_parse_int(PSY.get_name(PSY.get_area(PSY.get_bus(load))))
+        else
+            AREA = PSSE_DEFAULT
+        end
+        if !isnothing(PSY.get_load_zone(PSY.get_bus(load)))
+            ZONE = _permissive_parse_int(PSY.get_name(PSY.get_load_zone(PSY.get_bus(load))))
+        else
+            ZONE = PSSE_DEFAULT
+        end
         PL, QL, IP, IQ, YP, YQ = _psse_get_load_data(exporter, load)
         OWNER = PSSE_DEFAULT  # defaults to bus's owner
         load_conformity = PSY.get_conformity(load)
