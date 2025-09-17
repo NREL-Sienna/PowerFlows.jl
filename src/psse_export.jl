@@ -1453,7 +1453,6 @@ function write_to_buffers!(
                     _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
                     _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
                 end
-            RATA1, RATB1, RATC1 = (_psse_round_val(x) for x in (RATA1, RATB1, RATC1))
             CONT1 = get_ext_key_or_default(transformer, "CONT1")
             VMA1 = get_ext_key_or_default(transformer, "VMA1")
             VMI1 = get_ext_key_or_default(transformer, "VMI1")
