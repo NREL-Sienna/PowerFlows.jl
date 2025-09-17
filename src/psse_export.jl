@@ -1522,8 +1522,16 @@ function write_to_buffers!(
             winding_data = []
             for (category, prefix) in WINDING_CATEGORIES
                 acc = WINDING_ACCESSORS[category]
-                NOMV = acc.get_base_voltage(transformer)
-                WINDV = acc.get_turns_ratio(transformer) * NOMV
+                NOMV = get_ext_key_or_default(
+                    transformer,
+                    "NOMV$prefix",
+                    acc.get_base_voltage(transformer),
+                )
+                WINDV = get_ext_key_or_default(
+                    transformer,
+                    "WINDV$prefix",
+                    acc.get_turns_ratio(transformer) * NOMV,
+                )
                 ANG = if transformer isa PSY.PhaseShiftingTransformer3W
                     _psse_round_val(rad2deg(acc.get_angle(transformer)))
                 elseif transformer isa PSY.Transformer3W
