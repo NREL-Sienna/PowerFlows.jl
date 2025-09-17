@@ -1530,7 +1530,7 @@ function write_to_buffers!(
                 WINDV = get_ext_key_or_default(
                     transformer,
                     "WINDV$prefix",
-                    acc.get_turns_ratio(transformer) * NOMV,
+                    acc.get_turns_ratio(transformer),
                 )
                 ANG = if transformer isa PSY.PhaseShiftingTransformer3W
                     _psse_round_val(rad2deg(acc.get_angle(transformer)))
