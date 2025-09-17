@@ -90,8 +90,9 @@ function _enhanced_flat_start(
     time_step::Int64,
 )
     newx0 = copy(x0)
+    bus_lookup = get_bus_lookup(data)
     for subnetwork_bus_axes in values(data.power_network_matrix.subnetwork_axes)
-        subnetwork_indices = [data.bus_lookup[ix] for ix in subnetwork_bus_axes[1]]
+        subnetwork_indices = [bus_lookup[ix] for ix in subnetwork_bus_axes[1]]
         ref_bus = [
             i for
             i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.REF
@@ -126,9 +127,10 @@ function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
     ABA_matrix = data.aux_network_matrix.data
     solver_cache = KLULinSolveCache(ABA_matrix)
     full_factor!(solver_cache, ABA_matrix)
+    valid_ix = get_valid_ix(data)
     p_inj =
-        data.bus_activepower_injection[data.valid_ix, time_step] -
-        data.bus_activepower_withdrawals[data.valid_ix, time_step]
+        data.bus_activepower_injection[valid_ix, time_step] -
+        data.bus_activepower_withdrawals[valid_ix, time_step]
     solve!(solver_cache, p_inj)
-    data.bus_angles[data.valid_ix, time_step] .= p_inj
+    data.bus_angles[valid_ix, time_step] .= p_inj
 end

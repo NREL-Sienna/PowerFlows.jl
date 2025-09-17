@@ -23,12 +23,6 @@ In the below descriptions, "number of buses" should be understood as "number of 
 after the network reduction." Similarly, we use "arcs" instead of "branches" to distinguish 
 between network elements (post-reduction) and system objects (pre-reduction).
 # Arguments:
-- `bus_lookup::Dict{Int, Int}`:
-        dictionary linking the system's bus number with the rows of either
-        "power_network_matrix" or "aux_network_matrix".
-- `arc_lookup::Dict{Tuple{Int, Int}, Int}`:
-        dictionary linking the arc name with the column name of either the
-        "power_network_matrix" or "aux_network_matrix".
 - `bus_activepower_injection::Matrix{Float64}`:
         "(b, t)" matrix containing the bus active power injection. b: number of
         buses, t: number of time period.
@@ -83,8 +77,6 @@ between network elements (post-reduction) and system objects (pre-reduction).
 - `timestep_map::Dict{Int, S}`:
         dictionary mapping the number of the time periods (corresponding to the
         column number of the previously mentioned matrices) and their names.
-- `valid_ix::Vector{Int}`:
-        vector containing the indices of not slack buses
 - `power_network_matrix::M`:
         matrix used for the evaluation of either the power flows or bus angles,
         depending on the method considered.
@@ -97,8 +89,6 @@ struct PowerFlowData{
     M <: PNM.PowerNetworkMatrix,
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
 } <: PowerFlowContainer
-    bus_lookup::Dict{Int, Int}
-    arc_lookup::Dict{Tuple{Int, Int}, Int}
     bus_activepower_injection::Matrix{Float64}
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
@@ -121,11 +111,10 @@ struct PowerFlowData{
     arc_activepower_flow_to_from::Matrix{Float64}
     arc_reactivepower_flow_to_from::Matrix{Float64}
     timestep_map::Dict{Int, String}
-    valid_ix::Vector{Int}
     power_network_matrix::M
     aux_network_matrix::N
     neighbors::Vector{Set{Int}}
-    converged::Vector{Bool}
+    converged::BitVector
     loss_factors::Union{Matrix{Float64}, Nothing}
     calculate_loss_factors::Bool
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
@@ -145,12 +134,7 @@ const ACPowerFlowData = PowerFlowData{
         Nothing,
     },
 }
-get_arc_axis(pfd::ACPowerFlowData) =
-    PNM.get_arc_axis(pfd.power_network_matrix.branch_admittance_from_to)
-get_bus_axis(pfd::ACPowerFlowData) =
-    PNM.get_bus_axis(pfd.power_network_matrix)
-get_network_reduction_data(pfd::ACPowerFlowData) =
-    PNM.get_network_reduction_data(pfd.power_network_matrix)
+get_metadata_matrix(pfd::ACPowerFlowData) = pfd.power_network_matrix
 
 const PTDFPowerFlowData = PowerFlowData{
     PNM.PTDF{
@@ -176,12 +160,8 @@ const vPTDFPowerFlowData = PowerFlowData{
         PNM.KLU.KLUFactorization{Float64, Int64},
     },
 }
-get_arc_axis(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
-    PNM.get_arc_axis(pfd.power_network_matrix)
-get_bus_axis(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
-    PNM.get_bus_axis(pfd.power_network_matrix)
-get_network_reduction_data(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
-    PNM.get_network_reduction_data(pfd.power_network_matrix)
+get_metadata_matrix(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
+    pfd.power_network_matrix
 
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
@@ -193,13 +173,9 @@ const ABAPowerFlowData = PowerFlowData{
         Tuple{Vector{Int64}, Vector{Tuple{Int, Int}}},
         Tuple{Dict{Int64, Int64}, Dict{Tuple{Int, Int}, Int64}}},
 }
-get_arc_axis(pfd::ABAPowerFlowData) = PNM.get_arc_axis(pfd.aux_network_matrix)
-get_bus_axis(pfd::ABAPowerFlowData) = PNM.get_bus_axis(pfd.aux_network_matrix)
-get_network_reduction_data(pfd::ABAPowerFlowData) =
-    PNM.get_network_reduction_data(pfd.aux_network_matrix)
+get_metadata_matrix(pfd::ABAPowerFlowData) = pfd.aux_network_matrix
 
-get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
-get_arc_lookup(pfd::PowerFlowData) = pfd.arc_lookup
+# true getters for fields:
 get_bus_activepower_injection(pfd::PowerFlowData) = pfd.bus_activepower_injection
 get_bus_reactivepower_injection(pfd::PowerFlowData) = pfd.bus_reactivepower_injection
 get_bus_activepower_withdrawals(pfd::PowerFlowData) = pfd.bus_activepower_withdrawals
@@ -212,6 +188,49 @@ get_bus_reactivepower_constant_current_withdrawals(pfd::PowerFlowData) =
     pfd.bus_reactivepower_constant_current_withdrawals
 get_bus_reactivepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
     pfd.bus_reactivepower_constant_impedance_withdrawals
+get_bus_reactivepower_bounds(pfd::PowerFlowData) = pfd.bus_reactivepower_bounds
+get_bus_slack_participation_factors(pfd::PowerFlowData) =
+    pfd.bus_slack_participation_factors
+get_generator_slack_participation_factors(pfd::PowerFlowData) =
+    pfd.generator_slack_participation_factors
+get_bus_type(pfd::PowerFlowData) = pfd.bus_type
+get_bus_magnitude(pfd::PowerFlowData) = pfd.bus_magnitude
+get_bus_angles(pfd::PowerFlowData) = pfd.bus_angles
+get_arc_activepower_flow_from_to(pfd::PowerFlowData) =
+    pfd.arc_activepower_flow_from_to
+get_arc_reactivepower_flow_from_to(pfd::PowerFlowData) =
+    pfd.arc_reactivepower_flow_from_to
+get_arc_activepower_flow_to_from(pfd::PowerFlowData) =
+    pfd.arc_activepower_flow_to_from
+get_arc_reactivepower_flow_to_from(pfd::PowerFlowData) =
+    pfd.arc_reactivepower_flow_to_from
+get_timestep_map(pfd::PowerFlowData) = pfd.timestep_map
+get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
+get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
+get_neighbor(pfd::PowerFlowData) = pfd.neighbors
+supports_multi_period(::PowerFlowData) = true
+get_converged(pfd::PowerFlowData) = pfd.converged
+get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
+get_calculate_loss_factors(pfd::PowerFlowData) = pfd.calculate_loss_factors
+get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
+get_calculate_voltage_stability_factors(pfd::PowerFlowData) =
+    pfd.calculate_voltage_stability_factors
+
+# auxiliary getters for the fields of PowerNetworkMatrices we're storing:
+# most things we patch through to calls on the metadata matrix:
+get_bus_lookup(pfd::PowerFlowData) = PNM.get_bus_lookup(get_metadata_matrix(pfd))
+get_bus_axis(pfd::PowerFlowData) = PNM.get_bus_axis(get_metadata_matrix(pfd))
+get_arc_lookup(pfd::PowerFlowData) = PNM.get_arc_lookup(get_metadata_matrix(pfd))
+get_arc_axis(pfd::PowerFlowData) = PNM.get_arc_axis(get_metadata_matrix(pfd))
+get_network_reduction_data(pfd::PowerFlowData) =
+    PNM.get_network_reduction_data(get_metadata_matrix(pfd))
+get_valid_ix(pdf::PowerFlowData) = Not(PNM.get_ref_bus_position(get_metadata_matrix(pdf)))
+
+# the ybus matrix itself doesn't have an arc axis, so we have to special-case it.
+get_arc_lookup(pfd::ACPowerFlowData) =
+    PNM.get_arc_lookup(pfd.power_network_matrix.branch_admittance_from_to)
+get_arc_axis(pfd::ACPowerFlowData) =
+    PNM.get_arc_axis(pfd.power_network_matrix.branch_admittance_from_to)
 
 function get_bus_activepower_total_withdrawals(pfd::PowerFlowData, ix::Int, time_step::Int)
     return pfd.bus_activepower_withdrawals[ix, time_step] +
@@ -232,36 +251,6 @@ function get_bus_reactivepower_total_withdrawals(
            pfd.bus_reactivepower_constant_impedance_withdrawals[ix, time_step] *
            pfd.bus_magnitude[ix, time_step]^2
 end
-
-get_bus_reactivepower_bounds(pfd::PowerFlowData) = pfd.bus_reactivepower_bounds
-get_bus_slack_participation_factors(pfd::PowerFlowData) =
-    pfd.bus_slack_participation_factors
-get_generator_slack_participation_factors(pfd::PowerFlowData) =
-    pfd.generator_slack_participation_factors
-get_bus_type(pfd::PowerFlowData) = pfd.bus_type
-# get_arc_type(pfd::PowerFlowData) = pfd.branch_type
-get_bus_magnitude(pfd::PowerFlowData) = pfd.bus_magnitude
-get_bus_angles(pfd::PowerFlowData) = pfd.bus_angles
-get_arc_activepower_flow_from_to(pfd::PowerFlowData) =
-    pfd.arc_activepower_flow_from_to
-get_arc_reactivepower_flow_from_to(pfd::PowerFlowData) =
-    pfd.arc_reactivepower_flow_from_to
-get_arc_activepower_flow_to_from(pfd::PowerFlowData) =
-    pfd.arc_activepower_flow_to_from
-get_arc_reactivepower_flow_to_from(pfd::PowerFlowData) =
-    pfd.arc_reactivepower_flow_to_from
-get_timestep_map(pfd::PowerFlowData) = pfd.timestep_map
-get_valid_ix(pfd::PowerFlowData) = pfd.valid_ix
-get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
-get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
-get_neighbor(pfd::PowerFlowData) = pfd.neighbors
-supports_multi_period(::PowerFlowData) = true
-get_converged(pfd::PowerFlowData) = pfd.converged
-get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
-get_calculate_loss_factors(pfd::PowerFlowData) = pfd.calculate_loss_factors
-get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
-get_calculate_voltage_stability_factors(pfd::PowerFlowData) =
-    pfd.calculate_voltage_stability_factors
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
@@ -309,6 +298,28 @@ function network_reduction_message(
     return
 end
 
+function make_and_initialize_powerflow_data(
+    pf::PowerFlowEvaluationModel,
+    sys::PSY.System,
+    power_network_matrix::M,
+    aux_network_matrix::N;
+    time_steps::Int = 1,
+    timestep_names::Vector{String} = String[],
+    neighbors = Vector{Set{Int}}(),
+    correct_bustypes::Bool = false,
+) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+    data = make_powerflow_data(
+        pf,
+        power_network_matrix,
+        aux_network_matrix,
+        time_steps;
+        timestep_names = timestep_names,
+        neighbors = neighbors,
+    )
+    initialize_powerflow_data!(data, pf, sys; correct_bustypes = correct_bustypes)
+    return data
+end
+
 """
 Function for the definition of the PowerFlowData structure given the System
 data, number of time periods to consider and their names.
@@ -337,76 +348,32 @@ function PowerFlowData(
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    correct_bustypes::Bool = false)
+    correct_bustypes::Bool = false,
+)
     network_reduction_message(network_reductions, pf)
-    calculate_loss_factors = pf.calculate_loss_factors
-    generator_slack_participation_factors = pf.generator_slack_participation_factors
-    calculate_voltage_stability_factors = pf.calculate_voltage_stability_factors
-    # assign timestep_names
-    # timestep names are then allocated in a dictionary to map matrix columns
-    if time_steps != 0
-        if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:time_steps]
-        elseif length(timestep_names) != time_steps
-            error("timestep_names field must have same length as time_steps")
-        end
-    end
-
-    timestep_map = Dict(zip([i for i in 1:time_steps], timestep_names))
-
-    # get data for calculations
     power_network_matrix = PNM.Ybus(
         sys;
         network_reductions = network_reductions,
         make_branch_admittance_matrices = true,
         include_constant_impedance_loads = false,
     )
-
-    # get number of arcs and branches
-    arc_lookup = PNM.get_arc_lookup(power_network_matrix.branch_admittance_from_to)
-    bus_lookup = PNM.get_bus_lookup(power_network_matrix)
-    n_buses = length(bus_lookup)
-
-    ref_bus_positions = PNM.get_ref_bus_position(power_network_matrix)
-
-    valid_ix = setdiff(1:n_buses, ref_bus_positions)
     neighbors = _calculate_neighbors(power_network_matrix)
-    converged = fill(false, time_steps)
-    # PERF: type instability.
-    # loss factors order matches the order of buses in the grid model, and is calculated for all buses including ref buses (equals 0 for ref buses)
-    if calculate_loss_factors
-        loss_factors = Matrix{Float64}(undef, (n_buses, length(timestep_names)))
-    else
-        loss_factors = nothing
-    end
-    if calculate_voltage_stability_factors
-        voltage_stability_factors =
-            Matrix{Float64}(undef, (n_buses, length(timestep_names)))
-    else
-        voltage_stability_factors = nothing
-    end
+
     if get_robust_power_flow(pf)
         aux_network_matrix = PNM.ABA_Matrix(sys)
     else
         aux_network_matrix = nothing
     end
-    return make_powerflowdata(
+
+    return make_and_initialize_powerflow_data(
+        pf,
         sys,
-        time_steps,
         power_network_matrix,
-        aux_network_matrix,
-        bus_lookup,
-        arc_lookup,
-        timestep_map,
-        valid_ix,
-        neighbors,
-        converged,
-        loss_factors,
-        calculate_loss_factors,
-        voltage_stability_factors,
-        calculate_voltage_stability_factors,
-        generator_slack_participation_factors,
-        correct_bustypes,
+        aux_network_matrix;
+        time_steps = time_steps,
+        timestep_names = timestep_names,
+        neighbors = neighbors,
+        correct_bustypes = correct_bustypes,
     )
 end
 
@@ -438,48 +405,21 @@ function PowerFlowData(
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    correct_bustypes = false)
+    correct_bustypes = false,
+)
     network_reduction_message(network_reductions, DCPowerFlow())
-    # assign timestep_names
-    # timestep names are then allocated in a dictionary to map matrix columns
-    if length(timestep_names) == 0
-        timestep_names = [string(i) for i in 1:time_steps]
-    elseif length(timestep_names) != time_steps
-        error("timestep_names field must have same length as time_steps")
-    end
-
     # get the network matrices
     power_network_matrix =
         PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
     aux_network_matrix = PNM.BA_Matrix(sys; network_reductions = network_reductions)
-
-    # get number of arcs and branches
-    bus_lookup = PNM.get_bus_lookup(aux_network_matrix)
-    arc_lookup = PNM.get_arc_lookup(aux_network_matrix)
-
-    valid_ix = setdiff(1:length(bus_lookup), PNM.get_ref_bus_position(aux_network_matrix))
-    converged = fill(false, time_steps)
-    loss_factors = nothing
-    calculate_loss_factors = false
-    generator_slack_participation_factors = nothing
-    voltage_stability_factors = nothing
-    calculate_voltage_stability_factors = false
-    return make_dc_powerflowdata(
+    return make_and_initialize_powerflow_data(
+        DCPowerFlow(),
         sys,
-        time_steps,
-        timestep_names,
         power_network_matrix,
-        aux_network_matrix,
-        bus_lookup,
-        arc_lookup,
-        valid_ix,
-        converged,
-        loss_factors,
-        calculate_loss_factors,
-        voltage_stability_factors,
-        calculate_voltage_stability_factors,
-        generator_slack_participation_factors,
-        correct_bustypes,
+        aux_network_matrix;
+        time_steps = time_steps,
+        timestep_names = timestep_names,
+        correct_bustypes = correct_bustypes,
     )
 end
 
@@ -512,49 +452,21 @@ function PowerFlowData(
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    correct_bustypes = false)
+    correct_bustypes = false,
+)
     network_reduction_message(network_reductions, PTDFDCPowerFlow())
-    # assign timestep_names
-    # timestep names are then allocated in a dictionary to map matrix columns
-    if time_steps != 0
-        if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:time_steps]
-        elseif length(timestep_names) != time_steps
-            error("timestep_names field must have same length as time_steps")
-        end
-    end
-
     # get the network matrices
     power_network_matrix = PNM.PTDF(sys; network_reductions = network_reductions)
     aux_network_matrix =
         PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
-
-    # get number of arcs and branches
-    bus_lookup = PNM.get_bus_lookup(power_network_matrix)
-    arc_lookup = PNM.get_arc_lookup(power_network_matrix)
-    valid_ix = setdiff(1:length(bus_lookup), PNM.get_ref_bus_position(power_network_matrix))
-    converged = fill(false, time_steps)
-    loss_factors = nothing
-    calculate_loss_factors = false
-    generator_slack_participation_factors = nothing
-    voltage_stability_factors = nothing
-    calculate_voltage_stability_factors = false
-    return make_dc_powerflowdata(
+    return make_and_initialize_powerflow_data(
+        PTDFDCPowerFlow(),
         sys,
-        time_steps,
-        timestep_names,
         power_network_matrix,
-        aux_network_matrix,
-        bus_lookup,
-        arc_lookup,
-        valid_ix,
-        converged,
-        loss_factors,
-        calculate_loss_factors,
-        voltage_stability_factors,
-        calculate_voltage_stability_factors,
-        generator_slack_participation_factors,
-        correct_bustypes,
+        aux_network_matrix;
+        time_steps = time_steps,
+        timestep_names = timestep_names,
+        correct_bustypes = correct_bustypes,
     )
 end
 
@@ -588,46 +500,20 @@ function PowerFlowData(
     timestep_names::Vector{String} = String[],
     correct_bustypes = false)
     network_reduction_message(network_reductions, vPTDFDCPowerFlow())
-    # assign timestep_names
-    # timestep names are then allocated in a dictionary to map matrix columns
-    if time_steps != 0
-        if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:time_steps]
-        elseif length(timestep_names) != time_steps
-            error("timestep_names field must have same length as time_steps")
-        end
-    end
 
     # get the network matrices
     power_network_matrix = PNM.VirtualPTDF(sys; network_reductions = network_reductions) # evaluates an empty virtual PTDF
     aux_network_matrix =
         PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
 
-    bus_lookup = power_network_matrix.lookup[2]
-    arc_lookup = power_network_matrix.lookup[1]
-    valid_ix = setdiff(1:length(bus_lookup), PNM.get_ref_bus_position(power_network_matrix))
-    converged = fill(false, time_steps)
-    loss_factors = nothing
-    calculate_loss_factors = false
-    generator_slack_participation_factors = nothing
-    voltage_stability_factors = nothing
-    calculate_voltage_stability_factors = false
-    return make_dc_powerflowdata(
+    return make_and_initialize_powerflow_data(
+        vPTDFDCPowerFlow(),
         sys,
-        time_steps,
-        timestep_names,
         power_network_matrix,
-        aux_network_matrix,
-        bus_lookup,
-        arc_lookup,
-        valid_ix,
-        converged,
-        loss_factors,
-        calculate_loss_factors,
-        voltage_stability_factors,
-        calculate_voltage_stability_factors,
-        generator_slack_participation_factors,
-        correct_bustypes,
+        aux_network_matrix;
+        time_steps = time_steps,
+        timestep_names = timestep_names,
+        correct_bustypes = correct_bustypes,
     )
 end
 

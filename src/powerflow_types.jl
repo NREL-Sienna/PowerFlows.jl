@@ -71,11 +71,19 @@ ACPowerFlow(
     skip_redistribution,
 )
 
-get_enhanced_flat_start(pf::ACPowerFlow{ACSolver}) where {ACSolver} =
-    pf.enhanced_flat_start
-get_robust_power_flow(pf::ACPowerFlow{ACSolver}) where {ACSolver} = pf.robust_power_flow
+get_enhanced_flat_start(pf::ACPowerFlow) = pf.enhanced_flat_start
+get_robust_power_flow(pf::ACPowerFlow) = pf.robust_power_flow
+get_slack_participation_factors(pf::ACPowerFlow) = pf.generator_slack_participation_factors
+get_calculate_loss_factors(pf::ACPowerFlow) = pf.calculate_loss_factors
+get_calculate_voltage_stability_factors(pf::ACPowerFlow) =
+    pf.calculate_voltage_stability_factors
 
 abstract type AbstractDCPowerFlow <: PowerFlowEvaluationModel end
+
+# only make sense for AC power flows, but convenient to have for code reuse reasons.
+get_slack_participation_factors(::AbstractDCPowerFlow) = nothing
+get_calculate_loss_factors(::AbstractDCPowerFlow) = false
+get_calculate_voltage_stability_factors(::AbstractDCPowerFlow) = false
 
 @kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing

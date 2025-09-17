@@ -22,6 +22,7 @@ export get_psse_export_paths
 import Base: @kwdef
 import Logging
 import DataFrames
+import DataFrames: Not
 import PowerSystems
 import PowerSystems: System, with_units_base
 import LinearAlgebra
@@ -32,7 +33,8 @@ import KLU
 import SparseArrays
 import InfrastructureSystems
 import PowerNetworkMatrices
-import SparseArrays: SparseMatrixCSC, SparseVector, sparse, sparsevec, AbstractSparseMatrix
+import SparseArrays:
+    SparseMatrixCSC, SparseVector, sparse, sparsevec, AbstractSparseMatrix, spzeros
 import StaticArrays: MVector
 import DataStructures: OrderedDict
 import Dates
@@ -43,11 +45,13 @@ const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
 
 include("psi_utils.jl")
+include("powerflow_types.jl")
+include("PowerFlowData.jl")
 include("common.jl")
 include("powersystems_utils.jl")
 include("definitions.jl")
-include("powerflow_types.jl")
-include("PowerFlowData.jl")
+include("make_powerflow_data.jl")
+include("initialize_powerflow_data.jl")
 include("psse_export.jl")
 include("LinearSolverCache/linear_solver_cache.jl")
 include("LinearSolverCache/klu_linear_solver.jl")
