@@ -96,17 +96,6 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         :ramp_limits,
         :time_limits,
         :services,
-        :r,
-        :x,
-        :tap,
-        :primary_star_arc,
-        :secondary_star_arc,
-        :tertiary_star_arc,
-        :primary_turns_ratio,
-        :secondary_turns_ratio,
-        :tertiary_turns_ratio,
-        :angle,
-        :magnitude,
     ]),
     exclude_fields_for_type = Dict(
         PSY.ThermalStandard => Set([
@@ -415,9 +404,9 @@ end
         get_psse_export_paths(joinpath(export_location, "basic2"))...)
 end
 
-# @testset "PSSE Exporter with system_240[32].json, v33" for (ACSolver, folder_name) in (
-#     (LUACPowerFlow, "system_240_LU"),
-#     (NewtonRaphsonACPowerFlow, "system_240_newton"),
+# @testset "PSSE Exporter with case16_sys.raw, v33" for (ACSolver, folder_name) in (
+#     (LUACPowerFlow, "case16_sys_LU"),
+#     (NewtonRaphsonACPowerFlow, "case16_sys_newton"),
 # )
 #     sys = load_test_system()
 #     pf = ACPowerFlow{ACSolver}()
