@@ -1338,7 +1338,8 @@ function write_to_buffers!(
                 end
             end
             md["transformer_control_objective_mapping"] = control_objective_mapping
-            md["transformer_winding_group_category_mapping"] = winding_group_category_mapping
+            md["transformer_winding_group_category_mapping"] =
+                winding_group_category_mapping
             md["transformer_resistance_mapping"] = transformer_resistance_mapping
             md["transformer_reactance_mapping"] = transformer_reactance_mapping
             md["transformer_tap_mapping"] = transformer_tap_mapping
