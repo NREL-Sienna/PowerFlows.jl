@@ -1,4 +1,4 @@
-@testset "NewtonRaphsonACPowerFlow" begin
+@testset "NewtonRaphsonACPowerFlow kwargs" begin
     # test NR kwargs.
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
     nr_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
@@ -7,7 +7,7 @@
         tol = 1e-10, refinement_threshold = 0.01, refinement_eps = 1e-7)
 end
 
-@testset "TrustRegionACPowerFlow" begin
+@testset "TrustRegionACPowerFlow kwargs" begin
     # test trust region kwargs.
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
     tr_pf = ACPowerFlow{TrustRegionACPowerFlow}()

@@ -168,6 +168,8 @@ get_arc_axis(pfd::ACPowerFlowData) =
     PNM.get_arc_axis(pfd.power_network_matrix.branch_admittance_from_to)
 get_bus_axis(pfd::ACPowerFlowData) =
     PNM.get_bus_axis(pfd.power_network_matrix)
+get_network_reduction_data(pfd::ACPowerFlowData) =
+    PNM.get_network_reduction_data(pfd.power_network_matrix)
 
 const PTDFPowerFlowData = PowerFlowData{
     PNM.PTDF{
@@ -197,6 +199,8 @@ get_arc_axis(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
     PNM.get_arc_axis(pfd.power_network_matrix)
 get_bus_axis(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
     PNM.get_bus_axis(pfd.power_network_matrix)
+get_network_reduction_data(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
+    PNM.get_network_reduction_data(pfd.power_network_matrix)
 
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
@@ -210,6 +214,8 @@ const ABAPowerFlowData = PowerFlowData{
 }
 get_arc_axis(pfd::ABAPowerFlowData) = PNM.get_arc_axis(pfd.aux_network_matrix)
 get_bus_axis(pfd::ABAPowerFlowData) = PNM.get_bus_axis(pfd.aux_network_matrix)
+get_network_reduction_data(pfd::ABAPowerFlowData) =
+    PNM.get_network_reduction_data(pfd.aux_network_matrix)
 
 get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
 get_arc_lookup(pfd::PowerFlowData) = pfd.arc_lookup
@@ -404,6 +410,7 @@ function _calculate_neighbors(
     return neighbors
 end
 
+# NOTE: remove this once network reductions are fully implemented
 function network_reduction_message(
     nrs::Vector{PNM.NetworkReduction},
     m::PowerFlowEvaluationModel,

@@ -7,9 +7,6 @@ exports. Redirects to `PSY.get_reactive_power_limits` in all but special cases.
 get_reactive_power_limits_for_power_flow(gen::PSY.Device) =
     PSY.get_reactive_power_limits(gen)
 
-# FIXME temporary workaround for FACTSControlDevice
-get_reactive_power_limits_for_power_flow(::PSY.FACTSControlDevice) = (min = -Inf, max = Inf)
-
 function get_reactive_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
     val = PSY.get_reactive_power(gen)
     return (min = val, max = val)
@@ -55,17 +52,25 @@ function _get_injections!(
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
 )
-    for source in PSY.get_components(PSY.StaticInjection, sys)
-        isa(source, PSY.ElectricLoad) && continue
-        isa(source, PSY.FACTSControlDevice) && continue # FIXME temporary workaround.
-        !PSY.get_available(source) && continue
-        bus = PSY.get_bus(source)
-        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-        # see issue #1463 in PSY
-        if !isa(source, PSY.SynchronousCondenser)
+    for source in PSY.get_available_components(PSY.StaticInjection, sys)
+        if contributes_active_power(source) &&
+           active_power_contribution_type(source) == PowerContributionType.INJECTION
+            bus = PSY.get_bus(source)
+            bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
             bus_activepower_injection[bus_ix] += PSY.get_active_power(source)
         end
-        bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power(source)
+        if contributes_reactive_power(source) &&
+           reactive_power_contribution_type(source) == PowerContributionType.INJECTION
+            bus = PSY.get_bus(source)
+            bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+            # yet to implement control mode etc. for FACTS devices.
+            if source isa PSY.FACTSControlDevice
+                bus_reactivepower_injection[bus_ix] +=
+                    PSY.get_reactive_power_required(source)
+            else
+                bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power(source)
+            end
+        end
     end
     return
 end
@@ -81,30 +86,42 @@ function _get_withdrawals!(
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
 )
-    for l in PSY.get_components(_SingleComponentLoad, sys)
-        PSY.get_available(l) || continue
-        bus = PSY.get_bus(l)
-        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-        bus_activepower_withdrawals[bus_ix] += PSY.get_active_power(l)
-        bus_reactivepower_withdrawals[bus_ix] += PSY.get_reactive_power(l)
+    # constant power withdrawals
+    for l in PSY.get_available_components(PSY.StaticInjection, sys)
+        if contributes_active_power(l) &&
+           active_power_contribution_type(l) == PowerContributionType.WITHDRAWAL
+            bus = PSY.get_bus(l)
+            bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+            bus_activepower_withdrawals[bus_ix] += PSY.get_active_power(l)
+        end
+        if contributes_reactive_power(l) &&
+           reactive_power_contribution_type(l) == PowerContributionType.WITHDRAWAL
+            bus = PSY.get_bus(l)
+            bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+            bus_reactivepower_withdrawals[bus_ix] += PSY.get_reactive_power(l)
+        end
     end
-    for l in PSY.get_components(PSY.StandardLoad, sys)
-        PSY.get_available(l) || continue
+    # handle StandardLoad: they have constant current and constant impedance withdrawals,
+    # and the getter for constant power is named differently (get_constant_active_power)
+    for l in PSY.get_available_components(
+        Union{PSY.StandardLoad, PSY.InterruptibleStandardLoad},
+        sys,
+    )
         bus = PSY.get_bus(l)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         bus_activepower_withdrawals[bus_ix] += PSY.get_constant_active_power(l)
+        bus_reactivepower_withdrawals[bus_ix] += PSY.get_constant_reactive_power(l)
         bus_activepower_constant_current_withdrawals[bus_ix] +=
             PSY.get_current_active_power(l)
         bus_activepower_constant_impedance_withdrawals[bus_ix] +=
             PSY.get_impedance_active_power(l)
-        bus_reactivepower_withdrawals[bus_ix] += PSY.get_constant_reactive_power(l)
         bus_reactivepower_constant_current_withdrawals[bus_ix] +=
             PSY.get_current_reactive_power(l)
         bus_reactivepower_constant_impedance_withdrawals[bus_ix] +=
             PSY.get_impedance_reactive_power(l)
     end
-    for sa in PSY.get_components(PSY.SwitchedAdmittance, sys)
-        PSY.get_available(sa) || continue
+    # FixedAdmittance components are already included in the Ybus matrix.
+    for sa in PSY.get_available_components(PSY.SwitchedAdmittance, sys)
         bus = PSY.get_bus(sa)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         Y = PSY.get_Y(sa) + sum(PSY.get_initial_status(sa) .* PSY.get_Y_increase(sa))
@@ -116,6 +133,13 @@ function _get_withdrawals!(
         bus_activepower_constant_impedance_withdrawals[bus_ix] += real(Y)
         bus_reactivepower_constant_impedance_withdrawals[bus_ix] -= imag(Y)
     end
+    for sc in PSY.get_available_components(PSY.SynchronousCondenser, sys)
+        bus = PSY.get_bus(sc)
+        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+        bus_activepower_withdrawals[bus_ix] += PSY.get_active_power_losses(sc)
+        # reactive power handled already:
+        # contributes_reactive_power(PSY.SynchronousCondenser) is true.
+    end
     return
 end
 
@@ -126,9 +150,9 @@ function _get_reactive_power_bound!(
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
 )
-    for source in PSY.get_components(PSY.StaticInjection, sys)
+    for source in PSY.get_available_components(PSY.StaticInjection, sys)
         isa(source, PSY.ElectricLoad) && continue
-        !PSY.get_available(source) && continue
+        isa(source, PSY.FACTSControlDevice) && continue # FIXME: FACTS devices.
         bus = PSY.get_bus(source)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         reactive_power_limits = get_reactive_power_limits_for_power_flow(source)
@@ -142,6 +166,7 @@ function _get_reactive_power_bound!(
             bus_reactivepower_bounds[bus_ix] = (-Inf, Inf)
         end
     end
+    return
 end
 
 function _initialize_bus_data!(
@@ -161,6 +186,7 @@ function _initialize_bus_data!(
     temp_bus_types = Dict{Int, PSY.ACBusTypes}()
     sizehint!(temp_bus_types, length(bus_numbers))
     temp_bus_map = Dict{Int, String}()
+    sizehint!(temp_bus_map, length(bus_numbers))
     for bus in PSY.get_components(PSY.ACBus, sys)
         bt = PSY.get_bustype(bus)
         bus_no = PSY.get_number(bus)
@@ -168,8 +194,9 @@ function _initialize_bus_data!(
         temp_bus_map[bus_no] = bus_name
         if (bt == PSY.ACBusTypes.PV || bt == PSY.ACBusTypes.REF) && !(bus_no in possible_PV)
             if correct_bustypes
-                @info "Bus $bus_name (number $bus_no) changed from PV to PQ: no available " *
-                      "sources at that bus." maxlog = PF_MAX_LOG
+                @warn "No available sources at bus $bus_name  of bus type 2 (PV). " *
+                      "Treating that bus as PQ for purposes of the power flow." maxlog =
+                    PF_MAX_LOG
                 bt = PSY.ACBusTypes.PQ
             else
                 throw(
@@ -187,17 +214,14 @@ function _initialize_bus_data!(
         temp_bus_types[bus_no] = bt
     end
 
-    bus_type_priorities = Dict{PSY.ACBusTypes, Int}(
-        PSY.ACBusTypes.REF => 3,
-        PSY.ACBusTypes.PV => 2,
-        PSY.ACBusTypes.PQ => 1,
-    )
+    # FIXME handle combining buses more intelligently.
+    # perhaps move some of this logic into PNM
     for (bus_no, reduced_bus_nos) in bus_reduction_map
         # pick the "highest" bus type among the reduced buses, where REF > PV > PQ.
         corrected_bus_types =
             [temp_bus_types[reduced_bus_no] for reduced_bus_no in reduced_bus_nos]
         push!(corrected_bus_types, temp_bus_types[bus_no])
-        combined_bus_type = findmax(bt -> bus_type_priorities[bt], corrected_bus_types)[1]
+        combined_bus_type = findmax(bt -> BUS_TYPE_PRIORITIES[bt], corrected_bus_types)[1]
         ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, bus_no)
         bus_type[ix] = combined_bus_type
         # TODO: combine the angles/magnitudes, between the reduced buses?
@@ -424,16 +448,15 @@ end
 """Return set of all bus numbers that must be PV: i.e. have an available generator."""
 function must_be_PV(sys::System)
     gen_buses = Set{Int}()
-    for gen in PSY.get_components(PSY.Generator, sys)
-        if PSY.get_available(gen)
-            push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
-        end
+    for gen in PSY.get_available_components(PSY.Generator, sys)
+        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
     end
     # PSSe counts buses with switched shunts as PV, so we do the same here.
-    for gen in PSY.get_components(PSY.SwitchedAdmittance, sys)
-        if PSY.get_available(gen)
-            push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
-        end
+    for gen in PSY.get_available_components(PSY.SwitchedAdmittance, sys)
+        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
+    end
+    for gen in PSY.get_available_components(PSY.SynchronousCondenser, sys)
+        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
     end
     return gen_buses
 end
@@ -442,10 +465,8 @@ end
 or certain voltage regulation devices."""
 function can_be_PV(sys::System)
     source_buses = must_be_PV(sys)
-    for source in PSY.get_components(PSY.Source, sys)
-        if PSY.get_available(source)
-            push!(source_buses, PSY.get_number(PSY.get_bus(source)))
-        end
+    for source in PSY.get_available_components(PSY.Source, sys)
+        push!(source_buses, PSY.get_number(PSY.get_bus(source)))
     end
     return source_buses
 end

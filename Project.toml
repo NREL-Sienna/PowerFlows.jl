@@ -20,7 +20,7 @@ StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
 DataFrames = "1"
-DataStructures = "0.18"
+DataStructures = "0.19"
 Dates = "1"
 InfrastructureSystems = "^2.4"
 JSON3 = "1"

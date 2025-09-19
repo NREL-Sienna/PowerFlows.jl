@@ -63,3 +63,9 @@ const ITypes = SparseArrays.CHOLMOD.ITypes
 
 # force arc names to be unique when reporting power flow results.
 const FORCE_UNIQUE_NAMES = true
+
+const BUS_TYPE_PRIORITIES = Dict{PSY.ACBusTypes, Int}(
+    PSY.ACBusTypes.REF => 3,
+    PSY.ACBusTypes.PV => 2,
+    PSY.ACBusTypes.PQ => 1,
+)
