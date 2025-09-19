@@ -202,7 +202,7 @@ function _create_jacobian_matrix_structure_lcc(data::ACPowerFlowData, rows::Vect
     columns::Vector{Int32},
     values::Vector{Float64},
     num_buses::Int)
-    for (i, (fb, tb)) in enumerate(zip(data.lcc.rectifier_bus, data.lcc.inverter_bus))
+    for (i, (fb, tb)) in enumerate(zip(data.lcc.rectifier.bus, data.lcc.inverter.bus))
         push!(rows, 2 * fb - 1)
         push!(columns, 2 * fb - 1)
         push!(values, 0.0)
@@ -462,21 +462,21 @@ function _set_entries_for_lcc(data::ACPowerFlowData,
     Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     num_buses::Int,
     time_step::Int)
-    for i in eachindex(data.lcc.rectifier_bus)
-        fb = data.lcc.rectifier_bus[i]
-        tb = data.lcc.inverter_bus[i]
+    for i in eachindex(data.lcc.rectifier.bus)
+        fb = data.lcc.rectifier.bus[i]
+        tb = data.lcc.inverter.bus[i]
 
         if data.bus_type[fb, time_step] == PSY.ACBusTypes.PQ
             Jv[2 * fb - 1, 2 * fb - 1] +=
-                data.lcc.rectifier_tap[i, time_step] * sqrt(6) / π *
-                data.lcc.rectifier_i_dc[i, time_step] *
-                cos(data.lcc.rectifier_delay_angle[i, time_step])
+                data.lcc.rectifier.tap[i, time_step] * sqrt(6) / π *
+                data.lcc.i_dc[i, time_step] *
+                cos(data.lcc.rectifier.thyristor_angle[i, time_step])
             Jv[2 * fb, 2 * fb - 1] += _calculate_dQ_dV_lcc(
-                data.lcc.rectifier_tap[i, time_step],
-                data.lcc.rectifier_i_dc[i, time_step],
-                data.lcc.rectifier_transformer_reactance[i],
+                data.lcc.rectifier.tap[i, time_step],
+                data.lcc.i_dc[i, time_step],
+                data.lcc.rectifier.transformer_reactance[i],
                 data.bus_magnitude[fb, time_step],
-                data.lcc.rectifier_phi[i, time_step],
+                data.lcc.rectifier.phi[i, time_step],
             )
         end
 
@@ -484,75 +484,71 @@ function _set_entries_for_lcc(data::ACPowerFlowData,
            data.bus_type[fb, time_step] == PSY.ACBusTypes.PQ
             Jv[2 * fb - 1, num_buses * 2 + (i - 1) * 4 + 1] =
                 data.bus_magnitude[fb, time_step] * sqrt(6) / π *
-                data.lcc.rectifier_i_dc[i, time_step] *
-                cos(data.lcc.rectifier_delay_angle[i, time_step])
+                data.lcc.i_dc[i, time_step] *
+                cos(data.lcc.rectifier.thyristor_angle[i, time_step])
             Jv[2 * fb - 1, num_buses * 2 + (i - 1) * 4 + 3] =
-                -data.bus_magnitude[fb, time_step] * data.lcc.rectifier_tap[i, time_step] *
-                sqrt(6) / π * data.lcc.rectifier_i_dc[i, time_step] *
-                cos(data.lcc.rectifier_delay_angle[i, time_step]) *
-                tan(data.lcc.rectifier_delay_angle[i, time_step])
+                -data.bus_magnitude[fb, time_step] * data.lcc.rectifier.tap[i, time_step] *
+                sqrt(6) / π * data.lcc.i_dc[i, time_step] *
+                sin(data.lcc.rectifier.thyristor_angle[i, time_step])
         end
 
         if data.bus_type[fb, time_step] == PSY.ACBusTypes.PQ
             Jv[2 * fb, num_buses * 2 + (i - 1) * 4 + 1] = _calculate_dQ_dt_lcc(
-                data.lcc.rectifier_tap[i, time_step],
-                data.lcc.rectifier_i_dc[i, time_step],
-                data.lcc.rectifier_transformer_reactance[i],
+                data.lcc.rectifier.tap[i, time_step],
+                data.lcc.i_dc[i, time_step],
+                data.lcc.rectifier.transformer_reactance[i],
                 data.bus_magnitude[fb, time_step],
-                data.lcc.rectifier_phi[i, time_step],
+                data.lcc.rectifier.phi[i, time_step],
             )
             Jv[2 * fb, num_buses * 2 + (i - 1) * 4 + 3] = _calculate_dQ_dα_lcc(
-                data.lcc.rectifier_tap[i, time_step],
-                data.lcc.rectifier_i_dc[i, time_step],
-                data.lcc.rectifier_transformer_reactance[i],
+                data.lcc.rectifier.tap[i, time_step],
+                data.lcc.i_dc[i, time_step],
+                data.lcc.rectifier.transformer_reactance[i],
                 data.bus_magnitude[fb, time_step],
-                data.lcc.rectifier_phi[i, time_step],
-                data.lcc.rectifier_delay_angle[i, time_step],
+                data.lcc.rectifier.phi[i, time_step],
+                data.lcc.rectifier.thyristor_angle[i, time_step],
             )
             Jv[num_buses * 2 + (i - 1) * 4 + 1, 2 * fb - 1] =
-                data.lcc.rectifier_tap[i] * sqrt(6) / π *
-                data.lcc.rectifier_i_dc[i, time_step] *
-                cos(data.lcc.rectifier_delay_angle[i, time_step])
+                data.lcc.rectifier.tap[i] * sqrt(6) / π *
+                data.lcc.i_dc[i, time_step] *
+                cos(data.lcc.rectifier.thyristor_angle[i, time_step])
             Jv[num_buses * 2 + (i - 1) * 4 + 2, 2 * fb - 1] =
-                data.lcc.rectifier_tap[i] * sqrt(6) / π *
-                data.lcc.rectifier_i_dc[i, time_step] *
-                cos(data.lcc.rectifier_delay_angle[i, time_step])
+                data.lcc.rectifier.tap[i] * sqrt(6) / π *
+                data.lcc.i_dc[i, time_step] *
+                cos(data.lcc.rectifier.thyristor_angle[i, time_step])
         end
 
         if data.bus_type[tb, time_step] == PSY.ACBusTypes.PQ
             Jv[num_buses * 2 + (i - 1) * 4 + 2, 2 * tb - 1] =
-                data.lcc.inverter_tap[i] * sqrt(6) / π *
-                data.lcc.inverter_i_dc[i, time_step] *
-                cos(data.lcc.inverter_extinction_angle[i, time_step])
+                data.lcc.inverter.tap[i] * sqrt(6) / π *
+                (-data.lcc.i_dc[i, time_step]) *
+                cos(data.lcc.inverter.thyristor_angle[i, time_step])
         end
 
         Jv[num_buses * 2 + (i - 1) * 4 + 1, num_buses * 2 + (i - 1) * 4 + 1] =
             data.bus_magnitude[fb, time_step] * sqrt(6) / π *
-            data.lcc.rectifier_i_dc[i, time_step] *
-            cos(data.lcc.rectifier_delay_angle[i, time_step])
+            data.lcc.i_dc[i, time_step] *
+            cos(data.lcc.rectifier.thyristor_angle[i, time_step])
         Jv[num_buses * 2 + (i - 1) * 4 + 1, num_buses * 2 + (i - 1) * 4 + 3] =
-            -data.bus_magnitude[fb, time_step] * data.lcc.rectifier_tap[i, time_step] *
-            sqrt(6) / π * data.lcc.rectifier_i_dc[i, time_step] *
-            cos(data.lcc.rectifier_delay_angle[i, time_step]) *
-            tan(data.lcc.rectifier_delay_angle[i, time_step])
+            -data.bus_magnitude[fb, time_step] * data.lcc.rectifier.tap[i, time_step] *
+            sqrt(6) / π * data.lcc.i_dc[i, time_step] *
+            sin(data.lcc.rectifier.thyristor_angle[i, time_step])
         Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 1] =
             data.bus_magnitude[fb, time_step] * sqrt(6) / π *
-            data.lcc.rectifier_i_dc[i, time_step] *
-            cos(data.lcc.rectifier_delay_angle[i, time_step])
+            data.lcc.i_dc[i, time_step] *
+            cos(data.lcc.rectifier.thyristor_angle[i, time_step])
         Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 2] =
             data.bus_magnitude[tb, time_step] * sqrt(6) / π *
-            data.lcc.inverter_i_dc[i, time_step] *
-            cos(data.lcc.inverter_extinction_angle[i, time_step])
+            (-data.lcc.i_dc[i, time_step]) *
+            cos(data.lcc.inverter.thyristor_angle[i, time_step])
         Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 3] =
-            -data.bus_magnitude[fb, time_step] * data.lcc.rectifier_tap[i, time_step] *
-            sqrt(6) / π * data.lcc.rectifier_i_dc[i, time_step] *
-            cos(data.lcc.rectifier_delay_angle[i, time_step]) *
-            tan(data.lcc.rectifier_delay_angle[i, time_step])
+            -data.bus_magnitude[fb, time_step] * data.lcc.rectifier.tap[i, time_step] *
+            sqrt(6) / π * data.lcc.i_dc[i, time_step] *
+            sin(data.lcc.rectifier.thyristor_angle[i, time_step])
         Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 4] =
-            -data.bus_magnitude[tb, time_step] * data.lcc.inverter_tap[i, time_step] *
-            sqrt(6) / π * data.lcc.inverter_i_dc[i, time_step] *
-            cos(data.lcc.inverter_extinction_angle[i, time_step]) *
-            tan(data.lcc.inverter_extinction_angle[i, time_step])
+            -data.bus_magnitude[tb, time_step] * data.lcc.inverter.tap[i, time_step] *
+            sqrt(6) / π * (-data.lcc.i_dc[i, time_step]) *
+            sin(data.lcc.inverter.thyristor_angle[i, time_step])
     end
     return
 end

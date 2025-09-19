@@ -665,8 +665,14 @@ siground(x::Float64) = round(x; sigdigits = 3)
 
 Compute the phase angle ϕ for LCC converter calculations.
 """
-function _calculate_ϕ_lcc(α::Float64, I_dc::Float64, x_t::Float64, Vm::Float64)::Float64
-    return acos(clamp(sign(I_dc) * (cos(α) - (x_t * I_dc) / (sqrt(2) * Vm)), -1.0, 1.0))
+function _calculate_ϕ_lcc(
+    t::Float64,
+    α::Float64,
+    I_dc::Float64,
+    x_t::Float64,
+    Vm::Float64,
+)::Float64
+    return acos(clamp(sign(I_dc) * (cos(α) - (x_t * I_dc) / (sqrt(2) * Vm * t)), -1.0, 1.0))
 end
 
 """
@@ -675,7 +681,7 @@ end
 Compute the admittance value Y for LCC converter calculations.
 """
 function _calculate_y_lcc(t::Float64, I_dc::Float64, Vm::Float64, ϕ::Float64)::ComplexF64
-    return -t / Vm * sqrt(6) / π * sign(I_dc) * I_dc * exp(-1im * ϕ)
+    return t / Vm * sqrt(6) / π * sign(I_dc) * I_dc * exp(-1im * ϕ)
 end
 
 """
@@ -733,39 +739,41 @@ function _calculate_dQ_dα_lcc(
 end
 
 function _update_ybus_lcc!(ybus_facts, data, time_step)
-    for i in eachindex(data.lcc.rectifier_bus)
-        data.lcc.rectifier_phi[i, time_step] = _calculate_ϕ_lcc(
-            data.lcc.rectifier_delay_angle[i, time_step],
-            data.lcc.rectifier_i_dc[i, time_step],
-            data.lcc.rectifier_transformer_reactance[i],
-            data.bus_magnitude[data.lcc.rectifier_bus[i], time_step],
+    for i in eachindex(data.lcc.rectifier.bus)
+        data.lcc.rectifier.phi[i, time_step] = _calculate_ϕ_lcc(
+            data.lcc.rectifier.tap[i, time_step],
+            data.lcc.rectifier.thyristor_angle[i, time_step],
+            data.lcc.i_dc[i, time_step],
+            data.lcc.rectifier.transformer_reactance[i],
+            data.bus_magnitude[data.lcc.rectifier.bus[i], time_step],
         )
-        data.lcc.inverter_phi[i, time_step] = _calculate_ϕ_lcc(
-            data.lcc.inverter_extinction_angle[i, time_step],
-            data.lcc.inverter_i_dc[i, time_step],
-            data.lcc.inverter_transformer_reactance[i],
-            data.bus_magnitude[data.lcc.inverter_bus[i], time_step],
+        data.lcc.inverter.phi[i, time_step] = _calculate_ϕ_lcc(
+            data.lcc.inverter.tap[i, time_step],
+            data.lcc.inverter.thyristor_angle[i, time_step],
+            -data.lcc.i_dc[i, time_step],
+            data.lcc.inverter.transformer_reactance[i],
+            data.bus_magnitude[data.lcc.inverter.bus[i], time_step],
         )
-        ybus_facts[data.lcc.rectifier_bus[i], data.lcc.rectifier_bus[i]] = _calculate_y_lcc(
-            data.lcc.rectifier_tap[i, time_step],
-            data.lcc.rectifier_i_dc[i, time_step],
-            data.bus_magnitude[data.lcc.rectifier_bus[i], time_step],
-            data.lcc.rectifier_phi[i, time_step],
+        ybus_facts[data.lcc.rectifier.bus[i], data.lcc.rectifier.bus[i]] = _calculate_y_lcc(
+            data.lcc.rectifier.tap[i, time_step],
+            data.lcc.i_dc[i, time_step],
+            data.bus_magnitude[data.lcc.rectifier.bus[i], time_step],
+            data.lcc.rectifier.phi[i, time_step],
         )
-        ybus_facts[data.lcc.inverter_bus[i], data.lcc.inverter_bus[i]] = _calculate_y_lcc(
-            data.lcc.inverter_tap[i, time_step],
-            data.lcc.inverter_i_dc[i, time_step],
-            data.bus_magnitude[data.lcc.inverter_bus[i], time_step],
-            data.lcc.inverter_phi[i, time_step],
+        ybus_facts[data.lcc.inverter.bus[i], data.lcc.inverter.bus[i]] = _calculate_y_lcc(
+            data.lcc.inverter.tap[i, time_step],
+            -data.lcc.i_dc[i, time_step],
+            data.bus_magnitude[data.lcc.inverter.bus[i], time_step],
+            data.lcc.inverter.phi[i, time_step],
         )
         data.power_network_matrix.branch_admittance_from_to[
             data.lcc.arc[i],
             data.lcc.arc[i].from,
-        ] = ybus_facts[data.lcc.rectifier_bus[i], data.lcc.rectifier_bus[i]]
+        ] = ybus_facts[data.lcc.rectifier.bus[i], data.lcc.rectifier.bus[i]]
         data.power_network_matrix.branch_admittance_to_from[
             data.lcc.arc[i],
             data.lcc.arc[i].to,
-        ] = ybus_facts[data.lcc.inverter_bus[i], data.lcc.inverter_bus[i]]
+        ] = ybus_facts[data.lcc.inverter.bus[i], data.lcc.inverter.bus[i]]
     end
     return
 end

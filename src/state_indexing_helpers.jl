@@ -58,10 +58,10 @@ function update_state!(x::Vector{Float64},
     end
     @assert state_variable_count - 1 == length(data.bus_type[:, 1]) * 2
     for i in eachindex(data.lcc.p_set[:, time_step])
-        x[state_variable_count] = data.lcc.rectifier_tap[i, time_step]
-        x[state_variable_count + 1] = data.lcc.inverter_tap[i, time_step]
-        x[state_variable_count + 2] = data.lcc.rectifier_delay_angle[i, time_step]
-        x[state_variable_count + 3] = data.lcc.inverter_extinction_angle[i, time_step]
+        x[state_variable_count] = data.lcc.rectifier.tap[i, time_step]
+        x[state_variable_count + 1] = data.lcc.inverter.tap[i, time_step]
+        x[state_variable_count + 2] = data.lcc.rectifier.thyristor_angle[i, time_step]
+        x[state_variable_count + 3] = data.lcc.inverter.thyristor_angle[i, time_step]
         state_variable_count += 4
     end
     @assert state_variable_count - 1 == length(x)

@@ -360,10 +360,10 @@ function _update_residual_values!(
     end
 
     if num_lcc > 0
-        data.lcc.rectifier_tap[:, time_step] = x[(end - 4 * num_lcc + 1):4:end]
-        data.lcc.inverter_tap[:, time_step] = x[(end - 4 * num_lcc + 2):4:end]
-        data.lcc.rectifier_delay_angle[:, time_step] = x[(end - 4 * num_lcc + 3):4:end]
-        data.lcc.inverter_extinction_angle[:, time_step] = x[(end - 4 * num_lcc + 4):4:end]
+        data.lcc.rectifier.tap[:, time_step] = x[(end - 4 * num_lcc + 1):4:end]
+        data.lcc.inverter.tap[:, time_step] = x[(end - 4 * num_lcc + 2):4:end]
+        data.lcc.rectifier.thyristor_angle[:, time_step] = x[(end - 4 * num_lcc + 3):4:end]
+        data.lcc.inverter.thyristor_angle[:, time_step] = x[(end - 4 * num_lcc + 4):4:end]
         _update_ybus_lcc!(Yb_facts, data, time_step)
     end
 
@@ -371,7 +371,7 @@ function _update_residual_values!(
     Vm = view(data.bus_magnitude, :, time_step)
     θ = view(data.bus_angles, :, time_step)
     # F is active and reactive power balance equations at all buses
-    Yb_vals = SparseArrays.nonzeros(Yb)
+    Yb_vals = SparseArrays.nonzeros(Yb .+ Yb_facts)
     Yb_rowvals = SparseArrays.rowvals(Yb)
     F .= 0.0
     for bus_to in axes(Yb, 1)
@@ -397,25 +397,23 @@ function _update_residual_values!(
 
     if num_lcc > 0
         P_lcc_from =
-            Vm[data.lcc.rectifier_bus, time_step] .* data.lcc.rectifier_tap[:, time_step] .*
-            sqrt(6) / π .* data.lcc.rectifier_i_dc[:, time_step] .*
-            cos.(data.lcc.rectifier_delay_angle[:, time_step]) .-
-            sqrt(3 / 2) * sqrt(6) / π .* data.lcc.rectifier_transformer_reactance .*
-            data.lcc.rectifier_i_dc[:, time_step] .^ 2
+            Vm[data.lcc.rectifier.bus, time_step] .* data.lcc.rectifier.tap[:, time_step] .*
+            sqrt(6) / π .* data.lcc.i_dc[:, time_step] .*
+            cos.(data.lcc.rectifier.phi[:, time_step])
         P_lcc_to =
-            Vm[data.lcc.inverter_bus, time_step] .* data.lcc.inverter_tap[:, time_step] .*
-            sqrt(6) / π .* data.lcc.inverter_i_dc[:, time_step] .*
-            cos.(data.lcc.inverter_extinction_angle[:, time_step]) .-
-            sqrt(3 / 2) * sqrt(6) / π .* data.lcc.inverter_transformer_reactance .*
-            data.lcc.inverter_i_dc[:, time_step] .^ 2
+            Vm[data.lcc.inverter.bus, time_step] .* data.lcc.inverter.tap[:, time_step] .*
+            sqrt(6) / π .* data.lcc.i_dc[:, time_step] .*
+            cos.(data.lcc.inverter.phi[:, time_step])
         F[(end - 4 * num_lcc + 1):4:end] .= P_lcc_from .- data.lcc.p_set[:, time_step]
         F[(end - 4 * num_lcc + 2):4:end] .=
             P_lcc_from .+ P_lcc_to .-
-            data.lcc.dc_line_resistance .* data.lcc.rectifier_i_dc[:, time_step] .^ 2
+            data.lcc.dc_line_resistance .* data.lcc.i_dc[:, time_step] .^ 2
         F[(end - 4 * num_lcc + 3):4:end] .=
-            data.lcc.rectifier_delay_angle[:, time_step] .- data.lcc.rectifier_min_alpha
+            data.lcc.rectifier.thyristor_angle[:, time_step] .-
+            data.lcc.rectifier.min_thyristor_angle
         F[(end - 4 * num_lcc + 4):4:end] .=
-            data.lcc.inverter_extinction_angle[:, time_step] .- data.lcc.inverter_min_gamma
+            data.lcc.inverter.thyristor_angle[:, time_step] .-
+            data.lcc.inverter.min_thyristor_angle
     end
     return
 end
