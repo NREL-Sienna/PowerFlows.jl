@@ -1,5 +1,6 @@
 const MAX_INIT_RESIDUAL = 10.0
 const BOUNDS_TOLERANCE = 1e-6
+const INFINITE_BOUND = 1e6 # used as default when a branch has rating 0.0, as implied by the PSSE Manual
 const MAX_REACTIVE_POWER_ITERATIONS = 10
 const DEFAULT_MAX_REDISTRIBUTION_ITERATIONS = 10
 const LARGE_RESIDUAL = 10 # threshold for "bad initial guess": default
@@ -50,6 +51,12 @@ const DEFAULT_VALIDATE_VOLTAGES = true
 const MinMax = NamedTuple{(:min, :max), Tuple{Float64, Float64}}
 const DEFAULT_VALIDATION_RANGE = (min = 0.5, max = 1.5)
 # const MAX_INDS_TO_PRINT = 10
+
+const FACTS_MODE_MAP = Dict(
+    PSY.FACTSOperationModes.OOS => 0,
+    PSY.FACTSOperationModes.NML => 1,
+    PSY.FACTSOperationModes.BYP => 2,
+)
 
 const OVERWRITE_NON_CONVERGED = true # overwrite non-converged time steps with NaN values
 
