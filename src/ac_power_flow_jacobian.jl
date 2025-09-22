@@ -198,78 +198,78 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
     return nothing
 end
 
+"""
+    _create_jacobian_matrix_structure_lcc(data::ACPowerFlowData, rows::Vector{Int32},
+    columns::Vector{Int32},
+    values::Vector{Float64},
+    num_buses::Int)
+
+    Create the Jacobian matrix structure for LCC HVDC.
+
+    The function iterates over each LCC and adds the non-zero entries to the Jacobian matrix structure.
+    The state vector for every LCC contains 4 variables (tap and angle for both rectifier and inverter).
+    The indices of non-zero entries correspond to the positions of these variables in the state vector.
+
+    For example, suppose we have a system with 2 buses connected by one LCC:
+    - Bus 1 is connected to the rectifier side,
+    - Bus 2 is connected to the inverter side.
+
+    The Jacobian matrix structure entries correspond to partial derivatives of the mismatch equations
+    with respect to these state variables.
+
+    The Jacobian matrix would have non-zero entries at positions like:
+
+    |           | V₁         | δ₁ | V₂         | δ₂ | t₁         | t₂         | a₁         | a₂         |
+    |-----------|------------|----|------------|----|------------|------------|------------|------------|
+    | P₁        | ∂P₁/∂V₁    |    |            |    | ∂P₁/∂t₁    |            | ∂P₁/∂a₁    |            |
+    | Q₁        | ∂Q₁/∂V₁    |    |            |    | ∂Q₁/∂t₁    |            | ∂Q₁/∂a₁    |            |
+    | P₂        |            |    |            |    |            |            |            |            |
+    | Q₂        |            |    |            |    |            |            |            |            |
+    | Fₜ₁       | ∂Fₜ₁/∂V₁    |    |            |    | ∂Fₜ₁/∂t₁    |            | ∂Fₜ₁/∂a₁   |            |
+    | Fₜ₂       | ∂Fₜ₂/∂V₁    |    | ∂Fₜ₂/∂V₂    |    | ∂Fₜ₂/∂t₁   | ∂Fₜ₂/∂t₂    | ∂Fₜ₂/∂a₁   | ∂Fₜ₂/∂a₂    |
+    | Fₐ₁       |            |    |            |    |            |            | ∂Fₐ₁/∂a₁   |            |
+    | Fₐ₂       |            |    |            |    |            |            |            | ∂Fₐ₂/∂a₂   |
+
+    This function sets up the indices of these non-zero entries in the sparse Jacobian matrix.
+"""
 function _create_jacobian_matrix_structure_lcc(data::ACPowerFlowData, rows::Vector{Int32},
     columns::Vector{Int32},
     values::Vector{Float64},
     num_buses::Int)
     for (i, (fb, tb)) in enumerate(zip(data.lcc.rectifier.bus, data.lcc.inverter.bus))
-        push!(rows, 2 * fb - 1)
-        push!(columns, 2 * fb - 1)
-        push!(values, 0.0)
+        idx_p_fb = 2 * fb - 1
+        idx_q_fb = 2 * fb
+        idx_p_tb = 2 * tb - 1
+        offset_lcc = num_buses * 2 + (i - 1) * 4
+        idx_tap_from = offset_lcc + 1
+        idx_tap_to = offset_lcc + 2
+        idx_angle_from = offset_lcc + 3
+        idx_angle_to = offset_lcc + 4
 
-        push!(rows, 2 * fb)
-        push!(columns, 2 * fb - 1)
-        push!(values, 0.0)
-
-        push!(rows, 2 * fb - 1)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 1)
-        push!(values, 0.0)
-
-        push!(rows, 2 * fb - 1)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 3)
-        push!(values, 0.0)
-
-        push!(rows, 2 * fb)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 1)
-        push!(values, 0.0)
-
-        push!(rows, 2 * fb)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 3)
-        push!(values, 0.0)
-
-        push!(rows, num_buses * 2 + (i - 1) * 4 + 1)
-        push!(columns, 2 * fb - 1)
-        push!(values, 0.0)
-
-        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
-        push!(columns, 2 * fb - 1)
-        push!(values, 0.0)
-
-        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
-        push!(columns, 2 * tb - 1)
-        push!(values, 0.0)
-
-        push!(rows, num_buses * 2 + (i - 1) * 4 + 1)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 1)
-        push!(values, 0.0)
-
-        push!(rows, num_buses * 2 + (i - 1) * 4 + 1)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 3)
-        push!(values, 0.0)
-
-        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 1)
-        push!(values, 0.0)
-
-        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 2)
-        push!(values, 0.0)
-
-        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 3)
-        push!(values, 0.0)
-
-        push!(rows, num_buses * 2 + (i - 1) * 4 + 2)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 4)
-        push!(values, 0.0)
-
-        push!(rows, num_buses * 2 + (i - 1) * 4 + 3)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 3)
-        push!(values, 1.0)
-
-        push!(rows, num_buses * 2 + (i - 1) * 4 + 4)
-        push!(columns, num_buses * 2 + (i - 1) * 4 + 4)
-        push!(values, 1.0)
+        rcv = [
+            (idx_p_fb, idx_p_fb, 0.0),  # ∂Pᵢ/∂Vᵢ
+            (idx_q_fb, idx_p_fb, 0.0),  # ∂Qᵢ/∂Vᵢ
+            (idx_p_fb, idx_tap_from, 0.0),  # ∂Pᵢ/∂tᵢ
+            (idx_p_fb, idx_angle_from, 0.0),  # ∂Pᵢ/∂αᵢ
+            (idx_q_fb, idx_tap_from, 0.0),  # ∂Qᵢ/∂tᵢ
+            (idx_q_fb, idx_angle_from, 0.0),  # ∂Qᵢ/∂αᵢ
+            (idx_tap_from, idx_p_fb, 0.0),  # ∂Fₜᵢ/∂Vᵢ
+            (idx_tap_to, idx_p_fb, 0.0),  # ∂Fₜⱼ/∂Vᵢ
+            (idx_tap_to, idx_p_tb, 0.0),  # ∂Fₜⱼ/∂Vⱼ
+            (idx_tap_from, idx_tap_from, 0.0),  # ∂Fₜᵢ/∂tᵢ
+            (idx_tap_from, idx_angle_from, 0.0),  # ∂Fₜᵢ/∂αᵢ
+            (idx_tap_to, idx_tap_from, 0.0),  # ∂Fₜⱼ/∂tᵢ
+            (idx_tap_to, idx_tap_to, 0.0),  # ∂Fₜⱼ/∂tⱼ
+            (idx_tap_to, idx_angle_from, 0.0),  # ∂Fₜⱼ/∂αᵢ
+            (idx_tap_to, idx_angle_to, 0.0),  # ∂Fₜⱼ/∂αⱼ
+            (idx_angle_from, idx_angle_from, 1.0),  # ∂Fₐᵢ/∂αᵢ
+            (idx_angle_to, idx_angle_to, 1.0),  # ∂Fₐⱼ/∂αⱼ
+        ]
+        for (r, c, v) in rcv
+            push!(rows, r)
+            push!(columns, c)
+            push!(values, v)
+        end
     end
     return
 end
@@ -462,93 +462,67 @@ function _set_entries_for_lcc(data::ACPowerFlowData,
     Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
     num_buses::Int,
     time_step::Int)
-    for i in eachindex(data.lcc.rectifier.bus)
-        fb = data.lcc.rectifier.bus[i]
-        tb = data.lcc.inverter.bus[i]
+    sqrt6_div_pi = sqrt(6) / π
+    for (i, (fb, tb)) in enumerate(zip(data.lcc.rectifier.bus, data.lcc.inverter.bus))
+        idx_p_fb = 2 * fb - 1
+        idx_q_fb = 2 * fb
+        idx_p_tb = 2 * tb - 1
+        offset_lcc = num_buses * 2 + (i - 1) * 4
+        idx_tap_from = offset_lcc + 1
+        idx_tap_to = offset_lcc + 2
+        idx_angle_from = offset_lcc + 3
+        idx_angle_to = offset_lcc + 4
 
-        if data.bus_type[fb, time_step] == PSY.ACBusTypes.PQ
-            Jv[2 * fb - 1, 2 * fb - 1] +=
-                data.lcc.rectifier.tap[i, time_step] * sqrt(6) / π *
-                data.lcc.i_dc[i, time_step] *
-                cos(data.lcc.rectifier.thyristor_angle[i, time_step])
-            Jv[2 * fb, 2 * fb - 1] += _calculate_dQ_dV_lcc(
-                data.lcc.rectifier.tap[i, time_step],
-                data.lcc.i_dc[i, time_step],
-                data.lcc.rectifier.transformer_reactance[i],
-                data.bus_magnitude[fb, time_step],
-                data.lcc.rectifier.phi[i, time_step],
-            )
+        i_dc = data.lcc.i_dc[i, time_step]
+        tap_r = data.lcc.rectifier.tap[i, time_step]
+        tap_i = data.lcc.inverter.tap[i, time_step]
+        alpha_r = data.lcc.rectifier.thyristor_angle[i, time_step]
+        alpha_i = data.lcc.inverter.thyristor_angle[i, time_step]
+        phi_r = data.lcc.rectifier.phi[i, time_step]
+        xtr_r = data.lcc.rectifier.transformer_reactance[i]
+        Vm_fb = data.bus_magnitude[fb, time_step]
+        Vm_tb = data.bus_magnitude[tb, time_step]
+        bus_type_fb = data.bus_type[fb, time_step]
+        bus_type_tb = data.bus_type[tb, time_step]
+
+        cos_alpha_r = cos(alpha_r)
+        sin_alpha_r = sin(alpha_r)
+        cos_alpha_i = cos(alpha_i)
+        sin_alpha_i = sin(alpha_i)
+
+        common_term_fb = Vm_fb * sqrt6_div_pi * i_dc
+        common_term_tb = Vm_tb * sqrt6_div_pi * (-i_dc)
+        common_term_tap_r = tap_r * sqrt6_div_pi * i_dc * cos_alpha_r
+        common_term_alpha_r = -common_term_fb * tap_r * sin_alpha_r
+
+        if bus_type_fb == PSY.ACBusTypes.PQ
+            Jv[idx_p_fb, idx_p_fb] += common_term_tap_r # ∂P_fb/∂V_fb
+            Jv[idx_q_fb, idx_p_fb] += _calculate_dQ_dV_lcc(tap_r, i_dc, xtr_r, Vm_fb, phi_r) # ∂Q_fb/∂V_fb
+
+            Jv[idx_q_fb, idx_tap_from] =
+                _calculate_dQ_dt_lcc(tap_r, i_dc, xtr_r, Vm_fb, phi_r) # ∂Q_fb/∂t_fb
+            Jv[idx_q_fb, idx_angle_from] =
+                _calculate_dQ_dα_lcc(tap_r, i_dc, xtr_r, Vm_fb, phi_r, alpha_r) # ∂Q_fb/∂α_fb
+
+            Jv[idx_tap_from, idx_p_fb] = common_term_tap_r # ∂F_t_fb/∂V_fb
+            Jv[idx_tap_to, idx_p_fb] = common_term_tap_r # ∂F_t_tb/∂V_fb
         end
 
-        if data.bus_type[fb, time_step] == PSY.ACBusTypes.PV ||
-           data.bus_type[fb, time_step] == PSY.ACBusTypes.PQ
-            Jv[2 * fb - 1, num_buses * 2 + (i - 1) * 4 + 1] =
-                data.bus_magnitude[fb, time_step] * sqrt(6) / π *
-                data.lcc.i_dc[i, time_step] *
-                cos(data.lcc.rectifier.thyristor_angle[i, time_step])
-            Jv[2 * fb - 1, num_buses * 2 + (i - 1) * 4 + 3] =
-                -data.bus_magnitude[fb, time_step] * data.lcc.rectifier.tap[i, time_step] *
-                sqrt(6) / π * data.lcc.i_dc[i, time_step] *
-                sin(data.lcc.rectifier.thyristor_angle[i, time_step])
+        if bus_type_fb == PSY.ACBusTypes.PQ || bus_type_fb == PSY.ACBusTypes.PV
+            Jv[idx_p_fb, idx_tap_from] = common_term_fb * cos_alpha_r # ∂P_fb/∂t_fb
+            Jv[idx_p_fb, idx_angle_from] = common_term_alpha_r # ∂P_fb/∂α_fb
         end
 
-        if data.bus_type[fb, time_step] == PSY.ACBusTypes.PQ
-            Jv[2 * fb, num_buses * 2 + (i - 1) * 4 + 1] = _calculate_dQ_dt_lcc(
-                data.lcc.rectifier.tap[i, time_step],
-                data.lcc.i_dc[i, time_step],
-                data.lcc.rectifier.transformer_reactance[i],
-                data.bus_magnitude[fb, time_step],
-                data.lcc.rectifier.phi[i, time_step],
-            )
-            Jv[2 * fb, num_buses * 2 + (i - 1) * 4 + 3] = _calculate_dQ_dα_lcc(
-                data.lcc.rectifier.tap[i, time_step],
-                data.lcc.i_dc[i, time_step],
-                data.lcc.rectifier.transformer_reactance[i],
-                data.bus_magnitude[fb, time_step],
-                data.lcc.rectifier.phi[i, time_step],
-                data.lcc.rectifier.thyristor_angle[i, time_step],
-            )
-            Jv[num_buses * 2 + (i - 1) * 4 + 1, 2 * fb - 1] =
-                data.lcc.rectifier.tap[i] * sqrt(6) / π *
-                data.lcc.i_dc[i, time_step] *
-                cos(data.lcc.rectifier.thyristor_angle[i, time_step])
-            Jv[num_buses * 2 + (i - 1) * 4 + 2, 2 * fb - 1] =
-                data.lcc.rectifier.tap[i] * sqrt(6) / π *
-                data.lcc.i_dc[i, time_step] *
-                cos(data.lcc.rectifier.thyristor_angle[i, time_step])
+        if bus_type_tb == PSY.ACBusTypes.PQ
+            Jv[idx_tap_to, idx_p_tb] = tap_i * sqrt6_div_pi * (-i_dc) * cos_alpha_i # ∂F_t_tb/∂V_tb
         end
 
-        if data.bus_type[tb, time_step] == PSY.ACBusTypes.PQ
-            Jv[num_buses * 2 + (i - 1) * 4 + 2, 2 * tb - 1] =
-                data.lcc.inverter.tap[i] * sqrt(6) / π *
-                (-data.lcc.i_dc[i, time_step]) *
-                cos(data.lcc.inverter.thyristor_angle[i, time_step])
-        end
-
-        Jv[num_buses * 2 + (i - 1) * 4 + 1, num_buses * 2 + (i - 1) * 4 + 1] =
-            data.bus_magnitude[fb, time_step] * sqrt(6) / π *
-            data.lcc.i_dc[i, time_step] *
-            cos(data.lcc.rectifier.thyristor_angle[i, time_step])
-        Jv[num_buses * 2 + (i - 1) * 4 + 1, num_buses * 2 + (i - 1) * 4 + 3] =
-            -data.bus_magnitude[fb, time_step] * data.lcc.rectifier.tap[i, time_step] *
-            sqrt(6) / π * data.lcc.i_dc[i, time_step] *
-            sin(data.lcc.rectifier.thyristor_angle[i, time_step])
-        Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 1] =
-            data.bus_magnitude[fb, time_step] * sqrt(6) / π *
-            data.lcc.i_dc[i, time_step] *
-            cos(data.lcc.rectifier.thyristor_angle[i, time_step])
-        Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 2] =
-            data.bus_magnitude[tb, time_step] * sqrt(6) / π *
-            (-data.lcc.i_dc[i, time_step]) *
-            cos(data.lcc.inverter.thyristor_angle[i, time_step])
-        Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 3] =
-            -data.bus_magnitude[fb, time_step] * data.lcc.rectifier.tap[i, time_step] *
-            sqrt(6) / π * data.lcc.i_dc[i, time_step] *
-            sin(data.lcc.rectifier.thyristor_angle[i, time_step])
-        Jv[num_buses * 2 + (i - 1) * 4 + 2, num_buses * 2 + (i - 1) * 4 + 4] =
-            -data.bus_magnitude[tb, time_step] * data.lcc.inverter.tap[i, time_step] *
-            sqrt(6) / π * (-data.lcc.i_dc[i, time_step]) *
-            sin(data.lcc.inverter.thyristor_angle[i, time_step])
+        Jv[idx_tap_from, idx_tap_from] = common_term_fb * cos_alpha_r # ∂F_t_fb/∂t_fb
+        Jv[idx_tap_from, idx_angle_from] = common_term_alpha_r # ∂F_t_fb/∂α_fb
+        Jv[idx_tap_to, idx_tap_from] = common_term_fb * cos_alpha_r # ∂F_t_tb/∂t_fb
+        Jv[idx_tap_to, idx_tap_to] = common_term_tb * cos_alpha_i # ∂F_t_tb/∂t_tb
+        Jv[idx_tap_to, idx_angle_from] = common_term_alpha_r # ∂F_t_tb/∂α_fb
+        Jv[idx_tap_to, idx_angle_to] = -common_term_tb * tap_i * sin_alpha_i # ∂F_t_tb/∂α_tb
     end
     return
 end

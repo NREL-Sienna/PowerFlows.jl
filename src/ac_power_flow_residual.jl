@@ -404,13 +404,17 @@ function _update_residual_values!(
             Vm[data.lcc.inverter.bus, time_step] .* data.lcc.inverter.tap[:, time_step] .*
             sqrt(6) / π .* data.lcc.i_dc[:, time_step] .*
             cos.(data.lcc.inverter.phi[:, time_step])
+        # control rectifier tap for P set point
         F[(end - 4 * num_lcc + 1):4:end] .= P_lcc_from .- data.lcc.p_set[:, time_step]
+        # control inverter tap for P balance
         F[(end - 4 * num_lcc + 2):4:end] .=
             P_lcc_from .+ P_lcc_to .-
             data.lcc.dc_line_resistance .* data.lcc.i_dc[:, time_step] .^ 2
+        # control rectifier thyristor angle
         F[(end - 4 * num_lcc + 3):4:end] .=
             data.lcc.rectifier.thyristor_angle[:, time_step] .-
             data.lcc.rectifier.min_thyristor_angle
+        # control inverter thyristor angle
         F[(end - 4 * num_lcc + 4):4:end] .=
             data.lcc.inverter.thyristor_angle[:, time_step] .-
             data.lcc.inverter.min_thyristor_angle

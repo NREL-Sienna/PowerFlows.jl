@@ -702,7 +702,7 @@ end
 Compute the admittance value Y for LCC converter calculations.
 """
 function _calculate_y_lcc(t::Float64, I_dc::Float64, Vm::Float64, ϕ::Float64)::ComplexF64
-    return t / Vm * sqrt(6) / π * sign(I_dc) * I_dc * exp(-1im * ϕ)
+    return t / Vm * sqrt(6) / π * I_dc * exp(-1im * ϕ)
 end
 
 """
@@ -717,11 +717,8 @@ function _calculate_dQ_dV_lcc(
     Vm::Float64,
     ϕ::Float64,
 )::Float64
-    return Vm * t * sqrt(6) / π * I_dc * sign(I_dc) *
-           (
-               sin(ϕ) -
-               cos(ϕ) * x_t * sign(I_dc) * I_dc / (sqrt(2) * Vm * t * sqrt(1 - cos(ϕ)^2))
-           )
+    return Vm * t * sqrt(6) / π * I_dc *
+           (sin(ϕ) - cos(ϕ) * x_t * I_dc / (sqrt(2) * Vm * t * sin(ϕ)^2))
 end
 
 """
@@ -736,11 +733,8 @@ function _calculate_dQ_dt_lcc(
     Vm::Float64,
     ϕ::Float64,
 )::Float64
-    return Vm * t * sqrt(6) / π * I_dc * sign(I_dc) *
-           (
-               sin(ϕ) / t -
-               cos(ϕ) * x_t * sign(I_dc) * I_dc / (sqrt(2) * Vm * t^2 * sqrt(1 - cos(ϕ)^2))
-           )
+    return Vm * t * sqrt(6) / π * I_dc *
+           (sin(ϕ) / t - cos(ϕ) * x_t * I_dc / (sqrt(2) * Vm * t^2 * sin(ϕ)^2))
 end
 
 """
@@ -783,7 +777,7 @@ function _update_ybus_lcc!(ybus_facts, data, time_step)
         )
         ybus_facts[data.lcc.inverter.bus[i], data.lcc.inverter.bus[i]] = _calculate_y_lcc(
             data.lcc.inverter.tap[i, time_step],
-            -data.lcc.i_dc[i, time_step],
+            data.lcc.i_dc[i, time_step],
             data.bus_magnitude[data.lcc.inverter.bus[i], time_step],
             data.lcc.inverter.phi[i, time_step],
         )
