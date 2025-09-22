@@ -4,6 +4,12 @@ function set_power_flow!(br::PSY.ACTransmission, flow::Complex)
     return
 end
 
+function set_power_flow!(br::PSY.TwoTerminalLCCLine, flow::Complex)
+    PSY.set_active_power_flow!(br, real(flow))
+    # TwoTerminalLCCLine does not have reactive power flow attributes (even though PFD has Q results)
+    return
+end
+
 function set_power_flow!(tp::Tuple{PSY.ThreeWindingTransformer, Int}, flow::Complex)
     (trf, winding) = tp
     if winding == 1

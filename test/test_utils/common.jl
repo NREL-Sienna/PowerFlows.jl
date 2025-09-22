@@ -376,6 +376,57 @@ function _add_simple_zip_load!(
     return zip_load
 end
 
+function _add_simple_lcc!(
+    sys,
+    bus1::ACBus,
+    bus2::ACBus,
+    r::Float64,
+    xr::Float64,
+    xi::Float64,
+)
+    lcc = TwoTerminalLCCLine(;
+        name = "LCC",
+        available = true,
+        arc = Arc(bus1, bus2),
+        active_power_flow = 0.0,
+        r = r,
+        transfer_setpoint = 50,
+        scheduled_dc_voltage = 230.0,
+        rectifier_bridges = 1,
+        rectifier_delay_angle_limits = (min = 0.0, max = π / 2),
+        rectifier_rc = 0.0,
+        rectifier_xc = xr,
+        rectifier_base_voltage = 230.0,
+        inverter_bridges = 1,
+        inverter_extinction_angle_limits = (min = 0, max = π / 2),
+        inverter_rc = 0.0,
+        inverter_xc = xi,
+        inverter_base_voltage = 230.0,
+        power_mode = true,
+        switch_mode_voltage = 0.0,
+        compounding_resistance = 0.0,
+        min_compounding_voltage = 0.0,
+        rectifier_transformer_ratio = 1.0,
+        rectifier_tap_setting = 1.0,
+        rectifier_tap_limits = (min = 0.5, max = 1.5),
+        rectifier_tap_step = 0.05,
+        rectifier_delay_angle = 0.01,
+        rectifier_capacitor_reactance = 0.0,
+        inverter_transformer_ratio = 1.0,
+        inverter_tap_setting = 1.0,
+        inverter_tap_limits = (min = 0.5, max = 1.5),
+        inverter_tap_step = 0.05,
+        inverter_extinction_angle = 0.0,
+        inverter_capacitor_reactance = 0.0,
+        active_power_limits_from = (min = 0.0, max = 0.0),
+        active_power_limits_to = (min = 0.0, max = 0.0),
+        reactive_power_limits_from = (min = 0.0, max = 0.0),
+        reactive_power_limits_to = (min = 0.0, max = 0.0),
+    )
+    add_component!(sys, lcc)
+    return lcc
+end
+
 function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
     injections = CSV.read(
         joinpath(MAIN_DIR, "test", "test_data", "c_sys14_injections.csv"),

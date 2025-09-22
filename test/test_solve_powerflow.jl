@@ -677,3 +677,39 @@ end
     )
     @test isapprox(data1.bus_angles[:, 1], data2.bus_angles[:, 1], atol = 1e-6, rtol = 0)
 end
+
+@testset "Test LCC" begin
+    for ACSolver in AC_SOLVERS_TO_TEST
+        # Skip the solvers that do not support LCCs
+        ACSolver ∈ (LUACPowerFlow, RobustHomotopyPowerFlow) && continue
+        @testset "AC Solver: $(ACSolver)" begin
+            sys = System(100.0)
+            b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+            b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+            b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.1, 0.0)
+            l12 = _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
+            l13 = _add_simple_line!(sys, b1, b3, 5e-3, 5e-3, 1e-3)
+            s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
+            lcc = _add_simple_lcc!(sys, b2, b3, 0.05, 0.05, 0.08)
+            pf = ACPowerFlow{ACSolver}()
+            data = PowerFlowData(pf, sys; correct_bustypes = true)
+            solve_powerflow!(data; pf = pf)
+
+            @test isapprox(
+                data.lcc.p_set[1],
+                data.arc_activepower_flow_from_to[3];
+                atol = 1e-6, rtol = 0,
+            )
+
+            @test isapprox(
+                sum(data.arc_activepower_flow_from_to .+ data.arc_activepower_flow_to_from),
+                data.bus_activepower_injection[1];
+                atol = 1e-5, rtol = 0,
+            )
+
+            solve_powerflow!(pf, sys)
+
+            @test get_active_power_flow(lcc) == data.arc_activepower_flow_from_to[3]
+        end
+    end
+end
