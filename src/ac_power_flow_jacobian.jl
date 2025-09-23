@@ -473,7 +473,7 @@ function _set_entries_for_lcc(data::ACPowerFlowData,
         idx_angle_from = offset_lcc + 3
         idx_angle_to = offset_lcc + 4
 
-        i_dc = data.lcc.i_dc[i, time_step]
+        i_dc = max(data.lcc.i_dc[i, time_step], 1e-9)  # Avoid numerical issues
         tap_r = data.lcc.rectifier.tap[i, time_step]
         tap_i = data.lcc.inverter.tap[i, time_step]
         alpha_r = data.lcc.rectifier.thyristor_angle[i, time_step]
