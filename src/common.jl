@@ -774,41 +774,41 @@ function _calculate_dQ_dα_lcc(
 end
 
 function _update_ybus_lcc!(ybus_facts, data, time_step)
-    for i in eachindex(data.lcc.rectifier.bus)
+    for (i, (fb, tb)) in enumerate(zip(data.lcc.rectifier.bus, data.lcc.inverter.bus))
         data.lcc.rectifier.phi[i, time_step] = _calculate_ϕ_lcc(
             data.lcc.rectifier.tap[i, time_step],
             data.lcc.rectifier.thyristor_angle[i, time_step],
             data.lcc.i_dc[i, time_step],
             data.lcc.rectifier.transformer_reactance[i],
-            data.bus_magnitude[data.lcc.rectifier.bus[i], time_step],
+            data.bus_magnitude[fb, time_step],
         )
         data.lcc.inverter.phi[i, time_step] = _calculate_ϕ_lcc(
             data.lcc.inverter.tap[i, time_step],
             data.lcc.inverter.thyristor_angle[i, time_step],
             -data.lcc.i_dc[i, time_step],
             data.lcc.inverter.transformer_reactance[i],
-            data.bus_magnitude[data.lcc.inverter.bus[i], time_step],
+            data.bus_magnitude[tb, time_step],
         )
-        ybus_facts[data.lcc.rectifier.bus[i], data.lcc.rectifier.bus[i]] = _calculate_y_lcc(
+        ybus_facts[fb, fb] = _calculate_y_lcc(
             data.lcc.rectifier.tap[i, time_step],
             data.lcc.i_dc[i, time_step],
-            data.bus_magnitude[data.lcc.rectifier.bus[i], time_step],
+            data.bus_magnitude[fb, time_step],
             data.lcc.rectifier.phi[i, time_step],
         )
-        ybus_facts[data.lcc.inverter.bus[i], data.lcc.inverter.bus[i]] = _calculate_y_lcc(
+        ybus_facts[tb, tb] = _calculate_y_lcc(
             data.lcc.inverter.tap[i, time_step],
             data.lcc.i_dc[i, time_step],
-            data.bus_magnitude[data.lcc.inverter.bus[i], time_step],
+            data.bus_magnitude[tb, time_step],
             data.lcc.inverter.phi[i, time_step],
         )
         data.power_network_matrix.branch_admittance_from_to[
             data.lcc.arc[i],
             data.lcc.arc[i].from,
-        ] = ybus_facts[data.lcc.rectifier.bus[i], data.lcc.rectifier.bus[i]]
+        ] = ybus_facts[fb, fb]
         data.power_network_matrix.branch_admittance_to_from[
             data.lcc.arc[i],
             data.lcc.arc[i].to,
-        ] = ybus_facts[data.lcc.inverter.bus[i], data.lcc.inverter.bus[i]]
+        ] = ybus_facts[tb, tb]
     end
     return
 end
