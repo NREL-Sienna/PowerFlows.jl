@@ -540,6 +540,23 @@ function write_powerflow_solution!(
         time_step,
     )
 
+    for (i, arc) in enumerate(data.lcc.arc)
+        lcc = both_branch_types[(
+            PSY.get_number(PSY.get_from(arc)),
+            PSY.get_number(PSY.get_to(arc)),
+        )]
+        PSY.set_rectifier_tap_setting!(lcc, data.lcc.rectifier.tap[i, time_step])
+        PSY.set_inverter_tap_setting!(lcc, data.lcc.inverter.tap[i, time_step])
+        PSY.set_rectifier_delay_angle!(
+            lcc,
+            data.lcc.rectifier.thyristor_angle[i, time_step],
+        )
+        PSY.set_inverter_extinction_angle!(
+            lcc,
+            data.lcc.inverter.thyristor_angle[i, time_step],
+        )
+    end
+
     # calculate the bus voltages at buses removed in degree 2 reduction.
     bus_lookup = get_bus_lookup(data)
     for (equivalent_arc, segments) in PNM.get_series_branch_map(nrd)
