@@ -371,23 +371,26 @@ function _update_residual_values!(
     Vm = view(data.bus_magnitude, :, time_step)
     θ = view(data.bus_angles, :, time_step)
     # F is active and reactive power balance equations at all buses
-    Yb_vals = SparseArrays.nonzeros(Yb .+ Yb_facts)
-    Yb_rowvals = SparseArrays.rowvals(Yb)
     F .= 0.0
-    for bus_to in axes(Yb, 1)
-        for j in Yb.colptr[bus_to]:(Yb.colptr[bus_to + 1] - 1)
-            yb = Yb_vals[j]
-            bus_from = Yb_rowvals[j]
-            gb = real(yb)
-            bb = imag(yb)
-            Δθ = θ[bus_from] - θ[bus_to]
-            if bus_from == bus_to
-                F[2 * bus_from - 1] += Vm[bus_from] * Vm[bus_to] * gb
-                F[2 * bus_from] += -Vm[bus_from] * Vm[bus_to] * bb
-            else
-                F[2 * bus_from - 1] +=
-                    Vm[bus_from] * Vm[bus_to] * (gb * cos(Δθ) + bb * sin(Δθ))
-                F[2 * bus_from] += Vm[bus_from] * Vm[bus_to] * (gb * sin(Δθ) - bb * cos(Δθ))
+    for Yb_i in (Yb, Yb_facts)
+        Yb_vals = SparseArrays.nonzeros(Yb_i)
+        Yb_rowvals = SparseArrays.rowvals(Yb_i)
+        for bus_to in axes(Yb_i, 1)
+            for j in Yb_i.colptr[bus_to]:(Yb_i.colptr[bus_to + 1] - 1)
+                yb = Yb_vals[j]
+                bus_from = Yb_rowvals[j]
+                gb = real(yb)
+                bb = imag(yb)
+                Δθ = θ[bus_from] - θ[bus_to]
+                if bus_from == bus_to
+                    F[2 * bus_from - 1] += Vm[bus_from] * Vm[bus_to] * gb
+                    F[2 * bus_from] += -Vm[bus_from] * Vm[bus_to] * bb
+                else
+                    F[2 * bus_from - 1] +=
+                        Vm[bus_from] * Vm[bus_to] * (gb * cos(Δθ) + bb * sin(Δθ))
+                    F[2 * bus_from] +=
+                        Vm[bus_from] * Vm[bus_to] * (gb * sin(Δθ) - bb * cos(Δθ))
+                end
             end
         end
     end
