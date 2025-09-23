@@ -26,6 +26,7 @@ end
 
 struct LCCParameters
     arc::Vector{PSY.Arc}
+    setpoint_at_rectifier::Vector{Bool}
     p_set::Matrix{Float64}
     i_dc::Matrix{Float64}
     dc_line_resistance::Vector{Float64}
@@ -309,6 +310,7 @@ function LCCParameters(
 )
     lccs = PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys)
     n_lccs = length(lccs)
+    lcc_setpoint_at_rectifier = trues(n_lccs)
     lcc_p_set = zeros(Float64, n_lccs, time_steps)
     lcc_i_dc = zeros(Float64, n_lccs, time_steps)
     lcc_dc_line_resistance = zeros(Float64, n_lccs)
@@ -330,6 +332,7 @@ function LCCParameters(
         base_power = PSY.get_base_power(sys)
         # todo: if current set point, transform into p set point
         # lcc_p_set = I_dc_A * V_dc_V / system_base_MVA
+        lcc_setpoint_at_rectifier .= PSY.get_transfer_setpoint.(lccs) .>= 0.0
         lcc_p_set .= abs.(PSY.get_transfer_setpoint.(lccs) ./ base_power) # only one direction is supported, no reverse flow possible
         lcc_i_dc .= lcc_p_set
         lcc_dc_line_resistance .=
@@ -373,6 +376,7 @@ function LCCParameters(
 
     return LCCParameters(
         PSY.get_arc.(lccs),
+        lcc_setpoint_at_rectifier,
         lcc_p_set,
         lcc_i_dc,
         lcc_dc_line_resistance,

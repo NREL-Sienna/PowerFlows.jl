@@ -405,7 +405,12 @@ function _update_residual_values!(
             sqrt(6) / π .* data.lcc.i_dc[:, time_step] .*
             cos.(data.lcc.inverter.phi[:, time_step])
         # control rectifier tap for P set point
-        F[(end - 4 * num_lcc + 1):4:end] .= P_lcc_from .- data.lcc.p_set[:, time_step]
+        F[(end - 4 * num_lcc + 1):4:end] .=
+            ifelse.(
+                data.lcc.setpoint_at_rectifier,
+                P_lcc_from .- data.lcc.p_set[:, time_step],
+                -P_lcc_to .- data.lcc.p_set[:, time_step],
+            )
         # control inverter tap for P balance
         F[(end - 4 * num_lcc + 2):4:end] .=
             P_lcc_from .+ P_lcc_to .-

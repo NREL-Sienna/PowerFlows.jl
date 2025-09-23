@@ -710,6 +710,20 @@ end
             solve_powerflow!(pf, sys)
 
             @test get_active_power_flow(lcc) == data.arc_activepower_flow_from_to[3]
+
+            PSY.set_transfer_setpoint!(lcc, -25.0)
+            data = PowerFlowData(pf, sys; correct_bustypes = true)
+            solve_powerflow!(data; pf = pf)
+
+            @test isapprox(
+                -data.lcc.p_set[1],
+                data.arc_activepower_flow_to_from[3];
+                atol = 1e-6, rtol = 0,
+            )
+
+            solve_powerflow!(pf, sys)
+
+            @test get_active_power_flow(lcc) == data.arc_activepower_flow_from_to[3]
         end
     end
 end
