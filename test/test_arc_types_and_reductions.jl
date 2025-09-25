@@ -1,27 +1,3 @@
-function types_in_series_reduction(nrd::PNM.NetworkReductionData)
-    types = Set{DataType}()
-    for segments in values(PNM.get_series_branch_map(nrd))
-        for comp in segments
-            push!(types, typeof(comp))
-        end
-    end
-    return types
-end
-
-function find_parallel_arc(sys::System)
-    arcs_seen = Set{Tuple{Int, Int}}()
-    for br in PSY.get_components(PSY.ACBranch, sys)
-        arc = PNM.get_arc_tuple(br)
-        if arc in arcs_seen
-            return arc
-        else
-            push!(arcs_seen, arc)
-        end
-    end
-    error("No parallel arcs found")
-    return (-1, -1)
-end
-
 function test_all_powerflow_types(
     sys::System,
     network_reductions::Vector{PNM.NetworkReduction},
