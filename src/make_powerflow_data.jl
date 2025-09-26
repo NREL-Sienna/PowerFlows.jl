@@ -52,6 +52,7 @@ function make_powerflow_data(
     calculate_voltage_stability_factors = get_calculate_voltage_stability_factors(pf)
     if !isnothing(get_slack_participation_factors(pf))
         empty_slack_participation_factors = Dict{Tuple{DataType, String}, Float64}[]
+        sizehint!(empty_slack_participation_factors, n_timesteps)
     else
         empty_slack_participation_factors = nothing
     end

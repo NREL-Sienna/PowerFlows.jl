@@ -357,10 +357,10 @@ function make_bus_slack_participation_factors!(
         return
     end
 
-    if length(generator_slack_participation_factors_input) < time_steps
+    if length(generator_slack_participation_factors_input) != time_steps
         throw(
             ArgumentError(
-                "slack_participation_factors must have at least the same length as time_steps",
+                "slack_participation_factors must be the same length as time_steps",
             ),
         )
     end

@@ -36,7 +36,7 @@ function initialize_powerflow_data!(
     data.bus_angles[:, 1] .= bus_angles
     data.bus_magnitude[:, 1] .= bus_magnitude
 
-    # active power injections, withdrawals
+    # active, reactive power injections, withdrawals
     bus_activepower_injection = zeros(Float64, n_buses)
     bus_reactivepower_injection = zeros(Float64, n_buses)
     _get_injections!(
