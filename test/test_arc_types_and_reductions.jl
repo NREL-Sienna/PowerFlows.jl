@@ -11,18 +11,17 @@ function test_all_powerflow_types(
         correct_bustypes = true,
     )
     solve_powerflow!(data; pf = pf) # should run without errors.
-    @test data isa Any
+    @test !isempty(data.arc_activepower_flow_from_to)
     solve_powerflow!(
         pf,
         sys;
         network_reductions = deepcopy(network_reductions),
         correct_bustypes = true,
     )
-    for pf in [PF.DCPowerFlow(), PF.PTDFDCPowerFlow(), PF.vPTDFDCPowerFlow()]
-        data = PF.PowerFlowData(pf, sys; network_reductions = deepcopy(network_reductions))
-        solve_powerflow!(data) # should run without errors.
-        @test data isa Any
-    end
+    pf = PF.DCPowerFlow()
+    data = PF.PowerFlowData(pf, sys; network_reductions = deepcopy(network_reductions))
+    solve_powerflow!(data) # should run without errors.
+    @test !isempty(data.arc_activepower_flow_from_to)
 end
 
 @testset "radial reduction with 3WT/parallel lines" begin

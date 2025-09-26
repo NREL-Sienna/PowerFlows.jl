@@ -12,7 +12,9 @@ dc_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
 @testset "DC power flow on 2k bus system: validate reduce-then-solve" begin
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
     @testset "$k reduction" for (k, v) in dc_reduction_types
-        @testset "$dc_pf power flow" for dc_pf in dc_powerflows
+        @testset "$pf_type power flow" for pf_type in
+                                           InteractiveUtils.subtypes(PF.AbstractDCPowerFlow)
+            dc_pf = pf_type()
             unreduced = PF.PowerFlowData(dc_pf, sys; correct_bustypes = true)
             PF.solve_powerflow!(unreduced)
             @assert all(unreduced.converged)

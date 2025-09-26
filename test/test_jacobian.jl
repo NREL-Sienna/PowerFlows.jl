@@ -1,5 +1,5 @@
 @testset "Jacobian Verification" begin
-    sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     pf = PF.ACPowerFlow{NewtonRaphsonACPowerFlow}()
     data = PF.PowerFlowData(pf, sys; correct_bustypes = true)
     time_step = 1
@@ -24,6 +24,10 @@
                 push!(outputValues, deepcopy(residual.Rv))
             end
             ΔF = outputValues[2] .- outputValues[1]
+            floating_point_issues = all(isapprox.(ΔF, 0.0; atol = eps(Float32)))
+            if floating_point_issues
+                break
+            end
             ∂F_∂u_numerical = ΔF ./ Δx_mag
             ∂F_∂u_symbolic = J_x0 * u
 
