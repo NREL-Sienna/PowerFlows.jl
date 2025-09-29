@@ -357,6 +357,15 @@ function make_bus_slack_participation_factors!(
         return
     end
 
+    if length(generator_slack_participation_factors_input) > time_steps
+        L = length(generator_slack_participation_factors_input)
+        @warn(
+            "slack_participation_factors has length $L which exceeds time_steps=$time_steps." *
+            " Only the first $time_steps entries will be used.",
+            maxlog = PF_MAX_LOG,
+        )
+    end
+
     if length(generator_slack_participation_factors_input) < time_steps
         throw(
             ArgumentError(

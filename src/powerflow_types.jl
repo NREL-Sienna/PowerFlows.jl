@@ -85,6 +85,8 @@ get_slack_participation_factors(::AbstractDCPowerFlow) = nothing
 get_calculate_loss_factors(::AbstractDCPowerFlow) = false
 get_calculate_voltage_stability_factors(::AbstractDCPowerFlow) = false
 
+# the exporter field is not used in PowerFlows.jl, only in PowerSimulations.jl,
+# which calls flatten_power_flow_evaluation_model then evaluates the two sequentially.
 @kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
