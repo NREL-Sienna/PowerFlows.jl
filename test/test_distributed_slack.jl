@@ -66,7 +66,7 @@
                     generator_slack_participation_factors = generator_slack_participation_factors[1:5],
                 )
                 @test_throws ArgumentError(
-                    "slack_participation_factors must be the same length as time_steps",
+                    "slack_participation_factors must have at least the same length as time_steps",
                 ) PowerFlowData(pf, sys; time_steps = time_steps)
             end
         end
