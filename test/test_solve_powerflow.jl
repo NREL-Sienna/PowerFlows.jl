@@ -417,7 +417,7 @@ function PowerFlowData_to_DataFrame(data::PowerFlowData)
     nbuses = size(data.bus_magnitude, 1)
     # Convert the PowerFlowData to a DataFrame
     bus_rev_lookup = fill(-1, nbuses)
-    for (bus_no, row_no) in data.bus_lookup
+    for (bus_no, row_no) in PF.get_bus_lookup(data)
         bus_rev_lookup[row_no] = bus_no
     end
     @assert !(-1 in bus_rev_lookup)

@@ -17,9 +17,10 @@ function solve_powerflow!(
         data.power_network_matrix.data' * power_injection
     data.arc_activepower_flow_to_from .= -data.arc_activepower_flow_from_to
     # evaluate bus angles
-    p_inj = power_injection[data.valid_ix, :]
+    valid_ix = get_valid_ix(data)
+    p_inj = power_injection[valid_ix, :]
     solve!(solver_cache, p_inj)
-    data.bus_angles[data.valid_ix, :] .= p_inj
+    data.bus_angles[valid_ix, :] .= p_inj
     data.converged .= true
     return
 end
@@ -40,9 +41,10 @@ function solve_powerflow!(
     data.arc_activepower_flow_from_to .=
         my_mul_mt(data.power_network_matrix, power_injection)
     data.arc_activepower_flow_to_from .= -data.arc_activepower_flow_from_to
-    p_inj = power_injection[data.valid_ix, :]
+    valid_ix = get_valid_ix(data)
+    p_inj = power_injection[valid_ix, :]
     solve!(solver_cache, p_inj)
-    data.bus_angles[data.valid_ix, :] .= p_inj
+    data.bus_angles[valid_ix, :] .= p_inj
     data.converged .= true
     return
 end
@@ -65,9 +67,10 @@ function solve_powerflow!(
     # get net injections
     power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals
     # save angles and power flows
-    p_inj = power_injection[data.valid_ix, :]
+    valid_ix = get_valid_ix(data)
+    p_inj = power_injection[valid_ix, :]
     solve!(solver_cache, p_inj)
-    data.bus_angles[data.valid_ix, :] .= p_inj
+    data.bus_angles[valid_ix, :] .= p_inj
     data.arc_activepower_flow_from_to .= data.aux_network_matrix.data' * data.bus_angles
     data.arc_activepower_flow_to_from .= -data.arc_activepower_flow_from_to
     data.converged .= true

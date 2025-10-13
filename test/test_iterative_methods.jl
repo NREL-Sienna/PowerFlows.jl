@@ -41,10 +41,11 @@ end
     sys2 = deepcopy(sys)
     data = PowerFlowData(dc_pf, sys2)
     PF._dc_powerflow_fallback!(data, 1)
-    ABA_angles = data.bus_angles[data.valid_ix, 1]
+    valid_ix = PF.get_valid_ix(data)
+    ABA_angles = data.bus_angles[valid_ix, 1]
     p_inj =
-        data.bus_activepower_injection[data.valid_ix, 1] -
-        data.bus_activepower_withdrawals[data.valid_ix, 1]
+        data.bus_activepower_injection[valid_ix, 1] -
+        data.bus_activepower_withdrawals[valid_ix, 1]
     @test data.aux_network_matrix.data * ABA_angles ≈ p_inj
 
     # check behavior of improved_x0 via creating bogus awful starting point.
