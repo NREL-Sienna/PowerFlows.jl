@@ -332,22 +332,25 @@ function LCCParameters(
         base_power = PSY.get_base_power(sys)
         # todo: if current set point, transform into p set point
         # lcc_p_set = I_dc_A * V_dc_V / system_base_MVA
+        lcc_arcs = PSY.get_arc.(lccs)
         lcc_setpoint_at_rectifier .= PSY.get_transfer_setpoint.(lccs) .>= 0.0
         lcc_p_set .= abs.(PSY.get_transfer_setpoint.(lccs) ./ base_power) # only one direction is supported, no reverse flow possible
-        lcc_i_dc .= lcc_p_set
-        lcc_dc_line_resistance .=
-            PSY.get_r.(lccs) .+ PSY.get_rectifier_rc.(lccs) .+ PSY.get_inverter_rc.(lccs)
         lcc_rectifier_tap[:, 1] .= PSY.get_rectifier_tap_setting.(lccs)
         lcc_inverter_tap[:, 1] .= PSY.get_inverter_tap_setting.(lccs)
+        lcc_dc_line_resistance .=
+            PSY.get_r.(lccs) .+ PSY.get_rectifier_rc.(lccs) .+ PSY.get_inverter_rc.(lccs)
+        lcc_i_dc .=
+            (-1 .+ sqrt.(1 .+ 4 .* lcc_dc_line_resistance .* lcc_p_set)) ./
+            (2 .* lcc_dc_line_resistance)
         lcc_rectifier_delay_angle[:, 1] .= PSY.get_rectifier_delay_angle.(lccs)
         lcc_inverter_extinction_angle[:, 1] .= PSY.get_inverter_extinction_angle.(lccs)
         lcc_rectifier_bus .= [
             _get_bus_ix(bus_lookup, reverse_bus_search_map, x) for
-            x in PSY.get_number.(PSY.get_from.(PSY.get_arc.(lccs)))
+            x in PSY.get_number.(PSY.get_from.(lcc_arcs))
         ]
         lcc_inverter_bus .= [
             _get_bus_ix(bus_lookup, reverse_bus_search_map, x) for
-            x in PSY.get_number.(PSY.get_to.(PSY.get_arc.(lccs)))
+            x in PSY.get_number.(PSY.get_to.(lcc_arcs))
         ]
         lcc_rectifier_transformer_reactance .= PSY.get_rectifier_xc.(lccs)
         lcc_inverter_transformer_reactance .= PSY.get_inverter_xc.(lccs)
@@ -375,7 +378,7 @@ function LCCParameters(
     )
 
     return LCCParameters(
-        PSY.get_arc.(lccs),
+        lcc_arcs,
         lcc_setpoint_at_rectifier,
         lcc_p_set,
         lcc_i_dc,

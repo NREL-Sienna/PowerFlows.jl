@@ -391,7 +391,7 @@ function _add_simple_lcc!(
         active_power_flow = 0.0,
         r = r,
         transfer_setpoint = 50,
-        scheduled_dc_voltage = 230.0,
+        scheduled_dc_voltage = 800.0,
         rectifier_bridges = 1,
         rectifier_delay_angle_limits = (min = 0.0, max = π / 2),
         rectifier_rc = 0.0,
