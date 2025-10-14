@@ -770,7 +770,7 @@ function _calculate_dQ_dα_lcc(
     ϕ::Float64,
     α::Float64,
 )::Float64
-    return Vm * t * sqrt(6) / π * I_dc * cos(ϕ) * sin(α) / sqrt(1 - cos(ϕ)^2)
+    return Vm * t * sqrt(6) / π * I_dc * cos(ϕ) * sin(α) / sin(ϕ)
 end
 
 function _update_ybus_lcc!(ybus_facts, data, time_step)
