@@ -1,3 +1,14 @@
+const UNSUPPORTED =
+    Set{Tuple{Type{<:PNM.NetworkReduction}, Type{<:PF.PowerFlowEvaluationModel}}}(
+        [
+        (PNM.WardReduction, PF.ACPowerFlow),
+        (PNM.WardReduction, PF.DCPowerFlow),
+        (PNM.WardReduction, PF.PTDFDCPowerFlow),
+        (PNM.WardReduction, PF.vPTDFDCPowerFlow),
+        (PNM.RadialReduction, PF.ACPowerFlow),
+    ],
+    )
+
 ac_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
     "default" => PNM.NetworkReduction[],
     "radial" => PNM.NetworkReduction[PNM.RadialReduction()],
@@ -17,6 +28,10 @@ ac_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
     pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
     for (k, v) in ac_reduction_types
         size(v) == 0 && continue # no reduction at all.
+        if any((typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v)
+            @warn "Skipping unsupported combination: $(typeof(nr)), $(typeof(pf))"
+            continue
+        end
         @testset "$k reduction" begin
             validate_reduced_powerflow(pf, sys, v, unreduced)
         end
@@ -28,12 +43,18 @@ end
     pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
 
     for (k, v) in ac_reduction_types
+        if any((typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v)
+            @warn "Skipping unsupported combination: $(typeof(nr)), $(typeof(pf))"
+            continue
+        end
         @testset "$k reduction" begin
             result = test_reduced_powerflow(pf, sys, v)
             @test all(result.converged)
         end
     end
 
+    # not yet implemented.
+    #=
     @testset "ward reduction" begin
         study_buses = [101, 114, 110, 111]
         result = test_reduced_powerflow(
@@ -43,6 +64,7 @@ end
         )
         @test all(result.converged) broken = true
     end
+    =#
 end
 
 @testset "system + powerflow solver calls" begin

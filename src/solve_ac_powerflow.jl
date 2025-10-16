@@ -151,9 +151,6 @@ function solve_powerflow!(
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
 
-    # TODO If anything in the grid topology changes, 
-    #  e.g. tap positions of transformers or in service 
-    #  status of branches, Yft and Ytf must be updated!
     Yft = data.power_network_matrix.branch_admittance_from_to
     Ytf = data.power_network_matrix.branch_admittance_to_from
     @assert PNM.get_bus_lookup(Yft) == get_bus_lookup(data)
@@ -185,7 +182,6 @@ function solve_powerflow!(
     end
 
     # write branch flows
-    # TODO if Yft, Ytf change between time steps, this must be moved inside the loop!
     # NOTE PNM's structs use ComplexF32, while the system objects store Float64's.
     #      so if you set the system bus angles/voltages to match these fields, then repeat 
     #      this math using the system voltages, you'll see differences in the flows, ~1e-4.

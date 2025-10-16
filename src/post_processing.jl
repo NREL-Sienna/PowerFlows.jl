@@ -33,7 +33,7 @@ function _calculate_fixed_admittance_powers(
     return busIxToFAPower
 end
 
-# TODO update for network reduction. Poor test case coverage: likely buggy.
+# sometimes errors on @assert length(remaining_unit_index) == 1. See issue #231
 function _power_redistribution_ref(
     sys::PSY.System,
     P_gen::Float64,
@@ -174,7 +174,7 @@ function _power_redistribution_ref(
     return
 end
 
-# TODO update for network reduction. Poor test case coverage: likely buggy.
+# sometimes errors on @assert length(remaining_unit_index) == 1. See issue #231
 function _reactive_power_redistribution_pv(
     sys::PSY.System,
     Q_gen::Float64,
@@ -209,7 +209,6 @@ function _reactive_power_redistribution_pv(
     else
         error("No devices in bus $(PSY.get_name(bus))")
     end
-    # see issue https://github.com/NREL-Sienna/PowerSystems.jl/pull/1463
     total_active_power = 0.0
     for d in devices
         if PSY.get_available(d) && !isa(d, PSY.SynchronousCondenser)
@@ -734,8 +733,6 @@ function write_results(
     return result_dict
 end
 
-# TODO: multi-period still to implement
-# i.e. write results for all time steps at once, instead of one at a time.
 """
 Returns a dictionary containing the AC power flow results.
 
@@ -811,7 +808,6 @@ See also `write_powerflow_solution!`. NOTE that this assumes that `data` was ini
 from `sys` and then solved with no further modifications.
 """
 function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
-    # TODO: throw an error if there's a network reduction.
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     if !isempty(PNM.get_reductions(nrd))
         error("update_system! does not support systems with network reductions.")

@@ -357,8 +357,6 @@ function clear_injection_data!(pfd::PowerFlowData)
     return
 end
 
-# AC Power Flow Data
-# TODO -> MULTI PERIOD: AC Power Flow Data
 function _calculate_neighbors(
     Yb::PNM.Ybus{
         Tuple{Vector{Int64}, Vector{Int64}},
