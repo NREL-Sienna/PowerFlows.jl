@@ -68,7 +68,6 @@ function _second_order_newton(homHess::HomotopyHessian,
             δ,
         )
         F_val = F_value(homHess, t_k, x, time_step)
-        # TODO jump in tolerance. F_val ~ sum of squares, so...
         converged = (last_tk ? norm(homHess.pfResidual.Rv, Inf) : abs(F_val)) < tol
         i += 1
         if converged

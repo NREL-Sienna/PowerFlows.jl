@@ -136,13 +136,9 @@ function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
 end
 
 function initialize_powerflow_variables(pf::ACPowerFlow{T},
-
     data::ACPowerFlowData,
-
     time_step::Int64;
-
     kwargs...,
-
 ) where {T <: ACPowerFlowSolverType}
     residual = ACPowerFlowResidual(data, time_step)
     x0 = improve_x0(pf, data, residual, time_step)
@@ -154,11 +150,7 @@ function initialize_powerflow_variables(pf::ACPowerFlow{T},
         print_signorms(residual.Rv; ps = [1, 2, Inf])
     end
     @info "Initial residual size: " *
-
-
           "$(norm(residual.Rv, 2)) L2, " *
-
-
           "$(norm(residual.Rv, Inf)) L∞"
 
     J = ACPowerFlowJacobian(data, time_step)

@@ -20,7 +20,7 @@ function _newton_powerflow(
         )
     end
     @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
-    
+
     if converged
         @info("The LevenbergMarquardtACPowerFlow solver converged after $i iterations.")
         if get_calculate_loss_factors(data)
@@ -62,7 +62,7 @@ function _run_powerflow_method(
     elseif i == maxIterations
         @error "The LevenbergMarquardtACPowerFlow solver didn't coverge in $maxIterations iterations."
     end
-    
+
     return converged, i
 end
 
@@ -78,7 +78,7 @@ function compute_error(
 )
     residual(x, time_step) # M(x_c)
     J(time_step)
-    
+
     n = size(J.Jv, 2)
     Iλ = sparse(1:n, 1:n, sqrt(λ) .* ones(n), n, n) # less error-prone compared to A = vcat(J.Jv, sqrt(λ) * sparse(LinearAlgebra.I, size(J.Jv)))
     A = [J.Jv; Iλ]
@@ -96,18 +96,21 @@ function compute_error(
     temp_y = residual.Rv .+ J.Jv * Δy
 
     newResidualSize_y = dot(residual.Rv, residual.Rv)
-    residual(x_trial.+Δy,time_step) # M(x_c+Δx+Δy)
-    newResidualSize = dot(residual.Rv,residual.Rv)
+    residual(x_trial .+ Δy, time_step) # M(x_c+Δx+Δy)
+    newResidualSize = dot(residual.Rv, residual.Rv)
 
     b_z = vcat(-residual.Rv, zeros(size(J.Jv, 2)))
     Δz = A \ b_z
     temp_z = residual.Rv .+ J.Jv * Δz
     newResidualSize_z = dot(residual.Rv, residual.Rv)
 
-    residual(x_trial.+Δy.+Δz,time_step) # M(x_c+Δx+Δy+Δz)
-    newResidualSize = dot(residual.Rv,residual.Rv)
+    residual(x_trial .+ Δy .+ Δz, time_step) # M(x_c+Δx+Δy+Δz)
+    newResidualSize = dot(residual.Rv, residual.Rv)
 
-    predicted_reduction = (residualSize - dot(temp_x, temp_x)  + newResidualSize_y - dot(temp_y,temp_y) + newResidualSize_z - dot(temp_z,temp_z))
+    predicted_reduction = (
+        residualSize - dot(temp_x, temp_x) + newResidualSize_y - dot(temp_y, temp_y) +
+        newResidualSize_z - dot(temp_z, temp_z)
+    )
     actual_reduction = (residualSize - newResidualSize)
     ρ = actual_reduction / predicted_reduction
 
@@ -117,7 +120,6 @@ function compute_error(
 
     return ρ
 end
-
 
 function update_damping_factor!(
     x::Vector{Float64},
@@ -133,24 +135,24 @@ function update_damping_factor!(
     # Now update \lambda
     test_lambda::Int = 1
     # https://www.sciencedirect.com/science/article/pii/S0142061518336342
-    λ = DEFAULT_λ_0*sqrt(residualSize)
-    while test_lambda<maxTestλs
+    λ = DEFAULT_λ_0 * sqrt(residualSize)
+    while test_lambda < maxTestλs
         ρ = compute_error(x, residual, J, λ, time_step, residualSize)
         if ρ > 0.75 # good step
             factor = 4.0
-            λ_temp =  λ/factor
+            λ_temp = λ / factor
             λ = max(λ_temp, 1.0e-8)
             break
-        elseif ρ>=0.25 # okay step
+        elseif ρ >= 0.25 # okay step
             break
         else # bad step
             factor = 4.0
             λ *= factor
         end
 
-       test_lambda += 1
+        test_lambda += 1
     end
-    if test_lambda==maxTestλs
+    if test_lambda == maxTestλs
         @error "Unable to improve: gave up after increasing damping factor $maxTestλs times."
         λ = NaN
     end

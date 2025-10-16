@@ -163,7 +163,6 @@ function _get_withdrawals!(
     return
 end
 
-# TODO: Might need changes if we have SwitchedAdmittances
 function _get_reactive_power_bound!(
     bus_reactivepower_bounds::Vector{Tuple{Float64, Float64}},
     bus_lookup::Dict{Int, Int},
@@ -244,7 +243,6 @@ function _initialize_bus_data!(
         combined_bus_type = findmax(bt -> BUS_TYPE_PRIORITIES[bt], corrected_bus_types)[1]
         ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, bus_no)
         bus_type[ix] = combined_bus_type
-        # TODO: combine the angles/magnitudes, between the reduced buses?
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.ACBus, sys, bus_name)
         bus_angles[ix] = PSY.get_angle(bus)
@@ -515,4 +513,5 @@ wnorm(w::Vector{Float64}, x::Vector{Float64}) = norm(w .* x)
 """For pretty printing floats in debugging messages."""
 siground(x::Float64) = round(x; sigdigits = 3)
 signorm(x::Vector{Float64}; p::Real = 2) = siground(LinearAlgebra.norm(x, p))
-print_signorms(x::Vector{Float64}; intro::String = "",  ps::Vector{Float64} = [2]) = @info "$intro norm: " * join(["$(signorm(x; p = p)) [L$p]" for p in ps], ", ")
+print_signorms(x::Vector{Float64}; intro::String = "", ps::Vector{Float64} = [2]) =
+    @info "$intro norm: " * join(["$(signorm(x; p = p)) [L$p]" for p in ps], ", ")
