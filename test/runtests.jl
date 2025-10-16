@@ -9,12 +9,12 @@ using LinearAlgebra
 using CSV
 using DataFrames
 using JSON3
+using InteractiveUtils
 using DataStructures
 import SparseArrays
 import SparseArrays: SparseMatrixCSC, sparse, sprandn, sprand
 import Random
 import PROPACK
-import InteractiveUtils
 
 const IS = InfrastructureSystems
 const PSB = PowerSystemCaseBuilder

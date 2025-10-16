@@ -64,17 +64,18 @@ end
 
 "Make the same changes to the PowerFlowData that modify_rts_system! makes to the System"
 function modify_rts_powerflow!(data::PowerFlowData)
+    bus_lookup = PF.get_bus_lookup(data)
     # For REF bus, voltage and angle are fixed; update active and reactive
-    data.bus_activepower_injection[data.bus_lookup[113]] = 2.4375
-    data.bus_reactivepower_injection[data.bus_lookup[113]] = 0.1875
+    data.bus_activepower_injection[bus_lookup[113]] = 2.4375
+    data.bus_reactivepower_injection[bus_lookup[113]] = 0.1875
 
     # For PV bus, active and voltage are fixed; update reactive and angle
-    data.bus_reactivepower_injection[data.bus_lookup[202]] = 0.37267
-    data.bus_angles[data.bus_lookup[202]] = -0.13778
+    data.bus_reactivepower_injection[bus_lookup[202]] = 0.37267
+    data.bus_angles[bus_lookup[202]] = -0.13778
 
     # For PQ bus, active and reactive are fixed; update voltage and angle
-    data.bus_magnitude[data.bus_lookup[117]] = 0.84783
-    data.bus_angles[data.bus_lookup[117]] = 0.14956
+    data.bus_magnitude[bus_lookup[117]] = 0.84783
+    data.bus_angles[bus_lookup[117]] = 0.14956
 end
 
 function _system_generation_power(

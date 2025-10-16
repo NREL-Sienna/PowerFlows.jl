@@ -120,8 +120,12 @@ function _dogleg!(Δx_proposed::Vector{Float64},
     d::Vector{Float64},
     delta::Float64,
 )
-    if wnorm(d, Δx_nr) <= delta
+    nr_norm = wnorm(d, Δx_nr)
+    @debug "Trust region: ||Δx_nr|| = $(siground(nr_norm)), δ = $(siground(delta))"
+
+    if nr_norm <= delta
         copyto!(Δx_proposed, Δx_nr) # update Δx_proposed: newton-raphson case.
+        @debug "Newton-Raphson step selected (inside trust region)"
     else
         # using Δx_proposed as a temporary buffer: alias to g for readability
         g = Δx_proposed
@@ -129,9 +133,13 @@ function _dogleg!(Δx_proposed::Vector{Float64},
         g .= g ./ d .^ 2
         Δx_cauchy .= -wnorm(d, g)^2 / sum(abs2, Jv * g) .* g # Cauchy point
 
-        if wnorm(d, Δx_cauchy) >= delta
+        cauchy_norm = wnorm(d, Δx_cauchy)
+        @debug "Cauchy point: ||Δx_cauchy|| = $(siground(cauchy_norm))"
+
+        if cauchy_norm >= delta
             # Δx_cauchy outside region => take step of length delta in direction of -g.
             LinearAlgebra.rmul!(g, -delta / wnorm(d, g))
+            @debug "Cauchy step selected (truncated to trust region boundary)"
             # not needed because g is already an alias for Δx_proposed.
             # copyto!(Δx_proposed, g) # update Δx_proposed: cauchy point case
         else
@@ -148,6 +156,7 @@ function _dogleg!(Δx_proposed::Vector{Float64},
             tau = (-b + sqrt(b^2 - 4a * (wnorm(d, Δx_cauchy)^2 - delta^2))) / (2a)
             Δx_cauchy .+= tau .* Δx_diff
             copyto!(Δx_proposed, Δx_cauchy) # update Δx_proposed: dogleg case.
+            @debug "Dogleg step selected (τ = $(siground(tau)))"
         end
     end
     return
@@ -166,6 +175,7 @@ function _trust_region_step(time_step::Int,
     eta::Float64,
     autoscale::Bool,
 )
+    old_delta = delta
     _set_Δx_nr!(
         stateVector,
         J,
@@ -190,7 +200,9 @@ function _trust_region_step(time_step::Int,
     # to avoid recomputing if we don't change x.
     oldResidual = stateVector.Δx_nr
     copyto!(oldResidual, residual.Rv)
+    old_residual_norm = sum(abs2, stateVector.r)
     residual(stateVector.x, time_step)
+    new_residual_norm = sum(abs2, residual.Rv)
 
     # Ratio of actual to predicted reduction
     LinearAlgebra.mul!(stateVector.r_predict, J.Jv, stateVector.Δx_proposed)
@@ -198,12 +210,15 @@ function _trust_region_step(time_step::Int,
     rho =
         (sum(abs2, stateVector.r) - sum(abs2, residual.Rv)) /
         (sum(abs2, stateVector.r) - sum(abs2, stateVector.r_predict))
+
+    @debug "Trust region step: ρ = $(siground(rho)), η = $(siground(eta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed)))"
+
     if rho > eta
         # Successful iteration
         stateVector.r .= residual.Rv
         residualSize = dot(residual.Rv, residual.Rv)
         linf = norm(residual.Rv, Inf)
-        @debug "sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed))), angle $(siground(theta))"
+        @debug "Step accepted: sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed)))"
         # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
         J(time_step)
         if autoscale
@@ -217,15 +232,21 @@ function _trust_region_step(time_step::Int,
         # Unsuccessful: reset x and residual.
         stateVector.x .-= stateVector.Δx_proposed
         copyto!(residual.Rv, oldResidual)
+        @debug "Step rejected: ρ = $(siground(rho)) ≤ η = $(siground(eta))"
     end
 
     # Update size of trust region
     if rho < HALVE_TRUST_REGION # rho < 0.1: insufficient improvement
         delta = delta / 2
+        @debug "Trust region decreased: δ $(siground(old_delta)) → $(siground(delta)) (ρ < $(HALVE_TRUST_REGION))"
     elseif rho >= DOUBLE_TRUST_REGION # rho >= 0.9: good improvement
         delta = 2 * wnorm(stateVector.d, stateVector.Δx_proposed)
+        @debug "Trust region increased (good): δ $(siground(old_delta)) → $(siground(delta)) (ρ ≥ $(DOUBLE_TRUST_REGION))"
     elseif rho >= MAX_DOUBLE_TRUST_REGION # rho >= 0.5: so-so improvement
         delta = max(delta, 2 * wnorm(stateVector.d, stateVector.Δx_proposed))
+        @debug "Trust region increased (moderate): δ $(siground(old_delta)) → $(siground(delta)) (ρ ≥ $(MAX_DOUBLE_TRUST_REGION))"
+    else
+        @debug "Trust region unchanged: δ = $(siground(delta))"
     end
     return delta
 end
@@ -337,6 +358,10 @@ function _run_powerflow_method(time_step::Int,
     eta::Float64 = get(kwargs, :eta, DEFAULT_TRUST_REGION_ETA)
     autoscale::Bool = get(kwargs, :autoscale, DEFAULT_AUTOSCALE)
 
+    if eta > 1.0 || eta < 0.0
+        @warn("η = $eta is outside [0, 1]") # eta is set to 2.0 in one test.
+    end
+
     validate_vms::Bool = get(
         kwargs,
         :validate_voltages,
@@ -389,31 +414,16 @@ function _newton_powerflow(
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
-    # setup: common code
-    residual = ACPowerFlowResidual(data, time_step)
-    x0 = improve_x0(pf, data, residual, time_step)
-    J = ACPowerFlowJacobian(data, time_step)
-    J(time_step)
-    converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
-    i = 0
 
+    # setup: common code
+    residual, J, x0 = initialize_powerflow_variables(pf, data, time_step; kwargs...)
+    converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
+
+    i = 0
     if !converged
-        bus_types = @view get_bus_type(J.data)[:, time_step]
-        validate_vms::Bool = get(
-            kwargs,
-            :validate_voltages,
-            DEFAULT_VALIDATE_VOLTAGES,
-        )
-        validation_range::MinMax = get(
-            kwargs,
-            :vm_validation_range,
-            DEFAULT_VALIDATION_RANGE,
-        )
-        validate_vms && validate_voltages(x0, bus_types, validation_range, 0)
         linSolveCache = KLULinSolveCache(J.Jv)
         symbolic_factor!(linSolveCache, J.Jv)
         stateVector = StateVectorCache(x0, residual.Rv)
-
         converged, i = _run_powerflow_method(
             time_step,
             stateVector,
@@ -424,6 +434,7 @@ function _newton_powerflow(
             kwargs...,
         )
     end
+    @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
 
     if converged
         @info("The $T solver converged after $i iterations.")

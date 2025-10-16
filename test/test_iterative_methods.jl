@@ -14,17 +14,51 @@ end
     @test_logs (:info, r".*TrustRegionACPowerFlow solver converged"
     ) match_mode = :any PF.solve_powerflow(tr_pf, sys; eta = 1e-5,
         tol = 1e-10, factor = 1.1, maxIterations = 50)
-    # TODO better tests? i.e. more granularly compare behavior to expected, not just check end result.
-    # could check behavior of delta, ie that delta is increased/decreased properly.
 end
-
-# TODO: can I create an input such that newton doesn't converge, but iterative_refinement does?
-# need jacobian to be ill-conditioned...
 
 function bad_x0!(sys::PSY.System)
     for comp in get_components(PSY.PowerLoad, sys)
         set_angle!(PSY.get_bus(comp), 1.0)
     end
+end
+
+@testset "TrustRegionACPowerFlow behavior" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    tr_pf = ACPowerFlow{TrustRegionACPowerFlow}()
+
+    # Small trust region size => Cauchy or dogleg step
+    @test_logs (:debug, r"(Dogleg step selected|Cauchy step selected)") match_mode = :any min_level =
+        Logging.Debug PF.solve_powerflow(
+        tr_pf,
+        sys;
+        factor = 0.01,
+        maxIterations = 1,
+    )
+
+    # Large trust region size => Newton-Raphson step
+    @test_logs (:debug, r"Newton-Raphson step selected.*") match_mode = :any min_level =
+        Logging.Debug PF.solve_powerflow(
+        tr_pf,
+        sys;
+        factor = 10.0,
+        maxIterations = 1,
+    )
+
+    # Large eta => step rejected
+    @test_logs (:debug, r"Step rejected.*") match_mode = :any min_level = Logging.Debug PF.solve_powerflow(
+        tr_pf,
+        sys;
+        eta = 2.0,
+        maxIterations = 1,
+    )
+
+    # Small eta => step accepted
+    @test_logs (:debug, r"Step accepted.*") match_mode = :any min_level = Logging.Debug PF.solve_powerflow(
+        tr_pf,
+        sys;
+        eta = 1e-6,
+        maxIterations = 1,
+    )
 end
 
 @testset "dc fallback" begin
@@ -41,10 +75,11 @@ end
     sys2 = deepcopy(sys)
     data = PowerFlowData(dc_pf, sys2)
     PF._dc_powerflow_fallback!(data, 1)
-    ABA_angles = data.bus_angles[data.valid_ix, 1]
+    valid_ix = PF.get_valid_ix(data)
+    ABA_angles = data.bus_angles[valid_ix, 1]
     p_inj =
-        data.bus_activepower_injection[data.valid_ix, 1] -
-        data.bus_activepower_withdrawals[data.valid_ix, 1]
+        data.bus_activepower_injection[valid_ix, 1] -
+        data.bus_activepower_withdrawals[valid_ix, 1]
     @test data.aux_network_matrix.data * ABA_angles ≈ p_inj
 
     # check behavior of improved_x0 via creating bogus awful starting point.
@@ -95,20 +130,3 @@ end
         ) match_mode = :any solve_powerflow!(data; pf = pf)
     end
 end
-
-# It happened: our more efficient "update J" means this test no longer finds
-# a point where J is singular.
-#=
-@testset "singular Jacobian trust region" begin
-    # NewtonRaphsonACPowerFlow fails to converge on this system.
-    # Empirically found: this system happens to have singular J's right next to the solution,
-    # and if we call solve_powerflow! repeatedly, TrustRegion happens to pick such a point.
-    # (May break if trust region is changed. TODO eventually: find a better test case.)
-    pf = ACPowerFlow{TrustRegionACPowerFlow}()
-    sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg10k_sys")
-    data = PowerFlowData(pf, sys)
-    @test_logs (:warn, Regex(".*Jacobian is singular.*")
-    ) match_mode = :any for _ in 1:20
-        solve_powerflow!(data; pf = pf)
-    end
-end=#

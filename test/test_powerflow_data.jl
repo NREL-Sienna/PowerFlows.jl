@@ -17,7 +17,6 @@ end
 @testset "PowerFlowData multiperiod" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     time_steps = 24
-    # TODO: "multiperiod AC still to implement"
     @test PowerFlowData(
         DCPowerFlow(),
         sys;

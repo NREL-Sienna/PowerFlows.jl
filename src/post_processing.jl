@@ -33,7 +33,7 @@ function _calculate_fixed_admittance_powers(
     return busIxToFAPower
 end
 
-# TODO update for network reduction. Poor test case coverage: likely buggy.
+# sometimes errors on @assert length(remaining_unit_index) == 1. See issue #231
 function _power_redistribution_ref(
     sys::PSY.System,
     P_gen::Float64,
@@ -174,7 +174,7 @@ function _power_redistribution_ref(
     return
 end
 
-# TODO update for network reduction. Poor test case coverage: likely buggy.
+# sometimes errors on @assert length(remaining_unit_index) == 1. See issue #231
 function _reactive_power_redistribution_pv(
     sys::PSY.System,
     Q_gen::Float64,
@@ -209,7 +209,6 @@ function _reactive_power_redistribution_pv(
     else
         error("No devices in bus $(PSY.get_name(bus))")
     end
-    # see issue https://github.com/NREL-Sienna/PowerSystems.jl/pull/1463
     total_active_power = 0.0
     for d in devices
         if PSY.get_available(d) && !isa(d, PSY.SynchronousCondenser)
@@ -751,8 +750,6 @@ function write_results(
     return result_dict
 end
 
-# TODO: multi-period still to implement
-# i.e. write results for all time steps at once, instead of one at a time.
 """
 Returns a dictionary containing the AC power flow results.
 
@@ -828,34 +825,33 @@ See also `write_powerflow_solution!`. NOTE that this assumes that `data` was ini
 from `sys` and then solved with no further modifications.
 """
 function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
-    # TODO: throw an error if there's a network reduction.
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     if !isempty(PNM.get_reductions(nrd))
         error("update_system! does not support systems with network reductions.")
     end
     for bus in PSY.get_components(PSY.ACBus, sys)
-        bus_number = data.bus_lookup[PSY.get_number(bus)]
-        bus_type = data.bus_type[bus_number, time_step]  # use this instead of bus.bustype to account for PV -> PQ
+        bus_index = get_bus_lookup(data)[PSY.get_number(bus)]
+        bus_type = data.bus_type[bus_index, time_step]  # use this instead of bus.bustype to account for PV -> PQ
         if bus_type == PSY.ACBusTypes.REF
             # For REF bus, voltage and angle are fixed; update active and reactive
-            P_gen = data.bus_activepower_injection[bus_number, time_step]
-            Q_gen = data.bus_reactivepower_injection[bus_number, time_step]
+            P_gen = data.bus_activepower_injection[bus_index, time_step]
+            Q_gen = data.bus_reactivepower_injection[bus_index, time_step]
             _power_redistribution_ref(sys, P_gen, Q_gen, bus,
                 DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
         elseif bus_type == PSY.ACBusTypes.PV
             # For PV bus, active and voltage are fixed; update reactive and angle
-            Q_gen = data.bus_reactivepower_injection[bus_number, time_step]
+            Q_gen = data.bus_reactivepower_injection[bus_index, time_step]
             _reactive_power_redistribution_pv(sys, Q_gen, bus,
                 DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
-            PSY.set_angle!(bus, data.bus_angles[bus_number, time_step])
+            PSY.set_angle!(bus, data.bus_angles[bus_index, time_step])
         elseif bus_type == PSY.ACBusTypes.PQ
             # For PQ bus, active and reactive are fixed; update voltage and angle
-            Vm = data.bus_magnitude[bus_number, time_step]
+            Vm = data.bus_magnitude[bus_index, time_step]
             PSY.set_magnitude!(bus, Vm)
-            PSY.set_angle!(bus, data.bus_angles[bus_number, time_step])
+            PSY.set_angle!(bus, data.bus_angles[bus_index, time_step])
             # if it used to be a PV bus, also set the Q value:
             if bus.bustype == PSY.ACBusTypes.PV
-                Q_gen = data.bus_reactivepower_injection[bus_number, time_step]
+                Q_gen = data.bus_reactivepower_injection[bus_index, time_step]
                 _reactive_power_redistribution_pv(sys, Q_gen, bus,
                     DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
                 # now both the Q and the Vm, Va are correct for this kind of buses

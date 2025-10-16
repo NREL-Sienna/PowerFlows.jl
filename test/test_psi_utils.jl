@@ -14,8 +14,7 @@
                     @test hasmethod(PSY.get_active_power, Tuple{T})
                 end
             end
-            # TODO awkward carve-out here, for FACTSControlDevice.
-            # for those, reactive_power_required is the equivalent of get_reactive_power,
+            # for FACTS, reactive_power_required is the equivalent of get_reactive_power,
             # but it depends on control mode, and PSY isn't updated for those modes yet.
             if PF.contributes_reactive_power(instance) && T != PSY.FACTSControlDevice
                 @test hasmethod(PF.reactive_power_contribution_type, Tuple{T})

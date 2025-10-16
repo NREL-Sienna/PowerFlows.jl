@@ -183,6 +183,10 @@ function solve_powerflow!(
             data.bus_magnitude[:, time_step] .= NaN
             data.bus_angles[:, time_step] .= NaN
         elseif converged
+            # NOTE PNM's structs use ComplexF32, while the system objects store Float64's.
+            #      so if you set the system bus angles/voltages to match these fields, then repeat 
+            #      this math using the system voltages, you'll see differences in the flows, ~1e-4.
+
             # write branch flows (inside this loop because Y_ft, Y_tf can change between time steps)
             V .=
                 data.bus_magnitude[:, time_step] .*
@@ -199,10 +203,6 @@ function solve_powerflow!(
             data.arc_reactivepower_flow_to_from[:, time_step] .= imag.(Stf)
         end
     end
-
-    # NOTE PNM's structs use ComplexF32, while the system objects store Float64's.
-    #      so if you set the system bus angles/voltages to match these fields, then repeat 
-    #      this math using the system voltages, you'll see differences in the flows, ~1e-4.
 
     data.converged .= ts_converged
 

@@ -7,14 +7,9 @@ function _newton_powerflow(
     time_step::Int64;
     kwargs...,
 )
-    # setup: common code
-    residual = ACPowerFlowResidual(data, time_step)
-    x0 = improve_x0(pf, data, residual, time_step)
-    J = ACPowerFlowJacobian(data, time_step)
-    J(time_step)
+    residual, J, x0 = initialize_powerflow_variables(pf, data, time_step; kwargs...)
     converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
-
     if !converged
         converged, i = _run_powerflow_method(
             time_step,
@@ -24,6 +19,7 @@ function _newton_powerflow(
             kwargs...,
         )
     end
+    @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
 
     if converged
         @info("The LevenbergMarquardtACPowerFlow solver converged after $i iterations.")
@@ -35,21 +31,11 @@ function _newton_powerflow(
         end
         return true
     end
+
     @error("The LevenbergMarquardtACPowerFlow solver failed to converge.")
     return false
 end
 
-# could add DAMPING_INCR and DAMPING_DECR too.
-"""Runs the full `LevenbergMarquardtACPowerFlow`.
-# Keyword arguments:
-- `maxIterations::Int`: maximum iterations. Default: $DEFAULT_NR_MAX_ITER.
-- `tol::Float64`: tolerance. The iterative search ends when `norm(abs.(residual)) < tol`.
-    Default: $DEFAULT_NR_TOL.
-- `λ_0::Float64`: the initial damping parameter. Larger means more damping and a step
-    closer to gradient descent. Default: $DEFAULT_λ_0.
-- `maxTestλs::Int`: if unable to find a point with a smaller residual vector after
-    increasing the damping parameter this many times, end the search with an error.
-    Default: $DEFAULT_MAX_TEST_λs"""
 function _run_powerflow_method(
     time_step::Int,
     x::Vector{Float64},
@@ -67,7 +53,7 @@ function _run_powerflow_method(
     linf = norm(residual.Rv, Inf)
     @debug "initially: sum of squares $(siground(resSize)), L ∞ norm $(siground(linf)), λ = $λ"
     while i < maxIterations && !converged && !isnan(λ)
-        λ = update!(x, residual, J, λ, time_step, maxTestλs)
+        λ = update_damping_factor!(x, residual, J, time_step, maxTestλs)
         converged = !isnan(λ) && norm(residual.Rv, Inf) < tol
         i += 1
     end
@@ -76,13 +62,13 @@ function _run_powerflow_method(
     elseif i == maxIterations
         @error "The LevenbergMarquardtACPowerFlow solver didn't coverge in $maxIterations iterations."
     end
+
     return converged, i
 end
 
-# solving (J^T J + λ I) Δx = -J^T r can be numerically unstable
-# instead, take the least squares solution to [J; √λ I] * Δx  = [-r; zeros(n)]
-# see eg Kaltenbach's master's thesis on levenberg marquardt, p 13.
-function betterResidual(
+# LM implementation and parameters values largely based upon this paper:
+# # https://www.sciencedirect.com/science/article/pii/S0142061518336342
+function compute_error(
     x::Vector{Float64},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
@@ -90,64 +76,86 @@ function betterResidual(
     time_step::Int,
     residualSize::Float64,
 )
-    residual(x, time_step)
+    residual(x, time_step) # M(x_c)
     J(time_step)
-    A = vcat(J.Jv, sqrt(λ) * sparse(LinearAlgebra.I, size(J.Jv)))
-    b = vcat(-residual.Rv, zeros(size(J.Jv, 1)))
-    Δx = A \ b
 
-    temp = residual.Rv .+ J.Jv * Δx
+    n = size(J.Jv, 2)
+    Iλ = sparse(1:n, 1:n, sqrt(λ) .* ones(n), n, n) # less error-prone compared to A = vcat(J.Jv, sqrt(λ) * sparse(LinearAlgebra.I, size(J.Jv)))
+    A = [J.Jv; Iλ]
+
+    b_x = vcat(-residual.Rv, zeros(size(J.Jv, 2)))
+    Δx = A \ b_x
+
+    temp_x = residual.Rv .+ J.Jv * Δx
 
     x_trial = x .+ Δx
-    residual(x_trial, time_step)
+    residual(x_trial, time_step) # M(y_c)
+
+    b_y = vcat(-residual.Rv, zeros(size(J.Jv, 2)))
+    Δy = A \ b_y
+    temp_y = residual.Rv .+ J.Jv * Δy
+
+    newResidualSize_y = dot(residual.Rv, residual.Rv)
+    residual(x_trial .+ Δy, time_step) # M(x_c+Δx+Δy)
     newResidualSize = dot(residual.Rv, residual.Rv)
 
-    predicted_reduction = 0.5 * (residualSize - dot(temp, temp) - λ * dot(Δx, Δx))
-    actual_reduction = residualSize - newResidualSize
-    @assert predicted_reduction > 0
+    b_z = vcat(-residual.Rv, zeros(size(J.Jv, 2)))
+    Δz = A \ b_z
+    temp_z = residual.Rv .+ J.Jv * Δz
+    newResidualSize_z = dot(residual.Rv, residual.Rv)
+
+    residual(x_trial .+ Δy .+ Δz, time_step) # M(x_c+Δx+Δy+Δz)
+    newResidualSize = dot(residual.Rv, residual.Rv)
+
+    predicted_reduction = (
+        residualSize - dot(temp_x, temp_x) + newResidualSize_y - dot(temp_y, temp_y) +
+        newResidualSize_z - dot(temp_z, temp_z)
+    )
+    actual_reduction = (residualSize - newResidualSize)
     ρ = actual_reduction / predicted_reduction
 
-    if actual_reduction > 0 && predicted_reduction > 0
-        step_size = norm(Δx)
-        linf = norm(residual.Rv, Inf)
-        @debug "sum of squares $(siground(newResidualSize)), L ∞ norm $(siground(linf)), λ = $(siground(λ)), ||Δx|| = $(siground(step_size))"
-        x .+= Δx
-        return ρ
-    else
-        residual(x, time_step)
+    if ρ > 1e-4
+        x .+= (Δx .+ Δy .+ Δz)
     end
-    return -1.0
+
+    return ρ
 end
 
-"""Updates x following to Levenberg-Maquardt, returning the new value of λ.
-Current procedure for adjusting λ:
-(1) improvement with current λ => λ /= DAMPING_DECR and x += Δx.
-(2) else, λ *= DAMPING_INCR.
-    (2a) improvement with this λ => keep λ the same and x += Δx.
-    (2b) else, go back to (2).
-Here, \"improvement with λ\" means: `norm(F(x+Δx), 2) < norm(F(x), 2)`, where
-`Δx` is the solution to `(J' * J + λ I) Δx = -J'*F(x)`.
-"""
-function update!(
+function update_damping_factor!(
     x::Vector{Float64},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
-    λ::Float64,
     time_step::Int,
     maxTestλs::Int,
 )
     residual(x, time_step)
     residualSize = dot(residual.Rv, residual.Rv)
     J(time_step)
-    for _ in 1:maxTestλs
-        ρ = betterResidual(x, residual, J, λ, time_step, residualSize)
-        if ρ > 0
-            λ *= max(1 / 3, 1 - (2 * ρ - 1)^3)
-            λ = max(λ, 1.0e-8)
-            return λ
+
+    # Now update \lambda
+    test_lambda::Int = 1
+    # https://www.sciencedirect.com/science/article/pii/S0142061518336342
+    λ = DEFAULT_λ_0 * sqrt(residualSize)
+    while test_lambda < maxTestλs
+        ρ = compute_error(x, residual, J, λ, time_step, residualSize)
+        if ρ > 0.75 # good step
+            factor = 4.0
+            λ_temp = λ / factor
+            λ = max(λ_temp, 1.0e-8)
+            break
+        elseif ρ >= 0.25 # okay step
+            break
+        else # bad step
+            factor = 4.0
+            λ *= factor
         end
-        λ *= 2.0
+
+        test_lambda += 1
     end
-    @error "Unable to improve: gave up after increasing damping factor $maxTestλs times."
-    return NaN
+    if test_lambda == maxTestλs
+        @error "Unable to improve: gave up after increasing damping factor $maxTestλs times."
+        λ = NaN
+    end
+
+    return λ
 end
