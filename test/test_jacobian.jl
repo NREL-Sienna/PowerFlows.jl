@@ -1,11 +1,12 @@
-@testset "Jacobian Verification" begin
-    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
+function verify_jacobian(sys::PSY.System)
     pf = PF.ACPowerFlow{NewtonRaphsonACPowerFlow}()
     data = PF.PowerFlowData(pf, sys; correct_bustypes = true)
     time_step = 1
     residual = PF.ACPowerFlowResidual(data, time_step)
     J = PF.ACPowerFlowJacobian(data, time_step)
-    n = 2 * length(collect(get_components(ACBus, sys)))
+    n_lccs =
+        length(collect(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys)))
+    n = 2 * length(collect(get_components(ACBus, sys))) + 4 * n_lccs
     x0 = PF.calculate_x0(data, time_step)
     residual(x0, time_step)
     J(time_step)
@@ -39,4 +40,23 @@
         end
         @test close_enough
     end
+end
+
+@testset "Jacobian verification" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys14")
+    verify_jacobian(sys)
+end
+
+@testset "Jacobian verification with LCC" begin
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+    b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.1, 0.0)
+    ld2 = _add_simple_load!(sys, b2, 10, 5)
+    ld3 = _add_simple_load!(sys, b3, 60, 20)
+    l12 = _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
+    l13 = _add_simple_line!(sys, b1, b3, 5e-3, 5e-3, 1e-3)
+    s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
+    lcc = _add_simple_lcc!(sys, b2, b3, 0.05, 0.05, 0.08)
+    verify_jacobian(sys)
 end

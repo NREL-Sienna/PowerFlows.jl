@@ -182,27 +182,41 @@ function solve_powerflow!(
             data.bus_reactivepower_constant_impedance_withdrawals[:, time_step] .= NaN
             data.bus_magnitude[:, time_step] .= NaN
             data.bus_angles[:, time_step] .= NaN
-        elseif converged
-            # NOTE PNM's structs use ComplexF32, while the system objects store Float64's.
-            #      so if you set the system bus angles/voltages to match these fields, then repeat 
-            #      this math using the system voltages, you'll see differences in the flows, ~1e-4.
-
-            # write branch flows (inside this loop because Y_ft, Y_tf can change between time steps)
-            V .=
+        elseif get_lcc_count(data) > 0 && converged
+            # calculate branch flows for LCCs: their self-admittances may change.
+            V =
                 data.bus_magnitude[:, time_step] .*
                 exp.(1im .* data.bus_angles[:, time_step])
-            Sft .=
-                V[fb_ix] .*
-                conj.(data.power_network_matrix.branch_admittance_from_to.data * V)
-            Stf .=
-                V[tb_ix] .*
-                conj.(data.power_network_matrix.branch_admittance_to_from.data * V)
-            data.arc_activepower_flow_from_to[:, time_step] .= real.(Sft)
-            data.arc_reactivepower_flow_from_to[:, time_step] .= imag.(Sft)
-            data.arc_activepower_flow_to_from[:, time_step] .= real.(Stf)
-            data.arc_reactivepower_flow_to_from[:, time_step] .= imag.(Stf)
+            for (bus_indices, self_admittances) in data.lcc.branch_admittances
+                (rectifier_ix, inverter_ix) = bus_indices
+                (rectifier_y, inverter_y) = self_admittances
+                S_inverter = V[inverter_ix] * conj(inverter_y * V[inverter_ix])
+                S_rectifier = V[rectifier_ix] * conj(rectifier_y * V[rectifier_ix])
+                data.lcc.arc_activepower_flow_from_to[time_step][bus_indices] =
+                    real(S_rectifier)
+                data.lcc.arc_reactivepower_flow_from_to[time_step][bus_indices] =
+                    imag(S_rectifier)
+                data.lcc.arc_activepower_flow_to_from[time_step][bus_indices] =
+                    real(S_inverter)
+                data.lcc.arc_reactivepower_flow_to_from[time_step][bus_indices] =
+                    imag(S_inverter)
+            end
         end
     end
+    # NOTE PNM's structs use ComplexF32, while the system objects store Float64's.
+    #      so if you set the system bus angles/voltages to match these fields, then repeat 
+    #      this math using the system voltages, you'll see differences in the flows, ~1e-4.
+
+    # calculate branch flows for all time steps at once
+    ts_V =
+        data.bus_magnitude[:, sorted_time_steps] .*
+        exp.(1im .* data.bus_angles[:, sorted_time_steps])
+    Sft = ts_V[fb_ix, :] .* conj.(Yft.data * ts_V)
+    Stf = ts_V[tb_ix, :] .* conj.(Ytf.data * ts_V)
+    data.arc_activepower_flow_from_to .= real.(Sft)
+    data.arc_reactivepower_flow_from_to .= imag.(Sft)
+    data.arc_activepower_flow_to_from .= real.(Stf)
+    data.arc_reactivepower_flow_to_from .= imag.(Stf)
 
     data.converged .= ts_converged
 

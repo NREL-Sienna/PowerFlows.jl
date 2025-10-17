@@ -4,7 +4,8 @@ Sets the fields of a PowerFlowData struct to match the given System.
 function initialize_powerflow_data!(
     data::PowerFlowData,
     pf::PowerFlowEvaluationModel,
-    sys::System;
+    sys::System,
+    n_lccs::Int;
     correct_bustypes = false,
 )
     # basically a copy-paste of make_powerflowdata from common.jl
@@ -103,8 +104,10 @@ function initialize_powerflow_data!(
         n_buses,
         data.bus_type,
     )
-    # LCCs
-    if !isempty(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys))
+    # LCCs: AC power flow only.
+    # TODO handle LCCs for DC power flow, by adding generator/load pair.
+    # TODO could dispatch on type of PowerFlowEvaluationModel here.
+    if n_lccs > 0
         initialize_LCCParameters!(data, sys, bus_lookup, reverse_bus_search_map)
     end
     return data

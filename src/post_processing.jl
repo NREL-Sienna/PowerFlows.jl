@@ -539,11 +539,8 @@ function write_powerflow_solution!(
         time_step,
     )
 
-    for (i, arc) in enumerate(data.lcc.arc)
-        lcc = both_branch_types[(
-            PSY.get_number(PSY.get_from(arc)),
-            PSY.get_number(PSY.get_to(arc)),
-        )]
+    for (i, arc) in enumerate(data.lcc.arcs)
+        lcc = both_branch_types[arc]
         PSY.set_rectifier_tap_setting!(lcc, data.lcc.rectifier.tap[i, time_step])
         PSY.set_inverter_tap_setting!(lcc, data.lcc.inverter.tap[i, time_step])
         PSY.set_rectifier_delay_angle!(

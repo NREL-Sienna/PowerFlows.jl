@@ -15,44 +15,6 @@ abstract type SystemPowerFlowContainer <: PowerFlowContainer end
 
 get_system(container::SystemPowerFlowContainer) = container.system
 
-struct LCCConverterParameters
-    bus::Vector{Int}
-    tap::Matrix{Float64}
-    thyristor_angle::Matrix{Float64}
-    phi::Matrix{Float64}
-    transformer_reactance::Vector{Float64}
-    min_thyristor_angle::Vector{Float64}
-end
-
-LCCConverterParameters(n_timesteps::Int, n_lccs::Int) = LCCConverterParameters(
-    zeros(Int, n_lccs),
-    zeros(Float64, n_lccs, n_timesteps),
-    zeros(Float64, n_lccs, n_timesteps),
-    zeros(Float64, n_lccs, n_timesteps),
-    zeros(Float64, n_lccs),
-    zeros(Float64, n_lccs),
-)
-
-struct LCCParameters
-    arc::Vector{PSY.Arc}
-    setpoint_at_rectifier::Vector{Bool}
-    p_set::Matrix{Float64}
-    i_dc::Matrix{Float64}
-    dc_line_resistance::Vector{Float64}
-    rectifier::LCCConverterParameters
-    inverter::LCCConverterParameters
-end
-
-LCCParameters(n_timesteps::Int, n_lccs::Int) = LCCParameters(
-    PSY.Arc[], # note that this one is filled in later.
-    falses(n_lccs),
-    zeros(Float64, n_lccs, n_timesteps),
-    zeros(Float64, n_lccs, n_timesteps),
-    zeros(Float64, n_lccs),
-    LCCConverterParameters(n_timesteps, n_lccs),
-    LCCConverterParameters(n_timesteps, n_lccs),
-)
-
 """
 Structure containing all the data required for the evaluation of the power
 flows and angles, as well as these ones.
@@ -276,6 +238,8 @@ get_lcc_rectifier_min_thyristor_angle(pfd::PowerFlowData) =
 get_lcc_inverter_min_thyristor_angle(pfd::PowerFlowData) =
     pfd.lcc.inverter.min_thyristor_angle
 get_lcc_i_dc(pfd::PowerFlowData) = pfd.lcc.i_dc
+# pseudo getter.
+get_lcc_count(data::PowerFlowData) = length(data.lcc.rectifier.bus)
 
 # auxiliary getters for the fields of PowerNetworkMatrices we're storing:
 # most things we patch through to calls on the metadata matrix:
@@ -410,69 +374,6 @@ function get_bus_reactivepower_total_withdrawals(
            pfd.bus_magnitude[ix, time_step]^2
 end
 
-function initialize_LCCParameters!(
-    data::PowerFlowData,
-    sys::PSY.System,
-    bus_lookup::Dict{Int, Int},
-    reverse_bus_search_map::Dict{Int, Int},
-)
-    lccs = PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys)
-
-    isempty(lccs) && return
-
-    lcc_setpoint_at_rectifier = get_lcc_setpoint_at_rectifier(data)
-    lcc_p_set = get_lcc_p_set(data)
-    lcc_i_dc = get_lcc_i_dc(data)
-    lcc_dc_line_resistance = get_lcc_dc_line_resistance(data)
-    lcc_rectifier_tap = get_lcc_rectifier_tap(data)
-    lcc_inverter_tap = get_lcc_inverter_tap(data)
-    lcc_rectifier_delay_angle = get_lcc_rectifier_thyristor_angle(data)
-    lcc_inverter_extinction_angle = get_lcc_inverter_thyristor_angle(data)
-
-    lcc_rectifier_bus = get_lcc_rectifier_bus(data)
-    lcc_inverter_bus = get_lcc_inverter_bus(data)
-    lcc_rectifier_transformer_reactance = get_lcc_rectifier_transformer_reactance(data)
-    lcc_inverter_transformer_reactance = get_lcc_inverter_transformer_reactance(data)
-    lcc_rectifier_min_alpha = get_lcc_rectifier_min_thyristor_angle(data)
-    lcc_inverter_min_gamma = get_lcc_inverter_min_thyristor_angle(data)
-
-    lccs = PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys)
-
-    sizehint!(data.lcc.arc, length(lccs))
-    for arc in get_arcs.(lccs)
-        push!(data.lcc.arc, arc)
-    end
-
-    base_power = PSY.get_base_power(sys)
-    # todo: if current set point, transform into p set point
-    # lcc_p_set = I_dc_A * V_dc_V / system_base_MVA
-    lcc_setpoint_at_rectifier .= PSY.get_transfer_setpoint.(lccs) .>= 0.0
-    lcc_p_set .= abs.(PSY.get_transfer_setpoint.(lccs) ./ base_power) # only one direction is supported, no reverse flow possible
-    lcc_rectifier_tap[:, 1] .= PSY.get_rectifier_tap_setting.(lccs)
-    lcc_inverter_tap[:, 1] .= PSY.get_inverter_tap_setting.(lccs)
-    lcc_dc_line_resistance .=
-        PSY.get_r.(lccs) .+ PSY.get_rectifier_rc.(lccs) .+ PSY.get_inverter_rc.(lccs)
-    lcc_i_dc .=
-        (-1 .+ sqrt.(1 .+ 4 .* lcc_dc_line_resistance .* lcc_p_set)) ./
-        (2 .* lcc_dc_line_resistance)
-    lcc_rectifier_delay_angle[:, 1] .= PSY.get_rectifier_delay_angle.(lccs)
-    lcc_inverter_extinction_angle[:, 1] .= PSY.get_inverter_extinction_angle.(lccs)
-    lcc_rectifier_bus .= [
-        _get_bus_ix(bus_lookup, reverse_bus_search_map, x) for
-        x in PSY.get_number.(PSY.get_from.(lcc_arcs))
-    ]
-    lcc_inverter_bus .= [
-        _get_bus_ix(bus_lookup, reverse_bus_search_map, x) for
-        x in PSY.get_number.(PSY.get_to.(lcc_arcs))
-    ]
-    lcc_rectifier_transformer_reactance .= PSY.get_rectifier_xc.(lccs)
-    lcc_inverter_transformer_reactance .= PSY.get_inverter_xc.(lccs)
-    lcc_rectifier_min_alpha .=
-        [x.min for x in PSY.get_rectifier_delay_angle_limits.(lccs)]
-    lcc_inverter_min_gamma .=
-        [x.min for x in PSY.get_inverter_extinction_angle_limits.(lccs)]
-end
-
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
     pfd.bus_reactivepower_injection .= 0.0
@@ -537,7 +438,8 @@ function make_and_initialize_powerflow_data(
         timestep_names = timestep_names,
         neighbors = neighbors,
     )
-    initialize_powerflow_data!(data, pf, sys; correct_bustypes = correct_bustypes)
+    @assert length(data.lcc.setpoint_at_rectifier) == n_lccs
+    initialize_powerflow_data!(data, pf, sys, n_lccs; correct_bustypes = correct_bustypes)
     return data
 end
 

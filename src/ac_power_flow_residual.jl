@@ -306,7 +306,6 @@ function _update_residual_values!(
 )
     # update P_net, Q_net, data.bus_angles, data.bus_magnitude based on X
     Yb = data.power_network_matrix.data
-    Yb_facts = data.power_network_matrix.data_facts
     num_lcc = size(data.lcc.p_set, 1)
     bus_types = view(data.bus_type, :, time_step)
 
@@ -364,7 +363,7 @@ function _update_residual_values!(
         data.lcc.inverter.tap[:, time_step] = x[(end - 4 * num_lcc + 2):4:end]
         data.lcc.rectifier.thyristor_angle[:, time_step] = x[(end - 4 * num_lcc + 3):4:end]
         data.lcc.inverter.thyristor_angle[:, time_step] = x[(end - 4 * num_lcc + 4):4:end]
-        _update_ybus_lcc!(Yb_facts, data, time_step)
+        _update_ybus_lcc!(data, time_step)
     end
 
     # compute active, reactive power balances using the just updated values.
@@ -372,25 +371,36 @@ function _update_residual_values!(
     θ = view(data.bus_angles, :, time_step)
     # F is active and reactive power balance equations at all buses
     F .= 0.0
-    for Yb_i in (Yb, Yb_facts)
-        Yb_vals = SparseArrays.nonzeros(Yb_i)
-        Yb_rowvals = SparseArrays.rowvals(Yb_i)
-        for bus_to in axes(Yb_i, 1)
-            for j in Yb_i.colptr[bus_to]:(Yb_i.colptr[bus_to + 1] - 1)
-                yb = Yb_vals[j]
-                bus_from = Yb_rowvals[j]
-                gb = real(yb)
-                bb = imag(yb)
-                Δθ = θ[bus_from] - θ[bus_to]
-                if bus_from == bus_to
-                    F[2 * bus_from - 1] += Vm[bus_from] * Vm[bus_to] * gb
-                    F[2 * bus_from] += -Vm[bus_from] * Vm[bus_to] * bb
-                else
-                    F[2 * bus_from - 1] +=
-                        Vm[bus_from] * Vm[bus_to] * (gb * cos(Δθ) + bb * sin(Δθ))
-                    F[2 * bus_from] +=
-                        Vm[bus_from] * Vm[bus_to] * (gb * sin(Δθ) - bb * cos(Δθ))
-                end
+    # normal ybus.
+    Yb_vals = SparseArrays.nonzeros(Yb)
+    Yb_rowvals = SparseArrays.rowvals(Yb)
+    for bus_to in axes(Yb, 1)
+        for j in Yb.colptr[bus_to]:(Yb.colptr[bus_to + 1] - 1)
+            yb = Yb_vals[j]
+            bus_from = Yb_rowvals[j]
+            gb = real(yb)
+            bb = imag(yb)
+            Δθ = θ[bus_from] - θ[bus_to]
+            if bus_from == bus_to
+                F[2 * bus_from - 1] += Vm[bus_from] * Vm[bus_to] * gb
+                F[2 * bus_from] += -Vm[bus_from] * Vm[bus_to] * bb
+            else
+                F[2 * bus_from - 1] +=
+                    Vm[bus_from] * Vm[bus_to] * (gb * cos(Δθ) + bb * sin(Δθ))
+                F[2 * bus_from] +=
+                    Vm[bus_from] * Vm[bus_to] * (gb * sin(Δθ) - bb * cos(Δθ))
+            end
+        end
+    end
+    # we read off entries from the LCC branch admittances instead of maintaining
+    # a separate ybus matrix for the LCCs. Few LCCs so efficient enough.
+    if num_lcc > 0
+        for (bus_indices, self_admittances) in data.lcc.branch_admittances
+            for (bus_ix, y_val) in zip(bus_indices, self_admittances)
+                gb = real(y_val)
+                bb = imag(y_val)
+                F[2 * bus_ix - 1] += Vm[bus_ix] * Vm[bus_ix] * gb
+                F[2 * bus_ix] += -Vm[bus_ix] * Vm[bus_ix] * bb
             end
         end
     end
