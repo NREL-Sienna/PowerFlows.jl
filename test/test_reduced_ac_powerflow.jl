@@ -1,12 +1,11 @@
-# this is erroring for some reason.
 const UNSUPPORTED =
-    Set{Tuple{Type{<:PNM.NetworkReduction}, Type{<:PF.PowerFlowEvaluationModel}}}(
+    Set(
         [
-        (PNM.WardReduction, PF.ACPowerFlow),
+        (PNM.WardReduction, PF.ACPowerFlow{PF.TrustRegionACPowerFlow}),
         (PNM.WardReduction, PF.DCPowerFlow),
         (PNM.WardReduction, PF.PTDFDCPowerFlow),
         (PNM.WardReduction, PF.vPTDFDCPowerFlow),
-        (PNM.RadialReduction, PF.ACPowerFlow),
+        (PNM.RadialReduction, PF.ACPowerFlow{PF.TrustRegionACPowerFlow}),
     ],
     )
 
@@ -28,9 +27,9 @@ ac_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
     @assert all(unreduced.converged)
     pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
     for (k, v) in ac_reduction_types
-        size(v) == 0 && continue # no reduction at all.
-        if any((typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v)
-            @warn "Skipping unsupported combination: $(typeof(nr)), $(typeof(pf))"
+        isempty(v) && continue # no reduction at all.
+        if any([(typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v])
+            @warn "Skipping unsupported combination"
             continue
         end
         @testset "$k reduction" begin
@@ -44,8 +43,8 @@ end
     pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
 
     for (k, v) in ac_reduction_types
-        if any((typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v)
-            @warn "Skipping unsupported combination: $(typeof(nr)), $(typeof(pf))"
+        if any([(typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v])
+            @warn "Skipping unsupported combination"
             continue
         end
         @testset "$k reduction" begin
@@ -87,17 +86,30 @@ end
             (PSSEParsingTestSystems, "pti_three_winding_test_2_sys")
             (PSSEParsingTestSystems, "pti_three_winding_test_sys")
             =#
+            # TODO this system has a LCC. find a replacement that doesn't
             sys = build_system(
                 PSSEParsingTestSystems,
                 "psse_14_network_reduction_test_system",
             )
             pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
-            results = solve_powerflow(
-                pf,
-                sys;
-                correct_bustypes = true,
-                network_reductions = deepcopy(v),
-            )
+            if any([(typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v])
+                results = @test_logs((:error, r"failed to converge"),
+                    :match_mode = any,
+                    solve_powerflow!(
+                        pf,
+                        sys;
+                        correct_bustypes = true,
+                        network_reductions = deepcopy(v),
+                    )
+                )
+            else
+                results = solve_powerflow!(
+                    pf,
+                    sys;
+                    correct_bustypes = true,
+                    network_reductions = deepcopy(v),
+                )
+            end
             @assert !isempty(PSY.get_components(PSY.Transformer3W, sys))
             test_trf = first(collect(PSY.get_components(PSY.Transformer3W, sys)))
             test_trf_name = PSY.get_name(test_trf)
@@ -111,12 +123,6 @@ end
                         sum(arc_flows[ix, "P_from_to"]) +
                         im * sum(arc_flows[ix, "Q_from_to"])
                 end
-                @test solve_powerflow!(
-                    pf,
-                    sys;
-                    correct_bustypes = true,
-                    network_reductions = deepcopy(v),
-                )
                 base_power = PSY.get_base_power(sys)
                 # check that transformer bus-to-star entries are there.
                 @test isapprox(

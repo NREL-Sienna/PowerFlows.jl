@@ -699,20 +699,25 @@ end
             data = PowerFlowData(pf, sys; correct_bustypes = true)
             solve_powerflow!(data; pf = pf)
 
-            lcc_arc = PSY.get_arc(lcc) .|> PSY.get_number
+            lcc_arc = PNM.get_arc_tuple(PSY.get_arc(lcc))
 
             @test isapprox(
                 data.lcc.p_set[1],
-                data.lcc.arc_activepower_flow_from_to[1][lcc_arc];
+                data.lcc.arc_activepower_flow_from_to[1, 1];
                 atol = 1e-6, rtol = 0,
             )
 
             # TODO what should this be, now that the LCC flows are stored separately?
-            #=
+            LCC_active_flow =
+                data.lcc.arc_activepower_flow_from_to[1, 1] +
+                data.lcc.arc_activepower_flow_to_from[1, 1]
+            LCC_reactive_flow =
+                data.lcc.arc_reactivepower_flow_from_to[1, 1] +
+                data.lcc.arc_reactivepower_flow_to_from[1, 1]
             @test isapprox(
                 sum(
                     data.arc_activepower_flow_from_to .+ data.arc_activepower_flow_to_from,
-                ) + sum(data.bus_activepower_withdrawals[:, 1]),
+                ) + sum(data.bus_activepower_withdrawals[:, 1]) + LCC_active_flow,
                 data.bus_activepower_injection[1];
                 atol = 1e-5, rtol = 0,
             )
@@ -721,15 +726,14 @@ end
                 sum(
                     data.arc_reactivepower_flow_from_to .+
                     data.arc_reactivepower_flow_to_from,
-                ) + sum(data.bus_reactivepower_withdrawals[:, 1]),
+                ) + sum(data.bus_reactivepower_withdrawals[:, 1]) + LCC_reactive_flow,
                 data.bus_reactivepower_injection[1];
                 atol = 1e-5, rtol = 0,
             )
-            =#
             solve_powerflow!(pf, sys)
 
             @test get_active_power_flow(lcc) ==
-                  data.lcc.arc_activepower_flow_from_to[1][lcc_arc]
+                  data.lcc.arc_activepower_flow_from_to[1, 1]
 
             PSY.set_transfer_setpoint!(lcc, -25.0)
             data = PowerFlowData(pf, sys; correct_bustypes = true)
@@ -737,14 +741,14 @@ end
 
             @test isapprox(
                 -data.lcc.p_set[1],
-                data.lcc.arc_activepower_flow_to_from[1][lcc_arc];
+                data.lcc.arc_activepower_flow_to_from[1, 1];
                 atol = 1e-6, rtol = 0,
             )
 
             solve_powerflow!(pf, sys)
 
             @test get_active_power_flow(lcc) ==
-                  data.lcc.arc_activepower_flow_from_to[1][lcc_arc]
+                  data.lcc.arc_activepower_flow_from_to[1, 1]
 
             PSY.set_transfer_setpoint!(lcc, 0.0)
             data = PowerFlowData(pf, sys; correct_bustypes = true)

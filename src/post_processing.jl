@@ -539,18 +539,30 @@ function write_powerflow_solution!(
         time_step,
     )
 
-    for (i, arc) in enumerate(data.lcc.arcs)
-        lcc = both_branch_types[arc]
-        PSY.set_rectifier_tap_setting!(lcc, data.lcc.rectifier.tap[i, time_step])
-        PSY.set_inverter_tap_setting!(lcc, data.lcc.inverter.tap[i, time_step])
-        PSY.set_rectifier_delay_angle!(
-            lcc,
-            data.lcc.rectifier.thyristor_angle[i, time_step],
-        )
-        PSY.set_inverter_extinction_angle!(
-            lcc,
-            data.lcc.inverter.thyristor_angle[i, time_step],
-        )
+    if get_lcc_count(data) > 0
+        # TODO LCCs and network reductions.
+        arc_to_lcc = Dict{Tuple{Int, Int}, PSY.TwoTerminalLCCLine}()
+        for lcc in PSY.get_available_components(PSY.TwoTerminalLCCLine, sys)
+            arc_to_lcc[PNM.get_arc_tuple(PSY.get_arc(lcc))] = lcc
+        end
+
+        for (i, arc) in enumerate(data.lcc.arcs)
+            lcc = arc_to_lcc[arc]
+            PSY.set_rectifier_tap_setting!(lcc, data.lcc.rectifier.tap[i, time_step])
+            PSY.set_inverter_tap_setting!(lcc, data.lcc.inverter.tap[i, time_step])
+            PSY.set_rectifier_delay_angle!(
+                lcc,
+                data.lcc.rectifier.thyristor_angle[i, time_step],
+            )
+            PSY.set_inverter_extinction_angle!(
+                lcc,
+                data.lcc.inverter.thyristor_angle[i, time_step],
+            )
+            PSY.set_active_power_flow!(
+                lcc,
+                data.lcc.arc_activepower_flow_from_to[i, time_step],
+            )
+        end
     end
 
     # calculate the bus voltages at buses removed in degree 2 reduction.

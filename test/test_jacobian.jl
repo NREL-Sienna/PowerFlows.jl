@@ -47,6 +47,9 @@ end
     verify_jacobian(sys)
 end
 
+# This fails. Might be a problem, or might just be because (according to Roman) we treat
+# the angle \phi as constant, to avoid super messy expressions in the Jacobian, 
+# and update it separately between iterations.
 @testset "Jacobian verification with LCC" begin
     sys = System(100.0)
     b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)

@@ -236,7 +236,7 @@ function _create_jacobian_matrix_structure_lcc(data::ACPowerFlowData, rows::Vect
     columns::Vector{Int32},
     values::Vector{Float64},
     num_buses::Int)
-    for (i, (fb, tb)) in enumerate(zip(data.lcc.rectifier.bus, data.lcc.inverter.bus))
+    for (i, (fb, tb)) in enumerate(data.lcc.bus_indices)
         idx_p_fb = 2 * fb - 1
         idx_q_fb = 2 * fb
         idx_p_tb = 2 * tb - 1
@@ -463,7 +463,7 @@ function _set_entries_for_lcc(data::ACPowerFlowData,
     num_buses::Int,
     time_step::Int)
     sqrt6_div_pi = sqrt(6) / π
-    for (i, (fb, tb)) in enumerate(zip(data.lcc.rectifier.bus, data.lcc.inverter.bus))
+    for (i, (fb, tb)) in enumerate(data.lcc.bus_indices)
         idx_p_fb = 2 * fb - 1
         idx_q_fb = 2 * fb
         idx_p_tb = 2 * tb - 1

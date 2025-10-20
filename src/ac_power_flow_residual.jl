@@ -395,7 +395,8 @@ function _update_residual_values!(
     # we read off entries from the LCC branch admittances instead of maintaining
     # a separate ybus matrix for the LCCs. Few LCCs so efficient enough.
     if num_lcc > 0
-        for (bus_indices, self_admittances) in data.lcc.branch_admittances
+        for (bus_indices, self_admittances) in
+            zip(data.lcc.bus_indices, data.lcc.branch_admittances)
             for (bus_ix, y_val) in zip(bus_indices, self_admittances)
                 gb = real(y_val)
                 bb = imag(y_val)

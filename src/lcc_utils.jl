@@ -71,7 +71,7 @@ function _calculate_dQ_dα_lcc(
 end
 
 function _update_ybus_lcc!(data::PowerFlowData, time_step::Int64)
-    for (i, (fb, tb)) in enumerate(zip(data.lcc.rectifier.bus, data.lcc.inverter.bus))
+    for (i, (fb, tb)) in enumerate(data.lcc.bus_indices)
         data.lcc.rectifier.phi[i, time_step] = _calculate_ϕ_lcc(
             data.lcc.rectifier.tap[i, time_step],
             data.lcc.rectifier.thyristor_angle[i, time_step],
@@ -99,7 +99,7 @@ function _update_ybus_lcc!(data::PowerFlowData, time_step::Int64)
             data.bus_magnitude[tb, time_step],
             data.lcc.inverter.phi[i, time_step],
         )
-        data.lcc.branch_admittances[(fb, tb)] = (rectifier_admittance, inverter_admittance)
+        data.lcc.branch_admittances[i] = (rectifier_admittance, inverter_admittance)
     end
     return
 end
@@ -131,10 +131,21 @@ function initialize_LCCParameters!(
     lcc_inverter_min_gamma = get_lcc_inverter_min_thyristor_angle(data)
 
     lcc_arcs = PSY.get_arc.(lccs)
-    for arc in lcc_arcs
-        push!(
-            data.lcc.arcs,
-            (PSY.get_number(PSY.get_from(arc)), PSY.get_number(PSY.get_to(arc))),
+    # TODO error if LCCs are involved in reductions.
+    nrd = get_network_reduction_data(data)
+    for (i, arc) in enumerate(lcc_arcs)
+        data.lcc.arcs[i] = PNM.get_arc_tuple(arc, nrd)
+        data.lcc.bus_indices[i] = (
+            _get_bus_ix(
+                bus_lookup,
+                reverse_bus_search_map,
+                PSY.get_number(PSY.get_from(arc)),
+            ),
+            _get_bus_ix(
+                bus_lookup,
+                reverse_bus_search_map,
+                PSY.get_number(PSY.get_to(arc)),
+            ),
         )
     end
 
