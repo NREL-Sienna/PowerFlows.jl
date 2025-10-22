@@ -1206,7 +1206,10 @@ function write_to_buffers!(
 
     # Add header comment for v35
     if exporter.psse_version == :v35
-        println(io, "@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4")
+        println(
+            io,
+            "@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
+        )
     end
 
     branches_with_numbers = get!(exporter.components_cache, "branches") do
@@ -1281,36 +1284,133 @@ function write_to_buffers!(
 
             B = PSY.get_b(branch).from + PSY.get_b(branch).to
 
-            if exporter.psse_version == :v35
-                NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
-                RATE1 = RATEA
-                RATE2 = RATEB  
-                RATE3 = RATEC
-                RATE4 = get_ext_key_or_default(branch, "RATE4", PSSE_DEFAULT)
-                RATE5 = get_ext_key_or_default(branch, "RATE5", PSSE_DEFAULT)
-                RATE6 = get_ext_key_or_default(branch, "RATE6", PSSE_DEFAULT)
-                RATE7 = get_ext_key_or_default(branch, "RATE7", PSSE_DEFAULT)
-                RATE8 = get_ext_key_or_default(branch, "RATE8", PSSE_DEFAULT)
-                RATE9 = get_ext_key_or_default(branch, "RATE9", PSSE_DEFAULT)
-                RATE10 = get_ext_key_or_default(branch, "RATE10", PSSE_DEFAULT)
-                RATE11 = get_ext_key_or_default(branch, "RATE11", PSSE_DEFAULT)
-                RATE12 = get_ext_key_or_default(branch, "RATE12", PSSE_DEFAULT)
+            NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
+            RATE1 = RATEA
+            RATE2 = RATEB
+            RATE3 = RATEC
+            RATE4 = get_ext_key_or_default(branch, "RATE4", PSSE_DEFAULT)
+            RATE5 = get_ext_key_or_default(branch, "RATE5", PSSE_DEFAULT)
+            RATE6 = get_ext_key_or_default(branch, "RATE6", PSSE_DEFAULT)
+            RATE7 = get_ext_key_or_default(branch, "RATE7", PSSE_DEFAULT)
+            RATE8 = get_ext_key_or_default(branch, "RATE8", PSSE_DEFAULT)
+            RATE9 = get_ext_key_or_default(branch, "RATE9", PSSE_DEFAULT)
+            RATE10 = get_ext_key_or_default(branch, "RATE10", PSSE_DEFAULT)
+            RATE11 = get_ext_key_or_default(branch, "RATE11", PSSE_DEFAULT)
+            RATE12 = get_ext_key_or_default(branch, "RATE12", PSSE_DEFAULT)
 
-                @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B, NAME,
-                    RATE1, RATE2, RATE3, RATE4, RATE5, RATE6, RATE7, RATE8, RATE9, RATE10, RATE11, RATE12,
-                    GI, BI, GJ, BJ, ST, MET, LEN)
-                fastprintln_psse_default_ownership(io)
-            else
-                @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B,
-                    RATEA, RATEB, RATEC, GI, BI,
-                    GJ, BJ, ST, MET, LEN)
-                fastprintln_psse_default_ownership(io)
-            end
+            @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B, NAME,
+                RATE1, RATE2, RATE3, RATE4, RATE5, RATE6, RATE7, RATE8, RATE9, RATE10,
+                RATE11, RATE12,
+                GI, BI, GJ, BJ, ST, MET, LEN)
+            fastprintln_psse_default_ownership(io)
         end
     end
     end_group(io, md, exporter, "Non-Transformer Branch Data", true)
     exporter.md_valid ||
         (md["branch_name_mapping"] = serialize_component_ids(branch_name_mapping))
+end
+
+"""
+WRITTEN TO SPEC: PSS/E 35.4 POM 5.2.1 System Switching Device Data
+"""
+function write_to_buffers!(
+    exporter::PSSEExporter,
+    ::Val{Symbol("Switching Device Data")},
+)
+    io = exporter.raw_buffer
+    md = exporter.md_dict
+    check_supported_version(exporter)
+
+    # Section exists only for v35
+    if exporter.psse_version != :v35
+        return
+    end
+
+    println(
+        io,
+        "@!   I,     J,'CKT',          X,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12, STAT,NSTAT,  MET,STYPE,'NAME'",
+    )
+
+    discrete_branches = get!(exporter.components_cache, "discrete_branches") do
+        branches_with_numbers = get_branches_with_numbers(exporter)
+        filter(
+            ((branch, _),) -> branch isa PSY.DiscreteControlledACBranch,
+            branches_with_numbers,
+        )
+    end
+
+    branch_name_mapping = get!(exporter.components_cache, "branch_name_mapping") do
+        create_component_ids(
+            convert_empty_stringvec(PSY.get_name.(first.(discrete_branches))),
+            last.(discrete_branches);
+            singles_to_1 = false,
+        )
+    end
+
+    for (branch, (from_n, to_n)) in discrete_branches
+        I = md["bus_number_mapping"][from_n]
+        J = md["bus_number_mapping"][to_n]
+
+        BASE_CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
+        branch_type = PSY.get_discrete_branch_type(branch)
+
+        if haskey(DISCRETE_BRANCH_MAP, branch_type)
+            char = DISCRETE_BRANCH_MAP[branch_type]
+            CKT = if occursin("_", BASE_CKT)
+                replace(BASE_CKT, "_" => char)
+            else
+                char * BASE_CKT
+            end
+        else
+            @warn "Unknown discrete branch type $branch_type for branch $(PSY.get_name(branch))"
+            CKT = BASE_CKT
+        end
+        CKT = _psse_quote_string(CKT)
+
+        # Switching devices typically have very small reactance
+        X = get_ext_key_or_default(branch, "X", 1.0e-4)
+
+        # Get ratings - for switches/breakers, often only first few ratings are used
+        RATE1 = with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+            _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT)
+        end
+        RATE1 = RATE1 >= INFINITE_BOUND ? 0.0 : RATE1 / PSY.get_base_power(exporter.system)
+
+        RATE2 = get_ext_key_or_default(branch, "RATE2", PSSE_DEFAULT)
+        RATE3 = get_ext_key_or_default(branch, "RATE3", PSSE_DEFAULT)
+        RATE4 = get_ext_key_or_default(branch, "RATE4", PSSE_DEFAULT)
+        RATE5 = get_ext_key_or_default(branch, "RATE5", PSSE_DEFAULT)
+        RATE6 = get_ext_key_or_default(branch, "RATE6", PSSE_DEFAULT)
+        RATE7 = get_ext_key_or_default(branch, "RATE7", PSSE_DEFAULT)
+        RATE8 = get_ext_key_or_default(branch, "RATE8", PSSE_DEFAULT)
+        RATE9 = get_ext_key_or_default(branch, "RATE9", PSSE_DEFAULT)
+        RATE10 = get_ext_key_or_default(branch, "RATE10", PSSE_DEFAULT)
+        RATE11 = get_ext_key_or_default(branch, "RATE11", PSSE_DEFAULT)
+        RATE12 = get_ext_key_or_default(branch, "RATE12", PSSE_DEFAULT)
+
+        STAT = PSY.get_available(branch) ? 1 : 0
+        NSTAT = get_ext_key_or_default(branch, "NSTAT", 1)  # Normally closed status
+        MET = get_ext_key_or_default(branch, "MET", 2)      # Metering flag
+
+        STYPE = if branch_type == PSY.DiscreteControlledBranchType.BREAKER
+            2  # Circuit breaker
+        elseif branch_type == PSY.DiscreteControlledBranchType.SWITCH
+            3  # Disconnect switch
+        else
+            1  # Generic connector (default for OTHER)
+        end
+
+        NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
+
+        @fastprintdelim_unroll(io, true, I, J, CKT, X,
+            RATE1, RATE2, RATE3, RATE4, RATE5, RATE6, RATE7, RATE8, RATE9, RATE10, RATE11,
+            RATE12,
+            STAT, NSTAT, MET, STYPE, NAME)
+    end
+
+    end_group(io, md, exporter, "Switching Device Data", true)
+    exporter.md_valid ||
+        (md["switching_device_name_mapping"] = serialize_component_ids(branch_name_mapping))
 end
 
 """
