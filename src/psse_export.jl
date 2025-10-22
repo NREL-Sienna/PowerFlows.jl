@@ -721,7 +721,7 @@ _psse_get_load_data(exporter::PSSEExporter, load::PSY.StaticLoad) =
     end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Load Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Load Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -730,6 +730,11 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    # Add format header comment for v35
+    if exporter.psse_version == :v35
+        println(io, "@!   I,'ID',STAT,AREA,ZONE,      PL,        QL,        IP,        IQ,        YP,        YQ, OWNER,SCALE,INTRPT,  DGENP,     DGENQ,DGENF,'  LOAD TYPE '")
+    end
 
     loads = get!(exporter.components_cache, "loads") do
         sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system)); by = PSY.get_name)
@@ -762,9 +767,20 @@ function write_to_buffers!(
         SCALE = load_conformity == PSY.LoadConformity.CONFORMING ? 1 : 0
         INTRPT = load isa PSY.ControllableLoad ? 1 : 0
 
-        @fastprintdelim_unroll(io, true, I, ID, STATUS, AREA, ZONE,
-            PL, QL, IP, IQ, YP, YQ, OWNER,
-            SCALE, INTRPT)
+        if exporter.psse_version == :v35
+            DGENP = get_ext_key_or_default(load, "DGENP")    
+            DGENQ = get_ext_key_or_default(load, "DGENQ")
+            DGENF = get_ext_key_or_default(load, "DGENF")
+            LOAD_TYPE = get_ext_key_or_default(load, "LOADTYPE")
+
+            @fastprintdelim_unroll(io, true, I, ID, STATUS, AREA, ZONE,
+                PL, QL, IP, IQ, YP, YQ, OWNER,
+                SCALE, INTRPT, DGENP, DGENQ, DGENF, LOAD_TYPE)
+        else
+            @fastprintdelim_unroll(io, true, I, ID, STATUS, AREA, ZONE,
+                PL, QL, IP, IQ, YP, YQ, OWNER,
+                SCALE, INTRPT)
+        end
     end
     end_group(io, md, exporter, "Load Data", true)
     exporter.md_valid ||
