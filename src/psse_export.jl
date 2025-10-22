@@ -1194,7 +1194,7 @@ function get_branches_with_numbers(exporter::PSSEExporter)
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Non-Transformer Branch Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Non-Transformer Branch Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1203,6 +1203,11 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    # Add header comment for v35
+    if exporter.psse_version == :v35
+        println(io, "@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4")
+    end
 
     branches_with_numbers = get!(exporter.components_cache, "branches") do
         get_branches_with_numbers(exporter)
@@ -1217,6 +1222,11 @@ function write_to_buffers!(
     end
 
     for (branch, (from_n, to_n)) in branches_with_numbers
+        # Skip discrete controlled branches for v35 (switches/breakers go to SWITCHING DEVICE DATA section)
+        if exporter.psse_version == :v35 && branch isa PSY.DiscreteControlledACBranch
+            continue
+        end
+
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
         BASE_CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
@@ -1271,10 +1281,31 @@ function write_to_buffers!(
 
             B = PSY.get_b(branch).from + PSY.get_b(branch).to
 
-            @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B,
-                RATEA, RATEB, RATEC, GI, BI,
-                GJ, BJ, ST, MET, LEN)
-            fastprintln_psse_default_ownership(io)
+            if exporter.psse_version == :v35
+                NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
+                RATE1 = RATEA
+                RATE2 = RATEB  
+                RATE3 = RATEC
+                RATE4 = get_ext_key_or_default(branch, "RATE4", PSSE_DEFAULT)
+                RATE5 = get_ext_key_or_default(branch, "RATE5", PSSE_DEFAULT)
+                RATE6 = get_ext_key_or_default(branch, "RATE6", PSSE_DEFAULT)
+                RATE7 = get_ext_key_or_default(branch, "RATE7", PSSE_DEFAULT)
+                RATE8 = get_ext_key_or_default(branch, "RATE8", PSSE_DEFAULT)
+                RATE9 = get_ext_key_or_default(branch, "RATE9", PSSE_DEFAULT)
+                RATE10 = get_ext_key_or_default(branch, "RATE10", PSSE_DEFAULT)
+                RATE11 = get_ext_key_or_default(branch, "RATE11", PSSE_DEFAULT)
+                RATE12 = get_ext_key_or_default(branch, "RATE12", PSSE_DEFAULT)
+
+                @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B, NAME,
+                    RATE1, RATE2, RATE3, RATE4, RATE5, RATE6, RATE7, RATE8, RATE9, RATE10, RATE11, RATE12,
+                    GI, BI, GJ, BJ, ST, MET, LEN)
+                fastprintln_psse_default_ownership(io)
+            else
+                @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B,
+                    RATEA, RATEB, RATEC, GI, BI,
+                    GJ, BJ, ST, MET, LEN)
+                fastprintln_psse_default_ownership(io)
+            end
         end
     end
     end_group(io, md, exporter, "Non-Transformer Branch Data", true)
