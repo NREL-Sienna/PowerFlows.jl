@@ -538,7 +538,7 @@ function _psse_bus_names(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Bus Data. Sienna voltage limits treated as PSS/E
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Bus Data. Sienna voltage limits treated as PSS/E
 normal voltage limits; PSSE emergency voltage limits left as default.
 """
 function write_to_buffers!(
@@ -548,6 +548,11 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    # Add format header comment for v35
+    if exporter.psse_version == :v35
+        println(io, "@!   I,'NAME        ', BASKV, IDE,AREA,ZONE,OWNER, VM,        VA,    NVHI,   NVLO,   EVHI,   EVLO")
+    end
 
     tr3w_starbuses =
         PSY.get_name.(
