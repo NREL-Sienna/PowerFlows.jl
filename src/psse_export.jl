@@ -549,7 +549,6 @@ function write_to_buffers!(
     md = exporter.md_dict
     check_supported_version(exporter)
 
-    # Add format header comment for v35
     if exporter.psse_version == :v35
         println(io, "@!   I,'NAME        ', BASKV, IDE,AREA,ZONE,OWNER, VM,        VA,    NVHI,   NVLO,   EVHI,   EVLO")
     end
@@ -731,7 +730,6 @@ function write_to_buffers!(
     md = exporter.md_dict
     check_supported_version(exporter)
 
-    # Add format header comment for v35
     if exporter.psse_version == :v35
         println(io, "@!   I,'ID',STAT,AREA,ZONE,      PL,        QL,        IP,        IQ,        YP,        YQ, OWNER,SCALE,INTRPT,  DGENP,     DGENQ,DGENF,'  LOAD TYPE '")
     end
@@ -788,7 +786,7 @@ function write_to_buffers!(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Fixed Bus Shunt Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -797,6 +795,10 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(io, "@!   I,'ID',STATUS,  GL,        BL")
+    end
 
     shunts = get!(exporter.components_cache, "shunts") do
         sort!(
