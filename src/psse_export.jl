@@ -1,4 +1,4 @@
-const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33]
+const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33, :v35]
 const PSSE_DEFAULT = ""  # Used below in cases where we want to insert an empty field to signify the PSSE default
 const PSSE_INFINITY = 9999.0
 const PSSE_BUS_TYPE_MAP = Dict(
@@ -328,11 +328,16 @@ function branch_to_bus_numbers(
     return (p, s, t)
 end
 
-"Throw a `NotImplementedError` if the `psse_version` is not `:v33`"
-check_33(exporter::PSSEExporter) = check_33(exporter.psse_version)
-check_33(psse_version::Symbol) =
-    (psse_version == :v33) ||
-    throw(IS.NotImplementedError("Only implemented for psse_version $(:v33)"))
+"Throw a `NotImplementedError` if the `psse_version` is not supported"
+check_supported_version(exporter::PSSEExporter) =
+    check_supported_version(exporter.psse_version)
+check_supported_version(psse_version::Symbol) =
+    (psse_version in PSSE_EXPORT_SUPPORTED_VERSIONS) ||
+    throw(
+        IS.NotImplementedError(
+            "Only implemented for psse_version $(PSSE_EXPORT_SUPPORTED_VERSIONS), got $psse_version",
+        ),
+    )
 
 "Validate that the Sienna area/zone names parse as PSS/E-compatible area/zone numbers, output a mapping"
 function _map_psse_container_names(container_names::Vector{String})
@@ -384,7 +389,7 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
 
-    check_33(exporter)
+    check_supported_version(exporter)
     now = Dates.now()
     md_string = "PSS/E 33.3 RAW via PowerFlows.jl, $now"
 
@@ -509,7 +514,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
 
     tr3w_starbuses =
         PSY.get_name.(
@@ -686,7 +691,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
 
     loads = get!(exporter.components_cache, "loads") do
         sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system)); by = PSY.get_name)
@@ -737,7 +742,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
 
     shunts = get!(exporter.components_cache, "shunts") do
         sort!(
@@ -877,7 +882,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
 
     generators = get!(exporter.components_cache, "generators") do
         temp_gens::Vector{PSY.StaticInjection} = sort!(
@@ -1120,7 +1125,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
 
     branches_with_numbers = get!(exporter.components_cache, "branches") do
         get_branches_with_numbers(exporter)
@@ -1265,7 +1270,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
     transformers_with_numbers = get!(exporter.components_cache, "transformers") do
         transformers = sort!(
             collect(PSY.get_components(PSY.TwoWindingTransformer, exporter.system));
@@ -1625,7 +1630,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
 
     dclines_with_numbers = get!(exporter.components_cache, "dclines") do
         dclines = sort!(
@@ -1746,7 +1751,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
 
     vsc_lines_with_numbers = get!(exporter.components_cache, "vsc_lines") do
         vsc_lines = sort!(
@@ -1917,7 +1922,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
 
     icd_entries = get!(exporter.components_cache, "icd_entries") do
         sort(
@@ -1960,7 +1965,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
     zone_mapping = md["zone_mapping"]
     zones = get!(exporter.components_cache, "zones") do
         sort!(
@@ -1988,7 +1993,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
 
     facts_devices = get!(exporter.components_cache, "facts_devices") do
         sort!(
@@ -2052,7 +2057,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
 
     switched_shunts = get!(exporter.components_cache, "switched_shunts") do
         sort!(
@@ -2124,7 +2129,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
     println(io, "Q")  # End of file
     exporter.md_valid || (md["record_groups"]["Q Record"] = true)
 end
@@ -2135,7 +2140,7 @@ function _write_skip_group(
     exporter::PSSEExporter,
     this_section_name::String,
 )
-    check_33(exporter)
+    check_supported_version(exporter)
     end_group_33(io, md, exporter, this_section_name, false)
     exporter.md_valid || (md["record_groups"][this_section_name] = false)
 end
