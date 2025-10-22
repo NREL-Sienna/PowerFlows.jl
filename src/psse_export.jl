@@ -550,7 +550,10 @@ function write_to_buffers!(
     check_supported_version(exporter)
 
     if exporter.psse_version == :v35
-        println(io, "@!   I,'NAME        ', BASKV, IDE,AREA,ZONE,OWNER, VM,        VA,    NVHI,   NVLO,   EVHI,   EVLO")
+        println(
+            io,
+            "@!   I,'NAME        ', BASKV, IDE,AREA,ZONE,OWNER, VM,        VA,    NVHI,   NVLO,   EVHI,   EVLO",
+        )
     end
 
     tr3w_starbuses =
@@ -731,7 +734,10 @@ function write_to_buffers!(
     check_supported_version(exporter)
 
     if exporter.psse_version == :v35
-        println(io, "@!   I,'ID',STAT,AREA,ZONE,      PL,        QL,        IP,        IQ,        YP,        YQ, OWNER,SCALE,INTRPT,  DGENP,     DGENQ,DGENF,'  LOAD TYPE '")
+        println(
+            io,
+            "@!   I,'ID',STAT,AREA,ZONE,      PL,        QL,        IP,        IQ,        YP,        YQ, OWNER,SCALE,INTRPT,  DGENP,     DGENQ,DGENF,'  LOAD TYPE '",
+        )
     end
 
     loads = get!(exporter.components_cache, "loads") do
@@ -766,7 +772,7 @@ function write_to_buffers!(
         INTRPT = load isa PSY.ControllableLoad ? 1 : 0
 
         if exporter.psse_version == :v35
-            DGENP = get_ext_key_or_default(load, "DGENP")    
+            DGENP = get_ext_key_or_default(load, "DGENP")
             DGENQ = get_ext_key_or_default(load, "DGENQ")
             DGENF = get_ext_key_or_default(load, "DGENF")
             LOAD_TYPE = get_ext_key_or_default(load, "LOADTYPE")
@@ -926,11 +932,7 @@ function _update_gens_from_hvdc!(
 end
 
 """
-If the export_settings flag `sources_as_generators` is set, export `PSY.Source` instances as
-PSS/E generators in addition to `PSY.Generator`s. Same for `storages_as_generators` and
-`PSY.Storage`.
-
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Generator Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Generator Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -939,6 +941,13 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!   I,'ID',      PG,        QG,        QT,        QB,     VS,    IREG,NREG,     MBASE,     ZR,         ZX,         RT,         XT,     GTAP,STAT, RMPCT,      PT,        PB,BASLOD,O1,    F1,  O2,    F2,  O3,    F3,  O4,    F4,WMOD, WPF",
+        )
+    end
 
     generators = get!(exporter.components_cache, "generators") do
         temp_gens::Vector{PSY.StaticInjection} = sort!(
@@ -1136,12 +1145,24 @@ function write_to_buffers!(
         WMOD = get_ext_key_or_default(generator, "WMOD")
         WPF = get_ext_key_or_default(generator, "WPF")
 
-        @fastprintdelim_unroll(io, false, I, ID, PG, QG, QT, QB,
-            VS, IREG, MBASE, ZR, ZX,
-            RT, XT, GTAP, STAT, RMPCT,
-            PT, PB)
-        fastprintdelim_psse_default_ownership(io)
-        @fastprintdelim_unroll(io, true, WMOD, WPF)
+        if exporter.psse_version == :v35
+            NREG = get_ext_key_or_default(generator, "NREG")
+            BASLOD = get_ext_key_or_default(generator, "BASLOD")
+
+            @fastprintdelim_unroll(io, false, I, ID, PG, QG, QT, QB,
+                VS, IREG, NREG, MBASE, ZR, ZX,
+                RT, XT, GTAP, STAT, RMPCT,
+                PT, PB, BASLOD)
+            fastprintdelim_psse_default_ownership(io)
+            @fastprintdelim_unroll(io, true, WMOD, WPF)
+        else
+            @fastprintdelim_unroll(io, false, I, ID, PG, QG, QT, QB,
+                VS, IREG, MBASE, ZR, ZX,
+                RT, XT, GTAP, STAT, RMPCT,
+                PT, PB)
+            fastprintdelim_psse_default_ownership(io)
+            @fastprintdelim_unroll(io, true, WMOD, WPF)
+        end
     end
     end_group(io, md, exporter, "Generator Data", true)
     exporter.md_valid ||
