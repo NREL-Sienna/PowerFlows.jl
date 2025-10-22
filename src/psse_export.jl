@@ -404,7 +404,7 @@ function _fix_3w_transformer_rating(rate)
     end
 end
 
-"WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Case Identification Data"
+"WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Case Identification Data"
 function write_to_buffers!(
     exporter::PSSEExporter,
     ::Val{Symbol("Case Identification Data")},
@@ -414,12 +414,22 @@ function write_to_buffers!(
 
     check_supported_version(exporter)
     now = Dates.now()
-    md_string = "PSS/E 33.3 RAW via PowerFlows.jl, $now"
+
+    # Update version-specific values
+    version_number = exporter.psse_version == :v33 ? 33 : 35
+    version_string = exporter.psse_version == :v33 ? "33.3" : "35"
+
+    md_string = "PSS/E $version_string RAW via PowerFlows.jl, $now"
+
+    # Add header format comment for v35
+    if exporter.psse_version == :v35
+        println(io, "@!IC,SBASE,REV,XFRRAT,NXFRAT,BASFRQ")
+    end
 
     # Record 1
     IC = 0
     SBASE = PSY.get_base_power(exporter.system)
-    REV = 33
+    REV = version_number
     XFRRAT = 0
     NXFRAT = 1
     BASFRQ = PSY.get_frequency(exporter.system)
