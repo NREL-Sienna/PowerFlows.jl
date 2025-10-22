@@ -1415,7 +1415,7 @@ end
 Given a vector of Sienna transformer names, create a dictionary from Sienna transformer name
 to PSS/E-compatible transformer name. Guarantees determinism and minimal changes.
 
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Data
 """
 function _psse_transformer_names(
     transformers::Vector{String},
@@ -1468,7 +1468,7 @@ function _psse_transformer_names(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1477,6 +1477,31 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    # Add header comments for v35
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!   I,     J,     K,'CKT',CW,CZ,CM,     MAG1,        MAG2,NMETR,               'N A M E',               STAT,O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4,     'VECGRP', ZCOD",
+        )
+        println(
+            io,
+            "@!   R1-2,       X1-2, SBASE1-2,     R2-3,       X2-3, SBASE2-3,     R3-1,       X3-1, SBASE3-1, VMSTAR,   ANSTAR",
+        )
+        println(
+            io,
+            "@!WINDV1, NOMV1,   ANG1, RATE1-1, RATE1-2, RATE1-3, RATE1-4, RATE1-5, RATE1-6, RATE1-7, RATE1-8, RATE1-9,RATE1-10,RATE1-11,RATE1-12,COD1,CONT1,NOD1,  RMA1,   RMI1,   VMA1,   VMI1, NTP1,TAB1, CR1,    CX1,  CNXA1",
+        )
+        println(
+            io,
+            "@!WINDV2, NOMV2,   ANG2, RATE2-1, RATE2-2, RATE2-3, RATE2-4, RATE2-5, RATE2-6, RATE2-7, RATE2-8, RATE2-9,RATE2-10,RATE2-11,RATE2-12,COD2,CONT2,NOD2,  RMA2,   RMI2,   VMA2,   VMI2, NTP2,TAB2, CR2,    CX2,  CNXA2",
+        )
+        println(
+            io,
+            "@!WINDV3, NOMV3,   ANG3, RATE3-1, RATE3-2, RATE3-3, RATE3-4, RATE3-5, RATE3-6, RATE3-7, RATE3-8, RATE3-9,RATE3-10,RATE3-11,RATE3-12,COD3,CONT3,NOD3,  RMA3,   RMI3,   VMA3,   VMI3, NTP3,TAB3, CR3,    CX3,  CNXA3",
+        )
+    end
+
     transformers_with_numbers = get!(exporter.components_cache, "transformers") do
         transformers = sort!(
             collect(PSY.get_components(PSY.TwoWindingTransformer, exporter.system));
@@ -1591,6 +1616,7 @@ function write_to_buffers!(
         NMETR = get_ext_key_or_default(transformer, "NMETR")
         supp_attr = PSY.get_supplemental_attributes(transformer)
         VECGRP = _psse_quote_string(get_ext_key_or_default(transformer, "VECGRP"))
+        ZCOD = get_ext_key_or_default(transformer, "ZCOD")
 
         winding_number = length(bus_tuple)
         if winding_number == 2  # Handle 2-winding transformer fields
@@ -1674,6 +1700,7 @@ function write_to_buffers!(
             RMA1 = get_ext_key_or_default(transformer, "RMA1")
             RMI1 = get_ext_key_or_default(transformer, "RMI1")
             NTP1 = get_ext_key_or_default(transformer, "NTP1")
+            NOD1 = get_ext_key_or_default(transformer, "NOD1", PSSE_DEFAULT)
 
             if (transformer isa PSY.PhaseShiftingTransformer)
                 ANG1 = rad2deg(PSY.get_α(transformer))
@@ -1683,12 +1710,36 @@ function write_to_buffers!(
             else
                 ANG1 = 0.0
             end
-            RATA1, RATB1, RATC1 =
-                with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-                    _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
-                    _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
-                    _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
-                end
+
+            if exporter.psse_version == :v35
+                RATA1, RATB1, RATC1 =
+                    with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                        _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
+                        _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
+                        _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+                    end
+
+                RATE1_1 = get_ext_key_or_default(transformer, "RATE11", RATA1)
+                RATE1_2 = get_ext_key_or_default(transformer, "RATE12", RATB1)
+                RATE1_3 = get_ext_key_or_default(transformer, "RATE13", RATC1)
+                RATE1_4 = get_ext_key_or_default(transformer, "RATE14")
+                RATE1_5 = get_ext_key_or_default(transformer, "RATE15")
+                RATE1_6 = get_ext_key_or_default(transformer, "RATE16")
+                RATE1_7 = get_ext_key_or_default(transformer, "RATE17")
+                RATE1_8 = get_ext_key_or_default(transformer, "RATE18")
+                RATE1_9 = get_ext_key_or_default(transformer, "RATE19")
+                RATE1_10 = get_ext_key_or_default(transformer, "RATE110")
+                RATE1_11 = get_ext_key_or_default(transformer, "RATE111")
+                RATE1_12 = get_ext_key_or_default(transformer, "RATE112")
+            else
+                RATA1, RATB1, RATC1 =
+                    with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                        _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
+                        _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
+                        _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+                    end
+            end
+
             CONT1 = get_ext_key_or_default(transformer, "CONT1")
             VMA1 = get_ext_key_or_default(transformer, "VMA1")
             VMI1 = get_ext_key_or_default(transformer, "VMI1")
@@ -1697,16 +1748,30 @@ function write_to_buffers!(
             CX1 = get_ext_key_or_default(transformer, "CX1")
             CNXA1 = get_ext_key_or_default(transformer, "CNXA1")
 
-            @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
-                MAG1, MAG2, NMETR, NAME, STAT)
-            fastprintdelim_psse_default_ownership(io)
-            fastprintln(io, VECGRP)
+            if exporter.psse_version == :v35
+                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+                    MAG1, MAG2, NMETR, NAME, STAT)
+                fastprintdelim_psse_default_ownership(io)
+                @fastprintdelim_unroll(io, true, VECGRP, ZCOD)
+            else
+                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+                    MAG1, MAG2, NMETR, NAME, STAT)
+                fastprintdelim_psse_default_ownership(io)
+                fastprintln(io, VECGRP)
+            end
 
             @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2)
 
-            @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1, RATA1,
-                RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
-                VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1)
+            if exporter.psse_version == :v35
+                @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1,
+                    RATE1_1, RATE1_2, RATE1_3, RATE1_4, RATE1_5, RATE1_6,
+                    RATE1_7, RATE1_8, RATE1_9, RATE1_10, RATE1_11, RATE1_12,
+                    COD1, CONT1, NOD1, RMA1, RMI1, VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1)
+            else
+                @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1, RATA1,
+                    RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
+                    VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1)
+            end
 
             @fastprintdelim_unroll(io, true, WINDV2, NOMV2)
 
@@ -1770,12 +1835,53 @@ function write_to_buffers!(
                     0.0
                 end
                 RAT = acc.get_rating(transformer)
-                RATA = get_ext_key_or_default(transformer, "RATA$prefix", RAT)
-                RATB = get_ext_key_or_default(transformer, "RATB$prefix", RAT)
-                RATC = get_ext_key_or_default(transformer, "RATC$prefix", RAT)
-                RATA, RATB, RATC = (_psse_round_val(x) for x in (RATA, RATB, RATC))
+
+                if exporter.psse_version == :v35
+                    RATE_1 = get_ext_key_or_default(transformer, "RATE$(prefix)1", RAT)
+                    RATE_2 = get_ext_key_or_default(transformer, "RATE$(prefix)2", RAT)
+                    RATE_3 = get_ext_key_or_default(transformer, "RATE$(prefix)3", RAT)
+                    RATE_4 =
+                        get_ext_key_or_default(transformer, "RATE$(prefix)4", PSSE_DEFAULT)
+                    RATE_5 =
+                        get_ext_key_or_default(transformer, "RATE$(prefix)5", PSSE_DEFAULT)
+                    RATE_6 =
+                        get_ext_key_or_default(transformer, "RATE$(prefix)6", PSSE_DEFAULT)
+                    RATE_7 =
+                        get_ext_key_or_default(transformer, "RATE$(prefix)7", PSSE_DEFAULT)
+                    RATE_8 =
+                        get_ext_key_or_default(transformer, "RATE$(prefix)8", PSSE_DEFAULT)
+                    RATE_9 =
+                        get_ext_key_or_default(transformer, "RATE$(prefix)9", PSSE_DEFAULT)
+                    RATE_10 =
+                        get_ext_key_or_default(transformer, "RATE$(prefix)10", PSSE_DEFAULT)
+                    RATE_11 =
+                        get_ext_key_or_default(transformer, "RATE$(prefix)11", PSSE_DEFAULT)
+                    RATE_12 =
+                        get_ext_key_or_default(transformer, "RATE$(prefix)12", PSSE_DEFAULT)
+                    RATES = (
+                        RATE_1,
+                        RATE_2,
+                        RATE_3,
+                        RATE_4,
+                        RATE_5,
+                        RATE_6,
+                        RATE_7,
+                        RATE_8,
+                        RATE_9,
+                        RATE_10,
+                        RATE_11,
+                        RATE_12,
+                    )
+                else
+                    RATA = get_ext_key_or_default(transformer, "RATA$prefix", RAT)
+                    RATB = get_ext_key_or_default(transformer, "RATB$prefix", RAT)
+                    RATC = get_ext_key_or_default(transformer, "RATC$prefix", RAT)
+                    RATES = (RATA, RATB, RATC)
+                end
+
                 COD = get_ext_key_or_default(transformer, "COD$prefix")
                 CONT = get_ext_key_or_default(transformer, "CONT$prefix")
+                NOD = get_ext_key_or_default(transformer, "NOD$prefix", PSSE_DEFAULT)
                 RMA = get_ext_key_or_default(transformer, "RMA$prefix")
                 RMI = get_ext_key_or_default(transformer, "RMI$prefix")
                 VMA = get_ext_key_or_default(transformer, "VMA$prefix")
@@ -1790,29 +1896,58 @@ function write_to_buffers!(
                 CR = get_ext_key_or_default(transformer, "CR$prefix")
                 CX = get_ext_key_or_default(transformer, "CX$prefix")
                 CNXA = get_ext_key_or_default(transformer, "CNXA$prefix")
-                push!(
-                    winding_data,
-                    (
-                        WINDV, NOMV, ANG, RATA, RATB, RATC, COD, CONT,
-                        RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
-                    ),
-                )
+
+                if exporter.psse_version == :v35
+                    push!(
+                        winding_data,
+                        (
+                            WINDV, NOMV, ANG, RATES..., COD, CONT, NOD,
+                            RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
+                        ),
+                    )
+                else
+                    push!(
+                        winding_data,
+                        (
+                            WINDV, NOMV, ANG, RATES..., COD, CONT,
+                            RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
+                        ),
+                    )
+                end
             end
 
-            @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
-                MAG1, MAG2, NMETR, NAME, STAT)
-            fastprintdelim_psse_default_ownership(io)
-            fastprintln(io, VECGRP)
+            if exporter.psse_version == :v35
+                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+                    MAG1, MAG2, NMETR, NAME, STAT)
+                fastprintdelim_psse_default_ownership(io)
+                @fastprintdelim_unroll(io, true, VECGRP, ZCOD)
+            else
+                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+                    MAG1, MAG2, NMETR, NAME, STAT)
+                fastprintdelim_psse_default_ownership(io)
+                fastprintln(io, VECGRP)
+            end
 
             @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2, R2_3,
                 X2_3, SBAS2_3, R3_1, X3_1, SBAS3_1, VMSTAR, ANSTAR
             )
 
             for wd in winding_data
-                @fastprintdelim_unroll(io, true,
-                    wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
-                    wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17]
-                )
+                if exporter.psse_version == :v35
+                    @fastprintdelim_unroll(io, true,
+                        wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
+                        wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17],
+                        wd[18],
+                        wd[19], wd[20], wd[21], wd[22], wd[23], wd[24], wd[25], wd[26],
+                        wd[27]
+                    )
+                else
+                    @fastprintdelim_unroll(io, true,
+                        wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
+                        wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17],
+                        wd[18], wd[19]
+                    )
+                end
             end
         else
             error("Unsupported transformer bus tuple length: $(length(bus_tuple))")
