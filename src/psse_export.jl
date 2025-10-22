@@ -57,7 +57,7 @@ const WINDING_GROUP_NUMBER_TO_DEGREES = Dict(
     11 => 30,             # GROUP_11: 30 Degrees
 )
 
-# Each of the groups in the PSS/E v33 & v35 standard
+# Each of the groups in the PSS/E v33 standard
 const PSSE_GROUPS = [
     "Case Identification Data",
     "Bus Data",
@@ -65,7 +65,6 @@ const PSSE_GROUPS = [
     "Fixed Shunt Data",
     "Generator Data",
     "Non-Transformer Branch Data",
-    "Switching Device Data", # Field for v35
     "Transformer Data",
     "Area Interchange Data",
     "Two-Terminal DC Transmission Line Data",
@@ -80,8 +79,13 @@ const PSSE_GROUPS = [
     "Switched Shunt Data",
     "GNE Device Data",
     "Induction Machine Data",
-    "Substantion Data", # Field for v35
     "Q Record",
+]
+
+# Extra groups for PSS/E v35 standard
+const PSSE_V35_EXTRA_GROUPS = [
+    "Switching Device Data",
+    "Substation Data",
 ]
 
 const PSSE_RAW_BUFFER_SIZEHINT = 1024
@@ -161,6 +165,18 @@ end
 supports_multi_period(::PSSEExporter) = false
 
 _value_or_default(val, default) = isnothing(val) ? default : val
+
+function update_version_group(psse_version::Symbol)
+    groups = copy(PSSE_GROUPS)
+    if psse_version == :v35
+        # Insert v35-specific group at the correct position
+        switching_idx = findfirst(==("Non-Transformer Branch Data"), groups) + 1
+        insert!(groups, switching_idx, "Switching Device Data")
+        substation_idx = findfirst(==("Induction Machine Data"), groups) + 1
+        insert!(groups, substation_idx, "Substation Data")
+    end
+    return groups
+end
 
 function _validate_same_system(sys1::PSY.System, sys2::PSY.System)
     return IS.get_uuid(PSY.get_internal(sys1)) == IS.get_uuid(PSY.get_internal(sys2))
@@ -278,12 +294,17 @@ function fastprintln_psse_default_ownership(io)
     @fastprintdelim_multi(io, PSSE_DEFAULT, true, 8)
 end
 
-function end_group_33(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name, written)
-    next_group = PSSE_GROUPS[only(findall(==(group_name), PSSE_GROUPS)) + 1]
+function end_group(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name, written)
+    groups = update_version_group(exporter.psse_version)
+    current_index = findfirst(==(group_name), groups)
+
     end_msg = "0"
     if exporter.write_comments
         end_msg *= " / End of $group_name"
-        (next_group == "Q Record") || (end_msg *= ", Begin $next_group")
+        if current_index < length(groups) && groups[current_index + 1] != "Q Record"
+            next_group = groups[current_index + 1]
+            end_msg *= ", Begin $next_group"
+        end
     end
     println(io, end_msg)
     exporter.md_valid || (md["record_groups"][group_name] = written)
@@ -576,7 +597,7 @@ function write_to_buffers!(
             ZONE, OWNER, VM, VA,
             NVHI, NVLO, EVHI, EVLO)
     end
-    end_group_33(io, md, exporter, "Bus Data", true)
+    end_group(io, md, exporter, "Bus Data", true)
 end
 
 function _increment_component_char(component_char::Char)
@@ -730,7 +751,7 @@ function write_to_buffers!(
             PL, QL, IP, IQ, YP, YQ, OWNER,
             SCALE, INTRPT)
     end
-    end_group_33(io, md, exporter, "Load Data", true)
+    end_group(io, md, exporter, "Load Data", true)
     exporter.md_valid ||
         (md["load_name_mapping"] = serialize_component_ids(load_name_mapping))
 end
@@ -770,7 +791,7 @@ function write_to_buffers!(
 
         @fastprintdelim_unroll(io, true, I, ID, STATUS, GL, BL)
     end
-    end_group_33(io, md, exporter, "Fixed Shunt Data", true)
+    end_group(io, md, exporter, "Fixed Shunt Data", true)
     exporter.md_valid ||
         (md["shunt_name_mapping"] = serialize_component_ids(shunt_name_mapping))
 end
@@ -1089,7 +1110,7 @@ function write_to_buffers!(
         fastprintdelim_psse_default_ownership(io)
         @fastprintdelim_unroll(io, true, WMOD, WPF)
     end
-    end_group_33(io, md, exporter, "Generator Data", true)
+    end_group(io, md, exporter, "Generator Data", true)
     exporter.md_valid ||
         (md["generator_name_mapping"] = serialize_component_ids(generator_name_mapping))
 end
@@ -1202,7 +1223,7 @@ function write_to_buffers!(
             fastprintln_psse_default_ownership(io)
         end
     end
-    end_group_33(io, md, exporter, "Non-Transformer Branch Data", true)
+    end_group(io, md, exporter, "Non-Transformer Branch Data", true)
     exporter.md_valid ||
         (md["branch_name_mapping"] = serialize_component_ids(branch_name_mapping))
 end
@@ -1615,7 +1636,7 @@ function write_to_buffers!(
         end
     end
 
-    end_group_33(io, md, exporter, "Transformer Data", true)
+    end_group(io, md, exporter, "Transformer Data", true)
     if !exporter.md_valid
         md["transformer_ckt_mapping"] = serialize_component_ids(transformer_ckt_mapping)
         md["transformer_3w_ckt_mapping"] =
@@ -1739,7 +1760,7 @@ function write_to_buffers!(
             ITI, IDI)
         fastprintln(io, XCAPI)
     end
-    end_group_33(io, md, exporter, "Two-Terminal DC Transmission Line Data", true)
+    end_group(io, md, exporter, "Two-Terminal DC Transmission Line Data", true)
     exporter.md_valid ||
         (md["dcline_name_mapping"] = serialize_component_ids(dcline_name_mapping))
 end
@@ -1904,7 +1925,7 @@ function write_to_buffers!(
             PWF2, MAXQ2, MINQ2, REMOT2)
         fastprintln(io, RMPCT2)
     end
-    end_group_33(
+    end_group(
         io,
         md,
         exporter,
@@ -1955,7 +1976,7 @@ function write_to_buffers!(
         fastprintln(io, "")
     end
 
-    end_group_33(io, md, exporter, "Transformer Impedance Correction Tables", true)
+    end_group(io, md, exporter, "Transformer Impedance Correction Tables", true)
 end
 
 """
@@ -1983,7 +2004,7 @@ function write_to_buffers!(
 
         @fastprintdelim_unroll(io, true, I, ZONAME)
     end
-    end_group_33(io, md, exporter, "Zone Data", true)
+    end_group(io, md, exporter, "Zone Data", true)
 end
 
 """
@@ -2045,7 +2066,7 @@ function write_to_buffers!(
             SET1, SET2, VSREF, REMOT)
         fastprintln(io, MNAME)
     end
-    end_group_33(io, md, exporter, "FACTS Device Data", true)
+    end_group(io, md, exporter, "FACTS Device Data", true)
     exporter.md_valid ||
         (md["facts_name_mapping"] = serialize_component_ids(facts_name_mapping))
 end
@@ -2114,7 +2135,7 @@ function write_to_buffers!(
             N_vars[4], B_vars[4], N_vars[5], B_vars[5], N_vars[6], B_vars[6],
             N_vars[7], B_vars[7], N_vars[8], B_vars[8])
     end
-    end_group_33(io, md, exporter, "Switched Shunt Data", true)
+    end_group(io, md, exporter, "Switched Shunt Data", true)
     exporter.md_valid ||
         (
             md["switched_shunt_name_mapping"] =
@@ -2143,7 +2164,7 @@ function _write_skip_group(
     this_section_name::String,
 )
     check_supported_version(exporter)
-    end_group_33(io, md, exporter, this_section_name, false)
+    end_group(io, md, exporter, this_section_name, false)
     exporter.md_valid || (md["record_groups"][this_section_name] = false)
 end
 
@@ -2218,8 +2239,9 @@ function write_export(
     end
 
     with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
+        groups_to_process = update_version_group(exporter.psse_version)
         # Each of these corresponds to a group of records in the PSS/E spec
-        for group_name in PSSE_GROUPS
+        for group_name in groups_to_process
             @debug "Writing export for group $group_name"
             write_to_buffers!(exporter, Val{Symbol(group_name)}())
         end
