@@ -57,14 +57,15 @@ const WINDING_GROUP_NUMBER_TO_DEGREES = Dict(
     11 => 30,             # GROUP_11: 30 Degrees
 )
 
-# Each of the groups in the PSS/3 v33 standard
-const PSSE_GROUPS_33 = [
+# Each of the groups in the PSS/E v33 & v35 standard
+const PSSE_GROUPS = [
     "Case Identification Data",
     "Bus Data",
     "Load Data",
     "Fixed Shunt Data",
     "Generator Data",
     "Non-Transformer Branch Data",
+    "Switching Device Data", # Field for v35
     "Transformer Data",
     "Area Interchange Data",
     "Two-Terminal DC Transmission Line Data",
@@ -79,6 +80,7 @@ const PSSE_GROUPS_33 = [
     "Switched Shunt Data",
     "GNE Device Data",
     "Induction Machine Data",
+    "Substantion Data", # Field for v35
     "Q Record",
 ]
 
@@ -277,7 +279,7 @@ function fastprintln_psse_default_ownership(io)
 end
 
 function end_group_33(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name, written)
-    next_group = PSSE_GROUPS_33[only(findall(==(group_name), PSSE_GROUPS_33)) + 1]
+    next_group = PSSE_GROUPS[only(findall(==(group_name), PSSE_GROUPS)) + 1]
     end_msg = "0"
     if exporter.write_comments
         end_msg *= " / End of $group_name"
@@ -2217,7 +2219,7 @@ function write_export(
 
     with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
         # Each of these corresponds to a group of records in the PSS/E spec
-        for group_name in PSSE_GROUPS_33
+        for group_name in PSSE_GROUPS
             @debug "Writing export for group $group_name"
             write_to_buffers!(exporter, Val{Symbol(group_name)}())
         end
