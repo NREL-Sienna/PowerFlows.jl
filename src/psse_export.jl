@@ -1367,10 +1367,7 @@ function write_to_buffers!(
         end
         CKT = _psse_quote_string(CKT)
 
-        # Switching devices typically have very small reactance
-        X = get_ext_key_or_default(branch, "X", 1.0e-4)
-
-        # Get ratings - for switches/breakers, often only first few ratings are used
+        X = PSY.get_x(branch)
         RATE1 = with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
             _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT)
         end
@@ -1389,8 +1386,8 @@ function write_to_buffers!(
         RATE12 = get_ext_key_or_default(branch, "RATE12", PSSE_DEFAULT)
 
         STAT = PSY.get_available(branch) ? 1 : 0
-        NSTAT = get_ext_key_or_default(branch, "NSTAT", 1)  # Normally closed status
-        MET = get_ext_key_or_default(branch, "MET", 2)      # Metering flag
+        NSTAT = get_ext_key_or_default(branch, "NSTAT")
+        MET = get_ext_key_or_default(branch, "MET")
 
         STYPE = if branch_type == PSY.DiscreteControlledBranchType.BREAKER
             2  # Circuit breaker
@@ -1405,7 +1402,8 @@ function write_to_buffers!(
         @fastprintdelim_unroll(io, true, I, J, CKT, X,
             RATE1, RATE2, RATE3, RATE4, RATE5, RATE6, RATE7, RATE8, RATE9, RATE10, RATE11,
             RATE12,
-            STAT, NSTAT, MET, STYPE, NAME)
+            STAT, NSTAT, MET, STYPE, NAME
+        )
     end
 
     end_group(io, md, exporter, "Switching Device Data", true)
