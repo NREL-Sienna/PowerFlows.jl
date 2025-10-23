@@ -2429,7 +2429,7 @@ function write_to_buffers!(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Zone Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Zone Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -2438,6 +2438,11 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(io, "@! I,   'ZONAME'")
+    end
+
     zone_mapping = md["zone_mapping"]
     zones = get!(exporter.components_cache, "zones") do
         sort!(
