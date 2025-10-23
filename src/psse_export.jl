@@ -1944,8 +1944,7 @@ function write_to_buffers!(
                 else
                     @fastprintdelim_unroll(io, true,
                         wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
-                        wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17],
-                        wd[18], wd[19]
+                        wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17]
                     )
                 end
             end
@@ -2552,7 +2551,6 @@ function write_to_buffers!(
     md = exporter.md_dict
     check_supported_version(exporter)
 
-    # Add header comment for v35
     if exporter.psse_version == :v35
         println(
             io,
