@@ -2316,7 +2316,7 @@ function write_to_buffers!(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Impedance Correction Tables
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Impedance Correction Tables
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -2325,6 +2325,19 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    # Add header comments for v35
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!I,  T1,   Re(F1), Im(F1),   T2,   Re(F2), Im(F2),   T3,   Re(F3), Im(F3),   T4,   Re(F4), Im(F4),   T5,   Re(F5), Im(F5),   T6,   Re(F6), Im(F6)",
+        )
+        println(
+            io,
+            "@!    T7,   Re(F7), Im(F7),   T8,   Re(F8), Im(F8),   T9,   Re(F9), Im(F9),   T10, Re(F10),Im(F10),   T11, Re(F11),Im(F11),   T12, Re(F12),Im(F12)",
+        )
+        println(io, "@!      ...")
+    end
 
     icd_entries = get!(exporter.components_cache, "icd_entries") do
         sort(
@@ -2346,13 +2359,70 @@ function write_to_buffers!(
 
     for (I, icd) in unique_icd_entries
         points = PSY.get_points(PSY.get_impedance_correction_curve(icd))
-        fastprint(io, I)
-        fastprint(io, ", ")
-        for p in points
-            fastprintdelim(io, p.x)
-            fastprintdelim(io, p.y)
+
+        if exporter.psse_version == :v35
+            # v35 format supports complex impedance values with line breaks every 6 points
+            fastprint(io, " ")
+            fastprint(io, I)
+            point_count = 0
+            total_points = length(points)
+
+            for p in points
+                if point_count > 0 && point_count % 6 == 0
+                    # Start new line after every 6 points (6 T,Re,Im triplets per line)
+                    fastprintln(io, "")
+                    # Add leading spaces for continuation lines
+                    fastprint(io, "   ")
+                else
+                    fastprint(io, ", ")
+                end
+
+                # T value (x-coordinate)
+                fastprint(io, p.x)
+                fastprint(io, ", ")
+                if isa(p.y, Complex)
+                    fastprint(io, real(p.y))
+                    fastprint(io, ", ")
+                    fastprint(io, imag(p.y))
+                else
+                    fastprint(io, p.y)
+                    fastprint(io, ", ")
+                    # Im(F) defaults to 0.0 for real values
+                    fastprint(io, 0.0)
+                end
+
+                point_count += 1
+            end
+
+            # Only pad with zeros if we have more than 6 points and the last line is incomplete
+            if total_points > 6
+                remaining_slots = 6 - (point_count % 6)
+                if remaining_slots > 0 && remaining_slots < 6
+                    for i in 1:remaining_slots
+                        fastprint(io, ", ")
+                        fastprint(io, 0.0)  # T
+                        fastprint(io, ", ")
+                        fastprint(io, 0.0)  # Re(F)
+                        fastprint(io, ", ")
+                        fastprint(io, 0.0)  # Im(F)
+                    end
+                end
+            end
+
+            fastprintln(io, "")
+        else
+            fastprint(io, I)
+            fastprint(io, ", ")
+            for p in points
+                fastprintdelim(io, p.x)
+                if isa(p.y, Complex)
+                    fastprintdelim(io, real(p.y))
+                else
+                    fastprintdelim(io, p.y)
+                end
+            end
+            fastprintln(io, "")
         end
-        fastprintln(io, "")
     end
 
     end_group(io, md, exporter, "Transformer Impedance Correction Tables", true)
