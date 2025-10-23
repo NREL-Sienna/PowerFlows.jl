@@ -2118,7 +2118,7 @@ function write_to_buffers!(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Voltage Source Converter (VSC) DC Transmission Line Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Voltage Source Converter (VSC) DC Transmission Line Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -2127,6 +2127,17 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!  'NAME',   MDC,  RDC,   O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
+        )
+        println(
+            io,
+            "@!IBUS,TYPE,MODE,  DCSET,  ACSET,  ALOSS,  BLOSS,MINLOSS,  SMAX,   IMAX,   PWF,     MAXQ,   MINQ, VSREG,NREG, RMPCT",
+        )
+    end
 
     vsc_lines_with_numbers = get!(exporter.components_cache, "vsc_lines") do
         vsc_lines = sort!(
@@ -2216,6 +2227,8 @@ function write_to_buffers!(
         MINQ1 =
             PSY.get_reactive_power_limits_from(vscline).min *
             PSY.get_base_power(exporter.system)
+        VSREG1 = get_ext_key_or_default(vscline, "VSREG_FROM")
+        NREG1 = get_ext_key_or_default(vscline, "NREG_FROM")
         REMOT1 = get_ext_key_or_default(vscline, "REMOT_FROM")
         RMPCT1 = get_ext_key_or_default(vscline, "RMPCT_FROM")
 
@@ -2261,21 +2274,35 @@ function write_to_buffers!(
         MINQ2 =
             PSY.get_reactive_power_limits_to(vscline).min *
             PSY.get_base_power(exporter.system)
+        VSREG2 = get_ext_key_or_default(vscline, "VSREG_TO")
+        NREG2 = get_ext_key_or_default(vscline, "NREG_TO")
         REMOT2 = get_ext_key_or_default(vscline, "REMOT_TO")
         RMPCT2 = get_ext_key_or_default(vscline, "RMPCT_TO")
 
         @fastprintdelim_unroll(io, false, NAME, MDC, RDC)
         fastprintln_psse_default_ownership(io)
 
-        @fastprintdelim_unroll(io, false,
-            IBUS1, TYPE1, MODE1, DCSET1, ACSET1, ALOSS1, BLOSS1, MINLOSS1, SMAX1, IMAX1,
-            PWF1, MAXQ1, MINQ1, REMOT1)
-        fastprintln(io, RMPCT1)
+        if exporter.psse_version == :v35
+            @fastprintdelim_unroll(io, false,
+                IBUS1, TYPE1, MODE1, DCSET1, ACSET1, ALOSS1, BLOSS1, MINLOSS1, SMAX1, IMAX1,
+                PWF1, MAXQ1, MINQ1, VSREG1, NREG1)
+            fastprintln(io, RMPCT1)
 
-        @fastprintdelim_unroll(io, false,
-            IBUS2, TYPE2, MODE2, DCSET2, ACSET2, ALOSS2, BLOSS2, MINLOSS2, SMAX2, IMAX2,
-            PWF2, MAXQ2, MINQ2, REMOT2)
-        fastprintln(io, RMPCT2)
+            @fastprintdelim_unroll(io, false,
+                IBUS2, TYPE2, MODE2, DCSET2, ACSET2, ALOSS2, BLOSS2, MINLOSS2, SMAX2, IMAX2,
+                PWF2, MAXQ2, MINQ2, VSREG2, NREG2)
+            fastprintln(io, RMPCT2)
+        else
+            @fastprintdelim_unroll(io, false,
+                IBUS1, TYPE1, MODE1, DCSET1, ACSET1, ALOSS1, BLOSS1, MINLOSS1, SMAX1, IMAX1,
+                PWF1, MAXQ1, MINQ1, REMOT1)
+            fastprintln(io, RMPCT1)
+
+            @fastprintdelim_unroll(io, false,
+                IBUS2, TYPE2, MODE2, DCSET2, ACSET2, ALOSS2, BLOSS2, MINLOSS2, SMAX2, IMAX2,
+                PWF2, MAXQ2, MINQ2, REMOT2)
+            fastprintln(io, RMPCT2)
+        end
     end
     end_group(
         io,
