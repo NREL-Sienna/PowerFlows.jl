@@ -2542,7 +2542,7 @@ function write_to_buffers!(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Switched Shunt Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Switched Shunt Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -2551,6 +2551,14 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    # Add header comment for v35
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!   I,'ID',MODSW,ADJM,ST, VSWHI,  VSWLO, SWREG,NREG, RMPCT,   'RMIDNT',     BINIT,S1,N1,    B1, S2,N2,    B2, S3,N3,    B3, S4,N4,    B4, S5,N5,    B5, S6,N6,    B6, S7,N7,    B7, S8,N8,    B8",
+        )
+    end
 
     switched_shunts = get!(exporter.components_cache, "switched_shunts") do
         sort!(
@@ -2566,15 +2574,37 @@ function write_to_buffers!(
                 singles_to_1 = true,
             )
         end
+
+    # Track bus numbers to generate ID field for v35
+    bus_id_counters = Dict{Int, Int}()
+
     for shunt in switched_shunts
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
+
+        # Add ID field for v35 (handle multiple shunts on same bus)
+        if exporter.psse_version == :v35
+            bus_id_counters[I] = get(bus_id_counters, I, 0) + 1
+            ID = _psse_quote_string(string(bus_id_counters[I]))
+        end
+
         MODSW = get_ext_key_or_default(shunt, "MODSW")
         ADJM = get_ext_key_or_default(shunt, "ADJM")
         STAT = PSY.get_available(shunt) ? 1 : 0
         VSWHI = PSY.get_admittance_limits(shunt).max
         VSWLO = PSY.get_admittance_limits(shunt).min
-        SWREM = get_ext_key_or_default(shunt, "SWREM")
+
+        if exporter.psse_version == :v35
+            SWREG = get_ext_key_or_default(
+                shunt,
+                "SWREG",
+                get_ext_key_or_default(shunt, "SWREM"),
+            )
+            NREG = get_ext_key_or_default(shunt, "NREG", PSSE_DEFAULT)
+        else
+            SWREM = get_ext_key_or_default(shunt, "SWREM")
+        end
+
         RMPCT = get_ext_key_or_default(shunt, "RMPCT")
         RMIDNT = get_ext_key_or_default(shunt, "RMIDNT")
         RMIDNT = _psse_quote_string(String(RMIDNT))
@@ -2584,26 +2614,64 @@ function write_to_buffers!(
         steps = PSY.get_number_of_steps(shunt)
         increases = PSY.get_Y_increase(shunt)
 
-        N_vals = []
-        B_vals = []
-        for (N, B) in zip(steps, increases)
-            push!(N_vals, N)
-            push!(B_vals, _psse_round_val(imag(B) * PSY.get_base_power(exporter.system)))
+        if exporter.psse_version == :v35
+            # v35 format has S, N, B triplets
+            S_vals = []
+            N_vals = []
+            B_vals = []
+
+            for (N, B) in zip(steps, increases)
+                push!(S_vals, get_ext_key_or_default(shunt, "S$(length(S_vals)+1)", 1))
+                push!(N_vals, N)
+                push!(
+                    B_vals,
+                    _psse_round_val(imag(B) * PSY.get_base_power(exporter.system)),
+                )
+            end
+
+            while length(S_vals) < 8
+                push!(S_vals, PSSE_DEFAULT)
+                push!(N_vals, PSSE_DEFAULT)
+                push!(B_vals, PSSE_DEFAULT)
+            end
+
+            S_vars = [get(S_vals, i, PSSE_DEFAULT) for i in 1:8]
+            N_vars = [get(N_vals, i, PSSE_DEFAULT) for i in 1:8]
+            B_vars = [get(B_vals, i, PSSE_DEFAULT) for i in 1:8]
+
+            @fastprintdelim_unroll(io, true, I, ID, MODSW, ADJM, STAT,
+                VSWHI, VSWLO, SWREG, NREG, RMPCT, RMIDNT, BINIT,
+                S_vars[1], N_vars[1], B_vars[1], S_vars[2], N_vars[2], B_vars[2],
+                S_vars[3], N_vars[3], B_vars[3], S_vars[4], N_vars[4], B_vars[4],
+                S_vars[5], N_vars[5], B_vars[5], S_vars[6], N_vars[6], B_vars[6],
+                S_vars[7], N_vars[7], B_vars[7], S_vars[8], N_vars[8], B_vars[8])
+        else
+            # v33 format has N, B pairs
+            N_vals = []
+            B_vals = []
+
+            for (N, B) in zip(steps, increases)
+                push!(N_vals, N)
+                push!(
+                    B_vals,
+                    _psse_round_val(imag(B) * PSY.get_base_power(exporter.system)),
+                )
+            end
+
+            while length(N_vals) < 8
+                push!(N_vals, PSSE_DEFAULT)
+                push!(B_vals, PSSE_DEFAULT)
+            end
+
+            N_vars = [get(N_vals, i, PSSE_DEFAULT) for i in 1:8]
+            B_vars = [get(B_vals, i, PSSE_DEFAULT) for i in 1:8]
+
+            @fastprintdelim_unroll(io, true, I, MODSW, ADJM, STAT,
+                VSWHI, VSWLO, SWREM, RMPCT, RMIDNT, BINIT,
+                N_vars[1], B_vars[1], N_vars[2], B_vars[2], N_vars[3], B_vars[3],
+                N_vars[4], B_vars[4], N_vars[5], B_vars[5], N_vars[6], B_vars[6],
+                N_vars[7], B_vars[7], N_vars[8], B_vars[8])
         end
-
-        while length(N_vals) < 8
-            push!(N_vals, PSSE_DEFAULT)
-            push!(B_vals, PSSE_DEFAULT)
-        end
-
-        N_vars = [get(N_vals, i, PSSE_DEFAULT) for i in 1:8]
-        B_vars = [get(B_vals, i, PSSE_DEFAULT) for i in 1:8]
-
-        @fastprintdelim_unroll(io, true, I, MODSW, ADJM, STAT,
-            VSWHI, VSWLO, SWREM, RMPCT, RMIDNT, BINIT,
-            N_vars[1], B_vars[1], N_vars[2], B_vars[2], N_vars[3], B_vars[3],
-            N_vars[4], B_vars[4], N_vars[5], B_vars[5], N_vars[6], B_vars[6],
-            N_vars[7], B_vars[7], N_vars[8], B_vars[8])
     end
     end_group(io, md, exporter, "Switched Shunt Data", true)
     exporter.md_valid ||
