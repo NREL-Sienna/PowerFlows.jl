@@ -1284,25 +1284,26 @@ function write_to_buffers!(
 
             B = PSY.get_b(branch).from + PSY.get_b(branch).to
 
-            NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
-            RATE1 = RATEA
-            RATE2 = RATEB
-            RATE3 = RATEC
-            RATE4 = get_ext_key_or_default(branch, "RATE4", PSSE_DEFAULT)
-            RATE5 = get_ext_key_or_default(branch, "RATE5", PSSE_DEFAULT)
-            RATE6 = get_ext_key_or_default(branch, "RATE6", PSSE_DEFAULT)
-            RATE7 = get_ext_key_or_default(branch, "RATE7", PSSE_DEFAULT)
-            RATE8 = get_ext_key_or_default(branch, "RATE8", PSSE_DEFAULT)
-            RATE9 = get_ext_key_or_default(branch, "RATE9", PSSE_DEFAULT)
-            RATE10 = get_ext_key_or_default(branch, "RATE10", PSSE_DEFAULT)
-            RATE11 = get_ext_key_or_default(branch, "RATE11", PSSE_DEFAULT)
-            RATE12 = get_ext_key_or_default(branch, "RATE12", PSSE_DEFAULT)
+            if exporter.psse_version == :v35
+                NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
 
-            @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B, NAME,
-                RATE1, RATE2, RATE3, RATE4, RATE5, RATE6, RATE7, RATE8, RATE9, RATE10,
-                RATE11, RATE12,
-                GI, BI, GJ, BJ, ST, MET, LEN)
-            fastprintln_psse_default_ownership(io)
+                rates = [RATEA, RATEB, RATEC]
+                for i in 4:12
+                    push!(rates, get_ext_key_or_default(branch, "RATE$i"))
+                end
+
+                @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B, NAME)
+                for rate in rates
+                    fastprintdelim(io, rate)
+                end
+                @fastprintdelim_unroll(io, false, GI, BI, GJ, BJ, ST, MET, LEN)
+                fastprintln_psse_default_ownership(io)
+            else
+                @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B,
+                    RATEA, RATEB, RATEC,
+                    GI, BI, GJ, BJ, ST, MET, LEN)
+                fastprintln_psse_default_ownership(io)
+            end
         end
     end
     end_group(io, md, exporter, "Non-Transformer Branch Data", true)
@@ -1373,17 +1374,10 @@ function write_to_buffers!(
         end
         RATE1 = RATE1 >= INFINITE_BOUND ? 0.0 : RATE1 / PSY.get_base_power(exporter.system)
 
-        RATE2 = get_ext_key_or_default(branch, "RATE2", PSSE_DEFAULT)
-        RATE3 = get_ext_key_or_default(branch, "RATE3", PSSE_DEFAULT)
-        RATE4 = get_ext_key_or_default(branch, "RATE4", PSSE_DEFAULT)
-        RATE5 = get_ext_key_or_default(branch, "RATE5", PSSE_DEFAULT)
-        RATE6 = get_ext_key_or_default(branch, "RATE6", PSSE_DEFAULT)
-        RATE7 = get_ext_key_or_default(branch, "RATE7", PSSE_DEFAULT)
-        RATE8 = get_ext_key_or_default(branch, "RATE8", PSSE_DEFAULT)
-        RATE9 = get_ext_key_or_default(branch, "RATE9", PSSE_DEFAULT)
-        RATE10 = get_ext_key_or_default(branch, "RATE10", PSSE_DEFAULT)
-        RATE11 = get_ext_key_or_default(branch, "RATE11", PSSE_DEFAULT)
-        RATE12 = get_ext_key_or_default(branch, "RATE12", PSSE_DEFAULT)
+        rates = [RATE1]
+        for i in 2:12
+            push!(rates, get_ext_key_or_default(branch, "RATE$i"))
+        end
 
         STAT = PSY.get_available(branch) ? 1 : 0
         NSTAT = get_ext_key_or_default(branch, "NSTAT")
@@ -1399,11 +1393,11 @@ function write_to_buffers!(
 
         NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
 
-        @fastprintdelim_unroll(io, true, I, J, CKT, X,
-            RATE1, RATE2, RATE3, RATE4, RATE5, RATE6, RATE7, RATE8, RATE9, RATE10, RATE11,
-            RATE12,
-            STAT, NSTAT, MET, STYPE, NAME
-        )
+        @fastprintdelim_unroll(io, false, I, J, CKT, X)
+        for rate in rates
+            fastprintdelim(io, rate)
+        end
+        @fastprintdelim_unroll(io, true, STAT, NSTAT, MET, STYPE, NAME)
     end
 
     end_group(io, md, exporter, "Switching Device Data", true)
@@ -1700,7 +1694,7 @@ function write_to_buffers!(
             RMA1 = get_ext_key_or_default(transformer, "RMA1")
             RMI1 = get_ext_key_or_default(transformer, "RMI1")
             NTP1 = get_ext_key_or_default(transformer, "NTP1")
-            NOD1 = get_ext_key_or_default(transformer, "NOD1", PSSE_DEFAULT)
+            NOD1 = get_ext_key_or_default(transformer, "NOD1")
 
             if (transformer isa PSY.PhaseShiftingTransformer)
                 ANG1 = rad2deg(PSY.get_α(transformer))
@@ -1719,18 +1713,14 @@ function write_to_buffers!(
                         _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
                     end
 
-                RATE1_1 = get_ext_key_or_default(transformer, "RATE11", RATA1)
-                RATE1_2 = get_ext_key_or_default(transformer, "RATE12", RATB1)
-                RATE1_3 = get_ext_key_or_default(transformer, "RATE13", RATC1)
-                RATE1_4 = get_ext_key_or_default(transformer, "RATE14")
-                RATE1_5 = get_ext_key_or_default(transformer, "RATE15")
-                RATE1_6 = get_ext_key_or_default(transformer, "RATE16")
-                RATE1_7 = get_ext_key_or_default(transformer, "RATE17")
-                RATE1_8 = get_ext_key_or_default(transformer, "RATE18")
-                RATE1_9 = get_ext_key_or_default(transformer, "RATE19")
-                RATE1_10 = get_ext_key_or_default(transformer, "RATE110")
-                RATE1_11 = get_ext_key_or_default(transformer, "RATE111")
-                RATE1_12 = get_ext_key_or_default(transformer, "RATE112")
+                rates_1 = [
+                    get_ext_key_or_default(transformer, "RATE11", RATA1),
+                    get_ext_key_or_default(transformer, "RATE12", RATB1),
+                    get_ext_key_or_default(transformer, "RATE13", RATC1),
+                ]
+                for i in 4:12
+                    push!(rates_1, get_ext_key_or_default(transformer, "RATE1$i"))
+                end
             else
                 RATA1, RATB1, RATC1 =
                     with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
@@ -1763,10 +1753,26 @@ function write_to_buffers!(
             @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2)
 
             if exporter.psse_version == :v35
-                @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1,
-                    RATE1_1, RATE1_2, RATE1_3, RATE1_4, RATE1_5, RATE1_6,
-                    RATE1_7, RATE1_8, RATE1_9, RATE1_10, RATE1_11, RATE1_12,
-                    COD1, CONT1, NOD1, RMA1, RMI1, VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1)
+                @fastprintdelim_unroll(io, false, WINDV1, NOMV1, ANG1)
+                for rate in rates_1
+                    fastprintdelim(io, rate)
+                end
+                @fastprintdelim_unroll(
+                    io,
+                    true,
+                    COD1,
+                    CONT1,
+                    NOD1,
+                    RMA1,
+                    RMI1,
+                    VMA1,
+                    VMI1,
+                    NTP1,
+                    TAB1,
+                    CR1,
+                    CX1,
+                    CNXA1
+                )
             else
                 @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1, RATA1,
                     RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
@@ -1837,41 +1843,19 @@ function write_to_buffers!(
                 RAT = acc.get_rating(transformer)
 
                 if exporter.psse_version == :v35
-                    RATE_1 = get_ext_key_or_default(transformer, "RATE$(prefix)1", RAT)
-                    RATE_2 = get_ext_key_or_default(transformer, "RATE$(prefix)2", RAT)
-                    RATE_3 = get_ext_key_or_default(transformer, "RATE$(prefix)3", RAT)
-                    RATE_4 =
-                        get_ext_key_or_default(transformer, "RATE$(prefix)4", PSSE_DEFAULT)
-                    RATE_5 =
-                        get_ext_key_or_default(transformer, "RATE$(prefix)5", PSSE_DEFAULT)
-                    RATE_6 =
-                        get_ext_key_or_default(transformer, "RATE$(prefix)6", PSSE_DEFAULT)
-                    RATE_7 =
-                        get_ext_key_or_default(transformer, "RATE$(prefix)7", PSSE_DEFAULT)
-                    RATE_8 =
-                        get_ext_key_or_default(transformer, "RATE$(prefix)8", PSSE_DEFAULT)
-                    RATE_9 =
-                        get_ext_key_or_default(transformer, "RATE$(prefix)9", PSSE_DEFAULT)
-                    RATE_10 =
-                        get_ext_key_or_default(transformer, "RATE$(prefix)10", PSSE_DEFAULT)
-                    RATE_11 =
-                        get_ext_key_or_default(transformer, "RATE$(prefix)11", PSSE_DEFAULT)
-                    RATE_12 =
-                        get_ext_key_or_default(transformer, "RATE$(prefix)12", PSSE_DEFAULT)
-                    RATES = (
-                        RATE_1,
-                        RATE_2,
-                        RATE_3,
-                        RATE_4,
-                        RATE_5,
-                        RATE_6,
-                        RATE_7,
-                        RATE_8,
-                        RATE_9,
-                        RATE_10,
-                        RATE_11,
-                        RATE_12,
-                    )
+                    rates = [
+                        get_ext_key_or_default(transformer, "RATE$(prefix)1", RAT),
+                        get_ext_key_or_default(transformer, "RATE$(prefix)2", RAT),
+                        get_ext_key_or_default(transformer, "RATE$(prefix)3", RAT),
+                    ]
+                    for i in 4:12
+                        # In case RATE is not found default to 0.0
+                        push!(
+                            rates,
+                            get_ext_key_or_default(transformer, "RATE$(prefix)$i", 0.0),
+                        )
+                    end
+                    RATES = tuple(rates...)
                 else
                     RATA = get_ext_key_or_default(transformer, "RATA$prefix", RAT)
                     RATB = get_ext_key_or_default(transformer, "RATB$prefix", RAT)
@@ -1881,7 +1865,7 @@ function write_to_buffers!(
 
                 COD = get_ext_key_or_default(transformer, "COD$prefix")
                 CONT = get_ext_key_or_default(transformer, "CONT$prefix")
-                NOD = get_ext_key_or_default(transformer, "NOD$prefix", PSSE_DEFAULT)
+                NOD = get_ext_key_or_default(transformer, "NOD$prefix")
                 RMA = get_ext_key_or_default(transformer, "RMA$prefix")
                 RMI = get_ext_key_or_default(transformer, "RMI$prefix")
                 VMA = get_ext_key_or_default(transformer, "VMA$prefix")
@@ -2517,10 +2501,10 @@ function write_to_buffers!(
         SET1 = get_ext_key_or_default(facts, "SET1")
         SET2 = get_ext_key_or_default(facts, "SET2")
         VSREF = get_ext_key_or_default(facts, "VSREF")
-        FCREG = get_ext_key_or_default(facts, "FCREG", PSSE_DEFAULT)
-        NREG = get_ext_key_or_default(facts, "NREG", PSSE_DEFAULT)
+        FCREG = get_ext_key_or_default(facts, "FCREG")
+        NREG = get_ext_key_or_default(facts, "NREG")
         REMOT = get_ext_key_or_default(facts, "REMOT")
-        MNAME = get_ext_key_or_default(facts, "MNAME")
+        MNAME = get_ext_key_or_default(facts, "MNAME", "")
         MNAME = _psse_quote_string(String(MNAME))
 
         if exporter.psse_version == :v35
@@ -2598,7 +2582,7 @@ function write_to_buffers!(
                 "SWREG",
                 get_ext_key_or_default(shunt, "SWREM"),
             )
-            NREG = get_ext_key_or_default(shunt, "NREG", PSSE_DEFAULT)
+            NREG = get_ext_key_or_default(shunt, "NREG")
         else
             SWREM = get_ext_key_or_default(shunt, "SWREM")
         end
