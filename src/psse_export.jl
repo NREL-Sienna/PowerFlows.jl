@@ -2462,7 +2462,7 @@ function write_to_buffers!(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 FACTS Device Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 FACTS Device Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -2471,6 +2471,13 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!  'NAME',         I,     J,MODE,PDES,   QDES,  VSET,   SHMX,   TRMX,   VTMN,   VTMX,   VSMX,    IMX,   LINX,   RMPCT,OWNER,  SET1,    SET2,VSREF, FCREG,NREG,   'MNAME'",
+        )
+    end
 
     facts_devices = get!(exporter.components_cache, "facts_devices") do
         sort!(
@@ -2511,14 +2518,23 @@ function write_to_buffers!(
         SET1 = get_ext_key_or_default(facts, "SET1")
         SET2 = get_ext_key_or_default(facts, "SET2")
         VSREF = get_ext_key_or_default(facts, "VSREF")
+        FCREG = get_ext_key_or_default(facts, "FCREG", PSSE_DEFAULT)
+        NREG = get_ext_key_or_default(facts, "NREG", PSSE_DEFAULT)
         REMOT = get_ext_key_or_default(facts, "REMOT")
         MNAME = get_ext_key_or_default(facts, "MNAME")
         MNAME = _psse_quote_string(String(MNAME))
 
-        @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
-            VSET, SHMX, TRMX, VTMN, VTMX, VSMX, IMX, LINX, RMPCT, OWNER,
-            SET1, SET2, VSREF, REMOT)
-        fastprintln(io, MNAME)
+        if exporter.psse_version == :v35
+            @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
+                VSET, SHMX, TRMX, VTMN, VTMX, VSMX, IMX, LINX, RMPCT, OWNER,
+                SET1, SET2, VSREF, FCREG, NREG)
+            fastprintln(io, MNAME)
+        else
+            @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
+                VSET, SHMX, TRMX, VTMN, VTMX, VSMX, IMX, LINX, RMPCT, OWNER,
+                SET1, SET2, VSREF, REMOT)
+            fastprintln(io, MNAME)
+        end
     end
     end_group(io, md, exporter, "FACTS Device Data", true)
     exporter.md_valid ||
