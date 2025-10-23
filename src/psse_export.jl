@@ -1963,7 +1963,7 @@ function write_to_buffers!(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Two-Terminal DC Transmission Line Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Two-Terminal DC Transmission Line Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1972,6 +1972,22 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
     check_supported_version(exporter)
+
+    # Add header comments for v35
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!  'NAME',   MDC,    RDC,     SETVL,    VSCHD,    VCMOD,    RCOMP,   DELTI,METER,   DCVMIN,CCCITMX,CCCACC",
+        )
+        println(
+            io,
+            "@! IPR,NBR,  ANMXR,  ANMNR,   RCR,    XCR,   EBASR,  TRR,    TAPR,   TMXR,   TMNR,   STPR,    ICR,NDR,   IFR,   ITR,'IDR', XCAPR",
+        )
+        println(
+            io,
+            "@! IPI,NBI,  ANMXI,  ANMNI,   RCI,    XCI,   EBASI,  TRI,    TAPI,   TMXI,   TMNI,   STPI,    ICI,NDI,   IFI,   ITI,'IDI', XCAPI",
+        )
+    end
 
     dclines_with_numbers = get!(exporter.components_cache, "dclines") do
         dclines = sort!(
@@ -2013,6 +2029,7 @@ function write_to_buffers!(
         DCVMIN = PSY.get_min_compounding_voltage(dcline)
         CCCITMX = get_ext_key_or_default(dcline, "CCCITMX")
         CCCACC = get_ext_key_or_default(dcline, "CCCACC")
+        # Handle RECTIFIER fields
         IPR = I
         NBR = PSY.get_rectifier_bridges(dcline)
         ANMXR = _psse_round_val(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).max))
@@ -2030,6 +2047,7 @@ function write_to_buffers!(
         TMNR = PSY.get_rectifier_tap_limits(dcline).min
         STPR = PSY.get_rectifier_tap_step(dcline)
         ICR = get_ext_key_or_default(dcline, "ICR")
+        NDR = get_ext_key_or_default(dcline, "NDR")
         IFR = get_ext_key_or_default(dcline, "IFR")
         ITR = get_ext_key_or_default(dcline, "ITR")
         IDR = get_ext_key_or_default(dcline, "IDR")
@@ -2037,6 +2055,7 @@ function write_to_buffers!(
             PSY.get_rectifier_capacitor_reactance(dcline) *
             PSY.get_rectifier_base_voltage(dcline)^2 /
             PSY.get_base_power(exporter.system)
+        # Handle INVERTER fields
         IPI = J
         NBI = PSY.get_inverter_bridges(dcline)
         ANMXI =
@@ -2056,6 +2075,7 @@ function write_to_buffers!(
         TMNI = PSY.get_inverter_tap_limits(dcline).min
         STPI = PSY.get_inverter_tap_step(dcline)
         ICI = get_ext_key_or_default(dcline, "ICI")
+        NDI = get_ext_key_or_default(dcline, "NDI")
         IFI = get_ext_key_or_default(dcline, "IFI")
         ITI = get_ext_key_or_default(dcline, "ITI")
         IDI = get_ext_key_or_default(dcline, "IDI")
@@ -2068,15 +2088,29 @@ function write_to_buffers!(
             NAME, MDC, RDC, SETVL, VSCHD, VCMOD, RCOMP, DELTI, METER, DCVMIN, CCCITMX)
         fastprintln(io, CCCACC)
 
-        @fastprintdelim_unroll(io, false,
-            IPR, NBR, ANMXR, ANMNR, RCR, XCR, EBASR, TRR, TAPR, TMXR, TMNR, STPR, ICR, IFR,
-            ITR, IDR)
-        fastprintln(io, XCAPR)
+        if exporter.psse_version == :v35
+            @fastprintdelim_unroll(io, false,
+                IPR, NBR, ANMXR, ANMNR, RCR, XCR, EBASR, TRR, TAPR, TMXR, TMNR, STPR, ICR,
+                NDR,
+                IFR, ITR, IDR)
+            fastprintln(io, XCAPR)
 
-        @fastprintdelim_unroll(io, false,
-            IPI, NBI, ANMXI, ANMNI, RCI, XCI, EBASI, TRI, TAPI, TMXI, TMNI, STPI, ICI, IFI,
-            ITI, IDI)
-        fastprintln(io, XCAPI)
+            @fastprintdelim_unroll(io, false,
+                IPI, NBI, ANMXI, ANMNI, RCI, XCI, EBASI, TRI, TAPI, TMXI, TMNI, STPI, ICI,
+                NDI,
+                IFI, ITI, IDI)
+            fastprintln(io, XCAPI)
+        else
+            @fastprintdelim_unroll(io, false,
+                IPR, NBR, ANMXR, ANMNR, RCR, XCR, EBASR, TRR, TAPR, TMXR, TMNR, STPR, ICR,
+                IFR, ITR, IDR)
+            fastprintln(io, XCAPR)
+
+            @fastprintdelim_unroll(io, false,
+                IPI, NBI, ANMXI, ANMNI, RCI, XCI, EBASI, TRI, TAPI, TMXI, TMNI, STPI, ICI,
+                IFI, ITI, IDI)
+            fastprintln(io, XCAPI)
+        end
     end
     end_group(io, md, exporter, "Two-Terminal DC Transmission Line Data", true)
     exporter.md_valid ||
