@@ -431,53 +431,53 @@ for (test_name, sys_name, version, folder_name) in test_configs
     end
 end
 
-# @testset "PSSE Exporter with psse_RTS_GMLC_sys.raw, v33" for (ACSolver, folder_name) in (
-#     (LUACPowerFlow, "rts_gmlc_LU"),
-#     (NewtonRaphsonACPowerFlow, "rts_gmlc_newton"),
-# )
-#     sys = load_test_system("pti_case24_sys")
-#     pf = ACPowerFlow{ACSolver}()
-#     isnothing(sys) && return
+@testset "PSSE Exporter with pti_case24_sys.raw, v33" for (ACSolver, folder_name) in (
+    (LUACPowerFlow, "case24_sys_LU"),
+    (NewtonRaphsonACPowerFlow, "case24_sys_NR"),
+)
+    sys = load_test_system("pti_case24_sys")
+    pf = ACPowerFlow{ACSolver}()
+    isnothing(sys) && return
 
-#     # PSS/E version must be one of the supported ones
-#     @test_throws ArgumentError PSSEExporter(sys, :vNonexistent, test_psse_export_dir)
+    # PSS/E version must be one of the supported ones
+    @test_throws ArgumentError PSSEExporter(sys, :vNonexistent, test_psse_export_dir)
 
-#     # Reimported export should be comparable to original system
-#     export_location = joinpath(test_psse_export_dir, "v33", folder_name)
-#     exporter = PSSEExporter(sys, :v33, export_location)
-#     test_psse_round_trip(pf, sys, exporter, "basic", export_location;
-#         exclude_reactive_flow = true)
+    # Reimported export should be comparable to original system
+    export_location = joinpath(test_psse_export_dir, "v33", folder_name)
+    exporter = PSSEExporter(sys, :v33, export_location)
+    test_psse_round_trip(pf, sys, exporter, "basic", export_location;
+        exclude_reactive_flow = true)
 
-#     # Exporting the exact same thing again should result in the exact same files
-#     write_export(exporter, "basic2"; overwrite = true)
-#     test_psse_export_strict_equality(
-#         get_psse_export_paths(joinpath(export_location, "basic"))...,
-#         get_psse_export_paths(joinpath(export_location, "basic2"))...)
+    # Exporting the exact same thing again should result in the exact same files
+    write_export(exporter, "basic2"; overwrite = true)
+    test_psse_export_strict_equality(
+        get_psse_export_paths(joinpath(export_location, "basic"))...,
+        get_psse_export_paths(joinpath(export_location, "basic2"))...)
 
-#     # Updating with a completely different system should fail
-#     different_system = load_test_system("pti_case5_alc_sys")
-#     @test_throws ArgumentError update_exporter!(exporter, different_system)
+    # Updating with a completely different system should fail
+    different_system = load_test_system("pti_case5_alc_sys")
+    @test_throws ArgumentError update_exporter!(exporter, different_system)
 
-#     # Updating with the exact same system should result in the exact same files
-#     update_exporter!(exporter, sys)
-#     write_export(exporter, "basic3"; overwrite = true)
-#     test_psse_export_strict_equality(
-#         get_psse_export_paths(joinpath(export_location, "basic"))...,
-#         get_psse_export_paths(joinpath(export_location, "basic3"))...)
+    # Updating with the exact same system should result in the exact same files
+    update_exporter!(exporter, sys)
+    write_export(exporter, "basic3"; overwrite = true)
+    test_psse_export_strict_equality(
+        get_psse_export_paths(joinpath(export_location, "basic"))...,
+        get_psse_export_paths(joinpath(export_location, "basic3"))...)
 
-#     # Updating with changed value should result in a different reimport (System version)
-#     sys2 = deepcopy(sys)
-#     line_to_change = first(get_components(Line, sys2))
-#     set_rating!(line_to_change, get_rating(line_to_change) * 12345.6)
-#     update_exporter!(exporter, sys2)
-#     write_export(exporter, "basic4"; overwrite = true)
-#     reread_sys2 = read_system_with_metadata(joinpath(export_location, "basic4"))
-#     @test compare_systems_loosely(sys2, reread_sys2)
-#     @test_logs((:error, r"values do not match"),
-#         match_mode = :any, min_level = Logging.Error,
-#         compare_systems_loosely(sys, reread_sys2))
-#     test_power_flow(pf, sys2, reread_sys2; exclude_reactive_flow = true)
-# end
+    # Updating with changed value should result in a different reimport (System version)
+    sys2 = deepcopy(sys)
+    line_to_change = first(get_components(Line, sys2))
+    set_rating!(line_to_change, get_rating(line_to_change) * 12345.6)
+    update_exporter!(exporter, sys2)
+    write_export(exporter, "basic4"; overwrite = true)
+    reread_sys2 = read_system_with_metadata(joinpath(export_location, "basic4"))
+    @test compare_systems_loosely(sys2, reread_sys2)
+    @test_logs((:error, r"values do not match"),
+        match_mode = :any, min_level = Logging.Error,
+        compare_systems_loosely(sys, reread_sys2))
+    test_power_flow(pf, sys2, reread_sys2; exclude_reactive_flow = true)
+end
 
 # @testset "PSSE Exporter with psse_RTS_GMLC_sys.raw, v33" for (ACSolver, folder_name) in (
 #     (NewtonRaphsonACPowerFlow, "rts_gmlc_newton"), # fails to converge if starting guess for V not plausible, fixed in PowerFlowData by clipping V
