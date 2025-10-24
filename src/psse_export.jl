@@ -2216,8 +2216,8 @@ function write_to_buffers!(
         MINQ1 =
             PSY.get_reactive_power_limits_from(vscline).min *
             PSY.get_base_power(exporter.system)
-        VSREG1 = get_ext_key_or_default(vscline, "VSREG_FROM")
-        NREG1 = get_ext_key_or_default(vscline, "NREG_FROM")
+        VSREG1 = get_ext_key_or_default(vscline, "VSREG_FROM", 0)
+        NREG1 = get_ext_key_or_default(vscline, "NREG_FROM", 0)
         REMOT1 = get_ext_key_or_default(vscline, "REMOT_FROM")
         RMPCT1 = get_ext_key_or_default(vscline, "RMPCT_FROM")
 
@@ -2263,8 +2263,8 @@ function write_to_buffers!(
         MINQ2 =
             PSY.get_reactive_power_limits_to(vscline).min *
             PSY.get_base_power(exporter.system)
-        VSREG2 = get_ext_key_or_default(vscline, "VSREG_TO")
-        NREG2 = get_ext_key_or_default(vscline, "NREG_TO")
+        VSREG2 = get_ext_key_or_default(vscline, "VSREG_TO", 0)
+        NREG2 = get_ext_key_or_default(vscline, "NREG_TO", 0)
         REMOT2 = get_ext_key_or_default(vscline, "REMOT_TO")
         RMPCT2 = get_ext_key_or_default(vscline, "RMPCT_TO")
 
