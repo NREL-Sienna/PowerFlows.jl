@@ -1638,12 +1638,12 @@ function write_to_buffers!(
             NOMV1 = get_ext_key_or_default(
                 transformer,
                 "NOMV1",
-                PSY.get_base_voltage(PSY.get_from(PSY.get_arc(transformer))),
+                PSY.get_base_voltage_primary(transformer),
             )
             NOMV2 = get_ext_key_or_default(
                 transformer,
                 "NOMV2",
-                PSY.get_base_voltage(PSY.get_to(PSY.get_arc(transformer))),
+                PSY.get_base_voltage_secondary(transformer),
             )
             SBASE1_2 = get_ext_key_or_default(
                 transformer,
@@ -1660,10 +1660,13 @@ function write_to_buffers!(
                 "WINDV1",
                 PSY.get_base_voltage_primary(transformer),
             )
-            R1_2 = get_ext_key_or_default(
+            # Adding the Float64, for some reason when reading the new EI for 0.0 resistance values
+            # it was getting just a get_r is a 0, leading it to break the reading of the files since 
+            # 0 at the beginning is considered as file termination.
+            R1_2 = Float64(get_ext_key_or_default(
                 transformer,
                 "R1-2",
-                PSY.get_r(transformer),
+                PSY.get_r(transformer))
             )
             X1_2 = get_ext_key_or_default(
                 transformer,
@@ -1806,7 +1809,10 @@ function write_to_buffers!(
                 STAT = PSY.get_available(transformer) ? 1 : 0
             end
 
-            R1_2 = get_ext_key_or_default(transformer, "R1-2", PSY.get_r_12(transformer))
+            # Same issue as described above
+            R1_2 = Float64(
+                get_ext_key_or_default(transformer, "R1-2", PSY.get_r_12(transformer)),
+            )
             X1_2 = get_ext_key_or_default(transformer, "X1-2", PSY.get_x_12(transformer))
             SBASE1_2 = PSY.get_base_power_12(transformer)
             R2_3 = get_ext_key_or_default(transformer, "R2-3", PSY.get_r_23(transformer))
