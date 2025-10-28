@@ -1,4 +1,4 @@
-const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33]
+const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33, :v35]
 const PSSE_DEFAULT = ""  # Used below in cases where we want to insert an empty field to signify the PSSE default
 const PSSE_INFINITY = 9999.0
 const PSSE_BUS_TYPE_MAP = Dict(
@@ -57,8 +57,8 @@ const WINDING_GROUP_NUMBER_TO_DEGREES = Dict(
     11 => 30,             # GROUP_11: 30 Degrees
 )
 
-# Each of the groups in the PSS/3 v33 standard
-const PSSE_GROUPS_33 = [
+# Each of the groups in the PSS/E v33 standard
+const PSSE_GROUPS = [
     "Case Identification Data",
     "Bus Data",
     "Load Data",
@@ -80,6 +80,12 @@ const PSSE_GROUPS_33 = [
     "GNE Device Data",
     "Induction Machine Data",
     "Q Record",
+]
+
+# Extra groups for PSS/E v35 standard
+const PSSE_V35_EXTRA_GROUPS = [
+    "Switching Device Data",
+    "Substation Data",
 ]
 
 const PSSE_RAW_BUFFER_SIZEHINT = 1024
@@ -159,6 +165,18 @@ end
 supports_multi_period(::PSSEExporter) = false
 
 _value_or_default(val, default) = isnothing(val) ? default : val
+
+function update_version_group(psse_version::Symbol)
+    groups = copy(PSSE_GROUPS)
+    if psse_version == :v35
+        # Insert v35-specific group at the correct position
+        switching_idx = findfirst(==("Non-Transformer Branch Data"), groups) + 1
+        insert!(groups, switching_idx, "Switching Device Data")
+        substation_idx = findfirst(==("Induction Machine Data"), groups) + 1
+        insert!(groups, substation_idx, "Substation Data")
+    end
+    return groups
+end
 
 function _validate_same_system(sys1::PSY.System, sys2::PSY.System)
     return IS.get_uuid(PSY.get_internal(sys1)) == IS.get_uuid(PSY.get_internal(sys2))
@@ -276,12 +294,17 @@ function fastprintln_psse_default_ownership(io)
     @fastprintdelim_multi(io, PSSE_DEFAULT, true, 8)
 end
 
-function end_group_33(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name, written)
-    next_group = PSSE_GROUPS_33[only(findall(==(group_name), PSSE_GROUPS_33)) + 1]
+function end_group(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name, written)
+    groups = update_version_group(exporter.psse_version)
+    current_index = findfirst(==(group_name), groups)
+
     end_msg = "0"
     if exporter.write_comments
         end_msg *= " / End of $group_name"
-        (next_group == "Q Record") || (end_msg *= ", Begin $next_group")
+        if current_index < length(groups) && groups[current_index + 1] != "Q Record"
+            next_group = groups[current_index + 1]
+            end_msg *= ", Begin $next_group"
+        end
     end
     println(io, end_msg)
     exporter.md_valid || (md["record_groups"][group_name] = written)
@@ -328,11 +351,16 @@ function branch_to_bus_numbers(
     return (p, s, t)
 end
 
-"Throw a `NotImplementedError` if the `psse_version` is not `:v33`"
-check_33(exporter::PSSEExporter) = check_33(exporter.psse_version)
-check_33(psse_version::Symbol) =
-    (psse_version == :v33) ||
-    throw(IS.NotImplementedError("Only implemented for psse_version $(:v33)"))
+"Throw a `NotImplementedError` if the `psse_version` is not supported"
+check_supported_version(exporter::PSSEExporter) =
+    check_supported_version(exporter.psse_version)
+check_supported_version(psse_version::Symbol) =
+    (psse_version in PSSE_EXPORT_SUPPORTED_VERSIONS) ||
+    throw(
+        IS.NotImplementedError(
+            "Only implemented for psse_version $(PSSE_EXPORT_SUPPORTED_VERSIONS), got $psse_version",
+        ),
+    )
 
 "Validate that the Sienna area/zone names parse as PSS/E-compatible area/zone numbers, output a mapping"
 function _map_psse_container_names(container_names::Vector{String})
@@ -376,7 +404,7 @@ function _fix_3w_transformer_rating(rate)
     end
 end
 
-"WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Case Identification Data"
+"WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Case Identification Data"
 function write_to_buffers!(
     exporter::PSSEExporter,
     ::Val{Symbol("Case Identification Data")},
@@ -384,14 +412,24 @@ function write_to_buffers!(
     io = exporter.raw_buffer
     md = exporter.md_dict
 
-    check_33(exporter)
+    check_supported_version(exporter)
     now = Dates.now()
-    md_string = "PSS/E 33.3 RAW via PowerFlows.jl, $now"
+
+    # Update version-specific values
+    version_number = exporter.psse_version == :v33 ? 33 : 35
+    version_string = exporter.psse_version == :v33 ? "33.3" : "35"
+
+    md_string = "PSS/E $version_string RAW via PowerFlows.jl, $now"
+
+    # Add header format comment for v35
+    if exporter.psse_version == :v35
+        println(io, "@!IC,SBASE,REV,XFRRAT,NXFRAT,BASFRQ")
+    end
 
     # Record 1
     IC = 0
     SBASE = PSY.get_base_power(exporter.system)
-    REV = 33
+    REV = version_number
     XFRRAT = 0
     NXFRAT = 1
     BASFRQ = PSY.get_frequency(exporter.system)
@@ -500,7 +538,7 @@ function _psse_bus_names(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Bus Data. Sienna voltage limits treated as PSS/E
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Bus Data. Sienna voltage limits treated as PSS/E
 normal voltage limits; PSSE emergency voltage limits left as default.
 """
 function write_to_buffers!(
@@ -509,7 +547,14 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!   I,'NAME        ', BASKV, IDE,AREA,ZONE,OWNER, VM,        VA,    NVHI,   NVLO,   EVHI,   EVLO",
+        )
+    end
 
     tr3w_starbuses =
         PSY.get_name.(
@@ -569,7 +614,7 @@ function write_to_buffers!(
             ZONE, OWNER, VM, VA,
             NVHI, NVLO, EVHI, EVLO)
     end
-    end_group_33(io, md, exporter, "Bus Data", true)
+    end_group(io, md, exporter, "Bus Data", true)
 end
 
 function _increment_component_char(component_char::Char)
@@ -678,7 +723,7 @@ _psse_get_load_data(exporter::PSSEExporter, load::PSY.StaticLoad) =
     end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Load Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Load Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -686,7 +731,14 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!   I,'ID',STAT,AREA,ZONE,      PL,        QL,        IP,        IQ,        YP,        YQ, OWNER,SCALE,INTRPT,  DGENP,     DGENQ,DGENF,'  LOAD TYPE '",
+        )
+    end
 
     loads = get!(exporter.components_cache, "loads") do
         sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system)); by = PSY.get_name)
@@ -719,17 +771,28 @@ function write_to_buffers!(
         SCALE = load_conformity == PSY.LoadConformity.CONFORMING ? 1 : 0
         INTRPT = load isa PSY.ControllableLoad ? 1 : 0
 
-        @fastprintdelim_unroll(io, true, I, ID, STATUS, AREA, ZONE,
-            PL, QL, IP, IQ, YP, YQ, OWNER,
-            SCALE, INTRPT)
+        if exporter.psse_version == :v35
+            DGENP = get_ext_key_or_default(load, "DGENP")
+            DGENQ = get_ext_key_or_default(load, "DGENQ")
+            DGENF = get_ext_key_or_default(load, "DGENF")
+            LOAD_TYPE = get_ext_key_or_default(load, "LOADTYPE")
+
+            @fastprintdelim_unroll(io, true, I, ID, STATUS, AREA, ZONE,
+                PL, QL, IP, IQ, YP, YQ, OWNER,
+                SCALE, INTRPT, DGENP, DGENQ, DGENF, LOAD_TYPE)
+        else
+            @fastprintdelim_unroll(io, true, I, ID, STATUS, AREA, ZONE,
+                PL, QL, IP, IQ, YP, YQ, OWNER,
+                SCALE, INTRPT)
+        end
     end
-    end_group_33(io, md, exporter, "Load Data", true)
+    end_group(io, md, exporter, "Load Data", true)
     exporter.md_valid ||
         (md["load_name_mapping"] = serialize_component_ids(load_name_mapping))
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Fixed Bus Shunt Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Fixed Bus Shunt Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -737,7 +800,11 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(io, "@!   I,'ID',STATUS,  GL,        BL")
+    end
 
     shunts = get!(exporter.components_cache, "shunts") do
         sort!(
@@ -763,7 +830,7 @@ function write_to_buffers!(
 
         @fastprintdelim_unroll(io, true, I, ID, STATUS, GL, BL)
     end
-    end_group_33(io, md, exporter, "Fixed Shunt Data", true)
+    end_group(io, md, exporter, "Fixed Shunt Data", true)
     exporter.md_valid ||
         (md["shunt_name_mapping"] = serialize_component_ids(shunt_name_mapping))
 end
@@ -865,11 +932,7 @@ function _update_gens_from_hvdc!(
 end
 
 """
-If the export_settings flag `sources_as_generators` is set, export `PSY.Source` instances as
-PSS/E generators in addition to `PSY.Generator`s. Same for `storages_as_generators` and
-`PSY.Storage`.
-
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Generator Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Generator Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -877,7 +940,14 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!   I,'ID',      PG,        QG,        QT,        QB,     VS,    IREG,NREG,     MBASE,     ZR,         ZX,         RT,         XT,     GTAP,STAT, RMPCT,      PT,        PB,BASLOD,O1,    F1,  O2,    F2,  O3,    F3,  O4,    F4,WMOD, WPF",
+        )
+    end
 
     generators = get!(exporter.components_cache, "generators") do
         temp_gens::Vector{PSY.StaticInjection} = sort!(
@@ -1075,14 +1145,26 @@ function write_to_buffers!(
         WMOD = get_ext_key_or_default(generator, "WMOD")
         WPF = get_ext_key_or_default(generator, "WPF")
 
-        @fastprintdelim_unroll(io, false, I, ID, PG, QG, QT, QB,
-            VS, IREG, MBASE, ZR, ZX,
-            RT, XT, GTAP, STAT, RMPCT,
-            PT, PB)
-        fastprintdelim_psse_default_ownership(io)
-        @fastprintdelim_unroll(io, true, WMOD, WPF)
+        if exporter.psse_version == :v35
+            NREG = get_ext_key_or_default(generator, "NREG")
+            BASLOD = get_ext_key_or_default(generator, "BASLOD")
+
+            @fastprintdelim_unroll(io, false, I, ID, PG, QG, QT, QB,
+                VS, IREG, NREG, MBASE, ZR, ZX,
+                RT, XT, GTAP, STAT, RMPCT,
+                PT, PB, BASLOD)
+            fastprintdelim_psse_default_ownership(io)
+            @fastprintdelim_unroll(io, true, WMOD, WPF)
+        else
+            @fastprintdelim_unroll(io, false, I, ID, PG, QG, QT, QB,
+                VS, IREG, MBASE, ZR, ZX,
+                RT, XT, GTAP, STAT, RMPCT,
+                PT, PB)
+            fastprintdelim_psse_default_ownership(io)
+            @fastprintdelim_unroll(io, true, WMOD, WPF)
+        end
     end
-    end_group_33(io, md, exporter, "Generator Data", true)
+    end_group(io, md, exporter, "Generator Data", true)
     exporter.md_valid ||
         (md["generator_name_mapping"] = serialize_component_ids(generator_name_mapping))
 end
@@ -1112,7 +1194,7 @@ function get_branches_with_numbers(exporter::PSSEExporter)
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Non-Transformer Branch Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Non-Transformer Branch Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1120,7 +1202,15 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    # Add header comment for v35
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
+        )
+    end
 
     branches_with_numbers = get!(exporter.components_cache, "branches") do
         get_branches_with_numbers(exporter)
@@ -1135,6 +1225,11 @@ function write_to_buffers!(
     end
 
     for (branch, (from_n, to_n)) in branches_with_numbers
+        # Skip discrete controlled branches for v35 (switches/breakers go to SWITCHING DEVICE DATA section)
+        if exporter.psse_version == :v35 && branch isa PSY.DiscreteControlledACBranch
+            continue
+        end
+
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
         BASE_CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
@@ -1189,22 +1284,132 @@ function write_to_buffers!(
 
             B = PSY.get_b(branch).from + PSY.get_b(branch).to
 
-            @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B,
-                RATEA, RATEB, RATEC, GI, BI,
-                GJ, BJ, ST, MET, LEN)
-            fastprintln_psse_default_ownership(io)
+            if exporter.psse_version == :v35
+                NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
+
+                rates = [RATEA, RATEB, RATEC]
+                for i in 4:12
+                    push!(rates, get_ext_key_or_default(branch, "RATE$i"))
+                end
+
+                @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B, NAME)
+                for rate in rates
+                    fastprintdelim(io, rate)
+                end
+                @fastprintdelim_unroll(io, false, GI, BI, GJ, BJ, ST, MET, LEN)
+                fastprintln_psse_default_ownership(io)
+            else
+                @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B,
+                    RATEA, RATEB, RATEC,
+                    GI, BI, GJ, BJ, ST, MET, LEN)
+                fastprintln_psse_default_ownership(io)
+            end
         end
     end
-    end_group_33(io, md, exporter, "Non-Transformer Branch Data", true)
+    end_group(io, md, exporter, "Non-Transformer Branch Data", true)
     exporter.md_valid ||
         (md["branch_name_mapping"] = serialize_component_ids(branch_name_mapping))
+end
+
+"""
+WRITTEN TO SPEC: PSS/E 35.4 POM 5.2.1 System Switching Device Data
+"""
+function write_to_buffers!(
+    exporter::PSSEExporter,
+    ::Val{Symbol("Switching Device Data")},
+)
+    io = exporter.raw_buffer
+    md = exporter.md_dict
+    check_supported_version(exporter)
+
+    # Section exists only for v35
+    if exporter.psse_version != :v35
+        return
+    end
+
+    println(
+        io,
+        "@!   I,     J,'CKT',          X,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12, STAT,NSTAT,  MET,STYPE,'NAME'",
+    )
+
+    discrete_branches = get!(exporter.components_cache, "discrete_branches") do
+        branches_with_numbers = get_branches_with_numbers(exporter)
+        filter(
+            ((branch, _),) -> branch isa PSY.DiscreteControlledACBranch,
+            branches_with_numbers,
+        )
+    end
+
+    branch_name_mapping = get!(exporter.components_cache, "branch_name_mapping") do
+        create_component_ids(
+            convert_empty_stringvec(PSY.get_name.(first.(discrete_branches))),
+            last.(discrete_branches);
+            singles_to_1 = false,
+        )
+    end
+
+    for (branch, (from_n, to_n)) in discrete_branches
+        I = md["bus_number_mapping"][from_n]
+        J = md["bus_number_mapping"][to_n]
+
+        BASE_CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
+        branch_type = PSY.get_discrete_branch_type(branch)
+
+        if haskey(DISCRETE_BRANCH_MAP, branch_type)
+            char = DISCRETE_BRANCH_MAP[branch_type]
+            CKT = if occursin("_", BASE_CKT)
+                replace(BASE_CKT, "_" => char)
+            else
+                char * BASE_CKT
+            end
+        else
+            @warn "Unknown discrete branch type $branch_type for branch $(PSY.get_name(branch))"
+            CKT = BASE_CKT
+        end
+        CKT = _psse_quote_string(CKT)
+
+        X = PSY.get_x(branch)
+        RATE1 = with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+            _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT)
+        end
+        RATE1 = RATE1 >= INFINITE_BOUND ? 0.0 : RATE1 / PSY.get_base_power(exporter.system)
+
+        rates = [RATE1]
+        for i in 2:12
+            push!(rates, get_ext_key_or_default(branch, "RATE$i"))
+        end
+
+        STAT = PSY.get_available(branch) ? 1 : 0
+        NSTAT = get_ext_key_or_default(branch, "NSTAT")
+        MET = get_ext_key_or_default(branch, "MET")
+
+        STYPE = if branch_type == PSY.DiscreteControlledBranchType.BREAKER
+            2  # Circuit breaker
+        elseif branch_type == PSY.DiscreteControlledBranchType.SWITCH
+            3  # Disconnect switch
+        else
+            1  # Generic connector (default for OTHER)
+        end
+
+        NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
+
+        @fastprintdelim_unroll(io, false, I, J, CKT, X)
+        for rate in rates
+            fastprintdelim(io, rate)
+        end
+        @fastprintdelim_unroll(io, true, STAT, NSTAT, MET, STYPE, NAME)
+    end
+
+    end_group(io, md, exporter, "Switching Device Data", true)
+    exporter.md_valid ||
+        (md["switching_device_name_mapping"] = serialize_component_ids(branch_name_mapping))
 end
 
 """
 Given a vector of Sienna transformer names, create a dictionary from Sienna transformer name
 to PSS/E-compatible transformer name. Guarantees determinism and minimal changes.
 
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Data
 """
 function _psse_transformer_names(
     transformers::Vector{String},
@@ -1257,7 +1462,7 @@ function _psse_transformer_names(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1265,7 +1470,32 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    # Add header comments for v35
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!   I,     J,     K,'CKT',CW,CZ,CM,     MAG1,        MAG2,NMETR,               'N A M E',               STAT,O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4,     'VECGRP', ZCOD",
+        )
+        println(
+            io,
+            "@!   R1-2,       X1-2, SBASE1-2,     R2-3,       X2-3, SBASE2-3,     R3-1,       X3-1, SBASE3-1, VMSTAR,   ANSTAR",
+        )
+        println(
+            io,
+            "@!WINDV1, NOMV1,   ANG1, RATE1-1, RATE1-2, RATE1-3, RATE1-4, RATE1-5, RATE1-6, RATE1-7, RATE1-8, RATE1-9,RATE1-10,RATE1-11,RATE1-12,COD1,CONT1,NOD1,  RMA1,   RMI1,   VMA1,   VMI1, NTP1,TAB1, CR1,    CX1,  CNXA1",
+        )
+        println(
+            io,
+            "@!WINDV2, NOMV2,   ANG2, RATE2-1, RATE2-2, RATE2-3, RATE2-4, RATE2-5, RATE2-6, RATE2-7, RATE2-8, RATE2-9,RATE2-10,RATE2-11,RATE2-12,COD2,CONT2,NOD2,  RMA2,   RMI2,   VMA2,   VMI2, NTP2,TAB2, CR2,    CX2,  CNXA2",
+        )
+        println(
+            io,
+            "@!WINDV3, NOMV3,   ANG3, RATE3-1, RATE3-2, RATE3-3, RATE3-4, RATE3-5, RATE3-6, RATE3-7, RATE3-8, RATE3-9,RATE3-10,RATE3-11,RATE3-12,COD3,CONT3,NOD3,  RMA3,   RMI3,   VMA3,   VMI3, NTP3,TAB3, CR3,    CX3,  CNXA3",
+        )
+    end
+
     transformers_with_numbers = get!(exporter.components_cache, "transformers") do
         transformers = sort!(
             collect(PSY.get_components(PSY.TwoWindingTransformer, exporter.system));
@@ -1380,6 +1610,7 @@ function write_to_buffers!(
         NMETR = get_ext_key_or_default(transformer, "NMETR")
         supp_attr = PSY.get_supplemental_attributes(transformer)
         VECGRP = _psse_quote_string(get_ext_key_or_default(transformer, "VECGRP"))
+        ZCOD = get_ext_key_or_default(transformer, "ZCOD")
 
         winding_number = length(bus_tuple)
         if winding_number == 2  # Handle 2-winding transformer fields
@@ -1407,12 +1638,12 @@ function write_to_buffers!(
             NOMV1 = get_ext_key_or_default(
                 transformer,
                 "NOMV1",
-                PSY.get_base_voltage(PSY.get_from(PSY.get_arc(transformer))),
+                PSY.get_base_voltage_primary(transformer),
             )
             NOMV2 = get_ext_key_or_default(
                 transformer,
                 "NOMV2",
-                PSY.get_base_voltage(PSY.get_to(PSY.get_arc(transformer))),
+                PSY.get_base_voltage_secondary(transformer),
             )
             SBASE1_2 = get_ext_key_or_default(
                 transformer,
@@ -1429,10 +1660,13 @@ function write_to_buffers!(
                 "WINDV1",
                 PSY.get_base_voltage_primary(transformer),
             )
-            R1_2 = get_ext_key_or_default(
+            # Adding the Float64, for some reason when reading the new EI for 0.0 resistance values
+            # it was getting just a get_r is a 0, leading it to break the reading of the files since 
+            # 0 at the beginning is considered as file termination.
+            R1_2 = Float64(get_ext_key_or_default(
                 transformer,
                 "R1-2",
-                PSY.get_r(transformer),
+                PSY.get_r(transformer))
             )
             X1_2 = get_ext_key_or_default(
                 transformer,
@@ -1463,6 +1697,7 @@ function write_to_buffers!(
             RMA1 = get_ext_key_or_default(transformer, "RMA1")
             RMI1 = get_ext_key_or_default(transformer, "RMI1")
             NTP1 = get_ext_key_or_default(transformer, "NTP1")
+            NOD1 = get_ext_key_or_default(transformer, "NOD1")
 
             if (transformer isa PSY.PhaseShiftingTransformer)
                 ANG1 = rad2deg(PSY.get_α(transformer))
@@ -1472,12 +1707,32 @@ function write_to_buffers!(
             else
                 ANG1 = 0.0
             end
-            RATA1, RATB1, RATC1 =
-                with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-                    _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
-                    _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
-                    _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+
+            if exporter.psse_version == :v35
+                RATA1, RATB1, RATC1 =
+                    with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                        _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
+                        _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
+                        _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+                    end
+
+                rates_1 = [
+                    get_ext_key_or_default(transformer, "RATE11", RATA1),
+                    get_ext_key_or_default(transformer, "RATE12", RATB1),
+                    get_ext_key_or_default(transformer, "RATE13", RATC1),
+                ]
+                for i in 4:12
+                    push!(rates_1, get_ext_key_or_default(transformer, "RATE1$i"))
                 end
+            else
+                RATA1, RATB1, RATC1 =
+                    with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                        _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
+                        _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
+                        _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+                    end
+            end
+
             CONT1 = get_ext_key_or_default(transformer, "CONT1")
             VMA1 = get_ext_key_or_default(transformer, "VMA1")
             VMI1 = get_ext_key_or_default(transformer, "VMI1")
@@ -1486,16 +1741,46 @@ function write_to_buffers!(
             CX1 = get_ext_key_or_default(transformer, "CX1")
             CNXA1 = get_ext_key_or_default(transformer, "CNXA1")
 
-            @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
-                MAG1, MAG2, NMETR, NAME, STAT)
-            fastprintdelim_psse_default_ownership(io)
-            fastprintln(io, VECGRP)
+            if exporter.psse_version == :v35
+                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+                    MAG1, MAG2, NMETR, NAME, STAT)
+                fastprintdelim_psse_default_ownership(io)
+                @fastprintdelim_unroll(io, true, VECGRP, ZCOD)
+            else
+                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+                    MAG1, MAG2, NMETR, NAME, STAT)
+                fastprintdelim_psse_default_ownership(io)
+                fastprintln(io, VECGRP)
+            end
 
             @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2)
 
-            @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1, RATA1,
-                RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
-                VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1)
+            if exporter.psse_version == :v35
+                @fastprintdelim_unroll(io, false, WINDV1, NOMV1, ANG1)
+                for rate in rates_1
+                    fastprintdelim(io, rate)
+                end
+                @fastprintdelim_unroll(
+                    io,
+                    true,
+                    COD1,
+                    CONT1,
+                    NOD1,
+                    RMA1,
+                    RMI1,
+                    VMA1,
+                    VMI1,
+                    NTP1,
+                    TAB1,
+                    CR1,
+                    CX1,
+                    CNXA1
+                )
+            else
+                @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1, RATA1,
+                    RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
+                    VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1)
+            end
 
             @fastprintdelim_unroll(io, true, WINDV2, NOMV2)
 
@@ -1524,7 +1809,10 @@ function write_to_buffers!(
                 STAT = PSY.get_available(transformer) ? 1 : 0
             end
 
-            R1_2 = get_ext_key_or_default(transformer, "R1-2", PSY.get_r_12(transformer))
+            # Same issue as described above
+            R1_2 = Float64(
+                get_ext_key_or_default(transformer, "R1-2", PSY.get_r_12(transformer)),
+            )
             X1_2 = get_ext_key_or_default(transformer, "X1-2", PSY.get_x_12(transformer))
             SBASE1_2 = PSY.get_base_power_12(transformer)
             R2_3 = get_ext_key_or_default(transformer, "R2-3", PSY.get_r_23(transformer))
@@ -1559,12 +1847,31 @@ function write_to_buffers!(
                     0.0
                 end
                 RAT = acc.get_rating(transformer)
-                RATA = get_ext_key_or_default(transformer, "RATA$prefix", RAT)
-                RATB = get_ext_key_or_default(transformer, "RATB$prefix", RAT)
-                RATC = get_ext_key_or_default(transformer, "RATC$prefix", RAT)
-                RATA, RATB, RATC = (_psse_round_val(x) for x in (RATA, RATB, RATC))
+
+                if exporter.psse_version == :v35
+                    rates = [
+                        get_ext_key_or_default(transformer, "RATE$(prefix)1", RAT),
+                        get_ext_key_or_default(transformer, "RATE$(prefix)2", RAT),
+                        get_ext_key_or_default(transformer, "RATE$(prefix)3", RAT),
+                    ]
+                    for i in 4:12
+                        # In case RATE is not found default to 0.0
+                        push!(
+                            rates,
+                            get_ext_key_or_default(transformer, "RATE$(prefix)$i", 0.0),
+                        )
+                    end
+                    RATES = tuple(rates...)
+                else
+                    RATA = get_ext_key_or_default(transformer, "RATA$prefix", RAT)
+                    RATB = get_ext_key_or_default(transformer, "RATB$prefix", RAT)
+                    RATC = get_ext_key_or_default(transformer, "RATC$prefix", RAT)
+                    RATES = (RATA, RATB, RATC)
+                end
+
                 COD = get_ext_key_or_default(transformer, "COD$prefix")
                 CONT = get_ext_key_or_default(transformer, "CONT$prefix")
+                NOD = get_ext_key_or_default(transformer, "NOD$prefix")
                 RMA = get_ext_key_or_default(transformer, "RMA$prefix")
                 RMI = get_ext_key_or_default(transformer, "RMI$prefix")
                 VMA = get_ext_key_or_default(transformer, "VMA$prefix")
@@ -1579,36 +1886,64 @@ function write_to_buffers!(
                 CR = get_ext_key_or_default(transformer, "CR$prefix")
                 CX = get_ext_key_or_default(transformer, "CX$prefix")
                 CNXA = get_ext_key_or_default(transformer, "CNXA$prefix")
-                push!(
-                    winding_data,
-                    (
-                        WINDV, NOMV, ANG, RATA, RATB, RATC, COD, CONT,
-                        RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
-                    ),
-                )
+
+                if exporter.psse_version == :v35
+                    push!(
+                        winding_data,
+                        (
+                            WINDV, NOMV, ANG, RATES..., COD, CONT, NOD,
+                            RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
+                        ),
+                    )
+                else
+                    push!(
+                        winding_data,
+                        (
+                            WINDV, NOMV, ANG, RATES..., COD, CONT,
+                            RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
+                        ),
+                    )
+                end
             end
 
-            @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
-                MAG1, MAG2, NMETR, NAME, STAT)
-            fastprintdelim_psse_default_ownership(io)
-            fastprintln(io, VECGRP)
+            if exporter.psse_version == :v35
+                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+                    MAG1, MAG2, NMETR, NAME, STAT)
+                fastprintdelim_psse_default_ownership(io)
+                @fastprintdelim_unroll(io, true, VECGRP, ZCOD)
+            else
+                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+                    MAG1, MAG2, NMETR, NAME, STAT)
+                fastprintdelim_psse_default_ownership(io)
+                fastprintln(io, VECGRP)
+            end
 
             @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2, R2_3,
                 X2_3, SBAS2_3, R3_1, X3_1, SBAS3_1, VMSTAR, ANSTAR
             )
 
             for wd in winding_data
-                @fastprintdelim_unroll(io, true,
-                    wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
-                    wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17]
-                )
+                if exporter.psse_version == :v35
+                    @fastprintdelim_unroll(io, true,
+                        wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
+                        wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17],
+                        wd[18],
+                        wd[19], wd[20], wd[21], wd[22], wd[23], wd[24], wd[25], wd[26],
+                        wd[27]
+                    )
+                else
+                    @fastprintdelim_unroll(io, true,
+                        wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
+                        wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17]
+                    )
+                end
             end
         else
             error("Unsupported transformer bus tuple length: $(length(bus_tuple))")
         end
     end
 
-    end_group_33(io, md, exporter, "Transformer Data", true)
+    end_group(io, md, exporter, "Transformer Data", true)
     if !exporter.md_valid
         md["transformer_ckt_mapping"] = serialize_component_ids(transformer_ckt_mapping)
         md["transformer_3w_ckt_mapping"] =
@@ -1617,7 +1952,7 @@ function write_to_buffers!(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Two-Terminal DC Transmission Line Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Two-Terminal DC Transmission Line Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1625,7 +1960,23 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    # Add header comments for v35
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!  'NAME',   MDC,    RDC,     SETVL,    VSCHD,    VCMOD,    RCOMP,   DELTI,METER,   DCVMIN,CCCITMX,CCCACC",
+        )
+        println(
+            io,
+            "@! IPR,NBR,  ANMXR,  ANMNR,   RCR,    XCR,   EBASR,  TRR,    TAPR,   TMXR,   TMNR,   STPR,    ICR,NDR,   IFR,   ITR,'IDR', XCAPR",
+        )
+        println(
+            io,
+            "@! IPI,NBI,  ANMXI,  ANMNI,   RCI,    XCI,   EBASI,  TRI,    TAPI,   TMXI,   TMNI,   STPI,    ICI,NDI,   IFI,   ITI,'IDI', XCAPI",
+        )
+    end
 
     dclines_with_numbers = get!(exporter.components_cache, "dclines") do
         dclines = sort!(
@@ -1667,6 +2018,7 @@ function write_to_buffers!(
         DCVMIN = PSY.get_min_compounding_voltage(dcline)
         CCCITMX = get_ext_key_or_default(dcline, "CCCITMX")
         CCCACC = get_ext_key_or_default(dcline, "CCCACC")
+        # Handle RECTIFIER fields
         IPR = I
         NBR = PSY.get_rectifier_bridges(dcline)
         ANMXR = _psse_round_val(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).max))
@@ -1684,6 +2036,7 @@ function write_to_buffers!(
         TMNR = PSY.get_rectifier_tap_limits(dcline).min
         STPR = PSY.get_rectifier_tap_step(dcline)
         ICR = get_ext_key_or_default(dcline, "ICR")
+        NDR = get_ext_key_or_default(dcline, "NDR")
         IFR = get_ext_key_or_default(dcline, "IFR")
         ITR = get_ext_key_or_default(dcline, "ITR")
         IDR = get_ext_key_or_default(dcline, "IDR")
@@ -1691,6 +2044,7 @@ function write_to_buffers!(
             PSY.get_rectifier_capacitor_reactance(dcline) *
             PSY.get_rectifier_base_voltage(dcline)^2 /
             PSY.get_base_power(exporter.system)
+        # Handle INVERTER fields
         IPI = J
         NBI = PSY.get_inverter_bridges(dcline)
         ANMXI =
@@ -1710,6 +2064,7 @@ function write_to_buffers!(
         TMNI = PSY.get_inverter_tap_limits(dcline).min
         STPI = PSY.get_inverter_tap_step(dcline)
         ICI = get_ext_key_or_default(dcline, "ICI")
+        NDI = get_ext_key_or_default(dcline, "NDI")
         IFI = get_ext_key_or_default(dcline, "IFI")
         ITI = get_ext_key_or_default(dcline, "ITI")
         IDI = get_ext_key_or_default(dcline, "IDI")
@@ -1722,23 +2077,37 @@ function write_to_buffers!(
             NAME, MDC, RDC, SETVL, VSCHD, VCMOD, RCOMP, DELTI, METER, DCVMIN, CCCITMX)
         fastprintln(io, CCCACC)
 
-        @fastprintdelim_unroll(io, false,
-            IPR, NBR, ANMXR, ANMNR, RCR, XCR, EBASR, TRR, TAPR, TMXR, TMNR, STPR, ICR, IFR,
-            ITR, IDR)
-        fastprintln(io, XCAPR)
+        if exporter.psse_version == :v35
+            @fastprintdelim_unroll(io, false,
+                IPR, NBR, ANMXR, ANMNR, RCR, XCR, EBASR, TRR, TAPR, TMXR, TMNR, STPR, ICR,
+                NDR,
+                IFR, ITR, IDR)
+            fastprintln(io, XCAPR)
 
-        @fastprintdelim_unroll(io, false,
-            IPI, NBI, ANMXI, ANMNI, RCI, XCI, EBASI, TRI, TAPI, TMXI, TMNI, STPI, ICI, IFI,
-            ITI, IDI)
-        fastprintln(io, XCAPI)
+            @fastprintdelim_unroll(io, false,
+                IPI, NBI, ANMXI, ANMNI, RCI, XCI, EBASI, TRI, TAPI, TMXI, TMNI, STPI, ICI,
+                NDI,
+                IFI, ITI, IDI)
+            fastprintln(io, XCAPI)
+        else
+            @fastprintdelim_unroll(io, false,
+                IPR, NBR, ANMXR, ANMNR, RCR, XCR, EBASR, TRR, TAPR, TMXR, TMNR, STPR, ICR,
+                IFR, ITR, IDR)
+            fastprintln(io, XCAPR)
+
+            @fastprintdelim_unroll(io, false,
+                IPI, NBI, ANMXI, ANMNI, RCI, XCI, EBASI, TRI, TAPI, TMXI, TMNI, STPI, ICI,
+                IFI, ITI, IDI)
+            fastprintln(io, XCAPI)
+        end
     end
-    end_group_33(io, md, exporter, "Two-Terminal DC Transmission Line Data", true)
+    end_group(io, md, exporter, "Two-Terminal DC Transmission Line Data", true)
     exporter.md_valid ||
         (md["dcline_name_mapping"] = serialize_component_ids(dcline_name_mapping))
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Voltage Source Converter (VSC) DC Transmission Line Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Voltage Source Converter (VSC) DC Transmission Line Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1746,7 +2115,18 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!  'NAME',   MDC,  RDC,   O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
+        )
+        println(
+            io,
+            "@!IBUS,TYPE,MODE,  DCSET,  ACSET,  ALOSS,  BLOSS,MINLOSS,  SMAX,   IMAX,   PWF,     MAXQ,   MINQ, VSREG,NREG, RMPCT",
+        )
+    end
 
     vsc_lines_with_numbers = get!(exporter.components_cache, "vsc_lines") do
         vsc_lines = sort!(
@@ -1836,6 +2216,8 @@ function write_to_buffers!(
         MINQ1 =
             PSY.get_reactive_power_limits_from(vscline).min *
             PSY.get_base_power(exporter.system)
+        VSREG1 = get_ext_key_or_default(vscline, "VSREG_FROM", 0)
+        NREG1 = get_ext_key_or_default(vscline, "NREG_FROM", 0)
         REMOT1 = get_ext_key_or_default(vscline, "REMOT_FROM")
         RMPCT1 = get_ext_key_or_default(vscline, "RMPCT_FROM")
 
@@ -1881,23 +2263,37 @@ function write_to_buffers!(
         MINQ2 =
             PSY.get_reactive_power_limits_to(vscline).min *
             PSY.get_base_power(exporter.system)
+        VSREG2 = get_ext_key_or_default(vscline, "VSREG_TO", 0)
+        NREG2 = get_ext_key_or_default(vscline, "NREG_TO", 0)
         REMOT2 = get_ext_key_or_default(vscline, "REMOT_TO")
         RMPCT2 = get_ext_key_or_default(vscline, "RMPCT_TO")
 
         @fastprintdelim_unroll(io, false, NAME, MDC, RDC)
         fastprintln_psse_default_ownership(io)
 
-        @fastprintdelim_unroll(io, false,
-            IBUS1, TYPE1, MODE1, DCSET1, ACSET1, ALOSS1, BLOSS1, MINLOSS1, SMAX1, IMAX1,
-            PWF1, MAXQ1, MINQ1, REMOT1)
-        fastprintln(io, RMPCT1)
+        if exporter.psse_version == :v35
+            @fastprintdelim_unroll(io, false,
+                IBUS1, TYPE1, MODE1, DCSET1, ACSET1, ALOSS1, BLOSS1, MINLOSS1, SMAX1, IMAX1,
+                PWF1, MAXQ1, MINQ1, VSREG1, NREG1)
+            fastprintln(io, RMPCT1)
 
-        @fastprintdelim_unroll(io, false,
-            IBUS2, TYPE2, MODE2, DCSET2, ACSET2, ALOSS2, BLOSS2, MINLOSS2, SMAX2, IMAX2,
-            PWF2, MAXQ2, MINQ2, REMOT2)
-        fastprintln(io, RMPCT2)
+            @fastprintdelim_unroll(io, false,
+                IBUS2, TYPE2, MODE2, DCSET2, ACSET2, ALOSS2, BLOSS2, MINLOSS2, SMAX2, IMAX2,
+                PWF2, MAXQ2, MINQ2, VSREG2, NREG2)
+            fastprintln(io, RMPCT2)
+        else
+            @fastprintdelim_unroll(io, false,
+                IBUS1, TYPE1, MODE1, DCSET1, ACSET1, ALOSS1, BLOSS1, MINLOSS1, SMAX1, IMAX1,
+                PWF1, MAXQ1, MINQ1, REMOT1)
+            fastprintln(io, RMPCT1)
+
+            @fastprintdelim_unroll(io, false,
+                IBUS2, TYPE2, MODE2, DCSET2, ACSET2, ALOSS2, BLOSS2, MINLOSS2, SMAX2, IMAX2,
+                PWF2, MAXQ2, MINQ2, REMOT2)
+            fastprintln(io, RMPCT2)
+        end
     end
-    end_group_33(
+    end_group(
         io,
         md,
         exporter,
@@ -1909,7 +2305,7 @@ function write_to_buffers!(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Transformer Impedance Correction Tables
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Impedance Correction Tables
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1917,7 +2313,20 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    # Add header comments for v35
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!I,  T1,   Re(F1), Im(F1),   T2,   Re(F2), Im(F2),   T3,   Re(F3), Im(F3),   T4,   Re(F4), Im(F4),   T5,   Re(F5), Im(F5),   T6,   Re(F6), Im(F6)",
+        )
+        println(
+            io,
+            "@!    T7,   Re(F7), Im(F7),   T8,   Re(F8), Im(F8),   T9,   Re(F9), Im(F9),   T10, Re(F10),Im(F10),   T11, Re(F11),Im(F11),   T12, Re(F12),Im(F12)",
+        )
+        println(io, "@!      ...")
+    end
 
     icd_entries = get!(exporter.components_cache, "icd_entries") do
         sort(
@@ -1939,20 +2348,77 @@ function write_to_buffers!(
 
     for (I, icd) in unique_icd_entries
         points = PSY.get_points(PSY.get_impedance_correction_curve(icd))
-        fastprint(io, I)
-        fastprint(io, ", ")
-        for p in points
-            fastprintdelim(io, p.x)
-            fastprintdelim(io, p.y)
+
+        if exporter.psse_version == :v35
+            # v35 format supports complex impedance values with line breaks every 6 points
+            fastprint(io, " ")
+            fastprint(io, I)
+            point_count = 0
+            total_points = length(points)
+
+            for p in points
+                if point_count > 0 && point_count % 6 == 0
+                    # Start new line after every 6 points (6 T,Re,Im triplets per line)
+                    fastprintln(io, "")
+                    # Add leading spaces for continuation lines
+                    fastprint(io, "   ")
+                else
+                    fastprint(io, ", ")
+                end
+
+                # T value (x-coordinate)
+                fastprint(io, p.x)
+                fastprint(io, ", ")
+                if isa(p.y, Complex)
+                    fastprint(io, real(p.y))
+                    fastprint(io, ", ")
+                    fastprint(io, imag(p.y))
+                else
+                    fastprint(io, p.y)
+                    fastprint(io, ", ")
+                    # Im(F) defaults to 0.0 for real values
+                    fastprint(io, 0.0)
+                end
+
+                point_count += 1
+            end
+
+            # Only pad with zeros if we have more than 6 points and the last line is incomplete
+            if total_points > 6
+                remaining_slots = 6 - (point_count % 6)
+                if remaining_slots > 0 && remaining_slots < 6
+                    for i in 1:remaining_slots
+                        fastprint(io, ", ")
+                        fastprint(io, 0.0)  # T
+                        fastprint(io, ", ")
+                        fastprint(io, 0.0)  # Re(F)
+                        fastprint(io, ", ")
+                        fastprint(io, 0.0)  # Im(F)
+                    end
+                end
+            end
+
+            fastprintln(io, "")
+        else
+            fastprint(io, I)
+            fastprint(io, ", ")
+            for p in points
+                fastprintdelim(io, p.x)
+                if isa(p.y, Complex)
+                    fastprintdelim(io, real(p.y))
+                else
+                    fastprintdelim(io, p.y)
+                end
+            end
+            fastprintln(io, "")
         end
-        fastprintln(io, "")
     end
 
-    end_group_33(io, md, exporter, "Transformer Impedance Correction Tables", true)
+    end_group(io, md, exporter, "Transformer Impedance Correction Tables", true)
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Zone Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Zone Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1960,7 +2426,12 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(io, "@! I,   'ZONAME'")
+    end
+
     zone_mapping = md["zone_mapping"]
     zones = get!(exporter.components_cache, "zones") do
         sort!(
@@ -1976,11 +2447,11 @@ function write_to_buffers!(
 
         @fastprintdelim_unroll(io, true, I, ZONAME)
     end
-    end_group_33(io, md, exporter, "Zone Data", true)
+    end_group(io, md, exporter, "Zone Data", true)
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 FACTS Device Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 FACTS Device Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1988,7 +2459,14 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!  'NAME',         I,     J,MODE,PDES,   QDES,  VSET,   SHMX,   TRMX,   VTMN,   VTMX,   VSMX,    IMX,   LINX,   RMPCT,OWNER,  SET1,    SET2,VSREF, FCREG,NREG,   'MNAME'",
+        )
+    end
 
     facts_devices = get!(exporter.components_cache, "facts_devices") do
         sort!(
@@ -2029,22 +2507,31 @@ function write_to_buffers!(
         SET1 = get_ext_key_or_default(facts, "SET1")
         SET2 = get_ext_key_or_default(facts, "SET2")
         VSREF = get_ext_key_or_default(facts, "VSREF")
+        FCREG = get_ext_key_or_default(facts, "FCREG")
+        NREG = get_ext_key_or_default(facts, "NREG")
         REMOT = get_ext_key_or_default(facts, "REMOT")
-        MNAME = get_ext_key_or_default(facts, "MNAME")
+        MNAME = get_ext_key_or_default(facts, "MNAME", "")
         MNAME = _psse_quote_string(String(MNAME))
 
-        @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
-            VSET, SHMX, TRMX, VTMN, VTMX, VSMX, IMX, LINX, RMPCT, OWNER,
-            SET1, SET2, VSREF, REMOT)
-        fastprintln(io, MNAME)
+        if exporter.psse_version == :v35
+            @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
+                VSET, SHMX, TRMX, VTMN, VTMX, VSMX, IMX, LINX, RMPCT, OWNER,
+                SET1, SET2, VSREF, FCREG, NREG)
+            fastprintln(io, MNAME)
+        else
+            @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
+                VSET, SHMX, TRMX, VTMN, VTMX, VSMX, IMX, LINX, RMPCT, OWNER,
+                SET1, SET2, VSREF, REMOT)
+            fastprintln(io, MNAME)
+        end
     end
-    end_group_33(io, md, exporter, "FACTS Device Data", true)
+    end_group(io, md, exporter, "FACTS Device Data", true)
     exporter.md_valid ||
         (md["facts_name_mapping"] = serialize_component_ids(facts_name_mapping))
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Switched Shunt Data
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Switched Shunt Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -2052,7 +2539,14 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
+
+    if exporter.psse_version == :v35
+        println(
+            io,
+            "@!   I,'ID',MODSW,ADJM,ST, VSWHI,  VSWLO, SWREG,NREG, RMPCT,   'RMIDNT',     BINIT,S1,N1,    B1, S2,N2,    B2, S3,N3,    B3, S4,N4,    B4, S5,N5,    B5, S6,N6,    B6, S7,N7,    B7, S8,N8,    B8",
+        )
+    end
 
     switched_shunts = get!(exporter.components_cache, "switched_shunts") do
         sort!(
@@ -2068,15 +2562,37 @@ function write_to_buffers!(
                 singles_to_1 = true,
             )
         end
+
+    # Track bus numbers to generate ID field for v35
+    bus_id_counters = Dict{Int, Int}()
+
     for shunt in switched_shunts
         sienna_bus_number = PSY.get_number(PSY.get_bus(shunt))
         I = md["bus_number_mapping"][sienna_bus_number]
+
+        # Add ID field for v35 (handle multiple shunts on same bus)
+        if exporter.psse_version == :v35
+            bus_id_counters[I] = get(bus_id_counters, I, 0) + 1
+            ID = _psse_quote_string(string(bus_id_counters[I]))
+        end
+
         MODSW = get_ext_key_or_default(shunt, "MODSW")
         ADJM = get_ext_key_or_default(shunt, "ADJM")
         STAT = PSY.get_available(shunt) ? 1 : 0
         VSWHI = PSY.get_admittance_limits(shunt).max
         VSWLO = PSY.get_admittance_limits(shunt).min
-        SWREM = get_ext_key_or_default(shunt, "SWREM")
+
+        if exporter.psse_version == :v35
+            SWREG = get_ext_key_or_default(
+                shunt,
+                "SWREG",
+                get_ext_key_or_default(shunt, "SWREM"),
+            )
+            NREG = get_ext_key_or_default(shunt, "NREG")
+        else
+            SWREM = get_ext_key_or_default(shunt, "SWREM")
+        end
+
         RMPCT = get_ext_key_or_default(shunt, "RMPCT")
         RMIDNT = get_ext_key_or_default(shunt, "RMIDNT")
         RMIDNT = _psse_quote_string(String(RMIDNT))
@@ -2086,28 +2602,66 @@ function write_to_buffers!(
         steps = PSY.get_number_of_steps(shunt)
         increases = PSY.get_Y_increase(shunt)
 
-        N_vals = []
-        B_vals = []
-        for (N, B) in zip(steps, increases)
-            push!(N_vals, N)
-            push!(B_vals, _psse_round_val(imag(B) * PSY.get_base_power(exporter.system)))
+        if exporter.psse_version == :v35
+            # v35 format has S, N, B triplets
+            S_vals = []
+            N_vals = []
+            B_vals = []
+
+            for (N, B) in zip(steps, increases)
+                push!(S_vals, get_ext_key_or_default(shunt, "S$(length(S_vals)+1)", 1))
+                push!(N_vals, N)
+                push!(
+                    B_vals,
+                    _psse_round_val(imag(B) * PSY.get_base_power(exporter.system)),
+                )
+            end
+
+            while length(S_vals) < 8
+                push!(S_vals, PSSE_DEFAULT)
+                push!(N_vals, PSSE_DEFAULT)
+                push!(B_vals, PSSE_DEFAULT)
+            end
+
+            S_vars = [get(S_vals, i, PSSE_DEFAULT) for i in 1:8]
+            N_vars = [get(N_vals, i, PSSE_DEFAULT) for i in 1:8]
+            B_vars = [get(B_vals, i, PSSE_DEFAULT) for i in 1:8]
+
+            @fastprintdelim_unroll(io, true, I, ID, MODSW, ADJM, STAT,
+                VSWHI, VSWLO, SWREG, NREG, RMPCT, RMIDNT, BINIT,
+                S_vars[1], N_vars[1], B_vars[1], S_vars[2], N_vars[2], B_vars[2],
+                S_vars[3], N_vars[3], B_vars[3], S_vars[4], N_vars[4], B_vars[4],
+                S_vars[5], N_vars[5], B_vars[5], S_vars[6], N_vars[6], B_vars[6],
+                S_vars[7], N_vars[7], B_vars[7], S_vars[8], N_vars[8], B_vars[8])
+        else
+            # v33 format has N, B pairs
+            N_vals = []
+            B_vals = []
+
+            for (N, B) in zip(steps, increases)
+                push!(N_vals, N)
+                push!(
+                    B_vals,
+                    _psse_round_val(imag(B) * PSY.get_base_power(exporter.system)),
+                )
+            end
+
+            while length(N_vals) < 8
+                push!(N_vals, PSSE_DEFAULT)
+                push!(B_vals, PSSE_DEFAULT)
+            end
+
+            N_vars = [get(N_vals, i, PSSE_DEFAULT) for i in 1:8]
+            B_vars = [get(B_vals, i, PSSE_DEFAULT) for i in 1:8]
+
+            @fastprintdelim_unroll(io, true, I, MODSW, ADJM, STAT,
+                VSWHI, VSWLO, SWREM, RMPCT, RMIDNT, BINIT,
+                N_vars[1], B_vars[1], N_vars[2], B_vars[2], N_vars[3], B_vars[3],
+                N_vars[4], B_vars[4], N_vars[5], B_vars[5], N_vars[6], B_vars[6],
+                N_vars[7], B_vars[7], N_vars[8], B_vars[8])
         end
-
-        while length(N_vals) < 8
-            push!(N_vals, PSSE_DEFAULT)
-            push!(B_vals, PSSE_DEFAULT)
-        end
-
-        N_vars = [get(N_vals, i, PSSE_DEFAULT) for i in 1:8]
-        B_vars = [get(B_vals, i, PSSE_DEFAULT) for i in 1:8]
-
-        @fastprintdelim_unroll(io, true, I, MODSW, ADJM, STAT,
-            VSWHI, VSWLO, SWREM, RMPCT, RMIDNT, BINIT,
-            N_vars[1], B_vars[1], N_vars[2], B_vars[2], N_vars[3], B_vars[3],
-            N_vars[4], B_vars[4], N_vars[5], B_vars[5], N_vars[6], B_vars[6],
-            N_vars[7], B_vars[7], N_vars[8], B_vars[8])
     end
-    end_group_33(io, md, exporter, "Switched Shunt Data", true)
+    end_group(io, md, exporter, "Switched Shunt Data", true)
     exporter.md_valid ||
         (
             md["switched_shunt_name_mapping"] =
@@ -2124,7 +2678,7 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_33(exporter)
+    check_supported_version(exporter)
     println(io, "Q")  # End of file
     exporter.md_valid || (md["record_groups"]["Q Record"] = true)
 end
@@ -2135,8 +2689,8 @@ function _write_skip_group(
     exporter::PSSEExporter,
     this_section_name::String,
 )
-    check_33(exporter)
-    end_group_33(io, md, exporter, this_section_name, false)
+    check_supported_version(exporter)
+    end_group(io, md, exporter, this_section_name, false)
     exporter.md_valid || (md["record_groups"][this_section_name] = false)
 end
 
@@ -2211,8 +2765,9 @@ function write_export(
     end
 
     with_units_base(exporter.system, PSY.UnitSystem.SYSTEM_BASE) do
+        groups_to_process = update_version_group(exporter.psse_version)
         # Each of these corresponds to a group of records in the PSS/E spec
-        for group_name in PSSE_GROUPS_33
+        for group_name in groups_to_process
             @debug "Writing export for group $group_name"
             write_to_buffers!(exporter, Val{Symbol(group_name)}())
         end
