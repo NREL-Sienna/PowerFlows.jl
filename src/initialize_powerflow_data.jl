@@ -7,9 +7,6 @@ function initialize_powerflow_data!(
     sys::System;
     correct_bustypes = false,
 )
-    # basically a copy-paste of make_powerflowdata from common.jl
-    # but now that we already have a PowerFlowData object, we don't need to pass
-    # a boatload of arguments, and we can use existing getters for the maps and lookups.
     nrd = get_network_reduction_data(data)
     reverse_bus_search_map = PNM.get_reverse_bus_search_map(nrd)
     bus_reduction_map = PNM.get_bus_reduction_map(nrd)

@@ -10,14 +10,15 @@ Base.show(mat::FixedStructureCHOLMOD) =
 
 function FixedStructureCHOLMOD(A::SparseMatrixCSC{T, I}) where {T <: VTypes, I <: ITypes}
     cholmod_mat = SparseArrays.CHOLMOD.Sparse(LinearAlgebra.Symmetric(A))
-
-    chol = unsafe_load(cholmod_mat.ptr)
-    x_ptr = chol.x
+    SparseArrays.CHOLMOD.check_sparse(cholmod_mat) ||
+        throw(ArgumentError("Invalid CHOLMOD sparse matrix"))
+    chol = unsafe_load(SparseArrays.CHOLMOD.typedpointer(cholmod_mat))
+    Bool(chol.packed) || throw(ArgumentError("Unpacked CHOLMOD matrices not supported"))
     # max capacity may not be the same as the number of nonzeros:
     # instead of chol.nzmax, we want chol.p[chol.ncol]
-    # (what about packed matrices, though?)
     nonzero_count = unsafe_load(Ptr{I}(chol.p), chol.ncol + 1)
-    values = unsafe_wrap(Vector{T}, Ptr{T}(x_ptr), nonzero_count)
+    # know chol.x != C_NULL because of check_sparse above.
+    values = unsafe_wrap(Vector{T}, Ptr{T}(chol.x), nonzero_count; own = false)
     return FixedStructureCHOLMOD(cholmod_mat, values)
 end
 
@@ -29,7 +30,8 @@ function set_values!(
     mat::FixedStructureCHOLMOD{T, I},
     new_vals::AbstractVector{T},
 ) where {T <: VTypes, I <: ITypes}
-    @assert length(new_vals) == length(mat._values) "New values must be same length as allocated storage!"
+    length(new_vals) == length(mat._values) ||
+        throw(ArgumentError("Allocated storage of size "))
     copyto!(mat._values, new_vals)
     return mat
 end

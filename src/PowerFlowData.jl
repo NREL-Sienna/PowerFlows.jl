@@ -451,7 +451,7 @@ function PowerFlowData(
     neighbors = _calculate_neighbors(power_network_matrix)
 
     if get_robust_power_flow(pf)
-        aux_network_matrix = PNM.ABA_Matrix(sys)
+        aux_network_matrix = PNM.ABA_Matrix(sys; network_reductions = network_reductions)
     else
         aux_network_matrix = nothing
     end

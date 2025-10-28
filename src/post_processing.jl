@@ -12,13 +12,12 @@ function _calculate_fixed_admittance_powers(
     time_step::Int,
 )
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
-    reverse_bus_search_map = PNM.get_reverse_bus_search_map(nrd)
     bus_lookup = get_bus_lookup(data)
 
     busIxToFAPower = Dict{Int64, Tuple{Float64, Float64}}()
     for l in PSY.get_available_components(PSY.FixedAdmittance, sys)
         b = PSY.get_bus(l)
-        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(b))
+        bus_ix = PNM.get_bus_index(PSY.get_number(b), bus_lookup, nrd)
         Vm_squared =
             if get_bus_type(data)[bus_ix, time_step] == PSY.ACBusTypes.PQ
                 get_bus_magnitude(data)[bus_ix, time_step]^2
@@ -438,7 +437,6 @@ function set_branch_flows_for_dict!(
     data::ACPowerFlowData,
     time_step::Int,
 )
-    # if these asserts trigger, we may need to check for reverse(arc) too.
     arc_lookup = get_arc_lookup(data)
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     for (arc, br) in d

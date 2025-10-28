@@ -27,6 +27,32 @@ function set_voltage!(bus::PSY.ACBus, V::Complex)
     return
 end
 
+"""Return set of all bus numbers that must be PV: i.e. have an available generator."""
+function must_be_PV(sys::System)
+    gen_buses = Set{Int}()
+    for gen in PSY.get_available_components(PSY.Generator, sys)
+        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
+    end
+    # PSSe counts buses with switched shunts as PV, so we do the same here.
+    for gen in PSY.get_available_components(PSY.SwitchedAdmittance, sys)
+        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
+    end
+    for gen in PSY.get_available_components(PSY.SynchronousCondenser, sys)
+        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
+    end
+    return gen_buses
+end
+
+"""Return set of all bus numbers that can be PV: i.e. have an available generator,
+or certain voltage regulation devices."""
+function can_be_PV(sys::System)
+    source_buses = must_be_PV(sys)
+    for source in PSY.get_available_components(PSY.Source, sys)
+        push!(source_buses, PSY.get_number(PSY.get_bus(source)))
+    end
+    return source_buses
+end
+
 get_complex_voltage(bus::PSY.ACBus) = PSY.get_magnitude(bus) * exp(1im * PSY.get_angle(bus))
 
 function calculate_segment_flow!(

@@ -83,15 +83,15 @@ function HomotopyHessian(data::ACPowerFlowData, time_step::Int)
     return HomotopyHessian(data, pfResidual, J, PQ_V_mags, zeros(2 * nbuses), Hv)
 end
 
-function _create_hessian_matrix_structure(data::ACPowerFlowData, time_step::Int64)
+function _create_hessian_matrix_structure(data::ACPowerFlowData, ::Int64)
     rows = Int32[]      # I
     columns = Int32[]   # J
     values = Float64[]  # V
 
     # an over-estimate: I want ordered pairs of vertices that are 2 or fewer
     # steps apart, whereas this counts directed paths of 2 edges.
-    # (subtracting the number of non-degenerate quadrilaterals would give a better estimate)
-    numEdgePairs = sum(x -> length(x)^2, get_arc_lookup(data); init = 0.0)
+    numEdgePairs = sum(x -> (length(x) - 1)^2, get_neighbor(data); init = 0.0)
+    numEdgePairs += length(get_arc_axis(data))
     sizehint!(rows, 4 * numEdgePairs)
     sizehint!(columns, 4 * numEdgePairs)
     sizehint!(values, 4 * numEdgePairs)
