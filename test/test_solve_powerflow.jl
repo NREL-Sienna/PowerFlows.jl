@@ -157,8 +157,6 @@ end
     end
 end
 
-# FIXME currently errors: write_powerflow_solution! relies on all PV buses in
-# the system having available generators.
 @testset "AC Test 240 Case PSS/e results" begin
     file = joinpath(
         TEST_FILES_DIR,
@@ -174,7 +172,7 @@ end
     pf_bus_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_bus_results.csv")
     pf_gen_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_gen_results.csv")
 
-    # FIXME: remove skip_redistribution once redistribution is working properly.
+    # remove skip_redistribution once redistribution is working properly.
     pf = ACPowerFlow(; skip_redistribution = true)
 
     pf1 = solve_powerflow!(pf, system; correct_bustypes = true)
@@ -185,9 +183,9 @@ end
     p_diff, q_diff, names = psse_gen_results_compare(pf_gen_result_file, system)
 
     base_power = get_base_power(system)
-    @test norm(v_diff, Inf) < DIFF_INF_TOLERANCE
+    @test norm(v_diff, Inf) < DIFF_INF_TOLERANCE # FIXME failing badly
     @test norm(v_diff, 2) / length(v_diff) < DIFF_L2_TOLERANCE
-    @test norm(angle_diff, Inf) < DIFF_INF_TOLERANCE
+    @test norm(angle_diff, Inf) < DIFF_INF_TOLERANCE # FIXME failing badly.
     @test norm(angle_diff, 2) / length(angle_diff) < DIFF_L2_TOLERANCE
     @test norm(p_diff, Inf) < DIFF_INF_TOLERANCE * base_power
     @test norm(p_diff, 2) / length(p_diff) < DIFF_L2_TOLERANCE

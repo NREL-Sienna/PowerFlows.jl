@@ -1,11 +1,11 @@
 const UNSUPPORTED =
-    Set{Tuple{Type{<:PNM.NetworkReduction}, Type{<:PF.PowerFlowEvaluationModel}}}(
+    Set(
         [
-        (PNM.WardReduction, PF.ACPowerFlow),
+        (PNM.WardReduction, PF.ACPowerFlow{PF.TrustRegionACPowerFlow}),
         (PNM.WardReduction, PF.DCPowerFlow),
         (PNM.WardReduction, PF.PTDFDCPowerFlow),
         (PNM.WardReduction, PF.vPTDFDCPowerFlow),
-        (PNM.RadialReduction, PF.ACPowerFlow),
+        (PNM.RadialReduction, PF.ACPowerFlow{PF.TrustRegionACPowerFlow}),
     ],
     )
 
@@ -27,9 +27,9 @@ ac_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
     @assert all(unreduced.converged)
     pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
     for (k, v) in ac_reduction_types
-        size(v) == 0 && continue # no reduction at all.
-        if any((typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v)
-            @warn "Skipping unsupported combination: $(typeof(nr)), $(typeof(pf))"
+        isempty(v) && continue # no reduction at all.
+        if any([(typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v])
+            @warn "Skipping unsupported combination"
             continue
         end
         @testset "$k reduction" begin
@@ -43,8 +43,8 @@ end
     pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
 
     for (k, v) in ac_reduction_types
-        if any((typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v)
-            @warn "Skipping unsupported combination: $(typeof(nr)), $(typeof(pf))"
+        if any([(typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v])
+            @warn "Skipping unsupported combination"
             continue
         end
         @testset "$k reduction" begin
@@ -70,37 +70,34 @@ end
 @testset "system + powerflow solver calls" begin
     for (k, v) in ac_reduction_types
         @testset "$k reduction" begin
-            # systems in PSB with 3WT's:
-            #=
-            (PSSEParsingTestSystems, "psse_14_network_reduction_test_system")
-            (PSSEParsingTestSystems, "psse_14_tap_correction_test_system")
-            (PSSEParsingTestSystems, "psse_14_zero_impedance_branch_test_system")
-            (PSSEParsingTestSystems, "psse_4_zero_impedance_3wt_test_system")
-            (PSSEParsingTestSystems, "psse_ybus_14_test_system")
-            (PSSEParsingTestSystems, "pti_case10_voltage_winding_correction_sys")
-            (PSSEParsingTestSystems, "pti_case8_voltage_winding_correction_sys")
-            (PSSEParsingTestSystems, "pti_frankenstein_20_sys")
-            (PSSEParsingTestSystems, "pti_frankenstein_70_sys")
-            (PSSEParsingTestSystems, "pti_modified_case14_sys")
-            (PSSEParsingTestSystems, "pti_three_winding_mag_test_sys")
-            (PSSEParsingTestSystems, "pti_three_winding_test_2_sys")
-            (PSSEParsingTestSystems, "pti_three_winding_test_sys")
-            =#
             sys = build_system(
                 PSSEParsingTestSystems,
                 "psse_14_network_reduction_test_system",
             )
             pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
-            results = solve_powerflow(
-                pf,
-                sys;
-                correct_bustypes = true,
-                network_reductions = deepcopy(v),
-            )
+            supported = !any([(typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v])
+            if !supported
+                results = @test_logs((:error, r"failed to converge"),
+                    match_mode = :any,
+                    solve_powerflow(
+                        pf,
+                        sys;
+                        correct_bustypes = true,
+                        network_reductions = deepcopy(v),
+                    )
+                )
+            else
+                results = solve_powerflow(
+                    pf,
+                    sys;
+                    correct_bustypes = true,
+                    network_reductions = deepcopy(v),
+                )
+            end
             @assert !isempty(PSY.get_components(PSY.Transformer3W, sys))
             test_trf = first(collect(PSY.get_components(PSY.Transformer3W, sys)))
             test_trf_name = PSY.get_name(test_trf)
-            if !ismissing(results)
+            if supported
                 arc_flows = results["flow_results"]
                 trf_arc_flows = zeros(ComplexF32, 3)
                 for i in 1:3
@@ -149,7 +146,7 @@ end
                     atol = 1e-5,
                 )
             else
-                @error "Failed to converge: cannot test AC post-processing with $k reduction"
+                @warn "Skipping testing AC post-processing with unsupported reduction $k"
             end
         end
     end

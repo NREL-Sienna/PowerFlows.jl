@@ -171,7 +171,7 @@ function _get_reactive_power_bound!(
 )
     for source in PSY.get_available_components(PSY.StaticInjection, sys)
         isa(source, PSY.ElectricLoad) && continue
-        isa(source, PSY.FACTSControlDevice) && continue # FIXME: FACTS devices.
+        isa(source, PSY.FACTSControlDevice) && continue # FACTS devices.
         bus = PSY.get_bus(source)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         reactive_power_limits = get_reactive_power_limits_for_power_flow(source)
@@ -233,8 +233,6 @@ function _initialize_bus_data!(
         temp_bus_types[bus_no] = bt
     end
 
-    # FIXME handle combining buses more intelligently.
-    # perhaps move some of this logic into PNM
     for (bus_no, reduced_bus_nos) in bus_reduction_map
         # pick the "highest" bus type among the reduced buses, where REF > PV > PQ.
         corrected_bus_types =

@@ -1,6 +1,7 @@
 
 @testset "test_loss_factors_case_14" begin
     for ACSolver in AC_SOLVERS_TO_TEST
+        # FIXME failing for LevenbergMarquardtACPowerFlow. investigate.
         @testset "AC Solver: $(ACSolver)" begin
             sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
 

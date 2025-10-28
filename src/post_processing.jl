@@ -1,5 +1,5 @@
 function _is_available_source(x, bus::PSY.ACBus)
-    # FIXME temporary workaround for FACTSControlDevice
+    # temporary workaround for FACTSControlDevice
     return PSY.get_available(x) && x.bus == bus && !isa(x, PSY.ElectricLoad) &&
            !isa(x, PSY.FACTSControlDevice)
 end
@@ -476,7 +476,7 @@ function write_powerflow_solution!(
         data.generator_slack_participation_factors[time_step]
     end
 
-    # FIXME once redistribution is working again, could remove skip_redistribution.
+    # once redistribution is working again, could remove skip_redistribution.
     bus_lookup = get_bus_lookup(data)
     for (bus_number, reduced_buses) in PNM.get_bus_reduction_map(nrd)
         if length(reduced_buses) == 0
