@@ -236,10 +236,8 @@ end
                 im * PSY.get_reactive_power_flow(br)
         end
         if reversed
-            @show abs(net_from_to_from - total_flow)
             @test isapprox(net_from_to_from, total_flow; atol = 1e-3)
         else
-            @show abs(net_flow_from_to - total_flow)
             @test isapprox(net_flow_from_to, total_flow; atol = 1e-3)
         end
     end
