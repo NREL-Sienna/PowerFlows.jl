@@ -4,19 +4,27 @@ function set_power_flow!(br::PSY.ACTransmission, flow::Complex)
     return
 end
 
-function set_power_flow!(tp::Tuple{PSY.ThreeWindingTransformer, Int}, flow::Complex)
-    (trf, winding) = tp
-    if winding == 1
+function set_power_flow!(br::PNM.BranchesParallel, flow::Complex)
+    for segment in br
+        weight = PNM.compute_parallel_multiplier(br, PSY.get_name(segment))
+        set_power_flow!(segment, flow * weight)
+    end
+    return
+end
+
+function set_power_flow!(winding::PNM.ThreeWindingTransformerWinding, flow::Complex)
+    (trf, num) = (PNM.get_transformer(winding), PNM.get_winding_number(winding))
+    if num == 1
         PSY.set_active_power_flow_primary!(trf, real(flow))
         PSY.set_reactive_power_flow_primary!(trf, imag(flow))
-    elseif winding == 2
+    elseif num == 2
         PSY.set_active_power_flow_secondary!(trf, real(flow))
         PSY.set_reactive_power_flow_secondary!(trf, imag(flow))
-    elseif winding == 3
+    elseif num == 3
         PSY.set_active_power_flow_tertiary!(trf, real(flow))
         PSY.set_reactive_power_flow_tertiary!(trf, imag(flow))
     else
-        error("Invalid winding number: $winding")
+        error("Invalid winding number: $num")
     end
     return
 end
@@ -55,25 +63,12 @@ end
 
 get_complex_voltage(bus::PSY.ACBus) = PSY.get_magnitude(bus) * exp(1im * PSY.get_angle(bus))
 
-function calculate_segment_flow!(
-    segment::Union{PSY.ACTransmission, Tuple{PSY.ThreeWindingTransformer, Int}},
+function get_segment_flow(
+    segment::PSY.ACTransmission,
     V_from::ComplexF64,
     V_to::ComplexF64,
 )
     (y11, y12, _, _) = PNM.ybus_branch_entries(segment)
     I_from = y11 * V_from + y12 * V_to
-    S_from = V_from * conj(I_from)
-    set_power_flow!(segment, S_from)
-    return
-end
-
-function calculate_segment_flow!(
-    segment::Set{PSY.ACTransmission},
-    V_from::ComplexF64,
-    V_to::ComplexF64,
-)
-    for br in segment
-        calculate_segment_flow!(br, V_from, V_to)
-    end
-    return
+    return V_from * conj(I_from)
 end

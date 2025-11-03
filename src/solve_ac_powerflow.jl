@@ -151,8 +151,8 @@ function solve_powerflow!(
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
 
-    Yft = data.power_network_matrix.branch_admittance_from_to
-    Ytf = data.power_network_matrix.branch_admittance_to_from
+    Yft = data.power_network_matrix.arc_admittance_from_to
+    Ytf = data.power_network_matrix.arc_admittance_to_from
     @assert PNM.get_bus_lookup(Yft) == get_bus_lookup(data)
     arcs = PNM.get_arc_axis(Yft)
     @assert arcs == PNM.get_arc_axis(Ytf)
