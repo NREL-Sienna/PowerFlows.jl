@@ -477,10 +477,10 @@ end
     write_export(exporter, "basic4"; overwrite = true)
     reread_sys2 = read_system_with_metadata(joinpath(export_location, "basic4"))
     @test compare_systems_loosely(sys2, reread_sys2)
-    @test_logs((:error, r"values do not match"), #FIXME failing.
+    @test_logs((:error, r"values do not match"),
         match_mode = :any, min_level = Logging.Error,
         compare_systems_loosely(sys, reread_sys2))
-    test_power_flow(pf, sys2, reread_sys2; exclude_reactive_flow = true) # FIXME failing.
+    test_power_flow(pf, sys2, reread_sys2; exclude_reactive_flow = true)
 end
 
 # @testset "PSSE Exporter with psse_RTS_GMLC_sys.raw, v33" for (ACSolver, folder_name) in (
