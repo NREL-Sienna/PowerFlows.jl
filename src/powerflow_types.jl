@@ -71,6 +71,31 @@ ACPowerFlow(
     skip_redistribution,
 )
 
+function ACPowerFlow{LevenbergMarquardtACPowerFlow}(
+    check_reactive_power_limits,
+    exporter,
+    calculate_loss_factors,
+    calculate_voltage_stability_factors,
+    generator_slack_participation_factors,
+    enhanced_flat_start,
+    robust_power_flow,
+    skip_redistribution,
+)
+    if calculate_loss_factors
+        error("Loss factor calculation is not supported by the Levenberg-Marquardt solver.")
+    end
+    return ACPowerFlow{LevenbergMarquardtACPowerFlow}(
+        check_reactive_power_limits,
+        exporter,
+        calculate_loss_factors,
+        calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
+        enhanced_flat_start,
+        robust_power_flow,
+        skip_redistribution,
+    )
+end
+
 get_enhanced_flat_start(pf::ACPowerFlow) = pf.enhanced_flat_start
 get_robust_power_flow(pf::ACPowerFlow) = pf.robust_power_flow
 get_slack_participation_factors(pf::ACPowerFlow) = pf.generator_slack_participation_factors
