@@ -46,7 +46,7 @@ ACPowerFlow{ACSolver}(;
         skip_redistribution,
     )
 
-ACPowerFlow(
+function ACPowerFlow(
     ACSolver::Type{<:ACPowerFlowSolverType} = NewtonRaphsonACPowerFlow;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
@@ -60,30 +60,11 @@ ACPowerFlow(
     enhanced_flat_start::Bool = true,
     robust_power_flow::Bool = false,
     skip_redistribution::Bool = false,
-) = ACPowerFlow{ACSolver}(
-    check_reactive_power_limits,
-    exporter,
-    calculate_loss_factors,
-    calculate_voltage_stability_factors,
-    generator_slack_participation_factors,
-    enhanced_flat_start,
-    robust_power_flow,
-    skip_redistribution,
 )
-
-function ACPowerFlow{LevenbergMarquardtACPowerFlow}(
-    check_reactive_power_limits,
-    exporter,
-    calculate_loss_factors,
-    calculate_voltage_stability_factors,
-    generator_slack_participation_factors,
-    enhanced_flat_start,
-    robust_power_flow,
-    skip_redistribution,
-)
-    if calculate_loss_factors
+    if calculate_loss_factors && ACSolver == LevenbergMarquardtACPowerFlow
         error("Loss factor calculation is not supported by the Levenberg-Marquardt solver.")
     end
+
     return ACPowerFlow{LevenbergMarquardtACPowerFlow}(
         check_reactive_power_limits,
         exporter,
