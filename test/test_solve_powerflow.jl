@@ -157,8 +157,6 @@ end
     end
 end
 
-# FIXME currently errors: write_powerflow_solution! relies on all PV buses in
-# the system having available generators.
 @testset "AC Test 240 Case PSS/e results" begin
     file = joinpath(
         TEST_FILES_DIR,
@@ -174,7 +172,7 @@ end
     pf_bus_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_bus_results.csv")
     pf_gen_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_gen_results.csv")
 
-    # FIXME: remove skip_redistribution once redistribution is working properly.
+    # remove skip_redistribution once redistribution is working properly.
     pf = ACPowerFlow(; skip_redistribution = true)
 
     pf1 = solve_powerflow!(pf, system; correct_bustypes = true)
@@ -185,9 +183,9 @@ end
     p_diff, q_diff, names = psse_gen_results_compare(pf_gen_result_file, system)
 
     base_power = get_base_power(system)
-    @test norm(v_diff, Inf) < DIFF_INF_TOLERANCE
+    @test norm(v_diff, Inf) < DIFF_INF_TOLERANCE # FIXME failing badly
     @test norm(v_diff, 2) / length(v_diff) < DIFF_L2_TOLERANCE
-    @test norm(angle_diff, Inf) < DIFF_INF_TOLERANCE
+    @test norm(angle_diff, Inf) < DIFF_INF_TOLERANCE # FIXME failing badly.
     @test norm(angle_diff, 2) / length(angle_diff) < DIFF_L2_TOLERANCE
     @test norm(p_diff, Inf) < DIFF_INF_TOLERANCE * base_power
     @test norm(p_diff, 2) / length(p_diff) < DIFF_L2_TOLERANCE
@@ -454,17 +452,36 @@ end
     @test norm(sienna_df[!, "generator_q"] .- matpower_df[!, "generator_q"], Inf) < 1e-3
 end
 
-#=
-# Unfortunately, we correct the voltage magnitude to something sensible before running the 
-# solver, so testing this isn't straightforward.
-@testset "voltage validation" begin
+if PF.OVERRIDE_x0
+    @testset "voltage validation" begin
+        sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+        pf = ACPowerFlow{TrustRegionACPowerFlow}()
+        data = PowerFlowData(pf, sys; correct_bustypes = true)
+        x0 = PF.calculate_x0(data, 1)
+        for (i, bt) in enumerate(PF.get_bus_type(data))
+            if bt == PSY.ACBusTypes.PQ
+                x0[2 * i - 1] = 2.0 # set voltage magnitude of PQ bus to 2.0 p.u.
+            end
+        end
+        @test_logs (:warn, r".*voltage magnitudes outside of range.*") match_mode = :any solve_powerflow!(
+            data;
+            pf = pf,
+            x0 = x0,
+        )
+    end
+end
+
+@testset "enhanced flat start" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
-    pf = ACPowerFlow{TrustRegionACPowerFlow}()
+    pf = ACPowerFlow{TrustRegionACPowerFlow}(; enhanced_flat_start = true)
     data = PowerFlowData(pf, sys; correct_bustypes = true)
-    solve_powerflow!(data; pf = pf)
-    data.bus_magnitude[1, 1] = 2.0
-    @test_logs (:warn, r".*voltage magnitudes outside of range.*") match_mode = :any solve_powerflow!(data; pf = pf)
-end=#
+    x0 = PF.calculate_x0(data, 1)
+    x0_enhanced = PF._enhanced_flat_start(x0, data, 1)
+    solve_powerflow!(
+        data;
+        pf = pf,
+    )
+end
 
 @testset "Test ZIP loads: constant current" begin
     sys = System(100.0)

@@ -94,18 +94,9 @@ function _enhanced_flat_start(
     bus_lookup = get_bus_lookup(data)
     for subnetwork_bus_axes in values(data.power_network_matrix.subnetwork_axes)
         subnetwork_indices = [bus_lookup[ix] for ix in subnetwork_bus_axes[1]]
-        ref_bus = [
-            i for
-            i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.REF
-        ]
-        pv = [
-            i for
-            i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.PV
-        ]
-        pq = [
-            i for
-            i in subnetwork_indices if data.bus_type[i, time_step] == PSY.ACBusTypes.PQ
-        ]
+        ref_bus = subnetwork_indices[data.bus_type[:, time_step] .== (PSY.ACBusTypes.REF,)]
+        pv = subnetwork_indices[data.bus_type[:, time_step] .== (PSY.ACBusTypes.PV,)]
+        pq = subnetwork_indices[data.bus_type[:, time_step] .== (PSY.ACBusTypes.PQ,)]
         ref_bus_angle = sum(data.bus_angles[ref_bus, time_step]) / length(ref_bus)
         if ref_bus_angle != 0.0
             newx0[2 .* vcat(pv, pq)] .= ref_bus_angle

@@ -171,11 +171,12 @@ function _get_reactive_power_bound!(
 )
     for source in PSY.get_available_components(PSY.StaticInjection, sys)
         isa(source, PSY.ElectricLoad) && continue
-        isa(source, PSY.FACTSControlDevice) && continue # FIXME: FACTS devices.
+        isa(source, PSY.FACTSControlDevice) && continue # FACTS devices.
         bus = PSY.get_bus(source)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         reactive_power_limits = get_reactive_power_limits_for_power_flow(source)
-        if reactive_power_limits !== nothing
+        if !isnothing(reactive_power_limits) && !isinf(reactive_power_limits.min) &&
+           !isinf(reactive_power_limits.max)
             bus_reactivepower_bounds[bus_ix] = (
                 bus_reactivepower_bounds[bus_ix][1] + min(0, reactive_power_limits.min),
                 bus_reactivepower_bounds[bus_ix][2] + max(0, reactive_power_limits.max),
@@ -233,8 +234,6 @@ function _initialize_bus_data!(
         temp_bus_types[bus_no] = bt
     end
 
-    # FIXME handle combining buses more intelligently.
-    # perhaps move some of this logic into PNM
     for (bus_no, reduced_bus_nos) in bus_reduction_map
         # pick the "highest" bus type among the reduced buses, where REF > PV > PQ.
         corrected_bus_types =
@@ -444,32 +443,6 @@ function make_bus_slack_participation_factors!(
 
     data.bus_slack_participation_factors .= sparse(I, J, V, n_buses, time_steps)
     return
-end
-
-"""Return set of all bus numbers that must be PV: i.e. have an available generator."""
-function must_be_PV(sys::System)
-    gen_buses = Set{Int}()
-    for gen in PSY.get_available_components(PSY.Generator, sys)
-        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
-    end
-    # PSSe counts buses with switched shunts as PV, so we do the same here.
-    for gen in PSY.get_available_components(PSY.SwitchedAdmittance, sys)
-        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
-    end
-    for gen in PSY.get_available_components(PSY.SynchronousCondenser, sys)
-        push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
-    end
-    return gen_buses
-end
-
-"""Return set of all bus numbers that can be PV: i.e. have an available generator,
-or certain voltage regulation devices."""
-function can_be_PV(sys::System)
-    source_buses = must_be_PV(sys)
-    for source in PSY.get_available_components(PSY.Source, sys)
-        push!(source_buses, PSY.get_number(PSY.get_bus(source)))
-    end
-    return source_buses
 end
 
 function validate_voltages(x::Vector{Float64},

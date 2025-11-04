@@ -78,10 +78,8 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
         throw(ArgumentError("slack_participation_factors cannot be negative"))
     end
 
-    # Actually should be fine e.g. when PV is changed to PQ
-    # if sum_sl_weights != sum(abs.(data.slack_participation_factors[:, time_step]))
-    #     warn("Only slack weights for REF and PV buses can be considered.")
-    # end
+    # sum_sl_weights could differ from the sum of the timestep column of 
+    # slack participation factors: maybe a PV bus with nonzero weight got switched to PQ.
 
     # bus slack participation factors relevant for the current time step:
     bus_slack_participation_factors = sparsevec(spf_idx, spf_val, n_buses)
@@ -198,7 +196,7 @@ function _set_state_variables_at_bus!(
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.REF})
-    # When bustype == REFERENCE PSY.ACACBus, state variables are Active and Reactive Power Generated
+    # When bustype == REFERENCE PSY.ACBus, state variables are Active and Reactive Power Generated
     P_net[ix] = P_net_set[ix] + P_slack
     Q_net[ix] = StateVector[2 * ix]
     _setpq(

@@ -70,32 +70,16 @@ end
 @testset "system + powerflow solver calls" begin
     for (k, v) in ac_reduction_types
         @testset "$k reduction" begin
-            # systems in PSB with 3WT's:
-            #=
-            (PSSEParsingTestSystems, "psse_14_network_reduction_test_system")
-            (PSSEParsingTestSystems, "psse_14_tap_correction_test_system")
-            (PSSEParsingTestSystems, "psse_14_zero_impedance_branch_test_system")
-            (PSSEParsingTestSystems, "psse_4_zero_impedance_3wt_test_system")
-            (PSSEParsingTestSystems, "psse_ybus_14_test_system")
-            (PSSEParsingTestSystems, "pti_case10_voltage_winding_correction_sys")
-            (PSSEParsingTestSystems, "pti_case8_voltage_winding_correction_sys")
-            (PSSEParsingTestSystems, "pti_frankenstein_20_sys")
-            (PSSEParsingTestSystems, "pti_frankenstein_70_sys")
-            (PSSEParsingTestSystems, "pti_modified_case14_sys")
-            (PSSEParsingTestSystems, "pti_three_winding_mag_test_sys")
-            (PSSEParsingTestSystems, "pti_three_winding_test_2_sys")
-            (PSSEParsingTestSystems, "pti_three_winding_test_sys")
-            =#
-            # TODO this system has a LCC. find a replacement that doesn't
             sys = build_system(
                 PSSEParsingTestSystems,
                 "psse_14_network_reduction_test_system",
             )
             pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
-            if any([(typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v])
+            supported = !any([(typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v])
+            if !supported
                 results = @test_logs((:error, r"failed to converge"),
-                    :match_mode = any,
-                    solve_powerflow!(
+                    match_mode = :any,
+                    solve_powerflow(
                         pf,
                         sys;
                         correct_bustypes = true,
@@ -103,7 +87,7 @@ end
                     )
                 )
             else
-                results = solve_powerflow!(
+                results = solve_powerflow(
                     pf,
                     sys;
                     correct_bustypes = true,
@@ -113,16 +97,23 @@ end
             @assert !isempty(PSY.get_components(PSY.Transformer3W, sys))
             test_trf = first(collect(PSY.get_components(PSY.Transformer3W, sys)))
             test_trf_name = PSY.get_name(test_trf)
-            if !ismissing(results)
+            if supported
                 arc_flows = results["flow_results"]
                 trf_arc_flows = zeros(ComplexF32, 3)
                 for i in 1:3
-                    adj = ("primary", "secondary", "tertiary")[i]
-                    ix = arc_flows[!, "line_name"] .== "$(test_trf_name)-$adj"
+                    ix = arc_flows[!, "line_name"] .== "$(test_trf_name)_winding_$i"
+                    @assert sum(ix) > 0 "could not find arc in results dataframe with name" *
+                                        " $(test_trf_name)_winding_$i"
                     trf_arc_flows[i] =
                         sum(arc_flows[ix, "P_from_to"]) +
                         im * sum(arc_flows[ix, "Q_from_to"])
                 end
+                @test solve_powerflow!(
+                    pf,
+                    sys;
+                    correct_bustypes = true,
+                    network_reductions = deepcopy(v),
+                )
                 base_power = PSY.get_base_power(sys)
                 # check that transformer bus-to-star entries are there.
                 @test isapprox(
@@ -156,7 +147,7 @@ end
                     atol = 1e-5,
                 )
             else
-                @error "Failed to converge: cannot test AC post-processing with $k reduction"
+                @warn "Skipping testing AC post-processing with unsupported reduction $k"
             end
         end
     end
@@ -290,7 +281,7 @@ end
     for (equivalent_arc, segments) in PNM.get_series_branch_map(nrd)
         for segment in segments
             # skip parallel branches
-            if segment isa PSY.ACTransmission
+            if !(segment isa PNM.BranchesParallel)
                 compare_power_flows(unreduced, sys, segment)
             end
         end

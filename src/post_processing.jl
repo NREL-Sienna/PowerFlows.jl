@@ -1,5 +1,5 @@
 function _is_available_source(x, bus::PSY.ACBus)
-    # FIXME temporary workaround for FACTSControlDevice
+    # temporary workaround for FACTSControlDevice
     return PSY.get_available(x) && x.bus == bus && !isa(x, PSY.ElectricLoad) &&
            !isa(x, PSY.FACTSControlDevice)
 end
@@ -12,13 +12,12 @@ function _calculate_fixed_admittance_powers(
     time_step::Int,
 )
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
-    reverse_bus_search_map = PNM.get_reverse_bus_search_map(nrd)
     bus_lookup = get_bus_lookup(data)
 
     busIxToFAPower = Dict{Int64, Tuple{Float64, Float64}}()
     for l in PSY.get_available_components(PSY.FixedAdmittance, sys)
         b = PSY.get_bus(l)
-        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(b))
+        bus_ix = PNM.get_bus_index(PSY.get_number(b), bus_lookup, nrd)
         Vm_squared =
             if get_bus_type(data)[bus_ix, time_step] == PSY.ACBusTypes.PQ
                 get_bus_magnitude(data)[bus_ix, time_step]^2
@@ -359,12 +358,12 @@ In the below, I use y_11 instead of y_ff, y_12 instead of y_ft, etc.
 """
 function _set_series_voltages_and_flows!(
     sys::PSY.System,
-    segment_sequence::Vector{Any},
+    segment_sequence::PNM.BranchesSeries,
     equivalent_arc::Tuple{Int, Int},
     V_endpoints::Tuple{ComplexF64, ComplexF64},
     temp_bus_map::Dict{Int, String},
 )
-    chain_len = size(segment_sequence, 1)
+    chain_len = PNM.length(segment_sequence)
     nbuses = chain_len + 1
     # we find the voltages at interior nodes by solving Av = b, where A is tri-diagonal.
     # diagonal elements of A are: y_11 of "out" branch + y_22 of "in" branch.
@@ -421,7 +420,8 @@ function _set_series_voltages_and_flows!(
         set_voltage!(current_bus, current_V) # set voltage at bus i
 
         (V_from, V_to) = reversed ? (current_V, prev_V) : (prev_V, current_V)
-        calculate_segment_flow!(segment, V_from, V_to) # set flow at segment between i-1 and i.
+        S = get_segment_flow(segment, V_from, V_to) # set flow at segment between i-1 and i.
+        set_power_flow!(segment, S)
 
         prev_bus_no = current_bus_no
         if i < length(segment_sequence)
@@ -434,11 +434,10 @@ end
 """Set the power flow in the arcs that remain after network reduction. Called on the 
 `direct_branch_map` and `transformer3W_map` dictionaries."""
 function set_branch_flows_for_dict!(
-    d::Dict{Tuple{Int, Int}, Any},
+    d::Dict{Tuple{Int, Int}, PSY.ACTransmission},
     data::ACPowerFlowData,
     time_step::Int,
 )
-    # if these asserts trigger, we may need to check for reverse(arc) too.
     arc_lookup = get_arc_lookup(data)
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     for (arc, br) in d
@@ -449,6 +448,7 @@ function set_branch_flows_for_dict!(
         arc_ix = arc_lookup[arc]
         p_branch = data.arc_activepower_flow_from_to[arc_ix, time_step]
         q_branch = data.arc_reactivepower_flow_from_to[arc_ix, time_step]
+        # TODO: now br could be a BranchesParallel or a ThreeWindingTransformerWinding object.
         set_power_flow!(br, p_branch + im * q_branch)
     end
 end
@@ -476,7 +476,7 @@ function write_powerflow_solution!(
         data.generator_slack_participation_factors[time_step]
     end
 
-    # FIXME once redistribution is working again, could remove skip_redistribution.
+    # once redistribution is working again, could remove skip_redistribution.
     bus_lookup = get_bus_lookup(data)
     for (bus_number, reduced_buses) in PNM.get_bus_reduction_map(nrd)
         if length(reduced_buses) == 0
@@ -588,7 +588,8 @@ function write_powerflow_solution!(
         (bus_from, bus_to) = (PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_from_no]),
             PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_to_no]))
         (V_from, V_to) = (bus_from, bus_to) .|> get_complex_voltage
-        calculate_segment_flow!(parallel_branches, V_from, V_to)
+        S = get_segment_flow(parallel_branches, V_from, V_to)
+        set_power_flow!(parallel_branches, S)
     end
     return
 end
@@ -678,19 +679,10 @@ function get_arc_names(data::PowerFlowData)
         arc_name = PSY.get_name(branch)
         add_arc_name!(arc_names, arc_names_set, arc_lookup, arc, arc_name)
     end
+
     # fill in transformer winding names.
     for (arc, trf_winding) in PNM.get_transformer3W_map(nrd)
-        (trf, winding) = trf_winding
-        if winding == 1
-            arc_name = "$(PSY.get_name(trf))-primary"
-        elseif winding == 2
-            arc_name = "$(PSY.get_name(trf))-secondary"
-        elseif winding == 3
-            arc_name = "$(PSY.get_name(trf))-tertiary"
-        else
-            error("Invalid transformer winding number: $winding")
-        end
-        add_arc_name!(arc_names, arc_names_set, arc_lookup, arc, arc_name)
+        add_arc_name!(arc_names, arc_names_set, arc_lookup, arc, PNM.get_name(trf_winding))
     end
     # fill in missing names with placeholders
     for (arc, ix) in arc_lookup
@@ -789,7 +781,7 @@ function write_results(
     # NOTE: this may be different than get_bus_numbers(sys) if there's a network reduction!
     bus_numbers = PNM.get_bus_axis(data.power_network_matrix)
 
-    arcs = PNM.get_arc_axis(data.power_network_matrix.branch_admittance_from_to)
+    arcs = PNM.get_arc_axis(data.power_network_matrix.arc_admittance_from_to)
     from_bus = first.(arcs)
     to_bus = last.(arcs)
     arc_names = get_arc_names(data)

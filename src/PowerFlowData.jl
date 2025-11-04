@@ -253,15 +253,15 @@ get_valid_ix(pdf::PowerFlowData) = Not(PNM.get_ref_bus_position(get_metadata_mat
 
 # the ybus matrix itself doesn't have an arc axis, so we have to special-case it.
 get_arc_lookup(pfd::ACPowerFlowData) =
-    PNM.get_arc_lookup(pfd.power_network_matrix.branch_admittance_from_to)
+    PNM.get_arc_lookup(pfd.power_network_matrix.arc_admittance_from_to)
 get_arc_axis(pfd::ACPowerFlowData) =
-    PNM.get_arc_axis(pfd.power_network_matrix.branch_admittance_from_to)
+    PNM.get_arc_axis(pfd.power_network_matrix.arc_admittance_from_to)
 
 # so we can initialize things to the correct size inside the below constructor.
 # No `PowerFlowData` instance, so can't call get_arc_axis or similar to get the size.
 arc_count(::ACPowerFlow,
     power_network_matrix::PNM.PowerNetworkMatrix,
-    ::Union{PNM.PowerNetworkMatrix, Nothing}) = length(PNM.get_arc_axis(power_network_matrix.branch_admittance_from_to))
+    ::Union{PNM.PowerNetworkMatrix, Nothing}) = length(PNM.get_arc_axis(power_network_matrix.arc_admittance_from_to))
 bus_count(::ACPowerFlow,
     power_network_matrix::PNM.PowerNetworkMatrix,
     ::Union{PNM.PowerNetworkMatrix, Nothing}) = length(PNM.get_bus_axis(power_network_matrix))
@@ -477,13 +477,13 @@ function PowerFlowData(
     power_network_matrix = PNM.Ybus(
         sys;
         network_reductions = network_reductions,
-        make_branch_admittance_matrices = true,
+        make_arc_admittance_matrices = true,
         include_constant_impedance_loads = false,
     )
     neighbors = _calculate_neighbors(power_network_matrix)
 
     if get_robust_power_flow(pf)
-        aux_network_matrix = PNM.ABA_Matrix(sys)
+        aux_network_matrix = PNM.ABA_Matrix(sys; network_reductions = network_reductions)
     else
         aux_network_matrix = nothing
     end

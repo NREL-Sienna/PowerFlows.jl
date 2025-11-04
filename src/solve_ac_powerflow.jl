@@ -151,8 +151,8 @@ function solve_powerflow!(
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
 
-    Yft = data.power_network_matrix.branch_admittance_from_to
-    Ytf = data.power_network_matrix.branch_admittance_to_from
+    Yft = data.power_network_matrix.arc_admittance_from_to
+    Ytf = data.power_network_matrix.arc_admittance_to_from
     @assert PNM.get_bus_lookup(Yft) == get_bus_lookup(data)
     arcs = PNM.get_arc_axis(Yft)
     @assert arcs == PNM.get_arc_axis(Ytf)
@@ -162,9 +162,12 @@ function solve_powerflow!(
     tb_ix = [bus_lookup[bus_no] for bus_no in last.(arcs)]   # to bus indices
     @assert length(fb_ix) == length(arcs)
 
+    # needed?
+    #=
     Sft = zeros(Complex{Float64}, length(fb_ix))
     Stf = zeros(Complex{Float64}, length(tb_ix))
     V = zeros(Complex{Float64}, size(data.bus_type, 1))
+    =#
 
     for time_step in sorted_time_steps
         converged = _ac_powerflow(data, pf, time_step; kwargs...)
@@ -204,14 +207,15 @@ function solve_powerflow!(
             end
         end
     end
+    
+    # write branch flows
     # NOTE PNM's structs use ComplexF32, while the system objects store Float64's.
     #      so if you set the system bus angles/voltages to match these fields, then repeat 
     #      this math using the system voltages, you'll see differences in the flows, ~1e-4.
-
-    # calculate branch flows for all time steps at once
     ts_V =
         data.bus_magnitude[:, sorted_time_steps] .*
         exp.(1im .* data.bus_angles[:, sorted_time_steps])
+
     Sft = ts_V[fb_ix, :] .* conj.(Yft.data * ts_V)
     Stf = ts_V[tb_ix, :] .* conj.(Ytf.data * ts_V)
     data.arc_activepower_flow_from_to .= real.(Sft)
