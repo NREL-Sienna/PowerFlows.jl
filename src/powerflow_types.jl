@@ -65,7 +65,7 @@ function ACPowerFlow(
         error("Loss factor calculation is not supported by the Levenberg-Marquardt solver.")
     end
 
-    return ACPowerFlow{LevenbergMarquardtACPowerFlow}(
+    return ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,
         calculate_loss_factors,
