@@ -19,13 +19,10 @@ get_system(container::SystemPowerFlowContainer) = container.system
 Structure containing all the data required for the evaluation of the power
 flows and angles, as well as these ones.
 
+In the below descriptions, "number of buses" should be understood as "number of buses remaining,
+after the network reduction." Similarly, we use "arcs" instead of "branches" to distinguish 
+between network elements (post-reduction) and system objects (pre-reduction).
 # Arguments:
-- `bus_lookup::Dict{Int, Int}`:
-        dictionary linking the system's bus number with the rows of either
-        "power_network_matrix" or "aux_network_matrix".
-- `branch_lookup::Dict{String, Int}`:
-        dictionary linking the branch name with the column name of either the
-        "power_network_matrix" or "aux_network_matrix".
 - `bus_activepower_injection::Matrix{Float64}`:
         "(b, t)" matrix containing the bus active power injection. b: number of
         buses, t: number of time period.
@@ -38,6 +35,18 @@ flows and angles, as well as these ones.
 - `bus_reactivepower_withdrawals::Matrix{Float64}`:
         "(b, t)" matrix containing the bus reactive power withdrawals. b:
         number of buses, t: number of time period.
+- `bus_activepower_constant_current_withdrawals::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus active power constant current
+        withdrawals. b: number of buses, t: number of time period.
+- `bus_reactivepower_constant_current_withdrawals::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus reactive power constant current
+        withdrawals. b: number of buses, t: number of time period.
+- `bus_activepower_constant_impedance_withdrawals::Matrix{Float64}`:
+        "(b, t)" matrix containing the bus active power constant impedance
+        withdrawals. b: number of buses, t: number of time period.
+- `bus_reactivepower_constant_impedance_withdrawals::Matrix{Float64}`:  
+        "(b, t)" matrix containing the bus reactive power constant impedance
+        withdrawals. b: number of buses, t: number of time period.
 - `bus_reactivepower_bounds::Matrix{Float64}`:
         "(b, t)" matrix containing upper and lower bounds for the reactive supply at each
         bus at each time period.
@@ -50,26 +59,24 @@ flows and angles, as well as these ones.
 - `bus_angles::Matrix{Float64}`:
         "(b, t)" matrix containing the bus angles, ordered according to
         "bus_lookup". b: number of buses, t: number of time period.
-- `branch_activepower_flow_from_to::Matrix{Float64}`:
+- `arc_activepower_flow_from_to::Matrix{Float64}`:
         "(br, t)" matrix containing the active power flows measured at the `from` bus,
-        ordered according to "branch_lookup". br: number of branches, t: number of time
+        ordered according to "arc_lookup". br: number of arcs, t: number of time
         period.
-- `branch_reactivepower_flow_from_to::Matrix{Float64}`:
+- `arc_reactivepower_flow_from_to::Matrix{Float64}`:
         "(br, t)" matrix containing the reactive power flows measured at the `from` bus,
-        ordered according to "branch_lookup". br: number of branches, t: number of time
+        ordered according to "arc_lookup". br: number of arcs, t: number of time
         period.
-- `branch_activepower_flow_to_from::Matrix{Float64}`:
+- `arc_activepower_flow_to_from::Matrix{Float64}`:
         "(br, t)" matrix containing the active power flows measured at the `to` bus, ordered
-        according to "branch_lookup". br: number of branches, t: number of time period.
-- `branch_reactivepower_flow_to_from::Matrix{Float64}`:
+        according to "arc_lookup". br: number of arcs, t: number of time period.
+- `arc_reactivepower_flow_to_from::Matrix{Float64}`:
         "(br, t)" matrix containing the reactive power flows measured at the `to` bus,
-        ordered according to "branch_lookup". br: number of branches, t: number of time
+        ordered according to "arc_lookup". br: number of arcs, t: number of time
         period.
 - `timestep_map::Dict{Int, S}`:
-        dictonary mapping the number of the time periods (corresponding to the
-        column number of the previosly mentioned matrices) and their names.
-- `valid_ix::Vector{Int}`:
-        vector containing the indeces of not slack buses
+        dictionary mapping the number of the time periods (corresponding to the
+        column number of the previously mentioned matrices) and their names.
 - `power_network_matrix::M`:
         matrix used for the evaluation of either the power flows or bus angles,
         depending on the method considered.
@@ -82,29 +89,36 @@ struct PowerFlowData{
     M <: PNM.PowerNetworkMatrix,
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
 } <: PowerFlowContainer
-    bus_lookup::Dict{Int, Int}
-    branch_lookup::Dict{String, Int}
     bus_activepower_injection::Matrix{Float64}
     bus_reactivepower_injection::Matrix{Float64}
     bus_activepower_withdrawals::Matrix{Float64}
     bus_reactivepower_withdrawals::Matrix{Float64}
-    bus_reactivepower_bounds::Matrix{Vector{Float64}}
+    bus_activepower_constant_current_withdrawals::Matrix{Float64}
+    bus_reactivepower_constant_current_withdrawals::Matrix{Float64}
+    bus_activepower_constant_impedance_withdrawals::Matrix{Float64}
+    bus_reactivepower_constant_impedance_withdrawals::Matrix{Float64}
+    bus_reactivepower_bounds::Matrix{Tuple{Float64, Float64}}
+    generator_slack_participation_factors::Union{
+        Vector{Dict{Tuple{DataType, String}, Float64}},
+        Nothing,
+    }
+    bus_slack_participation_factors::SparseMatrixCSC{Float64, Int}
     bus_type::Matrix{PSY.ACBusTypes}
-    branch_type::Vector{DataType}
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
-    branch_activepower_flow_from_to::Matrix{Float64}
-    branch_reactivepower_flow_from_to::Matrix{Float64}
-    branch_activepower_flow_to_from::Matrix{Float64}
-    branch_reactivepower_flow_to_from::Matrix{Float64}
+    arc_activepower_flow_from_to::Matrix{Float64}
+    arc_reactivepower_flow_from_to::Matrix{Float64}
+    arc_activepower_flow_to_from::Matrix{Float64}
+    arc_reactivepower_flow_to_from::Matrix{Float64}
     timestep_map::Dict{Int, String}
-    valid_ix::Vector{Int}
     power_network_matrix::M
     aux_network_matrix::N
     neighbors::Vector{Set{Int}}
-    converged::Vector{Bool}
+    converged::BitVector
     loss_factors::Union{Matrix{Float64}, Nothing}
     calculate_loss_factors::Bool
+    voltage_stability_factors::Union{Matrix{Float64}, Nothing}
+    calculate_voltage_stability_factors::Bool
 end
 
 # aliases for specific type parameter combinations.
@@ -120,11 +134,12 @@ const ACPowerFlowData = PowerFlowData{
         Nothing,
     },
 }
+get_metadata_matrix(pfd::ACPowerFlowData) = pfd.power_network_matrix
 
 const PTDFPowerFlowData = PowerFlowData{
     PNM.PTDF{
-        Tuple{Vector{Int64}, Vector{String}},
-        Tuple{Dict{Int64, Int64}, Dict{String, Int64}},
+        Tuple{Vector{Int64}, Vector{Tuple{Int, Int}}},
+        Tuple{Dict{Int64, Int64}, Dict{Tuple{Int, Int}, Int64}},
         Matrix{Float64},
     },
     PNM.ABA_Matrix{
@@ -136,8 +151,8 @@ const PTDFPowerFlowData = PowerFlowData{
 
 const vPTDFPowerFlowData = PowerFlowData{
     PNM.VirtualPTDF{
-        Tuple{Vector{String}, Vector{Int64}},
-        Tuple{Dict{String, Int64}, Dict{Int64, Int64}},
+        Tuple{Vector{Tuple{Int, Int}}, Vector{Int64}},
+        Tuple{Dict{Tuple{Int, Int}, Int64}, Dict{Int64, Int64}},
     },
     PNM.ABA_Matrix{
         Tuple{Vector{Int64}, Vector{Int64}},
@@ -145,6 +160,8 @@ const vPTDFPowerFlowData = PowerFlowData{
         PNM.KLU.KLUFactorization{Float64, Int64},
     },
 }
+get_metadata_matrix(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
+    pfd.power_network_matrix
 
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
@@ -153,48 +170,193 @@ const ABAPowerFlowData = PowerFlowData{
         PNM.KLU.KLUFactorization{Float64, Int64},
     },
     PNM.BA_Matrix{
-        Tuple{Vector{Int64}, Vector{String}},
-        Tuple{Dict{Int64, Int64}, Dict{String, Int64}}},
+        Tuple{Vector{Int64}, Vector{Tuple{Int, Int}}},
+        Tuple{Dict{Int64, Int64}, Dict{Tuple{Int, Int}, Int64}}},
 }
+get_metadata_matrix(pfd::ABAPowerFlowData) = pfd.aux_network_matrix
 
-get_bus_lookup(pfd::PowerFlowData) = pfd.bus_lookup
-get_branch_lookup(pfd::PowerFlowData) = pfd.branch_lookup
+# true getters for fields:
 get_bus_activepower_injection(pfd::PowerFlowData) = pfd.bus_activepower_injection
 get_bus_reactivepower_injection(pfd::PowerFlowData) = pfd.bus_reactivepower_injection
 get_bus_activepower_withdrawals(pfd::PowerFlowData) = pfd.bus_activepower_withdrawals
+get_bus_activepower_constant_current_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_activepower_constant_current_withdrawals
+get_bus_activepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_activepower_constant_impedance_withdrawals
 get_bus_reactivepower_withdrawals(pfd::PowerFlowData) = pfd.bus_reactivepower_withdrawals
+get_bus_reactivepower_constant_current_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_reactivepower_constant_current_withdrawals
+get_bus_reactivepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_reactivepower_constant_impedance_withdrawals
 get_bus_reactivepower_bounds(pfd::PowerFlowData) = pfd.bus_reactivepower_bounds
+get_bus_slack_participation_factors(pfd::PowerFlowData) =
+    pfd.bus_slack_participation_factors
+get_generator_slack_participation_factors(pfd::PowerFlowData) =
+    pfd.generator_slack_participation_factors
 get_bus_type(pfd::PowerFlowData) = pfd.bus_type
-get_branch_type(pfd::PowerFlowData) = pfd.branch_type
 get_bus_magnitude(pfd::PowerFlowData) = pfd.bus_magnitude
 get_bus_angles(pfd::PowerFlowData) = pfd.bus_angles
-get_branch_activepower_flow_from_to(pfd::PowerFlowData) =
-    pfd.branch_activepower_flow_from_to
-get_branch_reactivepower_flow_from_to(pfd::PowerFlowData) =
-    pfd.branch_reactivepower_flow_from_to
-get_branch_activepower_flow_to_from(pfd::PowerFlowData) =
-    pfd.branch_activepower_flow_to_from
-get_branch_reactivepower_flow_to_from(pfd::PowerFlowData) =
-    pfd.branch_reactivepower_flow_to_from
+get_arc_activepower_flow_from_to(pfd::PowerFlowData) =
+    pfd.arc_activepower_flow_from_to
+get_arc_reactivepower_flow_from_to(pfd::PowerFlowData) =
+    pfd.arc_reactivepower_flow_from_to
+get_arc_activepower_flow_to_from(pfd::PowerFlowData) =
+    pfd.arc_activepower_flow_to_from
+get_arc_reactivepower_flow_to_from(pfd::PowerFlowData) =
+    pfd.arc_reactivepower_flow_to_from
 get_timestep_map(pfd::PowerFlowData) = pfd.timestep_map
-get_valid_ix(pfd::PowerFlowData) = pfd.valid_ix
 get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
 get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
 get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 supports_multi_period(::PowerFlowData) = true
 get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
+get_calculate_loss_factors(pfd::PowerFlowData) = pfd.calculate_loss_factors
+get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
+get_calculate_voltage_stability_factors(pfd::PowerFlowData) =
+    pfd.calculate_voltage_stability_factors
+
+# auxiliary getters for the fields of PowerNetworkMatrices we're storing:
+# most things we patch through to calls on the metadata matrix:
+get_bus_lookup(pfd::PowerFlowData) = PNM.get_bus_lookup(get_metadata_matrix(pfd))
+get_bus_axis(pfd::PowerFlowData) = PNM.get_bus_axis(get_metadata_matrix(pfd))
+get_arc_lookup(pfd::PowerFlowData) = PNM.get_arc_lookup(get_metadata_matrix(pfd))
+get_arc_axis(pfd::PowerFlowData) = PNM.get_arc_axis(get_metadata_matrix(pfd))
+get_network_reduction_data(pfd::PowerFlowData) =
+    PNM.get_network_reduction_data(get_metadata_matrix(pfd))
+get_valid_ix(pdf::PowerFlowData) = Not(PNM.get_ref_bus_position(get_metadata_matrix(pdf)))
+
+# the ybus matrix itself doesn't have an arc axis, so we have to special-case it.
+get_arc_lookup(pfd::ACPowerFlowData) =
+    PNM.get_arc_lookup(pfd.power_network_matrix.arc_admittance_from_to)
+get_arc_axis(pfd::ACPowerFlowData) =
+    PNM.get_arc_axis(pfd.power_network_matrix.arc_admittance_from_to)
+
+# so we can initialize things to the correct size inside the below constructor.
+# No `PowerFlowData` instance, so can't call get_arc_axis or similar to get the size.
+arc_count(::ACPowerFlow,
+    power_network_matrix::PNM.PowerNetworkMatrix,
+    ::Union{PNM.PowerNetworkMatrix, Nothing}) = length(PNM.get_arc_axis(power_network_matrix.arc_admittance_from_to))
+bus_count(::ACPowerFlow,
+    power_network_matrix::PNM.PowerNetworkMatrix,
+    ::Union{PNM.PowerNetworkMatrix, Nothing}) = length(PNM.get_bus_axis(power_network_matrix))
+
+arc_count(::Union{PTDFDCPowerFlow, vPTDFDCPowerFlow},
+    power_network_matrix::PNM.PowerNetworkMatrix,
+    ::Union{PNM.PowerNetworkMatrix, Nothing}) =
+    length(PNM.get_arc_axis(power_network_matrix))
+bus_count(::Union{PTDFDCPowerFlow, vPTDFDCPowerFlow},
+    power_network_matrix::PNM.PowerNetworkMatrix,
+    ::Union{PNM.PowerNetworkMatrix, Nothing}) =
+    length(PNM.get_bus_axis(power_network_matrix))
+
+arc_count(::DCPowerFlow,
+    power_network_matrix::PNM.PowerNetworkMatrix,
+    aux_network_matrix::Union{PNM.PowerNetworkMatrix, Nothing}) =
+    length(PNM.get_arc_axis(aux_network_matrix))
+bus_count(::DCPowerFlow,
+    power_network_matrix::PNM.PowerNetworkMatrix,
+    aux_network_matrix::Union{PNM.PowerNetworkMatrix, Nothing}) =
+    length(PNM.get_bus_axis(aux_network_matrix))
+
+"""
+Sets the two `PowerNetworkMatrix` fields and a few others (`timesteps`, `timestep_map`), 
+then creates arrays of default values (usually zeros) for the rest.
+"""
+function PowerFlowData(
+    pf::T,
+    power_network_matrix::M,
+    aux_network_matrix::N,
+    n_timesteps::Int;
+    timestep_names::Vector{String} = String[],
+    neighbors = Vector{Set{Int}}(),
+) where {
+    T <: PowerFlowEvaluationModel,
+    M <: PNM.PowerNetworkMatrix,
+    N <: Union{PNM.PowerNetworkMatrix, Nothing},
+}
+    if n_timesteps != 0
+        if length(timestep_names) == 0
+            timestep_names = [string(i) for i in 1:n_timesteps]
+        elseif length(timestep_names) != n_timesteps
+            error("timestep_names field must have same length as n_timesteps")
+        end
+    end
+    timestep_map = Dict(zip([i for i in 1:n_timesteps], timestep_names))
+
+    n_buses = bus_count(pf, power_network_matrix, aux_network_matrix)
+    n_arcs = arc_count(pf, power_network_matrix, aux_network_matrix)
+    calculate_loss_factors = get_calculate_loss_factors(pf)
+    calculate_voltage_stability_factors = get_calculate_voltage_stability_factors(pf)
+    if !isnothing(get_slack_participation_factors(pf))
+        empty_slack_participation_factors = Dict{Tuple{DataType, String}, Float64}[]
+        sizehint!(empty_slack_participation_factors, n_timesteps)
+    else
+        empty_slack_participation_factors = nothing
+    end
+    return PowerFlowData(
+        zeros(n_buses, n_timesteps), # bus_activepower_injection
+        zeros(n_buses, n_timesteps), # bus_reactivepower_injection
+        zeros(n_buses, n_timesteps), # bus_activepower_withdrawals
+        zeros(n_buses, n_timesteps), # bus_reactivepower_withdrawals
+        zeros(n_buses, n_timesteps), # bus_activepower_constant_current_withdrawals
+        zeros(n_buses, n_timesteps), # bus_reactivepower_constant_current_withdrawals
+        zeros(n_buses, n_timesteps), # bus_activepower_constant_impedance_withdrawals
+        zeros(n_buses, n_timesteps), # bus_reactivepower_constant_impedance_withdrawals
+        fill((-Inf, Inf), (n_buses, n_timesteps)), # bus_reactivepower_bounds
+        empty_slack_participation_factors, # generator_slack_participation_factors
+        spzeros(n_buses, n_timesteps), # bus_slack_participation_factors
+        fill(PSY.ACBusTypes.PQ, (n_buses, n_timesteps)), # bus_type
+        ones(n_buses, n_timesteps), # bus_magnitude
+        zeros(n_buses, n_timesteps), # bus_angles
+        zeros(n_arcs, n_timesteps), # arc_activepower_flow_from_to
+        zeros(n_arcs, n_timesteps), # arc_reactivepower_flow_from_to
+        zeros(n_arcs, n_timesteps), # arc_activepower_flow_to_from
+        zeros(n_arcs, n_timesteps), # arc_reactivepower_flow_to_from
+        timestep_map,
+        power_network_matrix,
+        aux_network_matrix,
+        neighbors,
+        falses(n_timesteps), # converged
+        calculate_loss_factors ? zeros(n_buses, n_timesteps) : nothing, # loss_factors
+        calculate_loss_factors,
+        calculate_voltage_stability_factors ? zeros(n_buses, n_timesteps) : nothing, # voltage_stability_factors
+        calculate_voltage_stability_factors,
+    )
+end
+
+function get_bus_activepower_total_withdrawals(pfd::PowerFlowData, ix::Int, time_step::Int)
+    return pfd.bus_activepower_withdrawals[ix, time_step] +
+           pfd.bus_activepower_constant_current_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step] +
+           pfd.bus_activepower_constant_impedance_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step]^2
+end
+
+function get_bus_reactivepower_total_withdrawals(
+    pfd::PowerFlowData,
+    ix::Int,
+    time_step::Int,
+)
+    return pfd.bus_reactivepower_withdrawals[ix, time_step] +
+           pfd.bus_reactivepower_constant_current_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step] +
+           pfd.bus_reactivepower_constant_impedance_withdrawals[ix, time_step] *
+           pfd.bus_magnitude[ix, time_step]^2
+end
 
 function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_activepower_injection .= 0.0
     pfd.bus_reactivepower_injection .= 0.0
     pfd.bus_activepower_withdrawals .= 0.0
+    pfd.bus_activepower_constant_current_withdrawals .= 0.0
+    pfd.bus_activepower_constant_impedance_withdrawals .= 0.0
     pfd.bus_reactivepower_withdrawals .= 0.0
+    pfd.bus_reactivepower_constant_current_withdrawals .= 0.0
+    pfd.bus_reactivepower_constant_impedance_withdrawals .= 0.0
     return
 end
 
-# AC Power Flow Data
-# TODO -> MULTI PERIOD: AC Power Flow Data
 function _calculate_neighbors(
     Yb::PNM.Ybus{
         Tuple{Vector{Int64}, Vector{Int64}},
@@ -210,8 +372,47 @@ function _calculate_neighbors(
     return neighbors
 end
 
+# NOTE: remove this once network reductions are fully implemented
+function network_reduction_message(
+    nrs::Vector{PNM.NetworkReduction},
+    m::PowerFlowEvaluationModel,
+)
+    if any(isa.(nrs, (PNM.WardReduction,)))
+        throw(IS.NotImplementedError("Ward reduction is not supported yet."))
+    end
+    if m isa ACPowerFlow && any(isa.(nrs, (PNM.RadialReduction,)))
+        @error "AC Power Flow with Radial Network Reduction: feature is a work-in-progress. The power flow will likely fail to converge."
+    end
+    if any(isa.(nrs, (PNM.DegreeTwoReduction,)))
+        @warn "Degree 2 network reductions mis-report branch power flows, but bus voltage results are correct. Use with caution."
+    end
+    return
+end
+
+function make_and_initialize_powerflow_data(
+    pf::PowerFlowEvaluationModel,
+    sys::PSY.System,
+    power_network_matrix::M,
+    aux_network_matrix::N;
+    time_steps::Int = 1,
+    timestep_names::Vector{String} = String[],
+    neighbors = Vector{Set{Int}}(),
+    correct_bustypes::Bool = false,
+) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+    data = PowerFlowData(
+        pf,
+        power_network_matrix,
+        aux_network_matrix,
+        time_steps;
+        timestep_names = timestep_names,
+        neighbors = neighbors,
+    )
+    initialize_powerflow_data!(data, pf, sys; correct_bustypes = correct_bustypes)
+    return data
+end
+
 """
-Function for the definition of the PowerFlowData strucure given the System
+Function for the definition of the PowerFlowData structure given the System
 data, number of time periods to consider and their names.
 Calling this function will not evaluate the power flows and angles.
 NOTE: use it for AC power flow computations.
@@ -227,97 +428,49 @@ NOTE: use it for AC power flow computations.
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "time_steps". Default
+        names of the time periods defines by the argument "time_steps". Default
         value = String[].
-- `check_connectivity::Bool`:
-        Perform connectivity check on the network matrix. Default value = true.
 
 WARNING: functions for the evaluation of the multi-period AC PF still to be implemented.
 """
 function PowerFlowData(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     sys::PSY.System;
+    network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true)
-    calculate_loss_factors = pf.calculate_loss_factors
-    # assign timestep_names
-    # timestep names are then allocated in a dictionary to map matrix columns
-    if time_steps != 0
-        if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:time_steps]
-        elseif length(timestep_names) != time_steps
-            error("timestep_names field must have same length as time_steps")
-        end
-    end
-
-    timestep_map = Dict(zip([i for i in 1:time_steps], timestep_names))
-
-    # get data for calculations
+    correct_bustypes::Bool = false,
+)
+    network_reduction_message(network_reductions, pf)
     power_network_matrix = PNM.Ybus(
         sys;
-        check_connectivity = check_connectivity,
-        make_branch_admittance_matrices = true,
+        network_reductions = network_reductions,
+        make_arc_admittance_matrices = true,
+        include_constant_impedance_loads = false,
     )
-
-    # get number of buses and branches
-    n_buses = length(axes(power_network_matrix, 1))
-    buses = PNM.get_buses(sys)
-    ref_bus_positions = PNM.find_slack_positions(buses)
-
-    branches = PNM.get_ac_branches(sys)
-    n_branches = length(branches)
-
-    bus_lookup = power_network_matrix.lookup[2]
-    branch_lookup = Dict{String, Int}()
-    sizehint!(branch_lookup, n_branches)
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
-    )
-    branch_types = Vector{DataType}(undef, n_branches)
-    for (ix, b) in enumerate(branches)
-        branch_lookup[PSY.get_name(b)] = ix
-        branch_types[ix] = typeof(b)
-    end
-
-    valid_ix = setdiff(1:n_buses, ref_bus_positions)
     neighbors = _calculate_neighbors(power_network_matrix)
-    converged = fill(false, time_steps)
-    # PERF: type instability.
-    # loss factors order matches the order of buses in the grid model, and is calculated for all buses including ref buses (equals 0 for ref buses)
-    if calculate_loss_factors
-        loss_factors = Matrix{Float64}(undef, (n_buses, length(timestep_names)))
-    else
-        loss_factors = nothing
-    end
+
     if get_robust_power_flow(pf)
-        aux_network_matrix = PNM.ABA_Matrix(sys)
+        aux_network_matrix = PNM.ABA_Matrix(sys; network_reductions = network_reductions)
     else
         aux_network_matrix = nothing
     end
-    return make_powerflowdata(
+
+    return make_and_initialize_powerflow_data(
+        pf,
         sys,
-        time_steps,
         power_network_matrix,
-        aux_network_matrix,
-        n_buses,
-        n_branches,
-        bus_lookup,
-        branch_lookup,
-        temp_bus_map,
-        branch_types,
-        timestep_map,
-        valid_ix,
-        neighbors,
-        converged,
-        loss_factors,
-        calculate_loss_factors,
+        aux_network_matrix;
+        time_steps = time_steps,
+        timestep_names = timestep_names,
+        neighbors = neighbors,
+        correct_bustypes = correct_bustypes,
     )
 end
 
 # DC Power Flow Data based on ABA and BA matrices
 """
-Function for the definition of the PowerFlowData strucure given the System
+Function for the definition of the PowerFlowData structure given the System
 data, number of time periods to consider and their names.
 Calling this function will not evaluate the power flows and angles.
 NOTE: use it for DC power flow computations.
@@ -334,64 +487,36 @@ NOTE: use it for DC power flow computations.
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "time_steps". Default
+        names of the time periods defines by the argument "time_steps". Default
         value = String[].
-- `check_connectivity::Bool`:
-        Perform connectivity check on the network matrix. Default value = true.
 """
 function PowerFlowData(
-    ::DCPowerFlow,
+    pf::DCPowerFlow,
     sys::PSY.System;
+    network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true)
-
-    # assign timestep_names
-    # timestep names are then allocated in a dictionary to map matrix columns
-    if length(timestep_names) == 0
-        timestep_names = [string(i) for i in 1:time_steps]
-    elseif length(timestep_names) != time_steps
-        error("timestep_names field must have same length as time_steps")
-    end
-
+    correct_bustypes = false,
+)
+    network_reduction_message(network_reductions, DCPowerFlow())
     # get the network matrices
-    power_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
-    aux_network_matrix = PNM.BA_Matrix(sys)
-
-    # get number of buses and branches
-    n_buses = length(axes(aux_network_matrix, 1))
-    n_branches = length(axes(aux_network_matrix, 2))
-
-    bus_lookup = aux_network_matrix.lookup[1]
-    branch_lookup = aux_network_matrix.lookup[2]
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
-    )
-    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
-    converged = fill(false, time_steps)
-    loss_factors = nothing
-    calculate_loss_factors = false
-    return make_dc_powerflowdata(
+    power_network_matrix =
+        PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
+    aux_network_matrix = PNM.BA_Matrix(sys; network_reductions = network_reductions)
+    return make_and_initialize_powerflow_data(
+        pf,
         sys,
-        time_steps,
-        timestep_names,
         power_network_matrix,
-        aux_network_matrix,
-        n_buses,
-        n_branches,
-        bus_lookup,
-        branch_lookup,
-        temp_bus_map,
-        valid_ix,
-        converged,
-        loss_factors,
-        calculate_loss_factors,
+        aux_network_matrix;
+        time_steps = time_steps,
+        timestep_names = timestep_names,
+        correct_bustypes = correct_bustypes,
     )
 end
 
 # DC Power Flow Data with PTDF matrix
 """
-Function for the definition of the PowerFlowData strucure given the System
+Function for the definition of the PowerFlowData structure given the System
 data, number of time periods to consider and their names.
 Calling this function will not evaluate the power flows and angles.
 NOTE: use it for DC power flow computations.
@@ -408,65 +533,37 @@ NOTE: use it for DC power flow computations.
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "time_steps". Default
+        names of the time periods defines by the argument "time_steps". Default
         value = String[].
 """
 
 function PowerFlowData(
-    ::PTDFDCPowerFlow,
+    pf::PTDFDCPowerFlow,
     sys::PSY.System;
+    network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true)
-
-    # assign timestep_names
-    # timestep names are then allocated in a dictionary to map matrix columns
-    if time_steps != 0
-        if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:time_steps]
-        elseif length(timestep_names) != time_steps
-            error("timestep_names field must have same length as time_steps")
-        end
-    end
-
+    correct_bustypes = false,
+)
+    network_reduction_message(network_reductions, PTDFDCPowerFlow())
     # get the network matrices
-    power_network_matrix = PNM.PTDF(sys)
-    aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
-
-    # get number of buses and branches
-    n_buses = length(axes(power_network_matrix, 1))
-    n_branches = length(axes(power_network_matrix, 2))
-
-    bus_lookup = power_network_matrix.lookup[1]
-    branch_lookup = power_network_matrix.lookup[2]
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
-    )
-    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
-    converged = fill(false, time_steps)
-    loss_factors = nothing
-    calculate_loss_factors = false
-    return make_dc_powerflowdata(
+    power_network_matrix = PNM.PTDF(sys; network_reductions = network_reductions)
+    aux_network_matrix =
+        PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
+    return make_and_initialize_powerflow_data(
+        pf,
         sys,
-        time_steps,
-        timestep_names,
         power_network_matrix,
-        aux_network_matrix,
-        n_buses,
-        n_branches,
-        bus_lookup,
-        branch_lookup,
-        temp_bus_map,
-        valid_ix,
-        converged,
-        loss_factors,
-        calculate_loss_factors,
+        aux_network_matrix;
+        time_steps = time_steps,
+        timestep_names = timestep_names,
+        correct_bustypes = correct_bustypes,
     )
 end
 
 # DC Power Flow Data with virtual PTDF matrix
 """
-Function for the definition of the PowerFlowData strucure given the System
+Function for the definition of the PowerFlowData structure given the System
 data, number of time periods to consider and their names.
 Calling this function will not evaluate the power flows and angles.
 NOTE: use it for DC power flow computations.
@@ -483,58 +580,31 @@ NOTE: use it for DC power flow computations.
         defines the number of columns of the matrices used to store data.
         Default value = 1.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argmunet "time_steps". Default
+        names of the time periods defines by the argument "time_steps". Default
         value = String[].
 """
 function PowerFlowData(
-    ::vPTDFDCPowerFlow,
+    pf::vPTDFDCPowerFlow,
     sys::PSY.System;
+    network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
-    check_connectivity::Bool = true)
-
-    # assign timestep_names
-    # timestep names are then allocated in a dictionary to map matrix columns
-    if time_steps != 0
-        if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:time_steps]
-        elseif length(timestep_names) != time_steps
-            error("timestep_names field must have same length as time_steps")
-        end
-    end
+    correct_bustypes = false)
+    network_reduction_message(network_reductions, vPTDFDCPowerFlow())
 
     # get the network matrices
-    power_network_matrix = PNM.VirtualPTDF(sys) # evaluates an empty virtual PTDF
-    aux_network_matrix = PNM.ABA_Matrix(sys; factorize = true)
+    power_network_matrix = PNM.VirtualPTDF(sys; network_reductions = network_reductions) # evaluates an empty virtual PTDF
+    aux_network_matrix =
+        PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
 
-    # get number of buses and branches
-    n_buses = length(axes(power_network_matrix, 2))
-    n_branches = length(axes(power_network_matrix, 1))
-
-    bus_lookup = power_network_matrix.lookup[2]
-    branch_lookup = power_network_matrix.lookup[1]
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.Bus, sys)
-    )
-    valid_ix = setdiff(1:n_buses, aux_network_matrix.ref_bus_positions)
-    converged = fill(false, time_steps)
-    loss_factors = nothing
-    calculate_loss_factors = false
-    return make_dc_powerflowdata(
+    return make_and_initialize_powerflow_data(
+        pf,
         sys,
-        time_steps,
-        timestep_names,
         power_network_matrix,
-        aux_network_matrix,
-        n_buses,
-        n_branches,
-        bus_lookup,
-        branch_lookup,
-        temp_bus_map,
-        valid_ix,
-        converged,
-        loss_factors,
-        calculate_loss_factors,
+        aux_network_matrix;
+        time_steps = time_steps,
+        timestep_names = timestep_names,
+        correct_bustypes = correct_bustypes,
     )
 end
 
@@ -546,7 +616,6 @@ Create an appropriate `PowerFlowContainer` for the given `PowerFlowEvaluationMod
 - `sys::PSY.System`: the system from which to initialize the power flow container
 - `time_steps::Int`: number of time periods to consider (default is `1`)
 - `timestep_names::Vector{String}`: names of the time periods defines by the argument "time_steps". Default value is `String[]`.
-- `check_connectivity::Bool`: Perform connectivity check on the network matrix. Default value is `true`.
 """
 function make_power_flow_container end
 

@@ -3,51 +3,105 @@ abstract type ACPowerFlowSolverType end
 
 struct NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType end
 struct TrustRegionACPowerFlow <: ACPowerFlowSolverType end
+struct LevenbergMarquardtACPowerFlow <: ACPowerFlowSolverType end
+struct RobustHomotopyPowerFlow <: ACPowerFlowSolverType end
 
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel
     check_reactive_power_limits::Bool
     exporter::Union{Nothing, PowerFlowEvaluationModel}
     calculate_loss_factors::Bool
+    calculate_voltage_stability_factors::Bool
+    generator_slack_participation_factors::Union{
+        Nothing,
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
+    }
+    enhanced_flat_start::Bool
     robust_power_flow::Bool
+    skip_redistribution::Bool
 end
 
 ACPowerFlow{ACSolver}(;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
+    calculate_voltage_stability_factors::Bool = false,
+    generator_slack_participation_factors::Union{
+        Nothing,
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
+    } = nothing,
+    enhanced_flat_start::Bool = true,
     robust_power_flow::Bool = false,
+    skip_redistribution::Bool = false,
 ) where {ACSolver <: ACPowerFlowSolverType} =
     ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,
         calculate_loss_factors,
+        calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
+        enhanced_flat_start,
         robust_power_flow,
+        skip_redistribution,
     )
 
-ACPowerFlow(
+function ACPowerFlow(
     ACSolver::Type{<:ACPowerFlowSolverType} = NewtonRaphsonACPowerFlow;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
+    calculate_voltage_stability_factors::Bool = false,
+    generator_slack_participation_factors::Union{
+        Nothing,
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
+    } = nothing,
+    enhanced_flat_start::Bool = true,
     robust_power_flow::Bool = false,
-) = ACPowerFlow{ACSolver}(
-    check_reactive_power_limits,
-    exporter,
-    calculate_loss_factors,
-    robust_power_flow,
+    skip_redistribution::Bool = false,
 )
+    if calculate_loss_factors && ACSolver == LevenbergMarquardtACPowerFlow
+        error("Loss factor calculation is not supported by the Levenberg-Marquardt solver.")
+    end
 
-get_robust_power_flow(pf::ACPowerFlow{ACSolver}) where {ACSolver} = pf.robust_power_flow
+    return ACPowerFlow{ACSolver}(
+        check_reactive_power_limits,
+        exporter,
+        calculate_loss_factors,
+        calculate_voltage_stability_factors,
+        generator_slack_participation_factors,
+        enhanced_flat_start,
+        robust_power_flow,
+        skip_redistribution,
+    )
+end
 
-@kwdef struct DCPowerFlow <: PowerFlowEvaluationModel
+get_enhanced_flat_start(pf::ACPowerFlow) = pf.enhanced_flat_start
+get_robust_power_flow(pf::ACPowerFlow) = pf.robust_power_flow
+get_slack_participation_factors(pf::ACPowerFlow) = pf.generator_slack_participation_factors
+get_calculate_loss_factors(pf::ACPowerFlow) = pf.calculate_loss_factors
+get_calculate_voltage_stability_factors(pf::ACPowerFlow) =
+    pf.calculate_voltage_stability_factors
+
+abstract type AbstractDCPowerFlow <: PowerFlowEvaluationModel end
+
+# only make sense for AC power flows, but convenient to have for code reuse reasons.
+get_slack_participation_factors(::AbstractDCPowerFlow) = nothing
+get_calculate_loss_factors(::AbstractDCPowerFlow) = false
+get_calculate_voltage_stability_factors(::AbstractDCPowerFlow) = false
+
+# the exporter field is not used in PowerFlows.jl, only in PowerSimulations.jl,
+# which calls flatten_power_flow_evaluation_model then evaluates the two sequentially.
+@kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 
-@kwdef struct PTDFDCPowerFlow <: PowerFlowEvaluationModel
+@kwdef struct PTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 
-@kwdef struct vPTDFDCPowerFlow <: PowerFlowEvaluationModel
+@kwdef struct vPTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
 end
 

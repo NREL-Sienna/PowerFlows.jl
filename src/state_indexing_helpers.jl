@@ -72,17 +72,17 @@ function update_data!(data::ACPowerFlowData,
         #       inside the call and passing index + vectors.
         # 3 case if-else with Val(constant) is faster than 1 case with Val(bt)
         if bt == PSY.ACBusTypes.REF
-            _set_state_vars_at_bus(ix, x, data, time_step, Val(PSY.ACBusTypes.REF))
+            _set_state_variables_at_bus(ix, x, data, time_step, Val(PSY.ACBusTypes.REF))
         elseif bt == PSY.ACBusTypes.PV
-            _set_state_vars_at_bus(ix, x, data, time_step, Val(PSY.ACBusTypes.PV))
+            _set_state_variables_at_bus(ix, x, data, time_step, Val(PSY.ACBusTypes.PV))
         elseif bt == PSY.ACBusTypes.PQ
-            _set_state_vars_at_bus(ix, x, data, time_step, Val(PSY.ACBusTypes.PQ))
+            _set_state_variables_at_bus(ix, x, data, time_step, Val(PSY.ACBusTypes.PQ))
         end
     end
 end
 
 # dispatching on Val for performance reasons.
-function _set_state_vars_at_bus(
+function _set_state_variables_at_bus(
     ix::Int,
     StateVector::Vector{Float64},
     data::ACPowerFlowData,
@@ -95,7 +95,7 @@ function _set_state_vars_at_bus(
         StateVector[2 * ix] + data.bus_reactivepower_withdrawals[ix, time_step]
 end
 
-function _set_state_vars_at_bus(
+function _set_state_variables_at_bus(
     ix::Int,
     StateVector::Vector{Float64},
     data::ACPowerFlowData,
@@ -107,7 +107,7 @@ function _set_state_vars_at_bus(
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
 end
 
-function _set_state_vars_at_bus(
+function _set_state_variables_at_bus(
     ix::Int,
     x::Vector{Float64},
     data::ACPowerFlowData,

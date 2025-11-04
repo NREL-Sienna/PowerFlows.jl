@@ -14,7 +14,7 @@ function _calc_x(
     bus_types = view(data.bus_type, :, time_step)
     for (ix, bt) in enumerate(bus_types)
         if bt == PSY.ACBusTypes.REF
-            # When bustype == REFERENCE PSY.Bus, state variables are Active and Reactive Power Generated
+            # When bustype == REFERENCE PSY.ACBus, state variables are Active and Reactive Power Generated
             x[2 * ix - 1] =
                 data.bus_activepower_injection[ix, time_step] -
                 data.bus_activepower_withdrawals[ix, time_step]
@@ -22,13 +22,13 @@ function _calc_x(
                 data.bus_reactivepower_injection[ix, time_step] -
                 data.bus_reactivepower_withdrawals[ix, time_step]
         elseif bt == PSY.ACBusTypes.PV
-            # When bustype == PV PSY.Bus, state variables are Reactive Power Generated and Voltage Angle
+            # When bustype == PV PSY.ACBus, state variables are Reactive Power Generated and Voltage Angle
             x[2 * ix - 1] =
                 data.bus_reactivepower_injection[ix, time_step] -
                 data.bus_reactivepower_withdrawals[ix, time_step]
             x[2 * ix] = data.bus_angles[ix, time_step]
         elseif bt == PSY.ACBusTypes.PQ
-            # When bustype == PQ PSY.Bus, state variables are Voltage Magnitude and Voltage Angle
+            # When bustype == PQ PSY.ACBus, state variables are Voltage Magnitude and Voltage Angle
             x[2 * ix - 1] = data.bus_magnitude[ix, time_step]
             x[2 * ix] = data.bus_angles[ix, time_step]
         end
@@ -96,7 +96,7 @@ end
 # this function is for testing purposes only
 function _legacy_dSbus_dV(
     V::Vector{Complex{Float64}},
-    Ybus::SparseMatrixCSC{Complex{Float64}, Int64},
+    Ybus::SparseMatrixCSC{Complex{Float32}, Int64},
 )::Tuple{SparseMatrixCSC{Complex{Float64}, Int32}, SparseMatrixCSC{Complex{Float64}, Int32}}
     diagV = SparseArrays.spdiagm(0 => V)
     diagVnorm = SparseArrays.spdiagm(0 => V ./ abs.(V))
@@ -214,7 +214,7 @@ function PowerFlows._newton_powerflow(
             end
         end
 
-        if data.calculate_loss_factors
+        if PowerFlows.get_calculate_loss_factors(data)
             dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus)
             J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
             dSbus_dV_ref = collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:])
@@ -223,6 +223,13 @@ function PowerFlows._newton_powerflow(
             lf = fact \ dSbus_dV_ref  # only take the dPref_dP loss factors, ignore dPref_dQ
             data.loss_factors[pvpq, time_step] .= lf[1:npvpq]
             data.loss_factors[ref, time_step] .= 1.0
+        end
+        if PowerFlows.get_calculate_voltage_stability_factors(data)
+            σ, u, v = PowerFlows._singular_value_decomposition(J, npvpq)
+            data.voltage_stability_factors[ref, time_step] .= 0.0
+            data.voltage_stability_factors[first(ref), time_step] = σ
+            data.voltage_stability_factors[pv, time_step] .= 0.0
+            data.voltage_stability_factors[pq, time_step] .= v
         end
         @info("The legacy powerflow solver with LU converged after $i iterations")
     end

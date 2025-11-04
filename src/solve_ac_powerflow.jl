@@ -15,7 +15,6 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 - `kwargs...`: Additional keyword arguments.
 
 ## Keyword Arguments
-- `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
 - 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
 - `tol`: Infinite norm of residuals under which convergence is declared. Default is `1e-9`.
 - `maxIterations`: Maximum number of Newton-Raphson iterations. Default is `30`.
@@ -30,7 +29,7 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 solve_powerflow!(pf, sys)
 
 # Passing kwargs
-solve_powerflow!(pf, sys; check_connectivity=false)
+solve_powerflow!(pf, sys; correct_bustypes = true)
 
 # Passing keyword arguments
 solve_powerflow!(pf, sys; maxIterations=100)
@@ -43,25 +42,26 @@ function solve_powerflow!(
 )
     # converged must be defined in the outer scope to be visible for return
     converged = false
-    time_step = 1
     with_units_base(system, PSY.UnitSystem.SYSTEM_BASE) do
         data = PowerFlowData(
             pf,
             system;
-            check_connectivity = get(kwargs, :check_connectivity, true),
+            correct_bustypes = get(kwargs, :correct_bustypes, false),
+            network_reductions = get(kwargs, :network_reductions, PNM.NetworkReduction[]),
         )
 
-        converged = _ac_powerflow(data, pf, time_step; kwargs...)
+        converged = solve_powerflow!(data; pf = pf, kwargs...)
 
         if converged
             write_powerflow_solution!(
                 system,
+                pf,
                 data,
                 get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER),
             )
             @info("PowerFlow solve converged, the results have been stored in the system")
         else
-            @error("The powerflow solver returned convergence = $(converged)")
+            @error("The powerflow solver returned convergence = $converged")
         end
     end
 
@@ -83,7 +83,7 @@ function solve_powerflow(
     system::PSY.System;
     kwargs...,
 )
-    # df_results must be defined in the oueter scope first to be visible for return
+    # df_results must be defined in the outer scope first to be visible for return
     df_results = Dict{String, DataFrames.DataFrame}()
     converged = false
     time_step = 1
@@ -91,10 +91,11 @@ function solve_powerflow(
         data = PowerFlowData(
             pf,
             system;
-            check_connectivity = get(kwargs, :check_connectivity, true),
+            correct_bustypes = get(kwargs, :correct_bustypes, false),
+            network_reductions = get(kwargs, :network_reductions, PNM.NetworkReduction[]),
         )
 
-        converged = _ac_powerflow(data, pf, time_step; kwargs...)
+        converged = solve_powerflow!(data; pf = pf, kwargs...)
 
         if converged
             @info("PowerFlow solve converged, the results are exported in DataFrames")
@@ -116,12 +117,11 @@ Solve the multiperiod AC power flow problem for the given power flow data.
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- `data::ACPowerFlowData`: The power flow data containing netwthe grid information and initial conditions.
+- `data::ACPowerFlowData`: The power flow data containing the grid information and initial conditions.
 - `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver type. Defaults to `NewtonRaphsonACPowerFlow`.
 - `kwargs...`: Additional keyword arguments.
 
 # Keyword Arguments
-- `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
 - 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
 - `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `data.timestep_map`.
 
@@ -151,44 +151,54 @@ function solve_powerflow!(
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
 
-    # TODO If anything in the grid topology changes, 
-    #  e.g. tap positions of transformers or in service 
-    #  status of branches, Yft and Ytf must be updated!
-    Yft = data.power_network_matrix.yft
-    Ytf = data.power_network_matrix.ytf
-    fb = data.power_network_matrix.fb
-    tb = data.power_network_matrix.tb
+    Yft = data.power_network_matrix.arc_admittance_from_to
+    Ytf = data.power_network_matrix.arc_admittance_to_from
+    @assert PNM.get_bus_lookup(Yft) == get_bus_lookup(data)
+    arcs = PNM.get_arc_axis(Yft)
+    @assert arcs == PNM.get_arc_axis(Ytf)
+    @assert length(PNM.get_bus_axis(Yft)) == length(data.bus_angles[:, 1])
+    bus_lookup = get_bus_lookup(data)
+    fb_ix = [bus_lookup[bus_no] for bus_no in first.(arcs)]  # from bus indices
+    tb_ix = [bus_lookup[bus_no] for bus_no in last.(arcs)]   # to bus indices
+    @assert length(fb_ix) == length(arcs)
 
     for time_step in sorted_time_steps
         converged = _ac_powerflow(data, pf, time_step; kwargs...)
         ts_converged[time_step] = converged
 
-        if !converged  # set values to NaN for not converged time steps
+        if OVERWRITE_NON_CONVERGED && !converged
+            # set values to NaN for not converged time steps
             data.bus_activepower_injection[:, time_step] .= NaN
             data.bus_activepower_withdrawals[:, time_step] .= NaN
+            data.bus_activepower_constant_current_withdrawals[:, time_step] .= NaN
+            data.bus_activepower_constant_impedance_withdrawals[:, time_step] .= NaN
             data.bus_reactivepower_injection[:, time_step] .= NaN
             data.bus_reactivepower_withdrawals[:, time_step] .= NaN
+            data.bus_reactivepower_constant_current_withdrawals[:, time_step] .= NaN
+            data.bus_reactivepower_constant_impedance_withdrawals[:, time_step] .= NaN
             data.bus_magnitude[:, time_step] .= NaN
             data.bus_angles[:, time_step] .= NaN
         end
     end
 
     # write branch flows
-    # TODO if Yft, Ytf change between time steps, this must be moved inside the loop!
+    # NOTE PNM's structs use ComplexF32, while the system objects store Float64's.
+    #      so if you set the system bus angles/voltages to match these fields, then repeat 
+    #      this math using the system voltages, you'll see differences in the flows, ~1e-4.
     ts_V =
         data.bus_magnitude[:, sorted_time_steps] .*
         exp.(1im .* data.bus_angles[:, sorted_time_steps])
-    Sft = ts_V[fb, :] .* conj.(Yft * ts_V)
-    Stf = ts_V[tb, :] .* conj.(Ytf * ts_V)
 
-    data.branch_activepower_flow_from_to .= real.(Sft)
-    data.branch_reactivepower_flow_from_to .= imag.(Sft)
-    data.branch_activepower_flow_to_from .= real.(Stf)
-    data.branch_reactivepower_flow_to_from .= imag.(Stf)
+    Sft = ts_V[fb_ix, :] .* conj.(Yft.data * ts_V)
+    Stf = ts_V[tb_ix, :] .* conj.(Ytf.data * ts_V)
+    data.arc_activepower_flow_from_to .= real.(Sft)
+    data.arc_reactivepower_flow_from_to .= imag.(Sft)
+    data.arc_activepower_flow_to_from .= real.(Stf)
+    data.arc_reactivepower_flow_to_from .= imag.(Stf)
 
     data.converged .= ts_converged
 
-    return
+    return all(data.converged)
 end
 
 function _ac_powerflow(
@@ -224,14 +234,22 @@ function _check_q_limit_bounds!(
         else
             continue
         end
+        Q_max = data.bus_reactivepower_bounds[ix, time_step][2]
+        Q_min = data.bus_reactivepower_bounds[ix, time_step][1]
 
-        if Q_gen <= data.bus_reactivepower_bounds[ix, time_step][1]
+        if isnan(Q_min) && isnan(Q_max)
+            @warn "Reactive power limits are uninitialized for bus $(bus_names[ix])" maxlog =
+                PF_MAX_LOG
+            continue
+        end
+
+        if Q_gen <= Q_min
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
             data.bus_reactivepower_injection[ix, time_step] =
                 data.bus_reactivepower_bounds[ix, time_step][1]
-        elseif Q_gen >= data.bus_reactivepower_bounds[ix, time_step][2]
+        elseif Q_gen >= Q_max
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ

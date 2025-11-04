@@ -26,9 +26,22 @@
 
     # create structure for multi-period case
     time_steps = 24
-    data_1 = PowerFlowData(DCPowerFlow(), sys; time_steps = time_steps)
-    data_2 = PowerFlowData(PTDFDCPowerFlow(), sys; time_steps = time_steps)
-    data_3 = PowerFlowData(vPTDFDCPowerFlow(), sys; time_steps = time_steps)
+    data_1 =
+        PowerFlowData(DCPowerFlow(), sys; time_steps = time_steps, correct_bustypes = true)
+    data_2 =
+        PowerFlowData(
+            PTDFDCPowerFlow(),
+            sys;
+            time_steps = time_steps,
+            correct_bustypes = true,
+        )
+    data_3 =
+        PowerFlowData(
+            vPTDFDCPowerFlow(),
+            sys;
+            time_steps = time_steps,
+            correct_bustypes = true,
+        )
 
     # allocate data from csv
     injs = Matrix(injections)
@@ -53,28 +66,30 @@
     results_3 = solve_powerflow(data_3, sys)
 
     # check results
+    # CSVs are in p.u., line flows are in natural units: convert back to p.u.
+    basepower = PSY.get_base_power(sys)
 
     # case 1
     for i in 1:length(data_1.timestep_map)
         net_flow = results_1[data_1.timestep_map[i]]["flow_results"].P_from_to
         net_flow_tf = results_1[data_1.timestep_map[i]]["flow_results"].P_to_from
-        @test isapprox(net_flow, flows[:, i], atol = 1e-5)
-        @test isapprox(net_flow_tf, -flows[:, i], atol = 1e-5)
+        @test isapprox(1 / basepower .* net_flow, flows[:, i], atol = 1e-5)
+        @test isapprox(1 / basepower .* net_flow_tf, -flows[:, i], atol = 1e-5)
     end
 
     # case 2
     for i in 1:length(data_1.timestep_map)
         net_flow = results_1[data_2.timestep_map[i]]["flow_results"].P_from_to
         net_flow_tf = results_1[data_2.timestep_map[i]]["flow_results"].P_to_from
-        @test isapprox(net_flow, flows[:, i], atol = 1e-5)
-        @test isapprox(net_flow_tf, -flows[:, i], atol = 1e-5)
+        @test isapprox(1 / basepower .* net_flow, flows[:, i], atol = 1e-5)
+        @test isapprox(1 / basepower .* net_flow_tf, -flows[:, i], atol = 1e-5)
     end
 
     # case 3
     for i in 1:length(data_1.timestep_map)
         net_flow = results_1[data_3.timestep_map[i]]["flow_results"].P_from_to
         net_flow_tf = results_1[data_3.timestep_map[i]]["flow_results"].P_to_from
-        @test isapprox(net_flow, flows[:, i], atol = 1e-5)
-        @test isapprox(net_flow_tf, -flows[:, i], atol = 1e-5)
+        @test isapprox(1 / basepower .* net_flow, flows[:, i], atol = 1e-5)
+        @test isapprox(1 / basepower .* net_flow_tf, -flows[:, i], atol = 1e-5)
     end
 end
