@@ -101,8 +101,9 @@ end
                 arc_flows = results["flow_results"]
                 trf_arc_flows = zeros(ComplexF32, 3)
                 for i in 1:3
-                    adj = ("primary", "secondary", "tertiary")[i]
-                    ix = arc_flows[!, "line_name"] .== "$(test_trf_name)-$adj"
+                    ix = arc_flows[!, "line_name"] .== "$(test_trf_name)_winding_$i"
+                    @assert sum(ix) > 0 "could not find arc in results dataframe with name" *
+                                        " $(test_trf_name)_winding_$i"
                     trf_arc_flows[i] =
                         sum(arc_flows[ix, "P_from_to"]) +
                         im * sum(arc_flows[ix, "Q_from_to"])
@@ -280,7 +281,7 @@ end
     for (equivalent_arc, segments) in PNM.get_series_branch_map(nrd)
         for segment in segments
             # skip parallel branches
-            if segment isa PSY.ACTransmission
+            if !(segment isa PNM.BranchesParallel)
                 compare_power_flows(unreduced, sys, segment)
             end
         end

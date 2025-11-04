@@ -241,7 +241,7 @@ active and reactive power generated at the `j`th bus (`REF` and `PV` only). Then
 | ∂ΔP₃/∂P₁ | ∂ΔP₃/∂Q₁ | ∂ΔP₃/∂Q₂ | ∂ΔP₃/∂θ₂ | ∂ΔP₃/∂V₃ | ∂ΔP₃/∂θ₃ |
 | ∂ΔQ₃/∂P₁ | ∂ΔQ₃/∂Q₁ | ∂ΔQ₃/∂Q₂ | ∂ΔQ₃/∂θ₂ | ∂ΔQ₃/∂V₃ | ∂ΔQ₃/∂θ₃ |
 
-In reality, for large networks, this matrix would be sparse, and each 4x4 block would only be nonzero
+In reality, for large networks, this matrix would be sparse, and each 2x2 block would only be nonzero
 when there's a line between the respective buses.
 
 Finally, the function constructs a sparse matrix from the collected indices and values and returns it.

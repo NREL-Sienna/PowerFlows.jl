@@ -96,13 +96,9 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         :ramp_limits,
         :time_limits,
         :services,
-        :rating,
         :angle_limits,
         :winding_group_number,
         :control_objective_primary,
-        :rating_primary,
-        :rating_secondary,
-        :rating_tertiary,
     ]),
     exclude_fields_for_type = Dict(
         PSY.ThermalStandard => Set([
@@ -127,6 +123,14 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         PSY.Transformer2W => Set([
             :active_power_flow,
             :reactive_power_flow,
+        ]),
+        PSY.Transformer3W => Set([
+            :active_power_flow,
+            :reactive_power_flow,
+            :rating,  # TODO why don't ratings match?
+            :rating_primary,
+            :rating_secondary,
+            :rating_tertiary,
         ]),
     ),
     generator_comparison_fns = [  # TODO rating
@@ -468,7 +472,7 @@ end
     # Updating with changed value should result in a different reimport (System version)
     sys2 = deepcopy(sys)
     line_to_change = first(get_components(Line, sys2))
-    set_rating!(line_to_change, get_rating(line_to_change) * 12345.6)
+    set_rating!(line_to_change, get_rating(line_to_change) * 123.4)  # careful not to exceed PF.INFINITE_BOUND
     update_exporter!(exporter, sys2)
     write_export(exporter, "basic4"; overwrite = true)
     reread_sys2 = read_system_with_metadata(joinpath(export_location, "basic4"))
