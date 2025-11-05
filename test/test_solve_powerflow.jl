@@ -697,21 +697,65 @@ end
     @test isapprox(data1.bus_angles[:, 1], data2.bus_angles[:, 1], atol = 1e-6, rtol = 0)
 end
 
+function check_lcc_consistency(
+    lcc::PSY.TwoTerminalLCCLine,
+    lcc_results::DataFrame;
+    base_power::Float64 = 100.0,
+)
+    @assert nrow(lcc_results) == 1
+
+    lcc_arc = PNM.get_arc_tuple(PSY.get_arc(lcc))
+    @test lcc_results[1, :bus_from] == lcc_arc[1]
+    @test lcc_results[1, :bus_to] == lcc_arc[2]
+    @test lcc_results[1, :line_name] == PSY.get_name(lcc)
+
+    @test lcc_results[1, :rectifier_delay_angle] ==
+          PSY.get_rectifier_delay_angle(lcc)
+    @test lcc_results[1, :inverter_extinction_angle] ==
+          PSY.get_inverter_extinction_angle(lcc)
+    @test lcc_results[1, :rectifier_tap] == PSY.get_rectifier_tap_setting(lcc)
+    @test lcc_results[1, :inverter_tap] == PSY.get_inverter_tap_setting(lcc)
+    @test lcc_results[1, :P_from_to] == base_power .* PSY.get_active_power_flow(lcc)
+    return nothing
+end
+
+function simple_lcc_system()
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+    b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.1, 0.0)
+    _add_simple_load!(sys, b2, 10, 5)
+    _add_simple_load!(sys, b3, 60, 20)
+    _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
+    _add_simple_line!(sys, b1, b3, 5e-3, 5e-3, 1e-3)
+    _add_simple_source!(sys, b1, 0.0, 0.0)
+    lcc = _add_simple_lcc!(sys, b2, b3, 0.05, 0.05, 0.08)
+    return sys, lcc
+end
+
+@testset "Test LCC consistency" begin
+    sys, lcc = simple_lcc_system()
+    pf = ACPowerFlow()
+    lcc_results = solve_powerflow(pf, sys)["lcc_results"]
+    solve_powerflow!(pf, sys)
+    check_lcc_consistency(lcc, lcc_results)
+
+    # repeat with a different setpoint
+    sys, lcc = simple_lcc_system()
+    PSY.set_transfer_setpoint!(lcc, -25.0)
+    lcc_results = solve_powerflow(pf, sys)["lcc_results"]
+    solve_powerflow!(pf, sys)
+    check_lcc_consistency(lcc, lcc_results)
+
+    # could add one with 2+ LCCs.
+end
+
 @testset "Test LCC" begin
     for ACSolver in AC_SOLVERS_TO_TEST
         # Skip the solvers that do not support LCCs
         ACSolver ∈ (LUACPowerFlow, RobustHomotopyPowerFlow) && continue
         @testset "AC Solver: $(ACSolver)" begin
-            sys = System(100.0)
-            b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
-            b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
-            b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.1, 0.0)
-            ld2 = _add_simple_load!(sys, b2, 10, 5)
-            ld3 = _add_simple_load!(sys, b3, 60, 20)
-            l12 = _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
-            l13 = _add_simple_line!(sys, b1, b3, 5e-3, 5e-3, 1e-3)
-            s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
-            lcc = _add_simple_lcc!(sys, b2, b3, 0.05, 0.05, 0.08)
+            sys, lcc = simple_lcc_system()
             pf = ACPowerFlow{ACSolver}()
             data = PowerFlowData(pf, sys; correct_bustypes = true)
             solve_powerflow!(data; pf = pf)
@@ -724,7 +768,6 @@ end
                 atol = 1e-6, rtol = 0,
             )
 
-            # TODO what should this be, now that the LCC flows are stored separately?
             LCC_active_flow =
                 data.lcc.arc_activepower_flow_from_to[1, 1] +
                 data.lcc.arc_activepower_flow_to_from[1, 1]

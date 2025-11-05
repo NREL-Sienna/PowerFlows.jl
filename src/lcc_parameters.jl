@@ -21,13 +21,11 @@ LCCConverterParameters(n_timesteps::Int, n_lccs::Int) = LCCConverterParameters(
 struct LCCParameters
     # bus number pairs
     arcs::Vector{Tuple{Int, Int}}
-    # bus index pairs, ordered to match arcs.
-    # Slightly redundant: matches zip(rectifier.bus, inverter.bus)
+    # all the following fields are ordered to match arcs:
+    # bus index pairs. Slightly redundant: matches zip(rectifier.bus, inverter.bus)
     bus_indices::Vector{Tuple{Int, Int}}
-    # (y_ff, y_tt) admittance pair, ordered to match arcs.
+    # (y_ff, y_tt) admittance pairs
     branch_admittances::Vector{Tuple{ComplexF64, ComplexF64}}
-    # each dict stores (bus_rectifier, bus_inverter) -> power flow.
-    # keys here are bus indices, not bus numbers.
     arc_activepower_flow_from_to::Matrix{Float64}
     arc_activepower_flow_to_from::Matrix{Float64}
     arc_reactivepower_flow_from_to::Matrix{Float64}
