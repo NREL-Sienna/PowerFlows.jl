@@ -6,6 +6,16 @@ powerflow_match_fn(
     b::T,
 ) where {T <: Union{AbstractFloat, AbstractArray{<:AbstractFloat}}} =
     isapprox(a, b; atol = POWERFLOW_COMPARISON_TOLERANCE) || IS.isequivalent(a, b)
+powerflow_match_fcn(
+    a::Matrix{Tuple{T, T}},
+    b::Matrix{Tuple{T, T}},
+) where {T <: AbstractFloat} = begin
+    all(
+        isapprox.(first.(a), first.(b); atol = POWERFLOW_COMPARISON_TOLERANCE)
+        .&
+        isapprox.(last.(a), last.(b); atol = POWERFLOW_COMPARISON_TOLERANCE),
+    ) || IS.isequivalent(a, b)
+end
 powerflow_match_fn(a, b) = IS.isequivalent(a, b)
 
 # TODO another temporary hack
@@ -13,6 +23,10 @@ powerflow_match_fn(a, b) = IS.isequivalent(a, b)
 function create_pf_friendly_rts_gmlc()
     sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
     remove_component!(sys, only(get_components(PSY.TwoTerminalHVDC, sys)))  # HVDC power flow not implemented yet
+    # temporary work-around for PSB issue #174
+    for sc in PSY.get_components(PSY.SynchronousCondenser, sys)
+        PSY.set_base_power!(sc, 100.0)
+    end
     # Modify some things so reactive power redistribution succeeds
     for (component_type, component_name, new_limits) in [
         (RenewableDispatch, "113_PV_1", (min = -30.0, max = 30.0))
@@ -395,4 +409,20 @@ function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
     data.bus_activepower_injection .= deepcopy(injs[:, 1:time_steps])
     data.bus_activepower_withdrawals .= deepcopy(withs[:, 1:time_steps])
     return nothing
+end
+
+function power_flow_with_units(
+    sys::PSY.System,
+    T::Type{<:PF.PowerFlowEvaluationModel},
+    units::PSY.UnitSystem,
+)
+    with_units_base(sys, units) do
+        results = solve_powerflow(T(), sys; correct_bustypes = true)
+        if "1" in keys(results)
+            first_line_flow = results["1"]["flow_results"][1, :]
+        else
+            first_line_flow = results["flow_results"][1, :]
+        end
+        return (first_line_flow[:line_name], first_line_flow[:P_from_to])
+    end
 end

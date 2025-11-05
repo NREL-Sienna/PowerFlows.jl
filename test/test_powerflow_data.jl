@@ -39,12 +39,18 @@ end
           PF.vPTDFPowerFlowData
 end
 
+# FIXME now that we're using system base consistently, some of these tests fail.
+# revisit once issues #1575 in PSY and #174 in PSB are resolved.
 @testset "System <-> PowerFlowData round trip" begin
     # TODO currently only tested with ACPowerFlow
     # TODO test that update_system! errors if the PowerFlowData doesn't correspond to the system
     for ACSolver in AC_SOLVERS_TO_TEST
         @testset "AC Solver: $(ACSolver)" begin
             sys_original = build_system(PSISystems, "RTS_GMLC_DA_sys")
+            # temporary work-around for PSB issue #174
+            for sc in PSY.get_components(PSY.SynchronousCondenser, sys_original)
+                PSY.set_base_power!(sc, 100.0)
+            end
             data_original =
                 PowerFlowData(
                     ACPowerFlow{ACSolver}(),
@@ -57,7 +63,7 @@ end
             data_modified =
                 PowerFlowData(
                     ACPowerFlow{ACSolver}(),
-                    sys_original;
+                    sys_original; # not a copy-paste error: intentionally sys_original
                     correct_bustypes = true,
                 )
             modify_rts_powerflow!(data_modified)

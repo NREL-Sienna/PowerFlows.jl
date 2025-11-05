@@ -463,112 +463,116 @@ function write_powerflow_solution!(
     max_iterations::Int,
     time_step::Int = 1,
 )
-    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
+    with_units_base(sys, "SYSTEM_BASE") do
+        nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
 
-    # getting bus by number is slow, O(n), so use names instead.
-    temp_bus_map = Dict{Int, String}(
-        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
-    )
-
-    gspf = if isnothing(data.generator_slack_participation_factors)
-        nothing
-    else
-        data.generator_slack_participation_factors[time_step]
-    end
-
-    # once redistribution is working again, could remove skip_redistribution.
-    bus_lookup = get_bus_lookup(data)
-    for (bus_number, reduced_buses) in PNM.get_bus_reduction_map(nrd)
-        if length(reduced_buses) == 0
-            # no reduction.
-            bus_name = temp_bus_map[bus_number]
-            bus = PSY.get_component(PSY.ACBus, sys, bus_name)
-            ix = bus_lookup[bus_number]
-            bustype = data.bus_type[ix, time_step] # may not be the same as bus.bustype!
-            if bustype != PSY.get_bustype(bus)
-                @warn "Changing system bus type at bus $(PSY.get_name(bus)) to match " *
-                      "power flow bus type." maxlog = PF_MAX_LOG
-                PSY.set_bustype!(bus, bustype)
-            end
-            if bustype == PSY.ACBusTypes.REF && !pf.skip_redistribution
-                P_gen = data.bus_activepower_injection[ix, time_step]
-                Q_gen = data.bus_reactivepower_injection[ix, time_step]
-                _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations, gspf)
-            elseif bustype == PSY.ACBusTypes.PV
-                Q_gen = data.bus_reactivepower_injection[ix, time_step]
-                bus.angle = data.bus_angles[ix, time_step]
-                # If the PV bus has a nonzero slack participation factor,
-                # then not only reactive power but also active power could have been changed
-                # in the power flow calculation. This requires the same
-                # active and reactive power redistribution step as for the REF bus.
-                if data.bus_slack_participation_factors[ix, time_step] != 0.0 &&
-                   !pf.skip_redistribution
-                    P_gen = data.bus_activepower_injection[ix, time_step]
-                    _power_redistribution_ref(
-                        sys,
-                        P_gen,
-                        Q_gen,
-                        bus,
-                        max_iterations,
-                        gspf,
-                    )
-                elseif !pf.skip_redistribution
-                    _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
-                end
-            elseif bustype == PSY.ACBusTypes.PQ
-                Vm = data.bus_magnitude[ix, time_step]
-                θ = data.bus_angles[ix, time_step]
-                PSY.set_magnitude!(bus, Vm)
-                PSY.set_angle!(bus, θ)
-            end
-        else
-            @warn "Buses $reduced_buses were reduced into bus $bus_number: skipping reactive" *
-                  " power redistribution and leaving voltage fields unchanged for those" *
-                  " buses" maxlog = PF_MAX_LOG
-        end
-    end
-
-    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
-    both_branch_types = merge(
-        PNM.get_direct_branch_map(nrd),
-        PNM.get_transformer3W_map(nrd),
-    )
-    set_branch_flows_for_dict!(
-        both_branch_types,
-        data,
-        time_step,
-    )
-
-    # calculate the bus voltages at buses removed in degree 2 reduction.
-    bus_lookup = get_bus_lookup(data)
-    for (equivalent_arc, segments) in PNM.get_series_branch_map(nrd)
-        (bus_from, bus_to) = equivalent_arc
-        (ix_from, ix_to) = (bus_lookup[bus_from], bus_lookup[bus_to])
-        Vm_endpoints = (data.bus_magnitude[ix_from], data.bus_magnitude[ix_to])
-        Va_endpoints = (data.bus_angles[ix_from], data.bus_angles[ix_to])
-        V_endpoints = Vm_endpoints .* exp.(im .* Va_endpoints)
-        _set_series_voltages_and_flows!(
-            sys,
-            segments,
-            equivalent_arc,
-            V_endpoints,
-            temp_bus_map,
+        # getting bus by number is slow, O(n), so use names instead.
+        temp_bus_map = Dict{Int, String}(
+            PSY.get_number(b) => PSY.get_name(b) for
+            b in PSY.get_components(PSY.ACBus, sys)
         )
-    end
 
-    # note: this assumes all bus voltages have been written to the system objects already.
-    for (equiv_arc, parallel_branches) in PNM.get_parallel_branch_map(nrd)
-        #set_power_flow!(parallel_branches,
+        gspf = if isnothing(data.generator_slack_participation_factors)
+            nothing
+        else
+            data.generator_slack_participation_factors[time_step]
+        end
 
-        #)
-        (bus_from_no, bus_to_no) = equiv_arc
-        (bus_from, bus_to) = (PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_from_no]),
-            PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_to_no]))
-        (V_from, V_to) = (bus_from, bus_to) .|> get_complex_voltage
-        S = get_segment_flow(parallel_branches, V_from, V_to)
-        set_power_flow!(parallel_branches, S)
+        # once redistribution is working again, could remove skip_redistribution.
+        bus_lookup = get_bus_lookup(data)
+        for (bus_number, reduced_buses) in PNM.get_bus_reduction_map(nrd)
+            if length(reduced_buses) == 0
+                # no reduction.
+                bus_name = temp_bus_map[bus_number]
+                bus = PSY.get_component(PSY.ACBus, sys, bus_name)
+                ix = bus_lookup[bus_number]
+                bustype = data.bus_type[ix, time_step] # may not be the same as bus.bustype!
+                if bustype != PSY.get_bustype(bus)
+                    @warn "Changing system bus type at bus $(PSY.get_name(bus)) to match " *
+                          "power flow bus type." maxlog = PF_MAX_LOG
+                    PSY.set_bustype!(bus, bustype)
+                end
+                if bustype == PSY.ACBusTypes.REF && !pf.skip_redistribution
+                    P_gen = data.bus_activepower_injection[ix, time_step]
+                    Q_gen = data.bus_reactivepower_injection[ix, time_step]
+                    _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations, gspf)
+                elseif bustype == PSY.ACBusTypes.PV
+                    Q_gen = data.bus_reactivepower_injection[ix, time_step]
+                    bus.angle = data.bus_angles[ix, time_step]
+                    # If the PV bus has a nonzero slack participation factor,
+                    # then not only reactive power but also active power could have been changed
+                    # in the power flow calculation. This requires the same
+                    # active and reactive power redistribution step as for the REF bus.
+                    if data.bus_slack_participation_factors[ix, time_step] != 0.0 &&
+                       !pf.skip_redistribution
+                        P_gen = data.bus_activepower_injection[ix, time_step]
+                        _power_redistribution_ref(
+                            sys,
+                            P_gen,
+                            Q_gen,
+                            bus,
+                            max_iterations,
+                            gspf,
+                        )
+                    elseif !pf.skip_redistribution
+                        _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+                    end
+                elseif bustype == PSY.ACBusTypes.PQ
+                    Vm = data.bus_magnitude[ix, time_step]
+                    θ = data.bus_angles[ix, time_step]
+                    PSY.set_magnitude!(bus, Vm)
+                    PSY.set_angle!(bus, θ)
+                end
+            else
+                @warn "Buses $reduced_buses were reduced into bus $bus_number: skipping reactive" *
+                      " power redistribution and leaving voltage fields unchanged for those" *
+                      " buses" maxlog = PF_MAX_LOG
+            end
+        end
+
+        nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
+        both_branch_types = merge(
+            PNM.get_direct_branch_map(nrd),
+            PNM.get_transformer3W_map(nrd),
+        )
+        set_branch_flows_for_dict!(
+            both_branch_types,
+            data,
+            time_step,
+        )
+
+        # calculate the bus voltages at buses removed in degree 2 reduction.
+        bus_lookup = get_bus_lookup(data)
+        for (equivalent_arc, segments) in PNM.get_series_branch_map(nrd)
+            (bus_from, bus_to) = equivalent_arc
+            (ix_from, ix_to) = (bus_lookup[bus_from], bus_lookup[bus_to])
+            Vm_endpoints = (data.bus_magnitude[ix_from], data.bus_magnitude[ix_to])
+            Va_endpoints = (data.bus_angles[ix_from], data.bus_angles[ix_to])
+            V_endpoints = Vm_endpoints .* exp.(im .* Va_endpoints)
+            _set_series_voltages_and_flows!(
+                sys,
+                segments,
+                equivalent_arc,
+                V_endpoints,
+                temp_bus_map,
+            )
+        end
+
+        # note: this assumes all bus voltages have been written to the system objects already.
+        for (equiv_arc, parallel_branches) in PNM.get_parallel_branch_map(nrd)
+            #set_power_flow!(parallel_branches,
+
+            #)
+            (bus_from_no, bus_to_no) = equiv_arc
+            (bus_from, bus_to) =
+                (PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_from_no]),
+                    PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_to_no]))
+            (V_from, V_to) = (bus_from, bus_to) .|> get_complex_voltage
+            S = get_segment_flow(parallel_branches, V_from, V_to)
+            set_power_flow!(parallel_branches, S)
+        end
+        return
     end
-    return
 end
 
 # returns list of arc tuples and buses numbers: ABA case
@@ -686,46 +690,48 @@ function write_results(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
     sys::PSY.System,
 )
-    @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
+    with_units_base(sys, "SYSTEM_BASE") do
+        @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
 
-    ### non time-dependent variables
+        ### non time-dependent variables
 
-    # get bus and arcs
-    arcs, buses = _get_arcs_buses(data)
+        # get bus and arcs
+        arcs, buses = _get_arcs_buses(data)
 
-    from_bus = first.(arcs)
-    to_bus = last.(arcs)
-    arc_names = get_arc_names(data)
-    if length(PSY.get_components(PSY.Transformer3W, sys)) > 0
-        @info "3-winding transformers included in the results export: bus-to-star flows " *
-              "reported with names like 'TransformerName-primary', " *
-              "'TransformerName-secondary', and 'TransformerName-tertiary'."
+        from_bus = first.(arcs)
+        to_bus = last.(arcs)
+        arc_names = get_arc_names(data)
+        if length(PSY.get_components(PSY.Transformer3W, sys)) > 0
+            @info "3-winding transformers included in the results export: bus-to-star flows " *
+                  "reported with names like 'TransformerName-primary', " *
+                  "'TransformerName-secondary', and 'TransformerName-tertiary'."
+        end
+
+        result_dict = Dict{Union{String, Char}, Dict{String, DataFrames.DataFrame}}()
+        for i in 1:length(data.timestep_map)
+            temp_dict = _allocate_results_data(
+                arc_names,
+                buses,
+                PSY.get_base_power(sys),
+                from_bus,
+                to_bus,
+                data.bus_magnitude[:, i],
+                data.bus_angles[:, i],
+                data.bus_activepower_injection[:, i],
+                data.bus_reactivepower_injection[:, i],
+                data.bus_activepower_withdrawals[:, i],
+                data.bus_reactivepower_withdrawals[:, i],
+                data.arc_activepower_flow_from_to[:, i],
+                data.arc_reactivepower_flow_from_to[:, i],
+                data.arc_activepower_flow_to_from[:, i],
+                data.arc_reactivepower_flow_to_from[:, i],
+                zeros(size(arc_names)),
+                zeros(size(arc_names)),
+            )
+            result_dict[data.timestep_map[i]] = temp_dict
+        end
+        return result_dict
     end
-
-    result_dict = Dict{Union{String, Char}, Dict{String, DataFrames.DataFrame}}()
-    for i in 1:length(data.timestep_map)
-        temp_dict = _allocate_results_data(
-            arc_names,
-            buses,
-            PSY.get_base_power(sys),
-            from_bus,
-            to_bus,
-            data.bus_magnitude[:, i],
-            data.bus_angles[:, i],
-            data.bus_activepower_injection[:, i],
-            data.bus_reactivepower_injection[:, i],
-            data.bus_activepower_withdrawals[:, i],
-            data.bus_reactivepower_withdrawals[:, i],
-            data.arc_activepower_flow_from_to[:, i],
-            data.arc_reactivepower_flow_from_to[:, i],
-            data.arc_activepower_flow_to_from[:, i],
-            data.arc_reactivepower_flow_to_from[:, i],
-            zeros(size(arc_names)),
-            zeros(size(arc_names)),
-        )
-        result_dict[data.timestep_map[i]] = temp_dict
-    end
-    return result_dict
 end
 
 """
@@ -748,52 +754,54 @@ function write_results(
     data::ACPowerFlowData,
     time_step::Int64,
 )
-    @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
-    busIxToFAPower = _calculate_fixed_admittance_powers(sys, data, time_step)
-    for (bus_ix, fa_power) in busIxToFAPower
-        data.bus_activepower_withdrawals[bus_ix, time_step] += fa_power[1]
-        data.bus_reactivepower_withdrawals[bus_ix, time_step] += fa_power[2]
+    with_units_base(sys, "SYSTEM_BASE") do
+        @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
+        busIxToFAPower = _calculate_fixed_admittance_powers(sys, data, time_step)
+        for (bus_ix, fa_power) in busIxToFAPower
+            data.bus_activepower_withdrawals[bus_ix, time_step] += fa_power[1]
+            data.bus_reactivepower_withdrawals[bus_ix, time_step] += fa_power[2]
+        end
+
+        # NOTE: this may be different than get_bus_numbers(sys) if there's a network reduction!
+        bus_numbers = PNM.get_bus_axis(data.power_network_matrix)
+
+        arcs = PNM.get_arc_axis(data.power_network_matrix.arc_admittance_from_to)
+        from_bus = first.(arcs)
+        to_bus = last.(arcs)
+        arc_names = get_arc_names(data)
+        if length(PSY.get_components(PSY.Transformer3W, sys)) > 0
+            @info "3-winding transformers included in the results export: bus-to-star flows " *
+                  "reported with names like 'TransformerName-primary', " *
+                  "'TransformerName-secondary', and 'TransformerName-tertiary'."
+        end
+
+        arc_activepower_losses =
+            data.arc_activepower_flow_from_to[:, time_step] .+
+            data.arc_activepower_flow_to_from[:, time_step]
+        arc_reactivepower_losses =
+            data.arc_reactivepower_flow_from_to[:, time_step] .+
+            data.arc_reactivepower_flow_to_from[:, time_step]
+
+        return _allocate_results_data(
+            arc_names,
+            bus_numbers,
+            PSY.get_base_power(sys),
+            from_bus,
+            to_bus,
+            data.bus_magnitude[:, time_step],
+            data.bus_angles[:, time_step],
+            data.bus_activepower_injection[:, time_step],
+            data.bus_reactivepower_injection[:, time_step],
+            data.bus_activepower_withdrawals[:, time_step],
+            data.bus_reactivepower_withdrawals[:, time_step],
+            data.arc_activepower_flow_from_to[:, time_step],
+            data.arc_reactivepower_flow_from_to[:, time_step],
+            data.arc_activepower_flow_to_from[:, time_step],
+            data.arc_reactivepower_flow_to_from[:, time_step],
+            arc_activepower_losses,
+            arc_reactivepower_losses,
+        )
     end
-
-    # NOTE: this may be different than get_bus_numbers(sys) if there's a network reduction!
-    bus_numbers = PNM.get_bus_axis(data.power_network_matrix)
-
-    arcs = PNM.get_arc_axis(data.power_network_matrix.arc_admittance_from_to)
-    from_bus = first.(arcs)
-    to_bus = last.(arcs)
-    arc_names = get_arc_names(data)
-    if length(PSY.get_components(PSY.Transformer3W, sys)) > 0
-        @info "3-winding transformers included in the results export: bus-to-star flows " *
-              "reported with names like 'TransformerName-primary', " *
-              "'TransformerName-secondary', and 'TransformerName-tertiary'."
-    end
-
-    arc_activepower_losses =
-        data.arc_activepower_flow_from_to[:, time_step] .+
-        data.arc_activepower_flow_to_from[:, time_step]
-    arc_reactivepower_losses =
-        data.arc_reactivepower_flow_from_to[:, time_step] .+
-        data.arc_reactivepower_flow_to_from[:, time_step]
-
-    return _allocate_results_data(
-        arc_names,
-        bus_numbers,
-        PSY.get_base_power(sys),
-        from_bus,
-        to_bus,
-        data.bus_magnitude[:, time_step],
-        data.bus_angles[:, time_step],
-        data.bus_activepower_injection[:, time_step],
-        data.bus_reactivepower_injection[:, time_step],
-        data.bus_activepower_withdrawals[:, time_step],
-        data.bus_reactivepower_withdrawals[:, time_step],
-        data.arc_activepower_flow_from_to[:, time_step],
-        data.arc_reactivepower_flow_from_to[:, time_step],
-        data.arc_activepower_flow_to_from[:, time_step],
-        data.arc_reactivepower_flow_to_from[:, time_step],
-        arc_activepower_losses,
-        arc_reactivepower_losses,
-    )
 end
 
 """
@@ -807,32 +815,36 @@ function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
     if !isempty(PNM.get_reductions(nrd))
         error("update_system! does not support systems with network reductions.")
     end
-    for bus in PSY.get_components(PSY.ACBus, sys)
-        bus_index = get_bus_lookup(data)[PSY.get_number(bus)]
-        bus_type = data.bus_type[bus_index, time_step]  # use this instead of bus.bustype to account for PV -> PQ
-        if bus_type == PSY.ACBusTypes.REF
-            # For REF bus, voltage and angle are fixed; update active and reactive
-            P_gen = data.bus_activepower_injection[bus_index, time_step]
-            Q_gen = data.bus_reactivepower_injection[bus_index, time_step]
-            _power_redistribution_ref(sys, P_gen, Q_gen, bus,
-                DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
-        elseif bus_type == PSY.ACBusTypes.PV
-            # For PV bus, active and voltage are fixed; update reactive and angle
-            Q_gen = data.bus_reactivepower_injection[bus_index, time_step]
-            _reactive_power_redistribution_pv(sys, Q_gen, bus,
-                DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
-            PSY.set_angle!(bus, data.bus_angles[bus_index, time_step])
-        elseif bus_type == PSY.ACBusTypes.PQ
-            # For PQ bus, active and reactive are fixed; update voltage and angle
-            Vm = data.bus_magnitude[bus_index, time_step]
-            PSY.set_magnitude!(bus, Vm)
-            PSY.set_angle!(bus, data.bus_angles[bus_index, time_step])
-            # if it used to be a PV bus, also set the Q value:
-            if bus.bustype == PSY.ACBusTypes.PV
+    with_units_base(sys, "SYSTEM_BASE") do
+        for bus in PSY.get_components(PSY.ACBus, sys)
+            bus_index = get_bus_lookup(data)[PSY.get_number(bus)]
+            bus_type = data.bus_type[bus_index, time_step]  # use this instead of bus.bustype to account for PV -> PQ
+
+            if bus_type == PSY.ACBusTypes.REF
+                # For REF bus, voltage and angle are fixed; update active and reactive
+                P_gen = data.bus_activepower_injection[bus_index, time_step]
                 Q_gen = data.bus_reactivepower_injection[bus_index, time_step]
+                _power_redistribution_ref(sys, P_gen, Q_gen, bus,
+                    DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
+            elseif bus_type == PSY.ACBusTypes.PV
+                # For PV bus, active and voltage are fixed; update reactive and angle
+                Q_gen = data.bus_reactivepower_injection[bus_index, time_step]
+                @assert !isnan(Q_gen)
                 _reactive_power_redistribution_pv(sys, Q_gen, bus,
                     DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
-                # now both the Q and the Vm, Va are correct for this kind of buses
+                PSY.set_angle!(bus, data.bus_angles[bus_index, time_step])
+            elseif bus_type == PSY.ACBusTypes.PQ
+                # For PQ bus, active and reactive are fixed; update voltage and angle
+                Vm = data.bus_magnitude[bus_index, time_step]
+                PSY.set_magnitude!(bus, Vm)
+                PSY.set_angle!(bus, data.bus_angles[bus_index, time_step])
+                # if it used to be a PV bus, also set the Q value:
+                if bus.bustype == PSY.ACBusTypes.PV
+                    Q_gen = data.bus_reactivepower_injection[bus_index, time_step]
+                    _reactive_power_redistribution_pv(sys, Q_gen, bus,
+                        DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
+                    # now both the Q and the Vm, Va are correct for this kind of buses
+                end
             end
         end
     end

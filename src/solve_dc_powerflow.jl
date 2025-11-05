@@ -98,9 +98,11 @@ function solve_powerflow(
     sys::PSY.System;
     kargs...,
 ) where {T <: AbstractDCPowerFlow}
-    data = PowerFlowData(T(), sys; kargs...)
-    solve_powerflow!(data)
-    return write_results(data, sys)
+    with_units_base(sys, PSY.UnitSystem.SYSTEM_BASE) do
+        data = PowerFlowData(T(), sys; kargs...)
+        solve_powerflow!(data)
+        return write_results(data, sys)
+    end
 end
 
 # MULTI PERIOD ###############################################################

@@ -399,16 +399,18 @@ function make_and_initialize_powerflow_data(
     neighbors = Vector{Set{Int}}(),
     correct_bustypes::Bool = false,
 ) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
-    data = PowerFlowData(
-        pf,
-        power_network_matrix,
-        aux_network_matrix,
-        time_steps;
-        timestep_names = timestep_names,
-        neighbors = neighbors,
-    )
-    initialize_powerflow_data!(data, pf, sys; correct_bustypes = correct_bustypes)
-    return data
+    with_units_base(sys, "SYSTEM_BASE") do
+        data = PowerFlowData(
+            pf,
+            power_network_matrix,
+            aux_network_matrix,
+            time_steps;
+            timestep_names = timestep_names,
+            neighbors = neighbors,
+        )
+        initialize_powerflow_data!(data, pf, sys; correct_bustypes = correct_bustypes)
+        return data
+    end
 end
 
 """
