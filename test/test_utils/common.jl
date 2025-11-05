@@ -447,3 +447,17 @@ function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
     data.bus_activepower_withdrawals .= deepcopy(withs[:, 1:time_steps])
     return nothing
 end
+
+function simple_lcc_system()
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.1, 0.0)
+    b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.1, 0.0)
+    _add_simple_load!(sys, b2, 10, 5)
+    _add_simple_load!(sys, b3, 60, 20)
+    _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
+    _add_simple_line!(sys, b1, b3, 5e-3, 5e-3, 1e-3)
+    _add_simple_source!(sys, b1, 0.0, 0.0)
+    lcc = _add_simple_lcc!(sys, b2, b3, 0.05, 0.05, 0.08)
+    return sys, lcc
+end

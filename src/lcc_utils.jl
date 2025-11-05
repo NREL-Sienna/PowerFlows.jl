@@ -104,8 +104,75 @@ function _update_ybus_lcc!(data::PowerFlowData, time_step::Int64)
     return
 end
 
-function initialize_LCCParameters!(
+"""
+Initialize the `arcs` and `bus_indices` fields of the LCCParameters structure in the PowerFlowData.
+"""
+function initialize_LCC_arcs_and_buses!(
     data::PowerFlowData,
+    lccs::Vector{PSY.TwoTerminalLCCLine},
+    bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
+)
+    lcc_arcs = PSY.get_arc.(lccs)
+    # TODO error if LCCs are involved in reductions.
+    nrd = get_network_reduction_data(data)
+    for (i, arc) in enumerate(lcc_arcs)
+        data.lcc.arcs[i] = PNM.get_arc_tuple(arc, nrd)
+        data.lcc.bus_indices[i] = (
+            _get_bus_ix(
+                bus_lookup,
+                reverse_bus_search_map,
+                PSY.get_number(PSY.get_from(arc)),
+            ),
+            _get_bus_ix(
+                bus_lookup,
+                reverse_bus_search_map,
+                PSY.get_number(PSY.get_to(arc)),
+            ),
+        )
+    end
+    return
+end
+
+function initialize_LCCParameters!(
+    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
+    sys::PSY.System,
+    bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
+)
+    lccs = collect(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys))
+    isempty(lccs) && return
+
+    initialize_LCC_arcs_and_buses!(data, lccs, bus_lookup, reverse_bus_search_map)
+
+    # use the LCCParameter's arc_activepower_flow_{from_to/to_from} field to save the 
+    # power injection at the {rectifier/inverter} respectively.
+
+    for (i, lcc_branch) in enumerate(lccs)
+        data.lcc.arc_activepower_flow_from_to[i, 1] = PSY.get_active_power_flow(lcc_branch)
+        # loss curve is always in natural units.
+        P_dc = with_units_base(sys, PSY.UnitSystem.NATURAL_UNITS) do
+            PSY.get_active_power_flow(lcc_branch)
+        end
+        P_dc == 0.0 && @warn "The active_power_flow field of $(PSY.get_name(lcc_branch)) " *
+              " is zero. This may lead to unexpected results in DC power flow calculations."
+        lcc_loss_curve = PSY.get_loss(lcc_branch)
+        loss_fcn = PSY.get_function_data(lcc_loss_curve)
+        loss_constant = PSY.get_input_at_zero(lcc_loss_curve)
+        loss_constant_float = isnothing(loss_constant) ? 0.0 : loss_constant
+        P_loss = loss_fcn(P_dc) + loss_constant_float
+        P_loss > P_dc && @warn "The loss curve of LCC $(PSY.get_name(lcc_branch)) " *
+              "indicates the losses are greater than the transmitted power $P_dc. " *
+              "Using 0.0 as the inverter received power."
+        # convert back to per unit.
+        inverter_received_power = max((P_dc - P_loss) / PSY.get_base_power(sys), 0.0)
+        data.lcc.arc_activepower_flow_to_from[i, 1] = inverter_received_power
+    end
+    return
+end
+
+function initialize_LCCParameters!(
+    data::ACPowerFlowData,
     sys::PSY.System,
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
@@ -130,24 +197,9 @@ function initialize_LCCParameters!(
     lcc_rectifier_min_alpha = get_lcc_rectifier_min_thyristor_angle(data)
     lcc_inverter_min_gamma = get_lcc_inverter_min_thyristor_angle(data)
 
+    initialize_LCC_arcs_and_buses!(data, lccs, bus_lookup, reverse_bus_search_map)
+
     lcc_arcs = PSY.get_arc.(lccs)
-    # TODO error if LCCs are involved in reductions.
-    nrd = get_network_reduction_data(data)
-    for (i, arc) in enumerate(lcc_arcs)
-        data.lcc.arcs[i] = PNM.get_arc_tuple(arc, nrd)
-        data.lcc.bus_indices[i] = (
-            _get_bus_ix(
-                bus_lookup,
-                reverse_bus_search_map,
-                PSY.get_number(PSY.get_from(arc)),
-            ),
-            _get_bus_ix(
-                bus_lookup,
-                reverse_bus_search_map,
-                PSY.get_number(PSY.get_to(arc)),
-            ),
-        )
-    end
 
     base_power = PSY.get_base_power(sys)
     # todo: if current set point, transform into p set point

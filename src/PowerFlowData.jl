@@ -292,8 +292,8 @@ function PowerFlowData(
     pf::T,
     power_network_matrix::M,
     aux_network_matrix::N,
-    n_timesteps::Int;
-    n_lccs::Int = 0,
+    n_timesteps::Int,
+    n_lccs::Int;
     timestep_names::Vector{String} = String[],
     neighbors = Vector{Set{Int}}(),
 ) where {
@@ -423,23 +423,23 @@ function make_and_initialize_powerflow_data(
     sys::PSY.System,
     power_network_matrix::M,
     aux_network_matrix::N;
-    n_lccs::Int = 0,
     time_steps::Int = 1,
     timestep_names::Vector{String} = String[],
     neighbors = Vector{Set{Int}}(),
     correct_bustypes::Bool = false,
 ) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+    n_lccs = length(PSY.get_available_components(PSY.TwoTerminalLCCLine, sys))
     data = PowerFlowData(
         pf,
         power_network_matrix,
         aux_network_matrix,
-        time_steps;
-        n_lccs = n_lccs,
+        time_steps,
+        n_lccs;
         timestep_names = timestep_names,
         neighbors = neighbors,
     )
     @assert length(data.lcc.setpoint_at_rectifier) == n_lccs
-    initialize_powerflow_data!(data, pf, sys, n_lccs; correct_bustypes = correct_bustypes)
+    initialize_powerflow_data!(data, pf, sys; correct_bustypes = correct_bustypes)
     return data
 end
 
@@ -488,13 +488,11 @@ function PowerFlowData(
         aux_network_matrix = nothing
     end
 
-    n_lccs = length(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys))
     return make_and_initialize_powerflow_data(
         pf,
         sys,
         power_network_matrix,
         aux_network_matrix;
-        n_lccs = n_lccs,
         time_steps = time_steps,
         timestep_names = timestep_names,
         neighbors = neighbors,

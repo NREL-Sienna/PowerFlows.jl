@@ -605,6 +605,53 @@ function _get_arcs_buses(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData})
     PNM.get_bus_axis(data.power_network_matrix)
 end
 
+empty_lcc_results() = DataFrames.DataFrame(;
+    line_name = String[],
+    bus_from = Int[],
+    bus_to = Int[],
+    rectifier_tap = Float64[],
+    inverter_tap = Float64[],
+    rectifier_delay_angle = Float64[],
+    inverter_extinction_angle = Float64[],
+    P_from_to = Float64[],
+    P_to_from = Float64[],
+    Q_from_to = Float64[],
+    Q_to_from = Float64[],
+    P_losses = Float64[],
+    Q_losses = Float64[],
+)
+
+function lcc_results_dataframe(
+    data::Union{ABAPowerFlowData, PTDFPowerFlowData, vPTDFPowerFlowData},
+    lcc_names::Vector{String},
+    sys_basepower::Float64,
+    time_step::Int,
+)
+    get_lcc_count(data) == 0 && return empty_lcc_results()
+
+    P_from_to = data.lcc.arc_activepower_flow_from_to[:, time_step]
+    P_to_from = data.lcc.arc_activepower_flow_to_from[:, time_step]
+    n_lccs = get_lcc_count(data)
+    return DataFrames.DataFrame(;
+        line_name = lcc_names,
+        bus_from = first.(data.lcc.arcs),
+        bus_to = last.(data.lcc.arcs),
+        # TODO appropriate null values? NaNs? zeros? ones?
+        rectifier_tap = zeros(n_lccs),
+        inverter_tap = zeros(n_lccs),
+        rectifier_delay_angle = zeros(n_lccs),
+        inverter_extinction_angle = zeros(n_lccs),
+        P_from_to = sys_basepower .* P_from_to,
+        P_to_from = sys_basepower .* P_to_from,
+        Q_from_to = zeros(n_lccs),
+        Q_to_from = zeros(n_lccs),
+        P_losses = zeros(n_lccs),
+        Q_losses = zeros(n_lccs), # TODO  P_losses is nonzero. I am taking into account
+        # the loss in the LCC, but I can't easily calculate it here. Would need to save it
+        # during initialization, or change P_to_from to not simply equal -P_from_to.
+    )
+end
+
 function lcc_results_dataframe(
     data::ACPowerFlowData,
     lcc_names::Vector{String},
@@ -612,23 +659,7 @@ function lcc_results_dataframe(
     time_step::Int,
 )
     # could simply omit the key from the results dict instead.
-    if get_lcc_count(data) == 0
-        return DataFrames.DataFrame(;
-            line_name = String[],
-            bus_from = Int[],
-            bus_to = Int[],
-            rectifier_tap = Float64[],
-            inverter_tap = Float64[],
-            rectifier_delay_angle = Float64[],
-            inverter_extinction_angle = Float64[],
-            P_from_to = Float64[],
-            P_to_from = Float64[],
-            Q_from_to = Float64[],
-            Q_to_from = Float64[],
-            P_losses = Float64[],
-            Q_losses = Float64[],
-        )
-    end
+    get_lcc_count(data) == 0 && return empty_lcc_results()
 
     arc_lookup = Dict{Tuple{Int, Int}, Int}()
     for (i, arc) in enumerate(data.lcc.arcs)
@@ -769,6 +800,20 @@ function get_arc_names(data::PowerFlowData)
     return arc_names
 end
 
+function get_lcc_names(data::PowerFlowData, sys::PSY.System)
+    lcc_names = String[]
+    if get_lcc_count(data) > 0
+        lcc_lookup = Dict{Tuple{Int, Int}, String}([
+            (PNM.get_arc_tuple(PSY.get_arc(lcc)) => PSY.get_name(lcc))
+            for lcc in PSY.get_available_components(PSY.TwoTerminalLCCLine, sys)
+        ])
+        for arc in data.lcc.arcs
+            push!(lcc_names, lcc_lookup[arc])
+        end
+    end
+    return lcc_names
+end
+
 """
 Returns a dictionary containing the DC power flow results. Each key corresponds
 to the name of the considered time periods, storing a DataFrame with the PF
@@ -800,12 +845,12 @@ function write_results(
               "'TransformerName-secondary', and 'TransformerName-tertiary'."
     end
 
-    result_dict = Dict{Union{String, Char}, Dict{String, DataFrames.DataFrame}}()
+    result_dict = Dict{String, Dict{String, DataFrames.DataFrame}}()
     for i in 1:length(data.timestep_map)
         temp_dict = _allocate_results_data(
             data,
             arc_names,
-            String[], # LCCs in DC power flows are modeled differently.
+            get_lcc_names(data, sys),
             buses,
             PSY.get_base_power(sys),
             from_bus,
@@ -876,22 +921,10 @@ function write_results(
         data.arc_reactivepower_flow_from_to[:, time_step] .+
         data.arc_reactivepower_flow_to_from[:, time_step]
 
-    lcc_names = String[]
-    if get_lcc_count(data) > 0
-        lcc_lookup = Dict{Tuple{Int, Int}, String}([
-            (PNM.get_arc_tuple(PSY.get_arc(lcc)) => PSY.get_name(lcc))
-            for lcc in PSY.get_available_components(PSY.TwoTerminalLCCLine, sys)
-        ])
-        for arc in data.lcc.arcs
-            push!(lcc_names, lcc_lookup[arc])
-        end
-    end
-    @assert length(lcc_names) == get_lcc_count(data)
-
     return _allocate_results_data(
         data,
         arc_names,
-        lcc_names,
+        get_lcc_names(data, sys),
         bus_numbers,
         PSY.get_base_power(sys),
         from_bus,

@@ -4,13 +4,9 @@ Sets the fields of a PowerFlowData struct to match the given System.
 function initialize_powerflow_data!(
     data::PowerFlowData,
     pf::PowerFlowEvaluationModel,
-    sys::System,
-    n_lccs::Int;
+    sys::System;
     correct_bustypes = false,
 )
-    # basically a copy-paste of make_powerflowdata from common.jl
-    # but now that we already have a PowerFlowData object, we don't need to pass
-    # a boatload of arguments, and we can use existing getters for the maps and lookups.
     nrd = get_network_reduction_data(data)
     reverse_bus_search_map = PNM.get_reverse_bus_search_map(nrd)
     bus_reduction_map = PNM.get_bus_reduction_map(nrd)
@@ -104,11 +100,7 @@ function initialize_powerflow_data!(
         n_buses,
         data.bus_type,
     )
-    # LCCs: AC power flow only.
-    # TODO handle LCCs for DC power flow, by adding generator/load pair.
-    # TODO could dispatch on type of PowerFlowEvaluationModel here.
-    if n_lccs > 0
-        initialize_LCCParameters!(data, sys, bus_lookup, reverse_bus_search_map)
-    end
+    # LCCs: initialize parameters. Details of LCC model depends on AC vs DC powerflow.
+    initialize_LCCParameters!(data, sys, bus_lookup, reverse_bus_search_map)
     return data
 end
