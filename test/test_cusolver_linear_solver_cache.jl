@@ -29,7 +29,7 @@ end
     if !cuda_available
         @info "Skipping CUDA linear solver tests (no CUDA-capable GPU detected)"
     else
-        @testset for dType in (Int32,)  # CUDA solver currently only supports Int32
+        @testset for dType in (Int32, Int64)  # Test both AC (Int32) and DC (Int64) power flow
             N = 50
             A = SparseMatrixCSC{Float64, dType}(sprandn(Float64, N, N, 0.1))
             while abs(det(A)) < eps(Float64)
