@@ -100,19 +100,23 @@ abstract type AbstractDCPowerFlow <: PowerFlowEvaluationModel end
 get_slack_participation_factors(::AbstractDCPowerFlow) = nothing
 get_calculate_loss_factors(::AbstractDCPowerFlow) = false
 get_calculate_voltage_stability_factors(::AbstractDCPowerFlow) = false
+get_linear_solver(pf::AbstractDCPowerFlow) = pf.linear_solver
 
 # the exporter field is not used in PowerFlows.jl, only in PowerSimulations.jl,
 # which calls flatten_power_flow_evaluation_model then evaluates the two sequentially.
 @kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+    linear_solver::Symbol = :klu  # :klu or :cusolver
 end
 
 @kwdef struct PTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+    linear_solver::Symbol = :klu  # :klu or :cusolver
 end
 
 @kwdef struct vPTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+    linear_solver::Symbol = :klu  # :klu or :cusolver
 end
 
 @kwdef struct PSSEExportPowerFlow <: PowerFlowEvaluationModel

@@ -1,3 +1,26 @@
+"""Helper function to create a linear solver cache for DC power flow.
+Uses Int64 indexing which is standard for DC power flow matrices."""
+function _create_dc_linear_solver_cache(
+    linear_solver::Symbol,
+    A::SparseMatrixCSC{Float64, Int64},
+)
+    if linear_solver == :klu
+        return KLULinSolveCache(A)
+    elseif linear_solver == :cusolver
+        # Check if CUDA extension is loaded
+        ext = Base.get_extension(@__MODULE__, :PowerFlowsCUDAExt)
+        if isnothing(ext)
+            error("CUDA solver requested but CUDA.jl is not loaded. " *
+                  "Please install and load CUDA.jl with: using Pkg; Pkg.add(\"CUDA\"); using CUDA")
+        end
+        # Access the type from the extension
+        CUSOLVERType = getfield(ext, :CUSOLVERLinSolveCache)
+        return CUSOLVERType(A)
+    else
+        error("Unknown linear solver: $linear_solver. Choose :klu or :cusolver")
+    end
+end
+
 """
 Evaluates the power flows on each system's branch and updates the PowerFlowData structure.
 
@@ -8,7 +31,8 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
 function solve_powerflow!(
     data::PTDFPowerFlowData,
 )
-    solver_cache = KLULinSolveCache(data.aux_network_matrix.data)
+    linear_solver = get_linear_solver(data)
+    solver_cache = _create_dc_linear_solver_cache(linear_solver, data.aux_network_matrix.data)
     full_factor!(solver_cache, data.aux_network_matrix.data)
     # get net power injections
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
@@ -35,7 +59,8 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
 function solve_powerflow!(
     data::vPTDFPowerFlowData,
 )
-    solver_cache = KLULinSolveCache(data.aux_network_matrix.data)
+    linear_solver = get_linear_solver(data)
+    solver_cache = _create_dc_linear_solver_cache(linear_solver, data.aux_network_matrix.data)
     full_factor!(solver_cache, data.aux_network_matrix.data)
     power_injection = data.bus_activepower_injection .- data.bus_activepower_withdrawals
     data.arc_activepower_flow_from_to .=
@@ -62,7 +87,8 @@ Evaluates the power flows on each system's branch and updates the PowerFlowData 
 function solve_powerflow!(
     data::ABAPowerFlowData,
 )
-    solver_cache = KLULinSolveCache(data.power_network_matrix.data)
+    linear_solver = get_linear_solver(data)
+    solver_cache = _create_dc_linear_solver_cache(linear_solver, data.power_network_matrix.data)
     full_factor!(solver_cache, data.power_network_matrix.data)
     # get net injections
     power_injection = data.bus_activepower_injection - data.bus_activepower_withdrawals

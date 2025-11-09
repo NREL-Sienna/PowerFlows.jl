@@ -77,13 +77,14 @@ end
 
 """Constructor for CUSOLVERLinSolveCache.
 Converts CSC matrix to CSR format and allocates GPU memory.
+Supports both Int32 (AC power flow) and Int64 (DC power flow) indexing.
 """
 function CUSOLVERLinSolveCache(
     A::SparseMatrixCSC{Float64, T};
     reuse_symbolic::Bool = true,
     check_pattern::Bool = true,
     pivot_threshold::Float64 = 1.0,
-) where {T<:Integer}
+) where {T<:Union{Int32, Int64}}
     n, m = size(A)
     if n != m
         throw(ArgumentError("Matrix must be square. Got size ($n, $m)."))
@@ -126,7 +127,7 @@ get_reuse_symbolic(cache::CUSOLVERLinSolveCache) = cache.reuse_symbolic
 function symbolic_factor!(
     cache::CUSOLVERLinSolveCache{T},
     A::SparseMatrixCSC{Float64, T},
-) where {T<:Integer}
+) where {T<:Union{Int32, Int64}}
     if !(size(A, 1) == cache.n && size(A, 2) == cache.n)
         throw(DimensionMismatch(
             "Can't factor: matrix has different dimensions."
@@ -154,7 +155,7 @@ end
 function symbolic_refactor!(
     cache::CUSOLVERLinSolveCache{T},
     A::SparseMatrixCSC{Float64, T},
-) where {T<:Integer}
+) where {T<:Union{Int32, Int64}}
     if cache.reuse_symbolic && cache.check_pattern
         if !(size(A, 1) == cache.n && size(A, 2) == cache.n)
             throw(DimensionMismatch(
@@ -184,7 +185,7 @@ end
 function numeric_refactor!(
     cache::CUSOLVERLinSolveCache{T},
     A::SparseMatrixCSC{Float64, T},
-) where {T<:Integer}
+) where {T<:Union{Int32, Int64}}
     if cache.check_pattern
         A_csr = SparseMatrixCSC(A')
         new_rowptr = Vector{T}(A_csr.colptr)
@@ -212,7 +213,7 @@ Modifies B in-place with the solution."""
 function solve!(
     cache::CUSOLVERLinSolveCache{T},
     B::StridedVecOrMat{Float64},
-) where {T<:Integer}
+) where {T<:Union{Int32, Int64}}
     if size(B, 1) != cache.n
         throw(DimensionMismatch(
             "Need size(B, 1) to equal $(cache.n), but got $(size(B, 1))."
@@ -282,7 +283,7 @@ function solve_w_refinement(
     A::SparseMatrixCSC{Float64, T},
     B::StridedVecOrMat{Float64},
     tol::Float64 = 1e-6,
-) where {T<:Integer}
+) where {T<:Union{Int32, Int64}}
     bNorm = norm(B, 1)
     XB = zeros(size(B))
     r = B - A * XB

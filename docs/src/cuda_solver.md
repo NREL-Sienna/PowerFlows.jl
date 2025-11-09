@@ -9,6 +9,7 @@ The CUDA linear solver uses `cusolverSpDcsrlsvlu` from NVIDIA's cuSOLVER library
 - Large power systems with thousands of buses
 - Repeated power flow calculations (e.g., in time series simulations)
 - Systems where GPU acceleration is available
+- Both AC and DC power flow computations
 
 ## Requirements
 
@@ -29,9 +30,9 @@ Pkg.add("CUDA")
 
 ## Usage
 
-### Basic Usage
+### AC Power Flow
 
-To use the CUDA solver instead of KLU, specify `linear_solver = :cusolver` when creating an `ACPowerFlow` object:
+To use the CUDA solver for AC power flow, specify `linear_solver = :cusolver` when creating an `ACPowerFlow` object:
 
 ```julia
 using PowerFlows
@@ -40,7 +41,7 @@ using PowerSystems
 # Load your system
 sys = System("path/to/system.json")
 
-# Create power flow with CUDA solver
+# Create AC power flow with CUDA solver
 pf = ACPowerFlow(
     NewtonRaphsonACPowerFlow;
     linear_solver = :cusolver
@@ -50,7 +51,7 @@ pf = ACPowerFlow(
 results = solve_powerflow(pf, sys)
 ```
 
-### With Trust Region Method
+### AC Power Flow with Trust Region Method
 
 ```julia
 pf = ACPowerFlow(
@@ -61,6 +62,24 @@ pf = ACPowerFlow(
 )
 
 results = solve_powerflow(pf, sys)
+```
+
+### DC Power Flow
+
+The CUDA solver also works with all DC power flow methods:
+
+```julia
+# Standard DC Power Flow
+pf_dc = DCPowerFlow(linear_solver = :cusolver)
+results = solve_powerflow(pf_dc, sys)
+
+# PTDF-based DC Power Flow
+pf_ptdf = PTDFDCPowerFlow(linear_solver = :cusolver)
+results = solve_powerflow(pf_ptdf, sys)
+
+# Virtual PTDF-based DC Power Flow
+pf_vptdf = vPTDFDCPowerFlow(linear_solver = :cusolver)
+results = solve_powerflow(pf_vptdf, sys)
 ```
 
 ### Comparing Solvers
@@ -142,10 +161,16 @@ The CUDA solver includes the same numerical stability features as KLU:
 
 The CUDA linear solver is supported for:
 
+**AC Power Flow:**
 - ✅ Newton-Raphson AC Power Flow
 - ✅ Trust Region AC Power Flow
 - ❌ Levenberg-Marquardt (uses augmented least squares, different structure)
 - ❌ Robust Homotopy (uses Hessian solvers, different approach)
+
+**DC Power Flow:**
+- ✅ Standard DC Power Flow (DCPowerFlow)
+- ✅ PTDF-based DC Power Flow (PTDFDCPowerFlow)
+- ✅ Virtual PTDF-based DC Power Flow (vPTDFDCPowerFlow)
 
 ## Troubleshooting
 

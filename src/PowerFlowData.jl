@@ -119,6 +119,7 @@ struct PowerFlowData{
     calculate_loss_factors::Bool
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
     calculate_voltage_stability_factors::Bool
+    linear_solver::Symbol  # :klu or :cusolver
 end
 
 # aliases for specific type parameter combinations.
@@ -215,6 +216,7 @@ get_calculate_loss_factors(pfd::PowerFlowData) = pfd.calculate_loss_factors
 get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
 get_calculate_voltage_stability_factors(pfd::PowerFlowData) =
     pfd.calculate_voltage_stability_factors
+get_linear_solver(pfd::PowerFlowData) = pfd.linear_solver
 
 # auxiliary getters for the fields of PowerNetworkMatrices we're storing:
 # most things we patch through to calls on the metadata matrix:
@@ -288,6 +290,7 @@ function PowerFlowData(
     n_arcs = arc_count(pf, power_network_matrix, aux_network_matrix)
     calculate_loss_factors = get_calculate_loss_factors(pf)
     calculate_voltage_stability_factors = get_calculate_voltage_stability_factors(pf)
+    linear_solver = get_linear_solver(pf)
     if !isnothing(get_slack_participation_factors(pf))
         empty_slack_participation_factors = Dict{Tuple{DataType, String}, Float64}[]
         sizehint!(empty_slack_participation_factors, n_timesteps)
@@ -322,6 +325,7 @@ function PowerFlowData(
         calculate_loss_factors,
         calculate_voltage_stability_factors ? zeros(n_buses, n_timesteps) : nothing, # voltage_stability_factors
         calculate_voltage_stability_factors,
+        linear_solver,
     )
 end
 
