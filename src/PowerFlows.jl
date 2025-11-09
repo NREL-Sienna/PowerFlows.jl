@@ -18,6 +18,15 @@ export PSSEExporter
 export update_exporter!
 export write_export
 export get_psse_export_paths
+export compute_inertia_via_sparse_lu
+export InertiaResult
+export is_jacobian_indefinite
+export is_positive_definite
+export is_negative_definite
+export check_jacobian_symmetric_part
+export quick_indefiniteness_check
+export get_inertia_report
+export monitor_jacobian_definiteness
 
 import Base: @kwdef
 import Logging
@@ -58,6 +67,7 @@ include("solve_dc_powerflow.jl")
 include("state_indexing_helpers.jl")
 include("ac_power_flow_residual.jl")
 include("ac_power_flow_jacobian.jl")
+include("jacobian_indefiniteness_detection.jl")
 include("solve_ac_powerflow.jl")
 include("powerflow_setup.jl")
 include("powerflow_method.jl")
