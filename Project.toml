@@ -18,7 +18,14 @@ PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
+[weakdeps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+
+[extensions]
+PowerFlowsCUDAExt = "CUDA"
+
 [compat]
+CUDA = "5"
 DataFrames = "1"
 DataStructures = "0.19"
 Dates = "1"
