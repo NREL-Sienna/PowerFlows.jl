@@ -119,6 +119,7 @@ struct PowerFlowData{
     calculate_loss_factors::Bool
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
     calculate_voltage_stability_factors::Bool
+    lcc::LCCParameters
 end
 
 # aliases for specific type parameter combinations.
@@ -216,6 +217,30 @@ get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factor
 get_calculate_voltage_stability_factors(pfd::PowerFlowData) =
     pfd.calculate_voltage_stability_factors
 
+# LCC getters.
+get_lcc_setpoint_at_rectifier(pfd::PowerFlowData) = pfd.lcc.setpoint_at_rectifier
+get_lcc_p_set(pfd::PowerFlowData) = pfd.lcc.p_set
+get_lcc_dc_line_resistance(pfd::PowerFlowData) = pfd.lcc.dc_line_resistance
+get_lcc_rectifier_tap(pfd::PowerFlowData) = pfd.lcc.rectifier.tap
+get_lcc_inverter_tap(pfd::PowerFlowData) = pfd.lcc.inverter.tap
+get_lcc_rectifier_thyristor_angle(pfd::PowerFlowData) = pfd.lcc.rectifier.thyristor_angle
+get_lcc_inverter_thyristor_angle(pfd::PowerFlowData) = pfd.lcc.inverter.thyristor_angle
+get_lcc_rectifier_phi(pfd::PowerFlowData) = pfd.lcc.rectifier.phi
+get_lcc_inverter_phi(pfd::PowerFlowData) = pfd.lcc.inverter.phi
+get_lcc_rectifier_bus(pfd::PowerFlowData) = pfd.lcc.rectifier.bus
+get_lcc_inverter_bus(pfd::PowerFlowData) = pfd.lcc.inverter.bus
+get_lcc_rectifier_transformer_reactance(pfd::PowerFlowData) =
+    pfd.lcc.rectifier.transformer_reactance
+get_lcc_inverter_transformer_reactance(pfd::PowerFlowData) =
+    pfd.lcc.inverter.transformer_reactance
+get_lcc_rectifier_min_thyristor_angle(pfd::PowerFlowData) =
+    pfd.lcc.rectifier.min_thyristor_angle
+get_lcc_inverter_min_thyristor_angle(pfd::PowerFlowData) =
+    pfd.lcc.inverter.min_thyristor_angle
+get_lcc_i_dc(pfd::PowerFlowData) = pfd.lcc.i_dc
+# pseudo getter.
+get_lcc_count(data::PowerFlowData) = length(data.lcc.rectifier.bus)
+
 # auxiliary getters for the fields of PowerNetworkMatrices we're storing:
 # most things we patch through to calls on the metadata matrix:
 get_bus_lookup(pfd::PowerFlowData) = PNM.get_bus_lookup(get_metadata_matrix(pfd))
@@ -267,7 +292,8 @@ function PowerFlowData(
     pf::T,
     power_network_matrix::M,
     aux_network_matrix::N,
-    n_timesteps::Int;
+    n_timesteps::Int,
+    n_lccs::Int;
     timestep_names::Vector{String} = String[],
     neighbors = Vector{Set{Int}}(),
 ) where {
@@ -294,6 +320,8 @@ function PowerFlowData(
     else
         empty_slack_participation_factors = nothing
     end
+
+    lcc_parameters = LCCParameters(n_timesteps, n_lccs)
     return PowerFlowData(
         zeros(n_buses, n_timesteps), # bus_activepower_injection
         zeros(n_buses, n_timesteps), # bus_reactivepower_injection
@@ -322,6 +350,7 @@ function PowerFlowData(
         calculate_loss_factors,
         calculate_voltage_stability_factors ? zeros(n_buses, n_timesteps) : nothing, # voltage_stability_factors
         calculate_voltage_stability_factors,
+        lcc_parameters,
     )
 end
 
@@ -399,14 +428,17 @@ function make_and_initialize_powerflow_data(
     neighbors = Vector{Set{Int}}(),
     correct_bustypes::Bool = false,
 ) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+    n_lccs = length(PSY.get_available_components(PSY.TwoTerminalLCCLine, sys))
     data = PowerFlowData(
         pf,
         power_network_matrix,
         aux_network_matrix,
-        time_steps;
+        time_steps,
+        n_lccs;
         timestep_names = timestep_names,
         neighbors = neighbors,
     )
+    @assert length(data.lcc.setpoint_at_rectifier) == n_lccs
     initialize_powerflow_data!(data, pf, sys; correct_bustypes = correct_bustypes)
     return data
 end

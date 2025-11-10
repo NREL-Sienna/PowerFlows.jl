@@ -31,7 +31,7 @@ function update_state!(x::Vector{Float64},
 )
     # I really only need access to 3 classes of fields of data:
     # bus types, bus power contributions [inj/widthdrawal], and bus voltages
-    @assert length(x) == 2 * length(data.bus_type[:, 1])
+    @assert length(x) == 2 * length(data.bus_type[:, 1]) + 4 * size(data.lcc.p_set, 1)
     state_variable_count = 1
     for (ix, b) in enumerate(data.bus_type[:, time_step])
         if b == PSY.ACBusTypes.REF
@@ -57,6 +57,14 @@ function update_state!(x::Vector{Float64},
         end
     end
     @assert state_variable_count - 1 == length(data.bus_type[:, 1]) * 2
+    for i in eachindex(data.lcc.p_set[:, time_step])
+        x[state_variable_count] = data.lcc.rectifier.tap[i, time_step]
+        x[state_variable_count + 1] = data.lcc.inverter.tap[i, time_step]
+        x[state_variable_count + 2] = data.lcc.rectifier.thyristor_angle[i, time_step]
+        x[state_variable_count + 3] = data.lcc.inverter.thyristor_angle[i, time_step]
+        state_variable_count += 4
+    end
+    @assert state_variable_count - 1 == length(x)
 end
 
 """Update the fields of data based on the values of the state vector."""

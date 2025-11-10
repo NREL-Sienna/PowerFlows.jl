@@ -100,5 +100,7 @@ function initialize_powerflow_data!(
         n_buses,
         data.bus_type,
     )
+    # LCCs: initialize parameters. Details of LCC model depends on AC vs DC powerflow.
+    initialize_LCCParameters!(data, sys, bus_lookup, reverse_bus_search_map)
     return data
 end

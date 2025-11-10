@@ -86,3 +86,20 @@ end
     )
     @test isapprox(solved_data_vPTDF["1"]["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 end
+
+@testset "DC power flow with an LCC" begin
+    sys, _ = simple_lcc_system()
+    lcc = first(get_components(PSY.TwoTerminalLCCLine, sys))
+    with_units_base(sys, PSY.UnitSystem.SYSTEM_BASE) do
+        set_active_power_flow!(lcc, 0.3)
+    end
+    for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
+        results = solve_powerflow(T(), sys; correct_bustypes = true)
+        lcc_flow = results["1"]["lcc_results"][1, :P_from_to]
+        with_units_base(sys, PSY.UnitSystem.NATURAL_UNITS) do
+            @test lcc_flow == get_active_power_flow(lcc)
+        end
+    end
+end
+
+# TODO LCC DC test case with nonzero loss.

@@ -178,6 +178,26 @@ function solve_powerflow!(
             data.bus_reactivepower_constant_impedance_withdrawals[:, time_step] .= NaN
             data.bus_magnitude[:, time_step] .= NaN
             data.bus_angles[:, time_step] .= NaN
+        elseif get_lcc_count(data) > 0 && converged
+            # calculate branch flows for LCCs: their self-admittances may change.
+            V =
+                data.bus_magnitude[:, time_step] .*
+                exp.(1im .* data.bus_angles[:, time_step])
+            for (i, (bus_indices, self_admittances)) in
+                enumerate(zip(data.lcc.bus_indices, data.lcc.branch_admittances))
+                (rectifier_ix, inverter_ix) = bus_indices
+                (rectifier_y, inverter_y) = self_admittances
+                S_inverter = V[inverter_ix] * conj(inverter_y * V[inverter_ix])
+                S_rectifier = V[rectifier_ix] * conj(rectifier_y * V[rectifier_ix])
+                data.lcc.arc_activepower_flow_from_to[time_step, i] =
+                    real(S_rectifier)
+                data.lcc.arc_reactivepower_flow_from_to[time_step, i] =
+                    imag(S_rectifier)
+                data.lcc.arc_activepower_flow_to_from[time_step, i] =
+                    real(S_inverter)
+                data.lcc.arc_reactivepower_flow_to_from[time_step, i] =
+                    imag(S_inverter)
+            end
         end
     end
 

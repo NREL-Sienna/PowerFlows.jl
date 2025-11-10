@@ -79,7 +79,8 @@ end
 function calculate_x0(data::ACPowerFlowData,
     time_step::Int64)
     n_buses = length(data.bus_type[:, 1])
-    x0 = Vector{Float64}(undef, 2 * n_buses)
+    n_lcc = size(data.lcc.p_set, 1)
+    x0 = Vector{Float64}(undef, 2 * n_buses + 4 * n_lcc)
     update_state!(x0, data, time_step)
     return x0
 end

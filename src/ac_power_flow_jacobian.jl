@@ -199,6 +199,82 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
 end
 
 """
+    _create_jacobian_matrix_structure_lcc(data::ACPowerFlowData, rows::Vector{Int32},
+    columns::Vector{Int32},
+    values::Vector{Float64},
+    num_buses::Int)
+
+    Create the Jacobian matrix structure for LCC HVDC.
+
+    The function iterates over each LCC and adds the non-zero entries to the Jacobian matrix structure.
+    The state vector for every LCC contains 4 variables (tap and angle for both rectifier and inverter).
+    The indices of non-zero entries correspond to the positions of these variables in the state vector.
+
+    For example, suppose we have a system with 2 buses connected by one LCC:
+    - Bus 1 is connected to the rectifier side,
+    - Bus 2 is connected to the inverter side.
+
+    The Jacobian matrix structure entries correspond to partial derivatives of the mismatch equations
+    with respect to these state variables.
+
+    The Jacobian matrix would have non-zero entries at positions like:
+
+    |           | V₁         | δ₁ | V₂         | δ₂ | t₁         | t₂         | a₁         | a₂         |
+    |-----------|------------|----|------------|----|------------|------------|------------|------------|
+    | P₁        | ∂P₁/∂V₁    |    |            |    | ∂P₁/∂t₁    |            | ∂P₁/∂a₁    |            |
+    | Q₁        | ∂Q₁/∂V₁    |    |            |    | ∂Q₁/∂t₁    |            | ∂Q₁/∂a₁    |            |
+    | P₂        |            |    |            |    |            |            |            |            |
+    | Q₂        |            |    |            |    |            |            |            |            |
+    | Fₜ₁       | ∂Fₜ₁/∂V₁    |    |            |    | ∂Fₜ₁/∂t₁    |            | ∂Fₜ₁/∂a₁   |            |
+    | Fₜ₂       | ∂Fₜ₂/∂V₁    |    | ∂Fₜ₂/∂V₂    |    | ∂Fₜ₂/∂t₁   | ∂Fₜ₂/∂t₂    | ∂Fₜ₂/∂a₁   | ∂Fₜ₂/∂a₂    |
+    | Fₐ₁       |            |    |            |    |            |            | ∂Fₐ₁/∂a₁   |            |
+    | Fₐ₂       |            |    |            |    |            |            |            | ∂Fₐ₂/∂a₂   |
+
+    This function sets up the indices of these non-zero entries in the sparse Jacobian matrix.
+"""
+function _create_jacobian_matrix_structure_lcc(data::ACPowerFlowData, rows::Vector{Int32},
+    columns::Vector{Int32},
+    values::Vector{Float64},
+    num_buses::Int)
+    for (i, (fb, tb)) in enumerate(data.lcc.bus_indices)
+        idx_p_fb = 2 * fb - 1
+        idx_q_fb = 2 * fb
+        idx_p_tb = 2 * tb - 1
+        offset_lcc = num_buses * 2 + (i - 1) * 4
+        idx_tap_from = offset_lcc + 1
+        idx_tap_to = offset_lcc + 2
+        idx_angle_from = offset_lcc + 3
+        idx_angle_to = offset_lcc + 4
+
+        rcv = [
+            (idx_p_fb, idx_p_fb, 0.0),  # ∂Pᵢ/∂Vᵢ
+            (idx_q_fb, idx_p_fb, 0.0),  # ∂Qᵢ/∂Vᵢ
+            (idx_p_fb, idx_tap_from, 0.0),  # ∂Pᵢ/∂tᵢ
+            (idx_p_fb, idx_angle_from, 0.0),  # ∂Pᵢ/∂αᵢ
+            (idx_q_fb, idx_tap_from, 0.0),  # ∂Qᵢ/∂tᵢ
+            (idx_q_fb, idx_angle_from, 0.0),  # ∂Qᵢ/∂αᵢ
+            (idx_tap_from, idx_p_fb, 0.0),  # ∂Fₜᵢ/∂Vᵢ
+            (idx_tap_to, idx_p_fb, 0.0),  # ∂Fₜⱼ/∂Vᵢ
+            (idx_tap_to, idx_p_tb, 0.0),  # ∂Fₜⱼ/∂Vⱼ
+            (idx_tap_from, idx_tap_from, 0.0),  # ∂Fₜᵢ/∂tᵢ
+            (idx_tap_from, idx_angle_from, 0.0),  # ∂Fₜᵢ/∂αᵢ
+            (idx_tap_to, idx_tap_from, 0.0),  # ∂Fₜⱼ/∂tᵢ
+            (idx_tap_to, idx_tap_to, 0.0),  # ∂Fₜⱼ/∂tⱼ
+            (idx_tap_to, idx_angle_from, 0.0),  # ∂Fₜⱼ/∂αᵢ
+            (idx_tap_to, idx_angle_to, 0.0),  # ∂Fₜⱼ/∂αⱼ
+            (idx_angle_from, idx_angle_from, 1.0),  # ∂Fₐᵢ/∂αᵢ
+            (idx_angle_to, idx_angle_to, 1.0),  # ∂Fₐⱼ/∂αⱼ
+        ]
+        for (r, c, v) in rcv
+            push!(rows, r)
+            push!(columns, c)
+            push!(values, v)
+        end
+    end
+    return
+end
+
+"""
     _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64) -> SparseMatrixCSC{Float64, Int32}
 
 Create the structure of the Jacobian matrix for an AC power flow problem. Inputs are the grid model as an instance of `ACPowerFlowData` at a given time step.
@@ -254,11 +330,12 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
     values = Float64[]  # V
 
     num_buses = first(size(data.bus_type))
+    num_lccs = size(data.lcc.p_set, 1)
 
     num_lines = length(get_arc_lookup(data))
-    sizehint!(rows, 4 * num_lines)
-    sizehint!(columns, 4 * num_lines)
-    sizehint!(values, 4 * num_lines)
+    sizehint!(rows, 4 * num_lines + 15 * num_lccs)
+    sizehint!(columns, 4 * num_lines + 15 * num_lccs)
+    sizehint!(values, 4 * num_lines + 15 * num_lccs)
 
     for bus_from in 1:num_buses
         row_from_p = 2 * bus_from - 1  # Row index for the value that is related to active power
@@ -283,6 +360,7 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
             )
         end
     end
+    _create_jacobian_matrix_structure_lcc(data, rows, columns, values, num_buses)
     Jv0 = SparseArrays.sparse(rows, columns, values)
     return Jv0
 end
@@ -380,6 +458,75 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     return
 end
 
+function _set_entries_for_lcc(data::ACPowerFlowData,
+    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    num_buses::Int,
+    time_step::Int)
+    sqrt6_div_pi = sqrt(6) / π
+    for (i, (fb, tb)) in enumerate(data.lcc.bus_indices)
+        idx_p_fb = 2 * fb - 1
+        idx_q_fb = 2 * fb
+        idx_p_tb = 2 * tb - 1
+        offset_lcc = num_buses * 2 + (i - 1) * 4
+        idx_tap_from = offset_lcc + 1
+        idx_tap_to = offset_lcc + 2
+        idx_angle_from = offset_lcc + 3
+        idx_angle_to = offset_lcc + 4
+
+        i_dc = max(data.lcc.i_dc[i, time_step], 1e-9)  # Avoid numerical issues
+        tap_r = data.lcc.rectifier.tap[i, time_step]
+        tap_i = data.lcc.inverter.tap[i, time_step]
+        alpha_r = data.lcc.rectifier.thyristor_angle[i, time_step]
+        alpha_i = data.lcc.inverter.thyristor_angle[i, time_step]
+        phi_r = data.lcc.rectifier.phi[i, time_step]
+        xtr_r = data.lcc.rectifier.transformer_reactance[i]
+        Vm_fb = data.bus_magnitude[fb, time_step]
+        Vm_tb = data.bus_magnitude[tb, time_step]
+        bus_type_fb = data.bus_type[fb, time_step]
+        bus_type_tb = data.bus_type[tb, time_step]
+
+        cos_alpha_r = cos(alpha_r)
+        sin_alpha_r = sin(alpha_r)
+        cos_alpha_i = cos(alpha_i)
+        sin_alpha_i = sin(alpha_i)
+
+        common_term_fb = Vm_fb * sqrt6_div_pi * i_dc
+        common_term_tb = Vm_tb * sqrt6_div_pi * (-i_dc)
+        common_term_tap_r = tap_r * sqrt6_div_pi * i_dc * cos_alpha_r
+        common_term_alpha_r = -common_term_fb * tap_r * sin_alpha_r
+
+        if bus_type_fb == PSY.ACBusTypes.PQ
+            Jv[idx_p_fb, idx_p_fb] += common_term_tap_r # ∂P_fb/∂V_fb
+            Jv[idx_q_fb, idx_p_fb] += _calculate_dQ_dV_lcc(tap_r, i_dc, xtr_r, Vm_fb, phi_r) # ∂Q_fb/∂V_fb
+
+            Jv[idx_q_fb, idx_tap_from] =
+                _calculate_dQ_dt_lcc(tap_r, i_dc, xtr_r, Vm_fb, phi_r) # ∂Q_fb/∂t_fb
+            Jv[idx_q_fb, idx_angle_from] =
+                _calculate_dQ_dα_lcc(tap_r, i_dc, xtr_r, Vm_fb, phi_r, alpha_r) # ∂Q_fb/∂α_fb
+
+            Jv[idx_tap_from, idx_p_fb] = common_term_tap_r # ∂F_t_fb/∂V_fb
+            Jv[idx_tap_to, idx_p_fb] = common_term_tap_r # ∂F_t_tb/∂V_fb
+        end
+
+        if bus_type_fb == PSY.ACBusTypes.PQ || bus_type_fb == PSY.ACBusTypes.PV
+            Jv[idx_p_fb, idx_tap_from] = common_term_fb * cos_alpha_r # ∂P_fb/∂t_fb
+            Jv[idx_p_fb, idx_angle_from] = common_term_alpha_r # ∂P_fb/∂α_fb
+        end
+
+        if bus_type_tb == PSY.ACBusTypes.PQ
+            Jv[idx_tap_to, idx_p_tb] = tap_i * sqrt6_div_pi * (-i_dc) * cos_alpha_i # ∂F_t_tb/∂V_tb
+        end
+
+        Jv[idx_tap_from, idx_tap_from] = common_term_fb * cos_alpha_r # ∂F_t_fb/∂t_fb
+        Jv[idx_tap_from, idx_angle_from] = common_term_alpha_r # ∂F_t_fb/∂α_fb
+        Jv[idx_tap_to, idx_tap_from] = common_term_fb * cos_alpha_r # ∂F_t_tb/∂t_fb
+        Jv[idx_tap_to, idx_tap_to] = common_term_tb * cos_alpha_i # ∂F_t_tb/∂t_tb
+        Jv[idx_tap_to, idx_angle_from] = common_term_alpha_r # ∂F_t_tb/∂α_fb
+        Jv[idx_tap_to, idx_angle_to] = -common_term_tb * tap_i * sin_alpha_i # ∂F_t_tb/∂α_tb
+    end
+    return
+end
+
 """Used to update Jv based on the bus voltages, angles, etc. in data."""
 function _update_jacobian_matrix_values!(
     Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
@@ -467,6 +614,7 @@ function _update_jacobian_matrix_values!(
             Jv[row_from_q, col_from_va] = -1.0
         end
     end
+    _set_entries_for_lcc(data, Jv, num_buses, time_step)
     return
 end
 

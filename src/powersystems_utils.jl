@@ -12,6 +12,12 @@ function set_power_flow!(br::PNM.BranchesParallel, flow::Complex)
     return
 end
 
+function set_power_flow!(br::PSY.TwoTerminalLCCLine, flow::Complex)
+    PSY.set_active_power_flow!(br, real(flow))
+    # TwoTerminalLCCLine does not have reactive power flow attributes (even though PFD has Q results)
+    return
+end
+
 function set_power_flow!(winding::PNM.ThreeWindingTransformerWinding, flow::Complex)
     (trf, num) = (PNM.get_transformer(winding), PNM.get_winding_number(winding))
     if num == 1
