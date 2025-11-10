@@ -34,9 +34,9 @@ function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     return StateVectorCache(x, r, r_predict, Δx_proposed, Δx_cauchy, Δx_nr, ones(size(x0)))
 end
 
-"""Solve for the Newton-Raphson step, given the factorization object for `J.Jv` 
+"""Solve for the Newton-Raphson step, given the factorization object for `J.Jv`
 (if non-singular) or its stand-in (if singular)."""
-function _solve_Δx_nr!(stateVector::StateVectorCache, cache::KLULinSolveCache{Int32})
+function _solve_Δx_nr!(stateVector::StateVectorCache, cache::LinearSolverCache{Int32})
     copyto!(stateVector.Δx_nr, stateVector.r)
     solve!(cache, stateVector.Δx_nr)
     return
@@ -45,7 +45,7 @@ end
 """Check error and do refinement."""
 function _do_refinement!(stateVector::StateVectorCache,
     A::SparseMatrixCSC{Float64, Int32},
-    cache::KLULinSolveCache{Int32},
+    cache::LinearSolverCache{Int32},
     refinement_threshold::Float64,
     refinement_eps::Float64,
 )
@@ -67,7 +67,7 @@ end
 `J.Jv` might be singular."""
 function _set_Δx_nr!(stateVector::StateVectorCache,
     J::ACPowerFlowJacobian,
-    linSolveCache::KLULinSolveCache{Int32},
+    linSolveCache::LinearSolverCache{Int32},
     solver::ACPowerFlowSolverType,
     refinement_threshold::Float64,
     refinement_eps::Float64)
@@ -85,7 +85,7 @@ function _set_Δx_nr!(stateVector::StateVectorCache,
             _do_refinement!(stateVector, M, tempCache, refinement_threshold, refinement_eps)
             LinearAlgebra.rmul!(stateVector.Δx_nr, -1.0)
         else
-            @error("KLU factorization failed: $e")
+            @error("Linear solver factorization failed: $e")
         end
     else
         _solve_Δx_nr!(stateVector, linSolveCache)
@@ -164,11 +164,11 @@ end
 
 """Does a single iteration of the `TrustRegionNRMethod`:
 updates the `x` and `r` fields of the `stateVector` and computes
-the value of the Jacobian at the new `x`, if needed. Unlike 
+the value of the Jacobian at the new `x`, if needed. Unlike
 `_simple_step`, this has a return value, the updated value of `delta``."""
 function _trust_region_step(time_step::Int,
     stateVector::StateVectorCache,
-    linSolveCache::KLULinSolveCache{Int32},
+    linSolveCache::LinearSolverCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     delta::Float64,
@@ -255,7 +255,7 @@ end
  fields of the `stateVector`, and computes the Jacobian at the new `x`."""
 function _simple_step(time_step::Int,
     stateVector::StateVectorCache,
-    linSolveCache::KLULinSolveCache{Int32},
+    linSolveCache::LinearSolverCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD,
@@ -289,11 +289,11 @@ end
     `norm(J_x Δx - r, 1)/norm(r, 1) > refinement_threshold`, do iterative refinement to
     improve the accuracy. Default: $DEFAULT_REFINEMENT_THRESHOLD.
 - `refinement_eps::Float64`: run iterative refinement on `J_x Δx = r` until
-    `norm(Δx_{i}-Δx_{i+1}, 1)/norm(r,1) < refinement_eps`. Default: 
+    `norm(Δx_{i}-Δx_{i+1}, 1)/norm(r,1) < refinement_eps`. Default:
     $DEFAULT_REFINEMENT_EPS """
 function _run_powerflow_method(time_step::Int,
     stateVector::StateVectorCache,
-    linSolveCache::KLULinSolveCache{Int32},
+    linSolveCache::LinearSolverCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::Type{NewtonRaphsonACPowerFlow};
@@ -347,7 +347,7 @@ end
     Default: $DEFAULT_TRUST_REGION_ETA."""
 function _run_powerflow_method(time_step::Int,
     stateVector::StateVectorCache,
-    linSolveCache::KLULinSolveCache{Int32},
+    linSolveCache::LinearSolverCache{Int32},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::Type{TrustRegionACPowerFlow};
@@ -409,6 +409,28 @@ function _run_powerflow_method(time_step::Int,
     return converged, i
 end
 
+"""Create a linear solver cache based on the solver type specified in pf."""
+function _create_linear_solver_cache(
+    linear_solver::Symbol,
+    A::SparseMatrixCSC{Float64, Int32},
+)
+    if linear_solver == :klu
+        return KLULinSolveCache(A)
+    elseif linear_solver == :cusolver
+        # Check if CUDA extension is loaded
+        ext = Base.get_extension(@__MODULE__, :PowerFlowsCUDAExt)
+        if isnothing(ext)
+            error("CUDA solver requested but CUDA.jl is not loaded. " *
+                  "Please install and load CUDA.jl with: using Pkg; Pkg.add(\"CUDA\"); using CUDA")
+        end
+        # Access the type from the extension
+        CUSOLVERType = getfield(ext, :CUSOLVERLinSolveCache)
+        return CUSOLVERType(A)
+    else
+        error("Unknown linear solver: $linear_solver. Choose :klu or :cusolver")
+    end
+end
+
 function _newton_powerflow(
     pf::ACPowerFlow{T},
     data::ACPowerFlowData,
@@ -421,7 +443,8 @@ function _newton_powerflow(
 
     i = 0
     if !converged
-        linSolveCache = KLULinSolveCache(J.Jv)
+        linear_solver = get_linear_solver(pf)
+        linSolveCache = _create_linear_solver_cache(linear_solver, J.Jv)
         symbolic_factor!(linSolveCache, J.Jv)
         stateVector = StateVectorCache(x0, residual.Rv)
         converged, i = _run_powerflow_method(

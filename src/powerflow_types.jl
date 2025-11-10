@@ -19,6 +19,7 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     enhanced_flat_start::Bool
     robust_power_flow::Bool
     skip_redistribution::Bool
+    linear_solver::Symbol  # :klu or :cusolver
 end
 
 ACPowerFlow{ACSolver}(;
@@ -34,6 +35,7 @@ ACPowerFlow{ACSolver}(;
     enhanced_flat_start::Bool = true,
     robust_power_flow::Bool = false,
     skip_redistribution::Bool = false,
+    linear_solver::Symbol = :klu,
 ) where {ACSolver <: ACPowerFlowSolverType} =
     ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
@@ -44,6 +46,7 @@ ACPowerFlow{ACSolver}(;
         enhanced_flat_start,
         robust_power_flow,
         skip_redistribution,
+        linear_solver,
     )
 
 function ACPowerFlow(
@@ -60,9 +63,14 @@ function ACPowerFlow(
     enhanced_flat_start::Bool = true,
     robust_power_flow::Bool = false,
     skip_redistribution::Bool = false,
+    linear_solver::Symbol = :klu,
 )
     if calculate_loss_factors && ACSolver == LevenbergMarquardtACPowerFlow
         error("Loss factor calculation is not supported by the Levenberg-Marquardt solver.")
+    end
+
+    if linear_solver ∉ [:klu, :cusolver]
+        error("Unsupported linear solver: $linear_solver. Choose :klu or :cusolver")
     end
 
     return ACPowerFlow{ACSolver}(
@@ -74,6 +82,7 @@ function ACPowerFlow(
         enhanced_flat_start,
         robust_power_flow,
         skip_redistribution,
+        linear_solver,
     )
 end
 
@@ -83,6 +92,7 @@ get_slack_participation_factors(pf::ACPowerFlow) = pf.generator_slack_participat
 get_calculate_loss_factors(pf::ACPowerFlow) = pf.calculate_loss_factors
 get_calculate_voltage_stability_factors(pf::ACPowerFlow) =
     pf.calculate_voltage_stability_factors
+get_linear_solver(pf::ACPowerFlow) = pf.linear_solver
 
 abstract type AbstractDCPowerFlow <: PowerFlowEvaluationModel end
 
@@ -90,19 +100,23 @@ abstract type AbstractDCPowerFlow <: PowerFlowEvaluationModel end
 get_slack_participation_factors(::AbstractDCPowerFlow) = nothing
 get_calculate_loss_factors(::AbstractDCPowerFlow) = false
 get_calculate_voltage_stability_factors(::AbstractDCPowerFlow) = false
+get_linear_solver(pf::AbstractDCPowerFlow) = pf.linear_solver
 
 # the exporter field is not used in PowerFlows.jl, only in PowerSimulations.jl,
 # which calls flatten_power_flow_evaluation_model then evaluates the two sequentially.
 @kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+    linear_solver::Symbol = :klu  # :klu or :cusolver
 end
 
 @kwdef struct PTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+    linear_solver::Symbol = :klu  # :klu or :cusolver
 end
 
 @kwdef struct vPTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+    linear_solver::Symbol = :klu  # :klu or :cusolver
 end
 
 @kwdef struct PSSEExportPowerFlow <: PowerFlowEvaluationModel

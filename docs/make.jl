@@ -2,7 +2,10 @@ using Documenter, PowerSystems, DocStringExtensions, PowerFlows, DataStructures
 
 pages = OrderedDict(
     "Welcome Page" => "index.md",
-    "How-to-Guides" => "how-tos/stub.md",
+    "How-to-Guides" => Any[
+        "Using CUDA Linear Solver" => "how-tos/cuda_solver.md",
+        "how-tos/stub.md",
+    ],
     "Tutorials" => "tutorials/stub.md",
     "Explanation" => "explanation/stub.md",
     "Reference" => Any[
