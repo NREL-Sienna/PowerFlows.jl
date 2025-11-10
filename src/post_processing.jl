@@ -693,8 +693,6 @@ function lcc_results_dataframe(
     return lcc_df
 end
 
-# data, lcc names, and timestep are needed for AC only, for the lcc_results_dataframe call.
-# [could split into separate allocate bus/branch/lcc results functions]
 function _allocate_results_data(
     data::PowerFlowData,
     branch_names::Vector{String},

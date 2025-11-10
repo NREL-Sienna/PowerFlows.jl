@@ -162,13 +162,6 @@ function solve_powerflow!(
     tb_ix = [bus_lookup[bus_no] for bus_no in last.(arcs)]   # to bus indices
     @assert length(fb_ix) == length(arcs)
 
-    # needed?
-    #=
-    Sft = zeros(Complex{Float64}, length(fb_ix))
-    Stf = zeros(Complex{Float64}, length(tb_ix))
-    V = zeros(Complex{Float64}, size(data.bus_type, 1))
-    =#
-
     for time_step in sorted_time_steps
         converged = _ac_powerflow(data, pf, time_step; kwargs...)
         ts_converged[time_step] = converged
