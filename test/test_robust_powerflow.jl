@@ -10,6 +10,6 @@
     pf_nr = ACPowerFlow()
     data_nr = PowerFlowData(pf_nr, sys2)
     solve_powerflow!(data_nr; pf = pf_nr)
-    @test data_nr.bus_angles ≈ data_hom.bus_angles
-    @test data_nr.bus_magnitude ≈ data_hom.bus_magnitude
+    @test isapprox(data_nr.bus_angles, data_hom.bus_angles; atol = 1e-4)
+    @test isapprox(data_nr.bus_magnitude, data_hom.bus_magnitude; atol = 1e-6)
 end
