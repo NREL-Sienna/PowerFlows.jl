@@ -12,26 +12,26 @@ import PowerFlows: LinearSolverCache, symbolic_factor!, symbolic_refactor!,
                    DEFAULT_REFINEMENT_MAX_ITER
 
 """
-CUDA-based linear solver using cusolverSpDcsrlsvlu for sparse linear systems.
+CUDA-based linear solver using cusolverSpDcsrlsvluHost for sparse linear systems.
 This provides a GPU-accelerated alternative to KLU for Newton-Raphson power flow.
 
 Note: This extension is automatically loaded when CUDA.jl is available.
 """
 
-"""A cached linear solver using cuSOLVER's cusolverSpDcsrlsvlu.
+"""A cached linear solver using cuSOLVER's cusolverSpDcsrlsvluHost.
 Uses GPU acceleration for sparse LU factorization and solve.
 
 # Fields:
 - `n::Int`: matrix dimension
 - `nnz::Int`: number of non-zeros
 - `handle`: cuSOLVER handle
-- `d_A`: device storage for matrix values
-- `d_csrRowPtr`: device storage for CSR row pointers
-- `d_csrColInd`: device storage for CSR column indices
-- `d_x`: device storage for solution vector
-- `d_b`: device storage for right-hand side
-- `h_csrRowPtr`: host storage for row pointers (cached)
-- `h_csrColInd`: host storage for column indices (cached)
+- `h_A::Vector{Float64}`: host storage for matrix values
+- `h_csrRowPtr::Vector{T}`: host storage for CSR row pointers
+- `h_csrColInd::Vector{T}`: host storage for CSR column indices
+- `h_x::Vector{Float64}`: host storage for solution vector
+- `h_b::Vector{Float64}`: host storage for right-hand side
+- `h_csrRowPtr_cached::Vector{T}`: cached row pointers for pattern checking
+- `h_csrColInd_cached::Vector{T}`: cached column indices for pattern checking
 - `reuse_symbolic::Bool`: reuse the symbolic factorization
 - `check_pattern::Bool`: verify sparsity pattern matches on refactor
 - `pivot_threshold::Float64`: pivoting threshold for stability
@@ -41,13 +41,13 @@ mutable struct CUSOLVERLinSolveCache{T<:Integer} <: PowerFlows.LinearSolverCache
     n::Int
     nnz::Int
     handle::Any  # Will be CUSOLVER.cusolverSpHandle
-    d_A::Any     # Will be CuVector{Float64}
-    d_csrRowPtr::Any  # Will be CuVector{T}
-    d_csrColInd::Any  # Will be CuVector{T}
-    d_x::Any     # Will be CuVector{Float64}
-    d_b::Any     # Will be CuVector{Float64}
+    h_A::Vector{Float64}
     h_csrRowPtr::Vector{T}
     h_csrColInd::Vector{T}
+    h_x::Vector{Float64}
+    h_b::Vector{Float64}
+    h_csrRowPtr_cached::Vector{T}
+    h_csrColInd_cached::Vector{T}
     reuse_symbolic::Bool
     check_pattern::Bool
     pivot_threshold::Float64
@@ -57,26 +57,26 @@ mutable struct CUSOLVERLinSolveCache{T<:Integer} <: PowerFlows.LinearSolverCache
         n::Int,
         nnz::Int,
         handle,
-        d_A,
-        d_csrRowPtr,
-        d_csrColInd,
-        d_x,
-        d_b,
+        h_A::Vector{Float64},
         h_csrRowPtr::Vector{T},
         h_csrColInd::Vector{T},
+        h_x::Vector{Float64},
+        h_b::Vector{Float64},
+        h_csrRowPtr_cached::Vector{T},
+        h_csrColInd_cached::Vector{T},
         reuse_symbolic::Bool,
         check_pattern::Bool,
         pivot_threshold::Float64,
         info,
     ) where {T<:Integer}
-        new{T}(n, nnz, handle, d_A, d_csrRowPtr, d_csrColInd, d_x, d_b,
-               h_csrRowPtr, h_csrColInd, reuse_symbolic, check_pattern,
+        new{T}(n, nnz, handle, h_A, h_csrRowPtr, h_csrColInd, h_x, h_b,
+               h_csrRowPtr_cached, h_csrColInd_cached, reuse_symbolic, check_pattern,
                pivot_threshold, info)
     end
 end
 
 """Constructor for CUSOLVERLinSolveCache.
-Converts CSC matrix to CSR format and allocates GPU memory.
+Converts CSC matrix to CSR format and allocates host memory.
 Supports both Int32 (AC power flow) and Int64 (DC power flow) indexing.
 """
 function CUSOLVERLinSolveCache(
@@ -97,23 +97,23 @@ function CUSOLVERLinSolveCache(
     # Create cuSOLVER handle
     handle = CUSOLVER.cusolverSpCreate()
 
-    # Allocate device memory
-    d_A = CUDA.CuVector{Float64}(undef, nnz)
-    d_csrRowPtr = CUDA.CuVector{T}(undef, n + 1)
-    d_csrColInd = CUDA.CuVector{T}(undef, nnz)
-    d_x = CUDA.CuVector{Float64}(undef, n)
-    d_b = CUDA.CuVector{Float64}(undef, n)
-
-    # Store host copies for pattern checking
+    # Allocate host memory
+    h_A = Vector{Float64}(A_csr.nzval)
     h_csrRowPtr = Vector{T}(A_csr.colptr)
     h_csrColInd = Vector{T}(A_csr.rowval)
+    h_x = Vector{Float64}(undef, n)
+    h_b = Vector{Float64}(undef, n)
+
+    # Store copies for pattern checking
+    h_csrRowPtr_cached = copy(h_csrRowPtr)
+    h_csrColInd_cached = copy(h_csrColInd)
 
     # Create info structure
     info = CUSOLVER.cusolverSpCreateCsrluInfoHost()
 
     cache = CUSOLVERLinSolveCache{T}(
-        n, nnz, handle, d_A, d_csrRowPtr, d_csrColInd, d_x, d_b,
-        h_csrRowPtr, h_csrColInd, reuse_symbolic, check_pattern,
+        n, nnz, handle, h_A, h_csrRowPtr, h_csrColInd, h_x, h_b,
+        h_csrRowPtr_cached, h_csrColInd_cached, reuse_symbolic, check_pattern,
         pivot_threshold, info
     )
 
@@ -140,12 +140,10 @@ function symbolic_factor!(
     # Update cached pattern
     cache.h_csrRowPtr = Vector{T}(A_csr.colptr)
     cache.h_csrColInd = Vector{T}(A_csr.rowval)
+    cache.h_csrRowPtr_cached = copy(cache.h_csrRowPtr)
+    cache.h_csrColInd_cached = copy(cache.h_csrColInd)
 
-    # Copy to device
-    CUDA.copyto!(cache.d_csrRowPtr, cache.h_csrRowPtr)
-    CUDA.copyto!(cache.d_csrColInd, cache.h_csrColInd)
-
-    # For cusolverSpDcsrlsvlu, symbolic factorization is done implicitly
+    # For cusolverSpDcsrlsvluHost, symbolic factorization is done implicitly
     # during the first numeric factorization, so we just prepare the structure
 
     return nothing
@@ -168,7 +166,7 @@ function symbolic_refactor!(
         new_rowptr = Vector{T}(A_csr.colptr)
         new_colind = Vector{T}(A_csr.rowval)
 
-        if new_rowptr != cache.h_csrRowPtr || new_colind != cache.h_csrColInd
+        if new_rowptr != cache.h_csrRowPtr_cached || new_colind != cache.h_csrColInd_cached
             throw(ArgumentError(
                 "Matrix has different sparse structure. Either create cache with " *
                 "reuse_symbolic = false, or call symbolic_factor! instead."
@@ -191,24 +189,24 @@ function numeric_refactor!(
         new_rowptr = Vector{T}(A_csr.colptr)
         new_colind = Vector{T}(A_csr.rowval)
 
-        if new_rowptr != cache.h_csrRowPtr || new_colind != cache.h_csrColInd
+        if new_rowptr != cache.h_csrRowPtr_cached || new_colind != cache.h_csrColInd_cached
             throw(ArgumentError(
                 "Cannot numeric_refactor: matrix has different sparse structure."
             ))
         end
     end
 
-    # Convert to CSR and copy values to device
+    # Convert to CSR and update values
     A_csr = SparseMatrixCSC(A')
-    CUDA.copyto!(cache.d_A, A_csr.nzval)
+    copyto!(cache.h_A, A_csr.nzval)
 
-    # cusolverSpDcsrlsvlu performs factorization during solve
+    # cusolverSpDcsrlsvluHost performs factorization during solve
     # For now, we just update the matrix values
 
     return nothing
 end
 
-"""Solves the linear system using cusolverSpDcsrlsvlu.
+"""Solves the linear system using cusolverSpDcsrlsvluHost.
 Modifies B in-place with the solution."""
 function solve!(
     cache::CUSOLVERLinSolveCache{T},
@@ -226,8 +224,8 @@ function solve!(
 
     # Handle vector case
     if B isa Vector
-        # Copy RHS to device
-        CUDA.copyto!(cache.d_b, B)
+        # Copy RHS to host buffer
+        copyto!(cache.h_b, B)
 
         # Create matrix descriptor for CSR format
         # Note: cuSOLVER expects 0-based indexing, so we need to adjust
@@ -235,11 +233,11 @@ function solve!(
         CUSPARSE.cusparseSetMatIndexBase(descrA, CUSPARSE.CUSPARSE_INDEX_BASE_ZERO)
         CUSPARSE.cusparseSetMatType(descrA, CUSPARSE.CUSPARSE_MATRIX_TYPE_GENERAL)
 
-        # Adjust indices for 0-based indexing
-        d_csrRowPtr_zero = cache.d_csrRowPtr .- T(1)
-        d_csrColInd_zero = cache.d_csrColInd .- T(1)
+        # Adjust indices for 0-based indexing (create new arrays)
+        h_csrRowPtr_zero = cache.h_csrRowPtr .- T(1)
+        h_csrColInd_zero = cache.h_csrColInd .- T(1)
 
-        # Solve using cusolverSpDcsrlsvlu
+        # Solve using cusolverSpDcsrlsvluHost
         tol = eps(Float64)
         reorder = 1  # Enable reordering for better stability
         singularity = Ref{Cint}(0)
@@ -249,13 +247,13 @@ function solve!(
             cache.n,
             cache.nnz,
             descrA,
-            cache.d_A,
-            d_csrRowPtr_zero,
-            d_csrColInd_zero,
-            cache.d_b,
+            cache.h_A,
+            h_csrRowPtr_zero,
+            h_csrColInd_zero,
+            cache.h_b,
             tol,
             reorder,
-            cache.d_x,
+            cache.h_x,
             singularity
         )
 
@@ -263,8 +261,8 @@ function solve!(
             @warn "Matrix appears to be singular at position $(singularity[])"
         end
 
-        # Copy solution back to host
-        CUDA.copyto!(B, cache.d_x)
+        # Copy solution back
+        copyto!(B, cache.h_x)
 
     else
         # Handle matrix case (multiple RHS)
