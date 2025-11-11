@@ -327,7 +327,7 @@ function _run_powerflow_method(time_step::Int,
             refinement_eps,
         )
         validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
-        converged = norm(residual.Rv, Inf) < tol
+        converged = check_convergence(residual, tol)
         if !converged
             i += 1
         end
@@ -401,7 +401,7 @@ function _run_powerflow_method(time_step::Int,
             autoscale,
         )
         validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
-        converged = norm(residual.Rv, Inf) < tol
+        converged = check_convergence(residual, tol)
         if !converged
             i += 1
         end
@@ -417,7 +417,7 @@ function _newton_powerflow(
 
     # setup: common code
     residual, J, x0 = initialize_powerflow_variables(pf, data, time_step; kwargs...)
-    converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
+    converged = check_convergence(residual, get(kwargs, :tol, DEFAULT_NR_TOL))
 
     i = 0
     if !converged
@@ -436,16 +436,5 @@ function _newton_powerflow(
     end
     @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
 
-    if converged
-        @info("The $T solver converged after $i iterations.")
-        if get_calculate_loss_factors(data)
-            _calculate_loss_factors(data, J.Jv, time_step)
-        end
-        if get_calculate_voltage_stability_factors(data)
-            _calculate_voltage_stability_factors(data, J.Jv, time_step)
-        end
-        return true
-    end
-    @error("The $T solver failed to converge.")
-    return false
+    return finalize_solver_result!(converged, string(T), data, J, time_step, i)
 end

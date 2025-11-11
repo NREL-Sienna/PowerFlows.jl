@@ -489,3 +489,66 @@ siground(x::Float64) = round(x; sigdigits = 3)
 signorm(x::Vector{Float64}; p::Real = 2) = siground(LinearAlgebra.norm(x, p))
 print_signorms(x::Vector{Float64}; intro::String = "", ps::Vector{Float64} = [2]) =
     @info "$intro norm: " * join(["$(signorm(x; p = p)) [L$p]" for p in ps], ", ")
+
+"""
+    check_convergence(residual::ACPowerFlowResidual, tol::Float64) -> Bool
+
+Check if the power flow has converged by comparing the infinity norm of the residual
+against the tolerance.
+
+# Arguments
+- `residual::ACPowerFlowResidual`: The residual object containing the residual vector.
+- `tol::Float64`: The convergence tolerance.
+
+# Returns
+- `Bool`: True if converged (||residual||_∞ < tol), false otherwise.
+"""
+function check_convergence(residual::ACPowerFlowResidual, tol::Float64)
+    return norm(residual.Rv, Inf) < tol
+end
+
+"""
+    finalize_solver_result!(
+        converged::Bool,
+        solver_name::String,
+        data::ACPowerFlowData,
+        J::ACPowerFlowJacobian,
+        time_step::Int,
+        iterations::Int
+    ) -> Bool
+
+Finalize solver execution by logging results and computing post-processing quantities
+(loss factors and voltage stability factors) if requested and if converged.
+
+# Arguments
+- `converged::Bool`: Whether the solver converged.
+- `solver_name::String`: Name of the solver for logging.
+- `data::ACPowerFlowData`: Power flow data.
+- `J::ACPowerFlowJacobian`: Jacobian matrix (used for post-processing).
+- `time_step::Int`: Current time step.
+- `iterations::Int`: Number of iterations taken.
+
+# Returns
+- `Bool`: Same as input `converged`.
+"""
+function finalize_solver_result!(
+    converged::Bool,
+    solver_name::String,
+    data::ACPowerFlowData,
+    J::ACPowerFlowJacobian,
+    time_step::Int,
+    iterations::Int,
+)
+    if converged
+        @info("The $solver_name solver converged after $iterations iterations.")
+        if get_calculate_loss_factors(data)
+            _calculate_loss_factors(data, J.Jv, time_step)
+        end
+        if get_calculate_voltage_stability_factors(data)
+            _calculate_voltage_stability_factors(data, J.Jv, time_step)
+        end
+        return true
+    end
+    @error("The $solver_name solver failed to converge.")
+    return false
+end

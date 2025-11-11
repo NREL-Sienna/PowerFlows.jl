@@ -16,9 +16,12 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     hSolver = CholeskyHessianSolver(homHess.Hv)
     symbolic_factor!(hSolver, homHess.Hv)
 
+    # Pre-allocate δ buffer to avoid allocations in each Newton step
+    δ = zeros(size(x, 1))
+
     success = true
     while true # go onto next t_k even if search doesn't terminate within max iterations.
-        converged_t_k, _ = _second_order_newton(homHess, t_k, time_step, x, hSolver)
+        converged_t_k, _ = _second_order_newton(homHess, t_k, time_step, x, hSolver, δ)
         if t_k == 1.0
             success = converged_t_k
             break
@@ -27,15 +30,12 @@ function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     end
     if !success
         @warn "RobustHomotopyPowerFlow failed to find a solution"
-    else
-        if get_calculate_loss_factors(data)
-            _calculate_loss_factors(data, homHess.J.Jv, time_step)
-        end
-        if get_calculate_voltage_stability_factors(data)
-            _calculate_voltage_stability_factors(data, homHess.J.Jv, time_step)
-        end
+        return false
     end
-    return success
+
+    # Note: For homotopy, we don't have a meaningful iteration count at the outer level
+    # The finalize function will handle the success case
+    return finalize_solver_result!(success, "RobustHomotopyPowerFlow", data, homHess.J, time_step, 0)
 end
 
 sig3(x::Float64) = round(x; sigdigits = 3)
@@ -49,7 +49,8 @@ function _second_order_newton(homHess::HomotopyHessian,
     t_k::Float64,
     time_step::Int,
     x::Vector{Float64},
-    hSolver::HessianSolver;
+    hSolver::HessianSolver,
+    δ::Vector{Float64};
     kwargs...)
     maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
@@ -57,7 +58,6 @@ function _second_order_newton(homHess::HomotopyHessian,
     i, converged, stop = 0, false, false
     F_val = F_value(homHess, t_k, x, time_step)
     last_tk = t_k == 1.0
-    δ = zeros(size(x, 1)) # PERF: allocating
     while i < maxIterations && !converged && !stop
         stop = _second_order_newton_step(
             homHess,
@@ -68,7 +68,7 @@ function _second_order_newton(homHess::HomotopyHessian,
             δ,
         )
         F_val = F_value(homHess, t_k, x, time_step)
-        converged = (last_tk ? norm(homHess.pfResidual.Rv, Inf) : abs(F_val)) < tol
+        converged = (last_tk ? check_convergence(homHess.pfResidual, tol) : abs(F_val) < tol)
         i += 1
         if converged
             info_helper(homHess, t_k, F_val, "converged")

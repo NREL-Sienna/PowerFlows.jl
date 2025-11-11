@@ -8,7 +8,7 @@ function _newton_powerflow(
     kwargs...,
 )
     residual, J, x0 = initialize_powerflow_variables(pf, data, time_step; kwargs...)
-    converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
+    converged = check_convergence(residual, get(kwargs, :tol, DEFAULT_NR_TOL))
     i = 0
     if !converged
         converged, i = _run_powerflow_method(
@@ -21,19 +21,7 @@ function _newton_powerflow(
     end
     @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
 
-    if converged
-        @info("The LevenbergMarquardtACPowerFlow solver converged after $i iterations.")
-        if get_calculate_loss_factors(data)
-            _calculate_loss_factors(data, J.Jv, time_step)
-        end
-        if get_calculate_voltage_stability_factors(data)
-            _calculate_voltage_stability_factors(data, J.Jv, time_step)
-        end
-        return true
-    end
-
-    @error("The LevenbergMarquardtACPowerFlow solver failed to converge.")
-    return false
+    return finalize_solver_result!(converged, "LevenbergMarquardtACPowerFlow", data, J, time_step, i)
 end
 
 function _run_powerflow_method(
@@ -54,7 +42,7 @@ function _run_powerflow_method(
     @debug "initially: sum of squares $(siground(resSize)), L ∞ norm $(siground(linf)), λ = $λ"
     while i < maxIterations && !converged && !isnan(λ)
         λ = update_damping_factor!(x, residual, J, time_step, maxTestλs)
-        converged = !isnan(λ) && norm(residual.Rv, Inf) < tol
+        converged = !isnan(λ) && check_convergence(residual, tol)
         i += 1
     end
     if isnan(λ)

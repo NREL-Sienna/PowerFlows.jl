@@ -27,7 +27,8 @@ function (hess::HomotopyHessian)(x::Vector{Float64}, t_k::Float64, time_step::In
     _update_hessian_matrix_values!(hess.Hv, Rv, hess.data, time_step)
     A_plus_eq_BT_B!(hess.Hv, Jv)
     SparseArrays.nonzeros(hess.Hv) .*= t_k
-    for (bus_ix, bt) in enumerate(get_bus_type(hess.data)[:, time_step]) # PERF: allocating
+    bus_types = @view get_bus_type(hess.data)[:, time_step]
+    for (bus_ix, bt) in enumerate(bus_types)
         if bt == PSY.ACBusTypes.PQ
             hess.Hv[2 * bus_ix - 1, 2 * bus_ix - 1] += (1 - t_k)
         end
@@ -65,7 +66,8 @@ end
 
 function homotopy_x0(data::ACPowerFlowData, time_step::Int)
     x = calculate_x0(data, time_step)
-    for (bus_ix, bt) in enumerate(get_bus_type(data)[:, time_step]) # PERF: allocating
+    bus_types = @view get_bus_type(data)[:, time_step]
+    for (bus_ix, bt) in enumerate(bus_types)
         if bt == PSY.ACBusTypes.PQ
             x[2 * bus_ix - 1] = 1.0
         end
