@@ -160,7 +160,7 @@ end
     pv_bus = buses[first_pv]
     set_availability_at_bus(sys, pv_bus, true)
     @assert PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
-    # PV with no available generators => error.
+    # PV with no available generators => AC power flow errors.
     set_availability_at_bus(sys, pv_bus, false)
     @assert PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
     @test_throws ArgumentError PF.PowerFlowData(
@@ -168,6 +168,17 @@ end
         sys,
     )
     @assert PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
+    # on the other hand, DC power flow is fine: PV vs PQ doesn't matter.
+    solve_powerflow(PF.DCPowerFlow(), sys)
+    # No available generators at REF bus does error for DC power flow.
+    ref_bus = findfirst(bus -> PSY.get_bustype(bus) == PSY.ACBusTypes.REF, buses)
+    ref_bus = buses[ref_bus]
+    set_availability_at_bus(sys, ref_bus, false)
+    @test_throws ArgumentError PF.PowerFlowData(
+        PF.DCPowerFlow(),
+        sys,
+    )
+    set_availability_at_bus(sys, ref_bus, true)
     # change it to PQ: should work now.
     set_bustype!(pv_bus, PSY.ACBusTypes.PQ)
     @test PF.PowerFlowData(PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(), sys) isa Any

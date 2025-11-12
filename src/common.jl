@@ -189,7 +189,71 @@ function _get_reactive_power_bound!(
     return
 end
 
+function _set_bus_angles_and_magnitudes!(
+    ::AbstractDCPowerFlow,
+    bus_type::Vector{PSY.ACBusTypes},
+    bus_angles::Vector{Float64},
+    bus_magnitude::Vector{Float64},
+    bus_lookup::Dict{Int, Int},
+    bus_reduction_map::Dict{Int, Set{Int}},
+    reverse_bus_search_map::Dict{Int, Int},
+    temp_bus_map::Dict{Int, String},
+    sys::PSY.System,
+)
+    for bus_no in keys(bus_reduction_map)
+        ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, bus_no)
+        bus_name = temp_bus_map[bus_no]
+        bus = PSY.get_component(PSY.ACBus, sys, bus_name)
+        bus_angles[ix] = PSY.get_angle(bus)
+        bus_magnitude[ix] = 1.0  # DC power flow: voltage magnitude is always 1.0 p.u.
+    end
+    return
+end
+
+function _set_bus_angles_and_magnitudes!(
+    ::ACPowerFlow{<:ACPowerFlowSolverType},
+    bus_type::Vector{PSY.ACBusTypes},
+    bus_angles::Vector{Float64},
+    bus_magnitude::Vector{Float64},
+    bus_lookup::Dict{Int, Int},
+    bus_reduction_map::Dict{Int, Set{Int}},
+    reverse_bus_search_map::Dict{Int, Int},
+    temp_bus_map::Dict{Int, String},
+    sys::PSY.System,
+)
+    for bus_no in keys(bus_reduction_map)
+        ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, bus_no)
+        bus_name = temp_bus_map[bus_no]
+        bus = PSY.get_component(PSY.ACBus, sys, bus_name)
+        bus_angles[ix] = PSY.get_angle(bus)
+        bus_vm = PSY.get_magnitude(bus)
+        # prevent unfeasible starting values for voltage magnitude at PQ buses (for PV and REF buses we cannot do this):
+        if bus_type[ix] == PSY.ACBusTypes.PQ &&
+           bus_vm < BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
+            @warn(
+                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is below the plausible minimum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u.",
+                maxlog = PF_MAX_LOG,
+            )
+            bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
+        elseif bus_type[ix] == PSY.ACBusTypes.PQ &&
+               bus_vm > BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
+            @warn(
+                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is above the plausible maximum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u.",
+                maxlog = PF_MAX_LOG,
+            )
+            bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
+        end
+        bus_magnitude[ix] = bus_vm
+    end
+    return
+end
+
+# ensures that we don't error/warn for PV vs PQ bus types in DC power flow.
+_bad_bustype(::ACPowerFlow{<:ACPowerFlowSolverType}, ::PSY.ACBusTypes) = true
+_bad_bustype(::AbstractDCPowerFlow, bt::PSY.ACBusTypes) = (bt == PSY.ACBusTypes.REF)
+
 function _initialize_bus_data!(
+    pf::PowerFlowEvaluationModel,
     bus_type::Vector{PSY.ACBusTypes},
     bus_angles::Vector{Float64},
     bus_magnitude::Vector{Float64},
@@ -199,7 +263,9 @@ function _initialize_bus_data!(
     sys::PSY.System,
     correct_bustypes::Bool = false,
 )
-    # correct/validate the bus types.
+    # correct/validate the bus types. We don't care about PV vs PQ for DC power flow, 
+    # but due to the network reduction logic, it's simpler to handle the bus types the same
+    # for both AC and DC [and just not error/warn for DC PV vs PQ problems].
     forced_PV = must_be_PV(sys)
     possible_PV = can_be_PV(sys)
     bus_numbers = PSY.get_bus_numbers(sys)
@@ -214,22 +280,22 @@ function _initialize_bus_data!(
         temp_bus_map[bus_no] = bus_name
         if (bt == PSY.ACBusTypes.PV || bt == PSY.ACBusTypes.REF) && !(bus_no in possible_PV)
             if correct_bustypes
-                @warn "No available sources at bus $bus_name  of bus type 2 (PV). " *
-                      "Treating that bus as PQ for purposes of the power flow." maxlog =
-                    PF_MAX_LOG
+                _bad_bustype(pf, bt) && @warn "No available sources at bus $bus_name of " *
+                      "bus type 2 (PV) or 3 (REF). Treating that bus as PQ for purposes of " *
+                      "the power flow." maxlog = PF_MAX_LOG
                 bt = PSY.ACBusTypes.PQ
-            else
+            elseif _bad_bustype(pf, bt)
                 throw(
                     ArgumentError(
-                        "No available sources at bus $bus_name of bus type 2 (PV)." *
-                        " Please change the bus type to PQ.",
+                        "No available sources at bus $bus_name of bus type 2 (PV) " *
+                        " or 3 (REF). Please change the bus type to PQ.",
                     ),
                 )
             end
-        elseif bt == PSY.ACBusTypes.PQ && bus_no in forced_PV
-            @warn "Active generators found at bus $bus_name of bus type 1 (PQ), i.e. " *
-                  "different than 2 (PV). Consider checking your data inputs." maxlog =
-                PF_MAX_LOG
+        elseif bt == PSY.ACBusTypes.PQ && bus_no in forced_PV && _bad_bustype(pf, bt)
+            @warn "Active generators found at bus $bus_name of bus" *
+                  " type 1 (PQ), i.e. different than 2 (PV). Consider checking your data " *
+                  "inputs." maxlog = PF_MAX_LOG
         end
         temp_bus_types[bus_no] = bt
     end
@@ -242,28 +308,21 @@ function _initialize_bus_data!(
         combined_bus_type = findmax(bt -> BUS_TYPE_PRIORITIES[bt], corrected_bus_types)[1]
         ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, bus_no)
         bus_type[ix] = combined_bus_type
-        bus_name = temp_bus_map[bus_no]
-        bus = PSY.get_component(PSY.ACBus, sys, bus_name)
-        bus_angles[ix] = PSY.get_angle(bus)
-        bus_vm = PSY.get_magnitude(bus)
-        # prevent unfeasible starting values for voltage magnitude at PQ buses (for PV and REF buses we cannot do this):
-        if combined_bus_type == PSY.ACBusTypes.PQ &&
-           bus_vm < BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
-            @warn(
-                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is below the plausible minimum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN p.u.",
-                maxlog = PF_MAX_LOG,
-            )
-            bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN
-        elseif combined_bus_type == PSY.ACBusTypes.PQ &&
-               bus_vm > BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
-            @warn(
-                "Initial bus voltage magnitude of $bus_vm p.u. at PQ bus $bus_name is above the plausible maximum cut-off value of $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u. and has been set to $BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX p.u.",
-                maxlog = PF_MAX_LOG,
-            )
-            bus_vm = BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
-        end
-        bus_magnitude[ix] = bus_vm
     end
+    # fill in the bus angles and magnitudes: for DC power flow, we only
+    # care about the angle at the reference bus(es).
+    _set_bus_angles_and_magnitudes!(
+        pf,
+        bus_type,
+        bus_angles,
+        bus_magnitude,
+        bus_lookup,
+        bus_reduction_map,
+        reverse_bus_search_map,
+        temp_bus_map,
+        sys,
+    )
+    return
 end
 ##############################################################################
 # Matrix Methods #############################################################

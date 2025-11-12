@@ -18,6 +18,7 @@ function initialize_powerflow_data!(
     bus_angles = zeros(Float64, n_buses)
     bus_magnitude = ones(Float64, n_buses)
     _initialize_bus_data!(
+        pf,
         bus_type,
         bus_angles,
         bus_magnitude,
