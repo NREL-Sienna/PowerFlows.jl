@@ -65,7 +65,11 @@ _get_bus_ix(
 ) =
     bus_lookup[get(reverse_bus_search_map, bus_number, bus_number)]
 
+considers_reactive_power(::ACPowerFlow{<:ACPowerFlowSolverType}) = true
+considers_reactive_power(::AbstractDCPowerFlow) = false
+
 function _get_injections!(
+    pf::PowerFlowEvaluationModel,
     bus_activepower_injection::Vector{Float64},
     bus_reactivepower_injection::Vector{Float64},
     bus_lookup::Dict{Int, Int},
@@ -79,7 +83,7 @@ function _get_injections!(
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
             bus_activepower_injection[bus_ix] += PSY.get_active_power(source)
         end
-        if contributes_reactive_power(source) &&
+        if considers_reactive_power(pf) && contributes_reactive_power(source) &&
            reactive_power_contribution_type(source) == PowerContributionType.INJECTION
             bus = PSY.get_bus(source)
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
@@ -96,6 +100,7 @@ function _get_injections!(
 end
 
 function _get_withdrawals!(
+    pf::PowerFlowEvaluationModel,
     bus_activepower_withdrawals::Vector{Float64},
     bus_reactivepower_withdrawals::Vector{Float64},
     bus_activepower_constant_current_withdrawals::Vector{Float64},
@@ -114,7 +119,7 @@ function _get_withdrawals!(
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
             bus_activepower_withdrawals[bus_ix] += PSY.get_active_power(l)
         end
-        if contributes_reactive_power(l) &&
+        if considers_reactive_power(pf) && contributes_reactive_power(l) &&
            reactive_power_contribution_type(l) == PowerContributionType.WITHDRAWAL
             bus = PSY.get_bus(l)
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))

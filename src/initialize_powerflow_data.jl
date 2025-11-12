@@ -38,6 +38,7 @@ function initialize_powerflow_data!(
     bus_activepower_injection = zeros(Float64, n_buses)
     bus_reactivepower_injection = zeros(Float64, n_buses)
     _get_injections!(
+        pf,
         bus_activepower_injection,
         bus_reactivepower_injection,
         bus_lookup,
@@ -55,6 +56,7 @@ function initialize_powerflow_data!(
     bus_activepower_constant_impedance_withdrawals = zeros(Float64, n_buses)
     bus_reactivepower_constant_impedance_withdrawals = zeros(Float64, n_buses)
     _get_withdrawals!(
+        pf,
         bus_activepower_withdrawals,
         bus_reactivepower_withdrawals,
         bus_activepower_constant_current_withdrawals,
