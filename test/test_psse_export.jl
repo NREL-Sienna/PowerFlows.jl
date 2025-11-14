@@ -414,6 +414,8 @@ function test_psse_exporter_version(sys_name::String, version::Symbol, folder_na
 end
 
 # Test configurations: (test_name, sys_name, version, folder_name)
+# ReTest chokes on @testset over a loop.
+#=
 test_configs = [
     (
         "PSSE Exporter with case16_sys.raw, v33",
@@ -427,17 +429,20 @@ test_configs = [
         :v35,
         "modified_case25_sys.raw",
     ),
-]
+]=#
 
-for (test_name, sys_name, version, folder_name) in test_configs
-    @testset "$test_name" for fn in [folder_name]
-        test_psse_exporter_version(sys_name, version, fn)
-    end
+@testset "PSSE Exporter with case16_sys.raw, v33" begin
+    test_psse_exporter_version("pti_case16_complete_sys", :v33, "case16_sys.raw")
 end
 
-@testset "PSSE Exporter with pti_case24_sys.raw, v33" for (ACSolver, folder_name) in (
-    (LUACPowerFlow, "case24_sys_LU"),
-    (NewtonRaphsonACPowerFlow, "case24_sys_NR"),
+@testset "PSSE Exporter with modified_case25_sys.raw, v35" begin
+    test_psse_exporter_version("pti_modified_case25_v35_sys", :v35,
+        "modified_case25_sys.raw")
+end
+
+function test_psse_exporter_inner(
+    ACSolver::Type{<:ACPowerFlowSolverType},
+    folder_name::String,
 )
     sys = load_test_system("pti_case24_sys")
     pf = ACPowerFlow{ACSolver}()
@@ -481,6 +486,14 @@ end
         match_mode = :any, min_level = Logging.Error,
         compare_systems_loosely(sys, reread_sys2))
     test_power_flow(pf, sys2, reread_sys2; exclude_reactive_flow = true)
+end
+
+@testset "PSSE Exporter with case24_sys.raw, v33 - LUACPowerFlow" begin
+    test_psse_exporter_inner(LUACPowerFlow, "case24_sys_LU")
+end
+
+@testset "PSSE Exporter with case24_sys.raw, v33 - NewtonRaphsonACPowerFlow" begin
+    test_psse_exporter_inner(NewtonRaphsonACPowerFlow, "case24_sys_NR")
 end
 
 @testset "Test exporter helper functions" begin
