@@ -2,22 +2,22 @@
     # get system
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     injections = CSV.read(
-        joinpath(MAIN_DIR, "test", "test_data", "c_sys14_injections.csv"),
+        joinpath(TEST_DATA_DIR, "c_sys14_injections.csv"),
         DataFrame;
         header = 0,
     )
     withdrawals = CSV.read(
-        joinpath(MAIN_DIR, "test", "test_data", "c_sys14_withdrawals.csv"),
+        joinpath(TEST_DATA_DIR, "c_sys14_withdrawals.csv"),
         DataFrame;
         header = 0,
     )
     flows = CSV.read(
-        joinpath(MAIN_DIR, "test", "test_data", "c_sys14_flows.csv"),
+        joinpath(TEST_DATA_DIR, "c_sys14_flows.csv"),
         DataFrame;
         header = 0,
     )
     angles = CSV.read(
-        joinpath(MAIN_DIR, "test", "test_data", "c_sys14_angles.csv"),
+        joinpath(TEST_DATA_DIR, "c_sys14_angles.csv"),
         DataFrame;
         header = 0,
     )

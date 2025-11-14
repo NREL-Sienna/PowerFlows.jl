@@ -159,7 +159,7 @@ end
 
 @testset "AC Test 240 Case PSS/e results" begin
     file = joinpath(
-        TEST_FILES_DIR,
+        TEST_DATA_DIR,
         "test_data",
         "WECC240_v04_DPV_RE20_v33_6302_xfmr_DPbuscode_PFadjusted_V32_noRemoteVctrl.raw",
     )
@@ -169,8 +169,8 @@ end
         runchecks = false,
     )
 
-    pf_bus_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_bus_results.csv")
-    pf_gen_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_gen_results.csv")
+    pf_bus_result_file = joinpath(TEST_DATA_DIR, "test_data", "pf_bus_results.csv")
+    pf_gen_result_file = joinpath(TEST_DATA_DIR, "test_data", "pf_gen_results.csv")
 
     # remove skip_redistribution once redistribution is working properly.
     pf = ACPowerFlow(; skip_redistribution = true)
@@ -434,7 +434,7 @@ function PowerFlowData_to_DataFrame(data::PowerFlowData)
 end
 
 @testset "ACTIVSg2000 matches matpower's solution" begin
-    MATPOWER_CSV = joinpath(TEST_FILES_DIR, "test_data", "ACTIVSg2000_solved.csv")
+    MATPOWER_CSV = joinpath(TEST_DATA_DIR, "test_data", "ACTIVSg2000_solved.csv")
     matpower_df = DataFrame(CSV.File(MATPOWER_CSV))
 
     sys_sienna = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
