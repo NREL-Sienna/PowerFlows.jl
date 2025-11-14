@@ -1,4 +1,4 @@
-test_psse_export_dir = joinpath(TEST_FILES_DIR, "test_exports")
+test_psse_export_dir = joinpath(TEST_DATA_DIR, "test_exports")
 isdir(test_psse_export_dir) && rm(test_psse_export_dir; recursive = true)
 
 function _log_assert(result, msg, comparison_name)
