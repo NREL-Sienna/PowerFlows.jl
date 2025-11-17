@@ -46,34 +46,37 @@ end
 
 "Take RTS_GMLC_DA_sys and make some changes to it that are fully captured in the PowerFlowData(ACPowerFlow(), ...)"
 function modify_rts_system!(sys::System)
-    # For REF bus, voltage and angle are fixed; update active and reactive
-    ref_bus = get_bus(sys, 113)  # "Arne"
-    @assert get_bustype(ref_bus) == ACBusTypes.REF
-    # NOTE: we are not testing the correctness of _power_redistribution_ref here, it is used on both sides of the test
-    PF._power_redistribution_ref(
-        sys,
-        2.4375,
-        0.1875,
-        ref_bus,
-        PF.DEFAULT_MAX_REDISTRIBUTION_ITERATIONS,
-    )
+    with_units_base(sys, "SYSTEM_BASE") do
+        # For REF bus, voltage and angle are fixed; update active and reactive
+        ref_bus = get_bus(sys, 113)  # "Arne"
+        @assert get_bustype(ref_bus) == ACBusTypes.REF
+        # NOTE: we are not testing the correctness of _power_redistribution_ref here, it is used on both sides of the test
+        PF._power_redistribution_ref(
+            sys,
+            2.4375,
+            0.1875,
+            ref_bus,
+            PF.DEFAULT_MAX_REDISTRIBUTION_ITERATIONS,
+        )
 
-    # For PV bus, active and voltage are fixed; update reactive and angle
-    pv_bus = get_bus(sys, 202)  # "Bacon"
-    @assert get_bustype(pv_bus) == ACBusTypes.PV
-    PF._reactive_power_redistribution_pv(
-        sys,
-        0.37267,
-        pv_bus,
-        PF.DEFAULT_MAX_REDISTRIBUTION_ITERATIONS,
-    )
-    set_angle!(pv_bus, -0.13778)
+        # For PV bus, active and voltage are fixed; update reactive and angle
+        pv_bus = get_bus(sys, 202)  # "Bacon"
+        @assert get_bustype(pv_bus) == ACBusTypes.PV
+        PF._reactive_power_redistribution_pv(
+            sys,
+            0.37267,
+            pv_bus,
+            PF.DEFAULT_MAX_REDISTRIBUTION_ITERATIONS,
+        )
+        set_angle!(pv_bus, -0.13778)
 
-    # For PQ bus, active and reactive are fixed; update voltage and angle
-    pq_bus = get_bus(sys, 117)  # "Aston"
-    @assert get_bustype(pq_bus) == ACBusTypes.PQ
-    set_magnitude!(pq_bus, 0.84783)
-    set_angle!(pq_bus, 0.14956)
+        # For PQ bus, active and reactive are fixed; update voltage and angle
+        pq_bus = get_bus(sys, 117)  # "Aston"
+        @assert get_bustype(pq_bus) == ACBusTypes.PQ
+        set_magnitude!(pq_bus, 0.84783)
+        # @assert PNM.BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN <= 0.84783 <= PNM.BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX
+        set_angle!(pq_bus, 0.14956)
+    end
 end
 
 "Make the same changes to the PowerFlowData that modify_rts_system! makes to the System"
@@ -82,14 +85,17 @@ function modify_rts_powerflow!(data::PowerFlowData)
     # For REF bus, voltage and angle are fixed; update active and reactive
     data.bus_activepower_injection[bus_lookup[113]] = 2.4375
     data.bus_reactivepower_injection[bus_lookup[113]] = 0.1875
+    @assert data.bus_type[bus_lookup[113], 1] == PSY.ACBusTypes.REF
 
     # For PV bus, active and voltage are fixed; update reactive and angle
     data.bus_reactivepower_injection[bus_lookup[202]] = 0.37267
     data.bus_angles[bus_lookup[202]] = -0.13778
+    @assert data.bus_type[bus_lookup[202], 1] == PSY.ACBusTypes.PV
 
     # For PQ bus, active and reactive are fixed; update voltage and angle
     data.bus_magnitude[bus_lookup[117]] = 0.84783
     data.bus_angles[bus_lookup[117]] = 0.14956
+    @assert data.bus_type[bus_lookup[117], 1] == PSY.ACBusTypes.PQ
 end
 
 function _system_generation_power(

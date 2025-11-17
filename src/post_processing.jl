@@ -43,6 +43,9 @@ function _power_redistribution_ref(
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
     } = nothing)
+    PSY.get_units_base(sys) == "SYSTEM_BASE" || throw(
+        ArgumentError("Power redistribution requires the system to be in SYSTEM_BASE"),
+    )
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
     all_devices = devices_
@@ -180,6 +183,9 @@ function _reactive_power_redistribution_pv(
     bus::PSY.ACBus,
     max_iterations::Int,
 )
+    PSY.get_units_base(sys) == "SYSTEM_BASE" || throw(
+        ArgumentError("Power redistribution requires the system to be in SYSTEM_BASE"),
+    )
     @debug "Reactive Power Distribution $(PSY.get_name(bus))"
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)

@@ -47,10 +47,6 @@ end
     for ACSolver in AC_SOLVERS_TO_TEST
         @testset "AC Solver: $(ACSolver)" begin
             sys_original = build_system(PSISystems, "RTS_GMLC_DA_sys")
-            # temporary work-around for PSB issue #174
-            for sc in PSY.get_components(PSY.SynchronousCondenser, sys_original)
-                PSY.set_base_power!(sc, 100.0)
-            end
             data_original =
                 PowerFlowData(
                     ACPowerFlow{ACSolver}(),
