@@ -154,9 +154,7 @@ const vPTDFPowerFlowData = PowerFlowData{
     PNM.VirtualPTDF{
         Tuple{Vector{Tuple{Int, Int}}, Vector{Int64}},
         Tuple{Dict{Tuple{Int, Int}, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64}, # TODO: could be AAFactorization.
-        # but for some reason it errors if I switch to 
-        # <:Union{PNM.KLU.KLUFactorization{Float64, Int64}, PNM.AAFactorization{Float64}
+        PNM.KLU.KLUFactorization{Float64, Int64},
     },
     PNM.ABA_Matrix{
         Tuple{Vector{Int64}, Vector{Int64}},
