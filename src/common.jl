@@ -7,9 +7,7 @@ exports. Redirects to `PSY.get_reactive_power_limits` in all but special cases.
 get_reactive_power_limits_for_power_flow(gen::PSY.Device) =
     PSY.get_reactive_power_limits(gen)
 
-check_unit_setting(sys::PSY.System) =
-    (PSY.get_units_base(sys) == "SYSTEM_BASE") ||
-    throw(ArgumentError("This function requires the system to be in SYSTEM_BASE units."))
+check_unit_setting(sys::PSY.System) = IS.@assert_op PSY.get_units_base(sys) == "SYSTEM_BASE"
 
 function get_reactive_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
     val = PSY.get_reactive_power(gen)
