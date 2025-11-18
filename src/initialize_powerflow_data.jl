@@ -7,6 +7,7 @@ function initialize_powerflow_data!(
     sys::System;
     correct_bustypes = false,
 )
+    check_unit_setting(sys)
     nrd = get_network_reduction_data(data)
     reverse_bus_search_map = PNM.get_reverse_bus_search_map(nrd)
     bus_reduction_map = PNM.get_bus_reduction_map(nrd)

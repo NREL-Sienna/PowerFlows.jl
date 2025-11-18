@@ -461,3 +461,19 @@ function simple_lcc_system()
     lcc = _add_simple_lcc!(sys, b2, b3, 0.05, 0.05, 0.08)
     return sys, lcc
 end
+
+function power_flow_with_units(
+    sys::PSY.System,
+    T::Type{<:PF.PowerFlowEvaluationModel},
+    units::PSY.UnitSystem,
+)
+    with_units_base(sys, units) do
+        results = solve_powerflow(T(), sys; correct_bustypes = true)
+        if "1" in keys(results)
+            first_line_flow = results["1"]["flow_results"][1, :]
+        else
+            first_line_flow = results["flow_results"][1, :]
+        end
+        return (first_line_flow[:line_name], first_line_flow[:P_from_to])
+    end
+end
