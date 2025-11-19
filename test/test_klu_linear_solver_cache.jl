@@ -13,7 +13,7 @@ function testSolve(
     isapprox(A * XB, B; rtol = RTOL)
 end
 
-@testset for dType in (Int32, Int64)
+function factorization_tests(dType::Type{T}) where {T <: Union{Int32, Int64}}
     N = 50
     A = SparseMatrixCSC{Float64, dType}(sprandn(Float64, N, N, 0.1))
     while abs(det(A)) < eps(Float64)
@@ -88,4 +88,12 @@ end
     # error handling: mismtached dimensions.
     b = rand(N - 1)
     @test_throws DimensionMismatch PF.solve!(k, b)
+end
+
+@testset "KLU Linear Solver Cache: Int32" begin
+    factorization_tests(Int32)
+end
+
+@testset "KLU Linear Solver Cache: Int64" begin
+    factorization_tests(Int64)
 end
