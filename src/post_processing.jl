@@ -11,6 +11,7 @@ function _calculate_fixed_admittance_powers(
     data::PowerFlowData,
     time_step::Int,
 )
+    check_unit_setting(sys)
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     bus_lookup = get_bus_lookup(data)
 
@@ -43,6 +44,7 @@ function _power_redistribution_ref(
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
     } = nothing)
+    check_unit_setting(sys)
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
     all_devices = devices_
@@ -180,6 +182,7 @@ function _reactive_power_redistribution_pv(
     bus::PSY.ACBus,
     max_iterations::Int,
 )
+    check_unit_setting(sys)
     @debug "Reactive Power Distribution $(PSY.get_name(bus))"
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
@@ -363,6 +366,7 @@ function _set_series_voltages_and_flows!(
     V_endpoints::Tuple{ComplexF64, ComplexF64},
     temp_bus_map::Dict{Int, String},
 )
+    check_unit_setting(sys)
     chain_len = PNM.length(segment_sequence)
     nbuses = chain_len + 1
     # we find the voltages at interior nodes by solving Av = b, where A is tri-diagonal.
@@ -463,6 +467,7 @@ function write_powerflow_solution!(
     max_iterations::Int,
     time_step::Int = 1,
 )
+    check_unit_setting(sys)
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
 
     # getting bus by number is slow, O(n), so use names instead.
@@ -827,6 +832,7 @@ function write_results(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
     sys::PSY.System,
 )
+    check_unit_setting(sys)
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
 
     ### non time-dependent variables
@@ -892,6 +898,7 @@ function write_results(
     data::ACPowerFlowData,
     time_step::Int64,
 )
+    check_unit_setting(sys)
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
     busIxToFAPower = _calculate_fixed_admittance_powers(sys, data, time_step)
     for (bus_ix, fa_power) in busIxToFAPower
@@ -950,6 +957,7 @@ See also `write_powerflow_solution!`. NOTE that this assumes that `data` was ini
 from `sys` and then solved with no further modifications.
 """
 function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
+    check_unit_setting(sys)
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     if !isempty(PNM.get_reductions(nrd))
         error("update_system! does not support systems with network reductions.")

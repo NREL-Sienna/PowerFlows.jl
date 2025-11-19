@@ -855,3 +855,13 @@ end
         end
     end
 end
+
+@testset "AC power flow: results independent of units" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    line_name_ac, flow_natural_ac =
+        power_flow_with_units(sys, ACPowerFlow, PSY.UnitSystem.NATURAL_UNITS)
+    line_name2_ac, flow_system_ac =
+        power_flow_with_units(sys, ACPowerFlow, PSY.UnitSystem.SYSTEM_BASE)
+    @test line_name_ac == line_name2_ac
+    @test flow_natural_ac == flow_system_ac
+end

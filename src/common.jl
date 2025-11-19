@@ -7,6 +7,8 @@ exports. Redirects to `PSY.get_reactive_power_limits` in all but special cases.
 get_reactive_power_limits_for_power_flow(gen::PSY.Device) =
     PSY.get_reactive_power_limits(gen)
 
+check_unit_setting(sys::PSY.System) = IS.@assert_op PSY.get_units_base(sys) == "SYSTEM_BASE"
+
 function get_reactive_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
     val = PSY.get_reactive_power(gen)
     return (min = val, max = val)
@@ -72,6 +74,7 @@ function _get_injections!(
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
 )
+    check_unit_setting(sys)
     for source in PSY.get_available_components(PSY.StaticInjection, sys)
         if contributes_active_power(source) &&
            active_power_contribution_type(source) == PowerContributionType.INJECTION
@@ -199,6 +202,7 @@ function _initialize_bus_data!(
     sys::PSY.System,
     correct_bustypes::Bool = false,
 )
+    check_unit_setting(sys)
     # correct/validate the bus types.
     forced_PV = must_be_PV(sys)
     possible_PV = can_be_PV(sys)

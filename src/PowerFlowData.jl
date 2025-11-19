@@ -154,6 +154,7 @@ const vPTDFPowerFlowData = PowerFlowData{
     PNM.VirtualPTDF{
         Tuple{Vector{Tuple{Int, Int}}, Vector{Int64}},
         Tuple{Dict{Tuple{Int, Int}, Int64}, Dict{Int64, Int64}},
+        PNM.KLU.KLUFactorization{Float64, Int64},
     },
     PNM.ABA_Matrix{
         Tuple{Vector{Int64}, Vector{Int64}},
@@ -428,6 +429,7 @@ function make_and_initialize_powerflow_data(
     neighbors = Vector{Set{Int}}(),
     correct_bustypes::Bool = false,
 ) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+    check_unit_setting(sys)
     n_lccs = length(PSY.get_available_components(PSY.TwoTerminalLCCLine, sys))
     data = PowerFlowData(
         pf,

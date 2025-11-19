@@ -103,3 +103,14 @@ end
 end
 
 # TODO LCC DC test case with nonzero loss.
+
+@testset "DC power flow: results independent of units" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
+        line_name, flow_natural =
+            power_flow_with_units(sys, T, PSY.UnitSystem.NATURAL_UNITS)
+        line_name2, flow_system = power_flow_with_units(sys, T, PSY.UnitSystem.SYSTEM_BASE)
+        @test line_name == line_name2
+        @test flow_natural == flow_system
+    end
+end
