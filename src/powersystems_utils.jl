@@ -1,3 +1,63 @@
+"""
+Return the reactive power limits that should be used in power flow calculations and PSS/E
+exports. Redirects to `PSY.get_reactive_power_limits` in all but special cases.
+"""
+get_reactive_power_limits_for_power_flow(gen::PSY.Device) =
+    PSY.get_reactive_power_limits(gen)
+
+check_unit_setting(sys::PSY.System) = IS.@assert_op PSY.get_units_base(sys) == "SYSTEM_BASE"
+
+function get_reactive_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
+    val = PSY.get_reactive_power(gen)
+    return (min = val, max = val)
+end
+
+function get_reactive_power_limits_for_power_flow(gen::PSY.Storage)
+    limits = PSY.get_reactive_power_limits(gen)
+    isnothing(limits) && return (min = -Inf, max = Inf)  # TODO decide on proper behavior in this case
+    return limits
+end
+
+"""
+Return the active power limits that should be used in power flow calculations and PSS/E
+exports. Redirects to `PSY.get_active_power_limits` in all but special cases.
+"""
+get_active_power_limits_for_power_flow(gen::PSY.Device) = PSY.get_active_power_limits(gen)
+
+get_active_power_limits_for_power_flow(::PSY.Source) = (min = -Inf, max = Inf)
+
+function get_active_power_limits_for_power_flow(gen::PSY.SynchronousCondenser)
+    return (min = 0.0, max = 0.0)
+end
+
+function get_active_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
+    val = PSY.get_active_power(gen)
+    return (min = val, max = val)
+end
+
+get_active_power_limits_for_power_flow(gen::PSY.RenewableDispatch) =
+    (min = 0.0, max = PSY.get_rating(gen))
+
+# TODO verify whether this is the correct behavior for Storage, (a) for redistribution and (b) for exporting
+get_active_power_limits_for_power_flow(gen::PSY.Storage) =
+    (min = 0.0, max = PSY.get_output_active_power_limits(gen).max)
+
+"""
+Return the active and reactive power generation from a generator component.
+It's pg=0 as default for synchronous condensers since there's no field in the component for active power.
+"""
+function get_active_and_reactive_power_from_generator(gen::PSY.SynchronousCondenser)
+    pg = 0.0
+    qg = PSY.get_reactive_power(gen)
+    return pg, qg
+end
+
+function get_active_and_reactive_power_from_generator(gen)
+    pg = PSY.get_active_power(gen)
+    qg = PSY.get_reactive_power(gen)
+    return pg, qg
+end
+
 function set_power_flow!(br::PSY.ACTransmission, flow::Complex)
     PSY.set_active_power_flow!(br, real(flow))
     PSY.set_reactive_power_flow!(br, imag(flow))
@@ -77,4 +137,51 @@ function get_segment_flow(
     (y11, y12, _, _) = PNM.ybus_branch_entries(segment)
     I_from = y11 * V_from + y12 * V_to
     return V_from * conj(I_from)
+end
+
+error_if_reversed(::PSY.TwoTerminalHVDC, ::Float64) = nothing
+
+function error_if_reversed(hvdc::PSY.TwoTerminalLCCLine, P_dc::Float64)
+    P_dc < 0 && throw(
+        ArgumentError(
+            "Power flow in $(PSY.summary(hvdc)) is reversed: active power flow " *
+            "is $(PSY.get_active_power_flow(hvdc)), negative. Please check your inputs.",
+        ),
+    )
+end
+
+function hvdc_injections_natural_units(hvdc::PSY.TwoTerminalHVDC)
+    P_dc = with_units_base(hvdc, "NATURAL_UNITS") do
+        PSY.get_active_power_flow(hvdc)
+    end
+    error_if_reversed(hvdc, P_dc)
+    flow_reversed = P_dc < 0
+    P_dc = abs(P_dc)
+    loss_curve = PSY.get_loss(hvdc)
+    loss_fcn = PSY.get_function_data(loss_curve)
+    loss_constant = PSY.get_input_at_zero(loss_curve)
+    loss_constant_float = isnothing(loss_constant) ? 0.0 : loss_constant
+    P_loss = loss_fcn(P_dc) + loss_constant_float
+    P_loss > P_dc && @warn "The loss curve of $(PSY.summary(hvdc)) " *
+          "indicates the losses are greater than the transmitted power $P_dc. " *
+          "Setting the loss equal to the transmitted power instead."
+    P_loss < 0.0 && @warn "The loss curve of $(PSY.summary(hvdc)) " *
+          "indicates negative losses for transmitted power $P_dc. " *
+          "Setting the loss equal to zero instead."
+    P_received = P_dc - clamp(P_loss, 0.0, P_dc)
+    @assert P_received >= 0.0 - eps() && P_received <= P_dc + eps()
+    # (from, to) net powers: reversed means from is receiving power.
+    return flow_reversed ? (P_received, -P_dc) : (-P_dc, P_received)
+end
+
+function get_hvdc_injections(
+    hvdc::PSY.TwoTerminalHVDC,
+    sys::PSY.System,
+)
+    base_power = PSY.get_base_power(sys)
+    (P_from, P_to) = hvdc_injections_natural_units(hvdc)
+    if hvdc isa PSY.TwoTerminalLCCLine
+        @assert P_from <= eps() && P_to >= -eps()
+    end
+    return (P_from / base_power, P_to / base_power)
 end

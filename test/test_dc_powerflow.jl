@@ -88,15 +88,15 @@ end
 end
 
 @testset "DC power flow with an LCC" begin
-    sys, _ = simple_lcc_system()
-    lcc = first(get_components(PSY.TwoTerminalLCCLine, sys))
-    with_units_base(sys, PSY.UnitSystem.SYSTEM_BASE) do
-        set_active_power_flow!(lcc, 0.3)
-    end
+    sys, lcc = simple_lcc_system()
+    @assert get_base_power(sys) == 100.0 "Test system base power changed."
+    @assert get_units_base(sys) == "SYSTEM_BASE" "Test system unit setting changed."
+    set_active_power_flow!(lcc, 0.3)
     for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
         results = solve_powerflow(T(), sys; correct_bustypes = true)
         lcc_flow = results["1"]["lcc_results"][1, :P_from_to]
-        with_units_base(sys, PSY.UnitSystem.NATURAL_UNITS) do
+        # 1st arg must be lcc, not sys, else test fails. See issue #1590 in PowerSystems.jl
+        with_units_base(lcc, PSY.UnitSystem.NATURAL_UNITS) do
             @test lcc_flow == get_active_power_flow(lcc)
         end
     end
