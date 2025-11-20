@@ -150,6 +150,25 @@ function error_if_reversed(hvdc::PSY.TwoTerminalLCCLine, P_dc::Float64)
     )
 end
 
+_eval_loss_function(curve::PSY.LinearCurve, x::Float64) = IS.get_function_data(curve)(x)
+
+# TODO remove once PR 514 in InfrastructureSystems.jl is merged:
+# then we'll be able to call curve(x) directly, regardless of curve type.
+function _eval_loss_function(pwl::PSY.PiecewiseIncrementalCurve, x::Float64)
+    x = IS.check_domain(IS.get_function_data(pwl), x)
+    x_coords = IS.get_x_coords(pwl)
+    slopes = IS.get_slopes(pwl)
+    i_leq = searchsortedlast(x_coords, x)  # uses binary search!
+    total = isnothing(IS.get_initial_input(pwl)) ? 0.0 : IS.get_initial_input(pwl)
+    for ix in 1:(i_leq - 1)
+        total += slopes[ix] * (x_coords[ix + 1] - x_coords[ix])
+    end
+    if i_leq <= length(slopes)
+        total += slopes[i_leq] * (x - x_coords[i_leq])
+    end
+    return total
+end
+
 function hvdc_injections_natural_units(hvdc::PSY.TwoTerminalHVDC)
     P_dc = with_units_base(hvdc, "NATURAL_UNITS") do
         PSY.get_active_power_flow(hvdc)
@@ -158,10 +177,7 @@ function hvdc_injections_natural_units(hvdc::PSY.TwoTerminalHVDC)
     flow_reversed = P_dc < 0
     P_dc = abs(P_dc)
     loss_curve = PSY.get_loss(hvdc)
-    loss_fcn = PSY.get_function_data(loss_curve)
-    loss_constant = PSY.get_input_at_zero(loss_curve)
-    loss_constant_float = isnothing(loss_constant) ? 0.0 : loss_constant
-    P_loss = loss_fcn(P_dc) + loss_constant_float
+    P_loss = _eval_loss_function(loss_curve, P_dc)
     P_loss > P_dc && @warn "The loss curve of $(PSY.summary(hvdc)) " *
           "indicates the losses are greater than the transmitted power $P_dc. " *
           "Setting the loss equal to the transmitted power instead."
