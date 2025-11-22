@@ -64,3 +64,114 @@ end
         @test all(data.converged)
     end
 end
+
+# written for below test case, but unused currently.
+function add_component_with_power!(sys::PSY.System, bus::PSY.ACBus, P::Float64)
+    if P > 0
+        gen = ThermalStandard(;
+            name = "gen_$(PSY.get_number(bus))_thermal_hvdc_$P",
+            available = true,
+            status = true,
+            bus = bus,
+            active_power = P, # TODO check units
+            reactive_power = 0.0,
+            # rest shouldn't actually matter for our test.
+            rating = 1.0,
+            active_power_limits = (min = 0, max = P),
+            reactive_power_limits = (min = -1, max = 1),
+            ramp_limits = nothing,
+            operation_cost = ThermalGenerationCost(nothing),
+            base_power = 100.0,
+            time_limits = nothing,
+            prime_mover_type = PrimeMovers.OT,
+            fuel = ThermalFuels.OTHER,
+            services = Device[],
+            dynamic_injector = nothing,
+            ext = Dict{String, Any}(),
+        )
+        add_component!(sys, gen)
+    else
+        load = PowerLoad(;
+            name = "load_$(PSY.get_number(bus))_hvdc_$(-P)",
+            available = true,
+            bus = bus,
+            active_power = -P, # Per-unitized by device base_power
+            reactive_power = 0.0, # Per-unitized by device base_power
+            base_power = 100.0, # MVA
+            max_active_power = -P,
+            max_reactive_power = 0.0,
+        )
+        add_component!(sys, load)
+    end
+end
+
+# goal: take a big system with a generic HVDC, replace its injections/withdrawals with
+# generators, and verify that AC power flow converges to the same solution
+# [except for the powers at the HVDC terminal buses]
+# TODO currently errors, even on the unmodified system with the HVDCs.
+# AC ignores the HVDC lines, so it sees multiple components, some without a REF bus.
+#=
+@testset "Test Generic HVDC on big network" begin
+    sys_original = build_system(PSISystems, "HVDC_TWO_RTO_RTS_1Hr_sys")
+    set_units_base_system!(sys_original, "SYSTEM_BASE")
+
+    sys_modified = deepcopy(sys_original)
+    set_units_base_system!(sys_modified, "SYSTEM_BASE")
+
+    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}()
+    data_original = PF.PowerFlowData(
+        pf,
+        sys_original;
+        correct_bustypes = true,
+    )
+    solve_powerflow!(data_original; pf = pf)
+    println("original system solved successfully.")
+
+    hvdc_bus_nums = Int[]
+    for hvdc in get_components(PSY.TwoTerminalGenericHVDCLine, sys_modified)
+        (P_from, P_to) = PF.hvdc_injections_natural_units(hvdc) .* PSY.get_base_power(sys_modified)
+        P_from /= PSY.get_base_power(sys_modified)
+        P_to /= PSY.get_base_power(sys_modified)
+        arc = get_arc(hvdc)
+        bus_from = arc.from
+        bus_to = arc.to
+        push!(hvdc_bus_nums, PSY.get_number(bus_from))
+        push!(hvdc_bus_nums, PSY.get_number(bus_to))
+        add_component_with_power!(sys_modified, bus_from, P_from)
+        add_component_with_power!(sys_modified, bus_to, P_to)
+        remove_component!(sys_modified, hvdc)
+    end
+
+    data_modified = PF.PowerFlowData(
+        pf,
+        sys_modified;
+        correct_bustypes = true,
+    )
+    solve_powerflow!(data_modified; pf = pf)
+
+    bus_lookup = PF.get_bus_lookup(data_original)
+    hvdc_bus_inds = [bus_lookup[num] for num in hvdc_bus_nums]
+    state_inds = [2 .* hvdc_bus_inds .- 1, 2 .* hvdc_bus_inds] # voltage mag and angle
+    n_buses = length(PF.get_bus_axis(data_original))
+    for i in 1:n_buses
+        if i in hvdc_bus_inds
+            continue
+        end
+        for fieldname in (:bus_magnitude, :bus_angle)
+            @test isapprox(
+                getfield(data_original, fieldname)[i],
+                getfield(data_modified, fieldname)[i];
+                atol = 1e-6,
+            )
+        end
+        for fieldname in (:bus_activepower_injection, :bus_activepower_withdrawals,
+                :bus_reactivepower_injection, :bus_reactivepower_withdrawals)
+            @test isapprox(
+                getfield(data_original, fieldname)[i],
+                getfield(data_modified, fieldname)[i];
+                atol = 1e-6,
+            )
+        end
+    end
+end
+=#
