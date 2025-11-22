@@ -9,12 +9,14 @@ function test_all_powerflow_types(
     pf = ACPowerFlow{PF.TrustRegionACPowerFlow}()
     if PNM.RadialReduction() in network_reductions
         # AC + radial reduction: may not converge, but should otherwise run ok.
-        @test_logs (:error, r"power flow will likely fail to converge"
-        ) match_mode = :any data = PF.PowerFlowData(
-            pf,
-            sys;
-            network_reductions = deepcopy(network_reductions),
-            correct_bustypes = true,
+        data = @test_logs((:error, r"power flow will likely fail to converge"),
+            match_mode = :any,
+            data = PF.PowerFlowData(
+                pf,
+                sys;
+                network_reductions = deepcopy(network_reductions),
+                correct_bustypes = true,
+            )
         )
         @test_logs (:error, r"solver failed to converge"
         ) match_mode = :any solve_powerflow!(data; pf = pf) # should run without errors.
