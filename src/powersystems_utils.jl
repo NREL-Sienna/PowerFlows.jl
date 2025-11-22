@@ -150,24 +150,10 @@ function error_if_reversed(hvdc::PSY.TwoTerminalLCCLine, P_dc::Float64)
     )
 end
 
-_eval_loss_function(curve::PSY.LinearCurve, x::Float64) = IS.get_function_data(curve)(x)
+_eval_loss_function(curve::PSY.LinearCurve, x::Float64) = curve(x)
 
-# TODO remove once PR 514 in InfrastructureSystems.jl is merged:
-# then we'll be able to call curve(x) directly, regardless of curve type.
-function _eval_loss_function(pwl::PSY.PiecewiseIncrementalCurve, x::Float64)
-    x = IS.check_domain(IS.get_function_data(pwl), x)
-    x_coords = IS.get_x_coords(pwl)
-    slopes = IS.get_slopes(pwl)
-    i_leq = searchsortedlast(x_coords, x)  # uses binary search!
-    total = isnothing(IS.get_initial_input(pwl)) ? 0.0 : IS.get_initial_input(pwl)
-    for ix in 1:(i_leq - 1)
-        total += slopes[ix] * (x_coords[ix + 1] - x_coords[ix])
-    end
-    if i_leq <= length(slopes)
-        total += slopes[i_leq] * (x - x_coords[i_leq])
-    end
-    return total
-end
+_eval_loss_function(pwl::PSY.PiecewiseIncrementalCurve, x::Float64) =
+    IS.InputOutputCurve(pwl)(x)
 
 function hvdc_injections_natural_units(hvdc::PSY.TwoTerminalHVDC)
     P_dc = with_units_base(hvdc, "NATURAL_UNITS") do
