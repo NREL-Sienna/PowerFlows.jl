@@ -257,8 +257,8 @@ function _set_bus_angles_and_magnitudes!(
 end
 
 # ensures that we don't error/warn for PV vs PQ bus types in DC power flow.
-_bad_bustype(::ACPowerFlow{<:ACPowerFlowSolverType}, ::PSY.ACBusTypes) = true
-_bad_bustype(::AbstractDCPowerFlow, bt::PSY.ACBusTypes) = (bt == PSY.ACBusTypes.REF)
+_considers_bustype(::ACPowerFlow{<:ACPowerFlowSolverType}, ::PSY.ACBusTypes) = true
+_considers_bustype(::AbstractDCPowerFlow, bt::PSY.ACBusTypes) = (bt == PSY.ACBusTypes.REF)
 
 function _initialize_bus_data!(
     pf::PowerFlowEvaluationModel,
@@ -288,11 +288,12 @@ function _initialize_bus_data!(
         temp_bus_map[bus_no] = bus_name
         if (bt == PSY.ACBusTypes.PV || bt == PSY.ACBusTypes.REF) && !(bus_no in possible_PV)
             if correct_bustypes
-                _bad_bustype(pf, bt) && @warn "No available sources at bus $bus_name of " *
-                      "bus type 2 (PV) or 3 (REF). Treating that bus as PQ for purposes of " *
-                      "the power flow." maxlog = PF_MAX_LOG
+                _considers_bustype(pf, bt) &&
+                    @warn "No available sources at bus $bus_name of " *
+                          "bus type 2 (PV) or 3 (REF). Treating that bus as PQ for purposes of " *
+                          "the power flow." maxlog = PF_MAX_LOG
                 bt = PSY.ACBusTypes.PQ
-            elseif _bad_bustype(pf, bt)
+            elseif _considers_bustype(pf, bt)
                 throw(
                     ArgumentError(
                         "No available sources at bus $bus_name of bus type 2 (PV) " *
@@ -300,7 +301,7 @@ function _initialize_bus_data!(
                     ),
                 )
             end
-        elseif bt == PSY.ACBusTypes.PQ && bus_no in forced_PV && _bad_bustype(pf, bt)
+        elseif bt == PSY.ACBusTypes.PQ && bus_no in forced_PV && _considers_bustype(pf, bt)
             @warn "Active generators found at bus $bus_name of bus" *
                   " type 1 (PQ), i.e. different than 2 (PV). Consider checking your data " *
                   "inputs." maxlog = PF_MAX_LOG
