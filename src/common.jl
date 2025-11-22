@@ -145,6 +145,8 @@ function _set_bus_angles_and_magnitudes!(
     bus_reduction_map::Dict{Int, Set{Int}},
     reverse_bus_search_map::Dict{Int, Int},
     temp_bus_map::Dict{Int, String},
+    subnetwork_keys::Base.KeySet{Int, Dict{Int, Set{Int}}},
+    main_ref_bus::Int,
     sys::PSY.System,
 )
     for bus_no in keys(bus_reduction_map)
@@ -152,6 +154,10 @@ function _set_bus_angles_and_magnitudes!(
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.ACBus, sys, bus_name)
         bus_angles[ix] = PSY.get_angle(bus)
+                # use 0 as angle for REF buses in islanded subnetworks.
+        if bus_no in subnetwork_keys && bus_no != main_ref_bus
+            bus_angles[ix] = 0.0
+        end
         bus_magnitude[ix] = 1.0  # DC power flow: voltage magnitude is always 1.0 p.u.
     end
     return
@@ -166,6 +172,8 @@ function _set_bus_angles_and_magnitudes!(
     bus_reduction_map::Dict{Int, Set{Int}},
     reverse_bus_search_map::Dict{Int, Int},
     temp_bus_map::Dict{Int, String},
+    subnetwork_keys::Base.KeySet{Int, Dict{Int, Set{Int}}},
+    main_ref_bus::Int,
     sys::PSY.System,
 )
     for bus_no in keys(bus_reduction_map)
@@ -173,6 +181,9 @@ function _set_bus_angles_and_magnitudes!(
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.ACBus, sys, bus_name)
         bus_angles[ix] = PSY.get_angle(bus)
+        if bus_no in subnetwork_keys && bus_no != main_ref_bus
+            bus_angles[ix] = 0.0
+        end
         bus_vm = PSY.get_magnitude(bus)
         # prevent unfeasible starting values for voltage magnitude at PQ buses (for PV and REF buses we cannot do this):
         if bus_type[ix] == PSY.ACBusTypes.PQ &&
@@ -213,6 +224,12 @@ function _initialize_bus_data!(
     # correct/validate the bus types. We don't care about PV vs PQ for DC power flow, 
     # but due to the network reduction logic, it's simpler to handle the bus types the same
     # for both AC and DC [and just not error/warn for DC PV vs PQ problems].
+    subnetworks = PNM.find_subnetworks(sys)
+    subnetwork_keys = keys(subnetworks)
+    # so that we don't warn if there's just 1 component.
+    main_ref_bus = argmax(x -> length(x[2]), subnetworks)[1]
+    check_unit_setting(sys)
+    # correct/validate the bus types.
     forced_PV = must_be_PV(sys)
     possible_PV = can_be_PV(sys)
     bus_numbers = PSY.get_bus_numbers(sys)
@@ -225,7 +242,22 @@ function _initialize_bus_data!(
         bus_no = PSY.get_number(bus)
         bus_name = PSY.get_name(bus)
         temp_bus_map[bus_no] = bus_name
-        if (bt == PSY.ACBusTypes.PV || bt == PSY.ACBusTypes.REF) && !(bus_no in possible_PV)
+        if bus_no in subnetwork_keys && bus_no != main_ref_bus
+            bt = PSY.ACBusTypes.REF
+            @warn("Island detected, containing $(summary(bus)).", maxlog = PF_MAX_LOG)
+            PSY.get_bustype(bus) != PSY.ACBusTypes.REF &&
+                @warn(
+                    "Treating $(summary(bus)) as REF bus for its subnetwork " *
+                    "for the power flow.", maxlog = PF_MAX_LOG
+                )
+            PSY.get_angle(bus) != 0.0 &&
+                @warn(
+                    "Using angle 0.0 for subnetwork REF bus $(summary(bus)), " *
+                    "instead of system value $(PSY.get_angle(bus)).",
+                    maxlog = PF_MAX_LOG
+                )
+        elseif (bt == PSY.ACBusTypes.PV || bt == PSY.ACBusTypes.REF) &&
+               !(bus_no in possible_PV)
             if correct_bustypes
                 _considers_bustype(pf, bt) &&
                     @warn "No available sources at bus $bus_name of " *
@@ -268,6 +300,8 @@ function _initialize_bus_data!(
         bus_reduction_map,
         reverse_bus_search_map,
         temp_bus_map,
+        subnetwork_keys,
+        main_ref_bus,
         sys,
     )
     return
