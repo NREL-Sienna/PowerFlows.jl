@@ -430,12 +430,12 @@ end
 
 function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
     injections = CSV.read(
-        joinpath(MAIN_DIR, "test", "test_data", "c_sys14_injections.csv"),
+        joinpath(TEST_DATA_DIR, "c_sys14_injections.csv"),
         DataFrame;
         header = 0,
     )
     withdrawals = CSV.read(
-        joinpath(MAIN_DIR, "test", "test_data", "c_sys14_withdrawals.csv"),
+        joinpath(TEST_DATA_DIR, "c_sys14_withdrawals.csv"),
         DataFrame;
         header = 0,
     )

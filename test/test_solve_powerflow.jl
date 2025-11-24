@@ -76,91 +76,89 @@
     @test 1.08 <= x2[15] <= 1.09
 end
 
-@testset "AC Power Flow 14-Bus Line Configurations" begin
-    for ACSolver in AC_SOLVERS_TO_TEST
-        @testset "ACSolver: $(ACSolver)" begin
-            sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-            pf = ACPowerFlow{ACSolver}()
-            base_res = solve_powerflow(pf, sys; correct_bustypes = true)
-            branch = first(PSY.get_components(Line, sys))
-            dyn_branch = DynamicBranch(branch)
-            add_component!(sys, dyn_branch)
-            @test dyn_pf = solve_powerflow!(pf, sys; correct_bustypes = true)
-            dyn_pf = solve_powerflow(pf, sys; correct_bustypes = true)
-            @test LinearAlgebra.norm(
-                dyn_pf["bus_results"].Vm - base_res["bus_results"].Vm,
-                Inf,
-            ) <=
-                  1e-6
+function test_ac_line_configurations(ACSolver)
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    pf = ACPowerFlow{ACSolver}()
+    base_res = solve_powerflow(pf, sys; correct_bustypes = true)
+    branch = first(PSY.get_components(Line, sys))
+    dyn_branch = DynamicBranch(branch)
+    add_component!(sys, dyn_branch)
+    @test dyn_pf = solve_powerflow!(pf, sys; correct_bustypes = true)
+    dyn_pf = solve_powerflow(pf, sys; correct_bustypes = true)
+    @test LinearAlgebra.norm(
+        dyn_pf["bus_results"].Vm - base_res["bus_results"].Vm,
+        Inf,
+    ) <= 1e-6
 
-            sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-            line = get_component(Line, sys, "Line4")
-            PSY.set_available!(line, false)
-            solve_powerflow!(pf, sys; correct_bustypes = true)
-            @test PSY.get_active_power_flow(line) == 0.0
-            test_bus = get_component(PSY.ACBus, sys, "Bus 4")
-            @test isapprox(PSY.get_magnitude(test_bus), 1.002; atol = 1e-3, rtol = 0)
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    line = get_component(Line, sys, "Line4")
+    PSY.set_available!(line, false)
+    solve_powerflow!(pf, sys; correct_bustypes = true)
+    @test PSY.get_active_power_flow(line) == 0.0
+    test_bus = get_component(PSY.ACBus, sys, "Bus 4")
+    @test isapprox(PSY.get_magnitude(test_bus), 1.002; atol = 1e-3, rtol = 0)
 
-            sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-            line = get_component(Line, sys, "Line4")
-            from_to = PNM.get_arc_tuple(line)
-            PSY.set_available!(line, false)
-            res = solve_powerflow(pf, sys; correct_bustypes = true)
-            for row in eachrow(res["flow_results"])
-                if (row["bus_from"], row["bus_to"]) == from_to
-                    @test row["P_from_to"] == 0.0
-                    @test row["P_to_from"] == 0.0
-                end
-            end
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    line = get_component(Line, sys, "Line4")
+    from_to = PNM.get_arc_tuple(line)
+    PSY.set_available!(line, false)
+    res = solve_powerflow(pf, sys; correct_bustypes = true)
+    for row in eachrow(res["flow_results"])
+        if (row["bus_from"], row["bus_to"]) == from_to
+            @test row["P_from_to"] == 0.0
+            @test row["P_to_from"] == 0.0
         end
     end
+end
+
+@testset "AC Power Flow 14-Bus Line Configurations" begin
+    foreach(test_ac_line_configurations, AC_SOLVERS_TO_TEST)
+end
+
+function test_ac_3bus_fixed_admittance(ACSolver)
+    p_gen_matpower_3bus = [20.3512373930753, 100.0, 100.0]
+    q_gen_matpower_3bus =
+        [45.516916781567232, 10.453799727283879, -31.992561631394636]
+    sys_3bus = PSB.build_system(PSB.PSYTestSystems, "psse_3bus_gen_cls_sys")
+    bus_103 = get_component(PSY.ACBus, sys_3bus, "BUS 3")
+    fix_shunt = PSY.FixedAdmittance("FixAdmBus3", true, bus_103, 0.0 + 0.2im)
+    add_component!(sys_3bus, fix_shunt)
+    pf = ACPowerFlow{ACSolver}()
+    df = solve_powerflow(pf, sys_3bus; correct_bustypes = true)
+    @test isapprox(df["bus_results"].P_gen, p_gen_matpower_3bus, atol = 1e-4)
+    @test isapprox(df["bus_results"].Q_gen, q_gen_matpower_3bus, atol = 1e-4)
 end
 
 @testset "AC Power Flow 3-Bus Fixed FixedAdmittance testing" begin
-    for ACSolver in AC_SOLVERS_TO_TEST
-        @testset "ACSolver: $(ACSolver)" begin
-            p_gen_matpower_3bus = [20.3512373930753, 100.0, 100.0]
-            q_gen_matpower_3bus =
-                [45.516916781567232, 10.453799727283879, -31.992561631394636]
-            sys_3bus = PSB.build_system(PSB.PSYTestSystems, "psse_3bus_gen_cls_sys")
-            bus_103 = get_component(PSY.ACBus, sys_3bus, "BUS 3")
-            fix_shunt = PSY.FixedAdmittance("FixAdmBus3", true, bus_103, 0.0 + 0.2im)
-            add_component!(sys_3bus, fix_shunt)
-            pf = ACPowerFlow{ACSolver}()
-            df = solve_powerflow(pf, sys_3bus; correct_bustypes = true)
-            @test isapprox(df["bus_results"].P_gen, p_gen_matpower_3bus, atol = 1e-4)
-            @test isapprox(df["bus_results"].Q_gen, q_gen_matpower_3bus, atol = 1e-4)
-        end
-    end
+    foreach(test_ac_3bus_fixed_admittance, AC_SOLVERS_TO_TEST)
+end
+
+function test_ac_convergence_fail(ACSolver)
+    pf_sys5_re =
+        PSB.build_system(PSB.PSITestSystems, "c_sys5_re"; add_forecasts = false)
+    remove_component!(Line, pf_sys5_re, "1")
+    remove_component!(Line, pf_sys5_re, "2")
+    br = get_component(Line, pf_sys5_re, "6")
+    PSY.set_x!(br, 20.0)
+    PSY.set_r!(br, 2.0)
+
+    pf = ACPowerFlow{ACSolver}()
+
+    # This is a negative test. The data passed for sys5_re is known to be infeasible.
+    @test_logs(
+        (:error, "The powerflow solver returned convergence = false"),
+        match_mode = :any,
+        @test !solve_powerflow!(pf, pf_sys5_re)
+    )
 end
 
 @testset "AC Power Flow convergence fail testing" begin
-    for ACSolver in AC_SOLVERS_TO_TEST
-        @testset "AC Solver: $(ACSolver)" begin
-            pf_sys5_re =
-                PSB.build_system(PSB.PSITestSystems, "c_sys5_re"; add_forecasts = false)
-            remove_component!(Line, pf_sys5_re, "1")
-            remove_component!(Line, pf_sys5_re, "2")
-            br = get_component(Line, pf_sys5_re, "6")
-            PSY.set_x!(br, 20.0)
-            PSY.set_r!(br, 2.0)
-
-            pf = ACPowerFlow{ACSolver}()
-
-            # This is a negative test. The data passed for sys5_re is known to be infeasible.
-            @test_logs(
-                (:error, "The powerflow solver returned convergence = false"),
-                match_mode = :any,
-                @test !solve_powerflow!(pf, pf_sys5_re)
-            )
-        end
-    end
+    foreach(test_ac_convergence_fail, AC_SOLVERS_TO_TEST)
 end
 
 @testset "AC Test 240 Case PSS/e results" begin
     file = joinpath(
-        TEST_FILES_DIR,
-        "test_data",
+        TEST_DATA_DIR,
         "WECC240_v04_DPV_RE20_v33_6302_xfmr_DPbuscode_PFadjusted_V32_noRemoteVctrl.raw",
     )
     system = System(
@@ -169,8 +167,8 @@ end
         runchecks = false,
     )
 
-    pf_bus_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_bus_results.csv")
-    pf_gen_result_file = joinpath(TEST_FILES_DIR, "test_data", "pf_gen_results.csv")
+    pf_bus_result_file = joinpath(TEST_DATA_DIR, "pf_bus_results.csv")
+    pf_gen_result_file = joinpath(TEST_DATA_DIR, "pf_gen_results.csv")
 
     # remove skip_redistribution once redistribution is working properly.
     pf = ACPowerFlow(; skip_redistribution = true)
@@ -194,98 +192,98 @@ end
     @test norm(q_diff, 2) / length(q_diff) < DIFF_L2_TOLERANCE
 end
 
+function test_ac_multiple_sources_at_ref(ACSolver)
+    sys = System(100.0)
+    b = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+
+    #Test two sources with equal and opposite P and Q
+    s1 = _add_simple_source!(sys, b, 0.5, 0.1)
+    s2 = _add_simple_source!(sys, b, -0.5, -0.1)
+
+    pf = ACPowerFlow{ACSolver}()
+    @test solve_powerflow!(pf, sys; correct_bustypes = true)
+
+    #Create power mismatch, test for error
+    set_active_power!(s1, -0.4)
+    @test_throws ErrorException(
+        "Sources do not match P and/or Q requirements for reference bus.",
+    ) solve_powerflow!(pf, sys)
+end
+
 @testset "AC Multiple sources at ref" begin
-    for ACSolver in AC_SOLVERS_TO_TEST
-        @testset "AC Solver: $(ACSolver)" begin
-            sys = System(100.0)
-            b = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    foreach(test_ac_multiple_sources_at_ref, AC_SOLVERS_TO_TEST)
+end
 
-            #Test two sources with equal and opposite P and Q
-            s1 = _add_simple_source!(sys, b, 0.5, 0.1)
-            s2 = _add_simple_source!(sys, b, -0.5, -0.1)
+function test_ac_multiple_sources_at_pv(ACSolver)
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PV, 230, 1.1, 0.0)
 
-            pf = ACPowerFlow{ACSolver}()
-            @test solve_powerflow!(pf, sys; correct_bustypes = true)
+    l = _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0)
 
-            #Create power mismatch, test for error
-            set_active_power!(s1, -0.4)
-            @test_throws ErrorException(
-                "Sources do not match P and/or Q requirements for reference bus.",
-            ) solve_powerflow!(pf, sys)
-        end
-    end
+    #Test two sources with equal and opposite P and Q
+    s1 = _add_simple_source!(sys, b1, 0.5, 0.1)
+    s2 = _add_simple_source!(sys, b2, 0.5, 1.1)
+    s3 = _add_simple_source!(sys, b2, -0.5, -1.1)
+
+    pf = ACPowerFlow{ACSolver}()
+
+    @test solve_powerflow!(pf, sys; correct_bustypes = true)
+
+    #Create power mismatch, test for error
+    set_reactive_power!(s3, -0.5)
+    @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_powerflow!(
+        pf,
+        sys,
+        correct_bustypes = true,
+    )
 end
 
 @testset "AC PowerFlow with Multiple sources at PV" begin
-    for ACSolver in AC_SOLVERS_TO_TEST
-        @testset "AC Solver: $(ACSolver)" begin
-            sys = System(100.0)
-            b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
-            b2 = _add_simple_bus!(sys, 2, ACBusTypes.PV, 230, 1.1, 0.0)
+    foreach(test_ac_multiple_sources_at_pv, AC_SOLVERS_TO_TEST)
+end
 
-            l = _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0)
+function test_ac_source_and_non_source_at_ref(ACSolver)
+    sys = System(100.0)
 
-            #Test two sources with equal and opposite P and Q
-            s1 = _add_simple_source!(sys, b1, 0.5, 0.1)
-            s2 = _add_simple_source!(sys, b2, 0.5, 1.1)
-            s3 = _add_simple_source!(sys, b2, -0.5, -1.1)
+    b = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
 
-            pf = ACPowerFlow{ACSolver}()
+    #Test two sources with equal and opposite P and Q
+    s1 = _add_simple_source!(sys, b, 0.5, 0.1)
+    g1 = _add_simple_thermal_standard!(sys, b, 0.1, 0.1)
 
-            @test solve_powerflow!(pf, sys; correct_bustypes = true)
+    pf = ACPowerFlow{ACSolver}()
 
-            #Create power mismatch, test for error
-            set_reactive_power!(s3, -0.5)
-            @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_powerflow!(
-                pf,
-                sys,
-                correct_bustypes = true,
-            )
-        end
-    end
+    @test solve_powerflow!(pf, sys)
+    @test isapprox(get_active_power(s1), 0.5; atol = 0.001)
+    @test isapprox(get_reactive_power(s1), 0.1; atol = 0.001)
 end
 
 @testset "AC PowerFlow Source + non-source at Ref" begin
-    for ACSolver in AC_SOLVERS_TO_TEST
-        @testset "AC Solver: $(ACSolver)" begin
-            sys = System(100.0)
+    foreach(test_ac_source_and_non_source_at_ref, AC_SOLVERS_TO_TEST)
+end
 
-            b = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+function test_ac_source_and_non_source_at_pv(ACSolver)
+    sys = System(100.0)
 
-            #Test two sources with equal and opposite P and Q
-            s1 = _add_simple_source!(sys, b, 0.5, 0.1)
-            g1 = _add_simple_thermal_standard!(sys, b, 0.1, 0.1)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PV, 230, 1.1, 0.0)
+    l = _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0)
 
-            pf = ACPowerFlow{ACSolver}()
+    #Test two sources with equal and opposite P and Q
+    s1 = _add_simple_source!(sys, b1, 0.5, 0.1)
+    s2 = _add_simple_source!(sys, b2, 0.5, 1.1)
+    g1 = _add_simple_thermal_standard!(sys, b2, 0.1, 0.1)
 
-            @test solve_powerflow!(pf, sys)
-            @test isapprox(get_active_power(s1), 0.5; atol = 0.001)
-            @test isapprox(get_reactive_power(s1), 0.1; atol = 0.001)
-        end
-    end
+    pf = ACPowerFlow{ACSolver}()
+
+    @test solve_powerflow!(pf, sys; correct_bustypes = true)
+    @test isapprox(get_active_power(s2), 0.5; atol = 0.001)
+    @test isapprox(get_reactive_power(s2), 1.1; atol = 0.001)
 end
 
 @testset "AC PowerFlow Source + non-source at PV" begin
-    for ACSolver in AC_SOLVERS_TO_TEST
-        @testset "AC Solver: $(ACSolver)" begin
-            sys = System(100.0)
-
-            b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
-            b2 = _add_simple_bus!(sys, 2, ACBusTypes.PV, 230, 1.1, 0.0)
-            l = _add_simple_line!(sys, b1, b2, 1e-3, 1e-3, 0.0)
-
-            #Test two sources with equal and opposite P and Q
-            s1 = _add_simple_source!(sys, b1, 0.5, 0.1)
-            s2 = _add_simple_source!(sys, b2, 0.5, 1.1)
-            g1 = _add_simple_thermal_standard!(sys, b2, 0.1, 0.1)
-
-            pf = ACPowerFlow{ACSolver}()
-
-            @test solve_powerflow!(pf, sys; correct_bustypes = true)
-            @test isapprox(get_active_power(s2), 0.5; atol = 0.001)
-            @test isapprox(get_reactive_power(s2), 1.1; atol = 0.001)
-        end
-    end
+    foreach(test_ac_source_and_non_source_at_pv, AC_SOLVERS_TO_TEST)
 end
 
 # in this test, the following aspects are checked:
@@ -435,7 +433,7 @@ function PowerFlowData_to_DataFrame(data::PowerFlowData)
 end
 
 @testset "ACTIVSg2000 matches matpower's solution" begin
-    MATPOWER_CSV = joinpath(TEST_FILES_DIR, "test_data", "ACTIVSg2000_solved.csv")
+    MATPOWER_CSV = joinpath(TEST_DATA_DIR, "ACTIVSg2000_solved.csv")
     matpower_df = DataFrame(CSV.File(MATPOWER_CSV))
 
     sys_sienna = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
@@ -737,123 +735,123 @@ end
     # could add one with 2+ LCCs.
 end
 
+function test_lcc_ac_solver(ACSolver)
+    # Skip the solvers that do not support LCCs
+    ACSolver ∈ (LUACPowerFlow, RobustHomotopyPowerFlow) && return
+    sys, lcc = simple_lcc_system()
+    pf = ACPowerFlow{ACSolver}()
+    data = PowerFlowData(pf, sys; correct_bustypes = true)
+    solve_powerflow!(data; pf = pf)
+
+    lcc_arc = PNM.get_arc_tuple(PSY.get_arc(lcc))
+
+    @test isapprox(
+        data.lcc.p_set[1],
+        data.lcc.arc_activepower_flow_from_to[1, 1];
+        atol = 1e-6, rtol = 0,
+    )
+
+    LCC_active_flow =
+        data.lcc.arc_activepower_flow_from_to[1, 1] +
+        data.lcc.arc_activepower_flow_to_from[1, 1]
+    LCC_reactive_flow =
+        data.lcc.arc_reactivepower_flow_from_to[1, 1] +
+        data.lcc.arc_reactivepower_flow_to_from[1, 1]
+    @test isapprox(
+        sum(
+            data.arc_activepower_flow_from_to .+ data.arc_activepower_flow_to_from,
+        ) + sum(data.bus_activepower_withdrawals[:, 1]) + LCC_active_flow,
+        data.bus_activepower_injection[1];
+        atol = 1e-5, rtol = 0,
+    )
+
+    @test isapprox(
+        sum(
+            data.arc_reactivepower_flow_from_to .+
+            data.arc_reactivepower_flow_to_from,
+        ) + sum(data.bus_reactivepower_withdrawals[:, 1]) + LCC_reactive_flow,
+        data.bus_reactivepower_injection[1];
+        atol = 1e-5, rtol = 0,
+    )
+    solve_powerflow!(pf, sys)
+
+    @test get_active_power_flow(lcc) ==
+          data.lcc.arc_activepower_flow_from_to[1, 1]
+
+    PSY.set_transfer_setpoint!(lcc, -25.0)
+    data = PowerFlowData(pf, sys; correct_bustypes = true)
+    solve_powerflow!(data; pf = pf)
+
+    @test isapprox(
+        -data.lcc.p_set[1],
+        data.lcc.arc_activepower_flow_to_from[1, 1];
+        atol = 1e-6, rtol = 0,
+    )
+
+    solve_powerflow!(pf, sys)
+
+    @test get_active_power_flow(lcc) ==
+          data.lcc.arc_activepower_flow_from_to[1, 1]
+
+    PSY.set_transfer_setpoint!(lcc, 0.0)
+    data = PowerFlowData(pf, sys; correct_bustypes = true)
+    solve_powerflow!(data; pf = pf)
+
+    PSY.remove_component!(sys, lcc)
+    data2 = PowerFlowData(pf, sys; correct_bustypes = true)
+    solve_powerflow!(data2; pf = pf)
+
+    @test isapprox(
+        data.bus_magnitude[:, 1],
+        data2.bus_magnitude[:, 1];
+        atol = 1e-6, rtol = 0,
+    )
+
+    @test isapprox(
+        data.bus_angles[:, 1],
+        data2.bus_angles[:, 1];
+        atol = 1e-6, rtol = 0,
+    )
+
+    @test isapprox(
+        data.bus_activepower_injection[:, 1],
+        data2.bus_activepower_injection[:, 1];
+        atol = 1e-6, rtol = 0,
+    )
+
+    @test isapprox(
+        data.bus_reactivepower_injection[:, 1],
+        data2.bus_reactivepower_injection[:, 1];
+        atol = 1e-6, rtol = 0,
+    )
+
+    @test isapprox(
+        data.arc_activepower_flow_from_to[1:2, :],
+        data2.arc_activepower_flow_from_to[1:2, :];
+        atol = 1e-6, rtol = 0,
+    )
+
+    @test isapprox(
+        data.arc_activepower_flow_to_from[1:2, :],
+        data2.arc_activepower_flow_to_from[1:2, :];
+        atol = 1e-6, rtol = 0,
+    )
+
+    @test isapprox(
+        data.arc_reactivepower_flow_from_to[1:2, :],
+        data2.arc_reactivepower_flow_from_to[1:2, :];
+        atol = 1e-6, rtol = 0,
+    )
+
+    @test isapprox(
+        data.arc_reactivepower_flow_to_from[1:2, :],
+        data2.arc_reactivepower_flow_to_from[1:2, :];
+        atol = 1e-6, rtol = 0,
+    )
+end
+
 @testset "Test LCC" begin
-    for ACSolver in AC_SOLVERS_TO_TEST
-        # Skip the solvers that do not support LCCs
-        ACSolver ∈ (LUACPowerFlow, RobustHomotopyPowerFlow) && continue
-        @testset "AC Solver: $(ACSolver)" begin
-            sys, lcc = simple_lcc_system()
-            pf = ACPowerFlow{ACSolver}()
-            data = PowerFlowData(pf, sys; correct_bustypes = true)
-            solve_powerflow!(data; pf = pf)
-
-            lcc_arc = PNM.get_arc_tuple(PSY.get_arc(lcc))
-
-            @test isapprox(
-                data.lcc.p_set[1],
-                data.lcc.arc_activepower_flow_from_to[1, 1];
-                atol = 1e-6, rtol = 0,
-            )
-
-            LCC_active_flow =
-                data.lcc.arc_activepower_flow_from_to[1, 1] +
-                data.lcc.arc_activepower_flow_to_from[1, 1]
-            LCC_reactive_flow =
-                data.lcc.arc_reactivepower_flow_from_to[1, 1] +
-                data.lcc.arc_reactivepower_flow_to_from[1, 1]
-            @test isapprox(
-                sum(
-                    data.arc_activepower_flow_from_to .+ data.arc_activepower_flow_to_from,
-                ) + sum(data.bus_activepower_withdrawals[:, 1]) + LCC_active_flow,
-                data.bus_activepower_injection[1];
-                atol = 1e-5, rtol = 0,
-            )
-
-            @test isapprox(
-                sum(
-                    data.arc_reactivepower_flow_from_to .+
-                    data.arc_reactivepower_flow_to_from,
-                ) + sum(data.bus_reactivepower_withdrawals[:, 1]) + LCC_reactive_flow,
-                data.bus_reactivepower_injection[1];
-                atol = 1e-5, rtol = 0,
-            )
-            solve_powerflow!(pf, sys)
-
-            @test get_active_power_flow(lcc) ==
-                  data.lcc.arc_activepower_flow_from_to[1, 1]
-
-            PSY.set_transfer_setpoint!(lcc, -25.0)
-            data = PowerFlowData(pf, sys; correct_bustypes = true)
-            solve_powerflow!(data; pf = pf)
-
-            @test isapprox(
-                -data.lcc.p_set[1],
-                data.lcc.arc_activepower_flow_to_from[1, 1];
-                atol = 1e-6, rtol = 0,
-            )
-
-            solve_powerflow!(pf, sys)
-
-            @test get_active_power_flow(lcc) ==
-                  data.lcc.arc_activepower_flow_from_to[1, 1]
-
-            PSY.set_transfer_setpoint!(lcc, 0.0)
-            data = PowerFlowData(pf, sys; correct_bustypes = true)
-            solve_powerflow!(data; pf = pf)
-
-            PSY.remove_component!(sys, lcc)
-            data2 = PowerFlowData(pf, sys; correct_bustypes = true)
-            solve_powerflow!(data2; pf = pf)
-
-            @test isapprox(
-                data.bus_magnitude[:, 1],
-                data2.bus_magnitude[:, 1];
-                atol = 1e-6, rtol = 0,
-            )
-
-            @test isapprox(
-                data.bus_angles[:, 1],
-                data2.bus_angles[:, 1];
-                atol = 1e-6, rtol = 0,
-            )
-
-            @test isapprox(
-                data.bus_activepower_injection[:, 1],
-                data2.bus_activepower_injection[:, 1];
-                atol = 1e-6, rtol = 0,
-            )
-
-            @test isapprox(
-                data.bus_reactivepower_injection[:, 1],
-                data2.bus_reactivepower_injection[:, 1];
-                atol = 1e-6, rtol = 0,
-            )
-
-            @test isapprox(
-                data.arc_activepower_flow_from_to[1:2, :],
-                data2.arc_activepower_flow_from_to[1:2, :];
-                atol = 1e-6, rtol = 0,
-            )
-
-            @test isapprox(
-                data.arc_activepower_flow_to_from[1:2, :],
-                data2.arc_activepower_flow_to_from[1:2, :];
-                atol = 1e-6, rtol = 0,
-            )
-
-            @test isapprox(
-                data.arc_reactivepower_flow_from_to[1:2, :],
-                data2.arc_reactivepower_flow_from_to[1:2, :];
-                atol = 1e-6, rtol = 0,
-            )
-
-            @test isapprox(
-                data.arc_reactivepower_flow_to_from[1:2, :],
-                data2.arc_reactivepower_flow_to_from[1:2, :];
-                atol = 1e-6, rtol = 0,
-            )
-        end
-    end
+    foreach(test_lcc_ac_solver, AC_SOLVERS_TO_TEST)
 end
 
 @testset "AC power flow: results independent of units" begin
