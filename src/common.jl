@@ -1,65 +1,3 @@
-_SingleComponentLoad = Union{PSY.PowerLoad, PSY.ExponentialLoad, PSY.InterruptiblePowerLoad}
-
-"""
-Return the reactive power limits that should be used in power flow calculations and PSS/E
-exports. Redirects to `PSY.get_reactive_power_limits` in all but special cases.
-"""
-get_reactive_power_limits_for_power_flow(gen::PSY.Device) =
-    PSY.get_reactive_power_limits(gen)
-
-check_unit_setting(sys::PSY.System) = IS.@assert_op PSY.get_units_base(sys) == "SYSTEM_BASE"
-
-function get_reactive_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
-    val = PSY.get_reactive_power(gen)
-    return (min = val, max = val)
-end
-
-function get_reactive_power_limits_for_power_flow(gen::PSY.Storage)
-    limits = PSY.get_reactive_power_limits(gen)
-    isnothing(limits) && return (min = -Inf, max = Inf)  # TODO decide on proper behavior in this case
-    return limits
-end
-
-"""
-Return the active power limits that should be used in power flow calculations and PSS/E
-exports. Redirects to `PSY.get_active_power_limits` in all but special cases.
-"""
-get_active_power_limits_for_power_flow(gen::PSY.Device) = PSY.get_active_power_limits(gen)
-
-get_active_power_limits_for_power_flow(::PSY.Source) = (min = -Inf, max = Inf)
-
-function get_active_power_limits_for_power_flow(gen::PSY.SynchronousCondenser)
-    return (min = 0.0, max = 0.0)
-end
-
-function get_active_power_limits_for_power_flow(gen::PSY.RenewableNonDispatch)
-    val = PSY.get_active_power(gen)
-    return (min = val, max = val)
-end
-
-get_active_power_limits_for_power_flow(gen::PSY.RenewableDispatch) =
-    (min = 0.0, max = PSY.get_rating(gen))
-
-# TODO verify whether this is the correct behavior for Storage, (a) for redistribution and (b) for exporting
-get_active_power_limits_for_power_flow(gen::PSY.Storage) =
-    (min = 0.0, max = PSY.get_output_active_power_limits(gen).max)
-
-"""
-Return the active and reactive power generation from a generator component.
-It's pg=0 as default for synchronous condensers since there's no field in the component for active power.
-"""
-function get_active_and_reactive_power_from_generator(gen::PSY.SynchronousCondenser)
-    pg = 0.0
-    qg = PSY.get_reactive_power(gen)
-    return pg, qg
-end
-
-function get_active_and_reactive_power_from_generator(gen)
-    pg = PSY.get_active_power(gen)
-    qg = PSY.get_reactive_power(gen)
-    return pg, qg
-end
-
 _get_bus_ix(
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
@@ -99,6 +37,7 @@ function _get_injections!(
             end
         end
     end
+    # note: we handle the injections/withdrawals from simple HVDCs elsewhere.
     return
 end
 

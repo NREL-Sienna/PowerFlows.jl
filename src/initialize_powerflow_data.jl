@@ -104,7 +104,17 @@ function initialize_powerflow_data!(
         n_buses,
         data.bus_type,
     )
-    # LCCs: initialize parameters. Details of LCC model depends on AC vs DC powerflow.
+    # LCCs: initialize parameters.
     initialize_LCCParameters!(data, sys, bus_lookup, reverse_bus_search_map)
+    # generic HVDC lines: fixed power injections at terminals
+    hvdc_fixed_injections!(
+        data,
+        PSY.TwoTerminalGenericHVDCLine,
+        sys,
+        bus_lookup,
+        reverse_bus_search_map,
+    )
+    # LCC lines: fixed power injections at terminals for DC. Does nothing for AC: LCC model is more complex.
+    lcc_fixed_injections!(data, sys, bus_lookup, reverse_bus_search_map)
     return data
 end
