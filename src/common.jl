@@ -154,7 +154,7 @@ function _set_bus_angles_and_magnitudes!(
         bus_name = temp_bus_map[bus_no]
         bus = PSY.get_component(PSY.ACBus, sys, bus_name)
         bus_angles[ix] = PSY.get_angle(bus)
-                # use 0 as angle for REF buses in islanded subnetworks.
+        # use 0 as angle for REF buses in islanded subnetworks.
         if bus_no in subnetwork_keys && bus_no != main_ref_bus
             bus_angles[ix] = 0.0
         end

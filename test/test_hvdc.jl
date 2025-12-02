@@ -172,14 +172,18 @@ function test_generic_hvdc_on_big_system(pf_type::Type{<:PF.PowerFlowEvaluationM
     @assert all(PF.get_bus_axis(data_original) .== PF.get_bus_axis(data_modified))
 
     @test all(
-        abs.(data_original.power_network_matrix.data .-
-        data_modified.power_network_matrix.data) .< TIGHT_TOLERANCE
+        abs.(
+            data_original.power_network_matrix.data .-
+            data_modified.power_network_matrix.data
+        ) .< TIGHT_TOLERANCE,
     )
     if pf_type() isa PF.AbstractDCPowerFlow
         # for AC, aux network matrix defaults to nothing.
         @test all(
-            abs.(data_original.aux_network_matrix.data .-
-            data_modified.aux_network_matrix.data) .< TIGHT_TOLERANCE
+            abs.(
+                data_original.aux_network_matrix.data .-
+                data_modified.aux_network_matrix.data
+            ) .< TIGHT_TOLERANCE,
         )
         # no need to check arc flows: since angles and aux matrices match, flows match.
         # check that the b in our Ax = b is the same
@@ -196,13 +200,15 @@ function test_generic_hvdc_on_big_system(pf_type::Type{<:PF.PowerFlowEvaluationM
 
     for fieldname in (:bus_angles, :bus_magnitude)
         @test all(
-            abs.(getfield(data_original, fieldname) .-
-            getfield(data_modified, fieldname)) .< TIGHT_TOLERANCE
+            abs.(
+                getfield(data_original, fieldname) .-
+                getfield(data_modified, fieldname)
+            ) .< TIGHT_TOLERANCE,
         )
     end
-    
+
     for fieldname in (:arc_activepower_flow_from_to, :arc_activepower_flow_to_from,
-            :arc_reactivepower_flow_from_to, :arc_reactivepower_flow_to_from)
+        :arc_reactivepower_flow_from_to, :arc_reactivepower_flow_to_from)
         for (original_arc_ind, arc) in enumerate(PF.get_arc_axis(data_original))
             modified_arc_ind = PF.get_arc_lookup(data_modified)[arc]
             @test isapprox(
