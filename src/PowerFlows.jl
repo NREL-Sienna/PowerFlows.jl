@@ -3,7 +3,7 @@ module PowerFlows
 export solve_powerflow
 export solve_powerflow!
 export PowerFlowData
-export ABAPowerFlowData, ACPowerFlowData, PTDFDCPowerFlowData, vPTDFDCPowerFlowData
+export ABAPowerFlowData, ACPowerFlowData, PTDFPowerFlowData, vPTDFPowerFlowData
 export DCPowerFlow
 export NewtonRaphsonACPowerFlow
 export TrustRegionACPowerFlow
