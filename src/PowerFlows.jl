@@ -1,9 +1,7 @@
 module PowerFlows
 
 export solve_powerflow
-export solve_powerflow!
-export PowerFlowData
-export ABAPowerFlowData, ACPowerFlowData, PTDFPowerFlowData, vPTDFPowerFlowData
+export solve_and_store_power_flow!
 export DCPowerFlow
 export NewtonRaphsonACPowerFlow
 export TrustRegionACPowerFlow
@@ -14,11 +12,12 @@ export ACPowerFlowSolverType
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
 export PSSEExportPowerFlow
-export write_results
 export PSSEExporter
 export update_exporter!
 export write_export
 export get_psse_export_paths
+# "protected" (semi-stable because used in PSI) but not exported:
+# PowerFlowData and related type aliases, solve_powerflow!, write_results
 
 import Base: @kwdef
 import Logging

@@ -15,7 +15,6 @@ Public = true
 Private = false
 Pages = [
     "powerflow_types.jl",
-    "psse_export.jl",
 ]
 ```
 
@@ -34,12 +33,12 @@ Pages = [
 ]
 ```
 
-## PowerFlowData
+## PSSE Export
 ```@autodocs
 Modules = [PowerFlows]
 Public = true
 Private = false
 Pages = [
-    "PowerFlowData.jl",
+    "psse_export.jl",
 ]
 ```

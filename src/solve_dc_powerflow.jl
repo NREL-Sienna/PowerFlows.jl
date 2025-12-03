@@ -136,7 +136,7 @@ end
     solve_powerflow(
         ::T,
         sys::PSY.System;
-    ) where T <: Union{PTDFDCPowerFlow, vPTDFDCPowerFlow, DCPowerFlow}
+    ) where T <: AbstractDCPowerFlow
 
 
 Evaluates the provided DC power flow method `T` on the [PowerSystems.System](@extref) `sys`, 

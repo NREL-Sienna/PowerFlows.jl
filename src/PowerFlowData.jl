@@ -125,14 +125,9 @@ end
 """A type alias for a `PowerFlowData` struct whose type parameters
 are configured for the `ACPowerFlow` method."""
 const ACPowerFlowData = PowerFlowData{
-    PNM.Ybus{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-    },
+    PNM.AC_Ybus_Matrix,
     <:Union{
-        PNM.ABA_Matrix{Tuple{Vector{Int64}, Vector{Int64}},
-            Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-            Nothing},
+        PNM.DC_ABA_Matrix_Unfactorized,
         Nothing,
     },
 }
@@ -141,31 +136,15 @@ get_metadata_matrix(pfd::ACPowerFlowData) = pfd.power_network_matrix
 """A type alias for a `PowerFlowData` struct whose type parameters
 are configured for the `PTDFDCPowerFlow` method ."""
 const PTDFPowerFlowData = PowerFlowData{
-    PNM.PTDF{
-        Tuple{Vector{Int64}, Vector{Tuple{Int, Int}}},
-        Tuple{Dict{Int64, Int64}, Dict{Tuple{Int, Int}, Int64}},
-        Matrix{Float64},
-    },
-    PNM.ABA_Matrix{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64},
-    },
+    PNM.DC_PTDF_Matrix,
+    PNM.DC_ABA_Matrix_Factorized,
 }
 
 """A type alias for a `PowerFlowData` struct whose type parameters
 are configured for the `vPTDFDCPowerFlow` method."""
 const vPTDFPowerFlowData = PowerFlowData{
-    PNM.VirtualPTDF{
-        Tuple{Vector{Tuple{Int, Int}}, Vector{Int64}},
-        Tuple{Dict{Tuple{Int, Int}, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64},
-    },
-    PNM.ABA_Matrix{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64},
-    },
+    PNM.DC_vPTDF_Matrix,
+    PNM.DC_ABA_Matrix_Factorized,
 }
 get_metadata_matrix(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
     pfd.power_network_matrix
@@ -173,14 +152,8 @@ get_metadata_matrix(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
 """A type alias for a `PowerFlowData` struct whose type parameters
 are configured for the `DCPowerFlow` method."""
 const ABAPowerFlowData = PowerFlowData{
-    PNM.ABA_Matrix{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64},
-    },
-    PNM.BA_Matrix{
-        Tuple{Vector{Int64}, Vector{Tuple{Int, Int}}},
-        Tuple{Dict{Int64, Int64}, Dict{Tuple{Int, Int}, Int64}}},
+    PNM.DC_ABA_Matrix_Factorized,
+    PNM.DC_BA_Matrix,
 }
 get_metadata_matrix(pfd::ABAPowerFlowData) = pfd.aux_network_matrix
 

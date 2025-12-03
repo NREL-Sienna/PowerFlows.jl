@@ -25,8 +25,8 @@ dc_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
                 network_reductions = deepcopy(v),
                 correct_bustypes = true,
             )
-            # no write-results-to-system solve_powerflow! for DC: should we add one?
-            # PF.solve_powerflow!(dc_pf, sys; network_reductions = deepcopy(v), correct_bustypes = true)
+            # no write-results-to-system solve_and_store_power_flow! for DC: should we add one?
+            # PF.solve_and_store_power_flow!(dc_pf, sys; network_reductions = deepcopy(v), correct_bustypes = true)
         end
     end
 end

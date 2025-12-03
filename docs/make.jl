@@ -25,7 +25,6 @@ makedocs(;
     plugins = [links],
     sitename = "PowerFlows.jl",
     pages = Any[p for p in pages],
-    warnonly = true,
 )
 
 deploydocs(;

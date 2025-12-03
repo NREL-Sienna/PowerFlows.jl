@@ -1,5 +1,5 @@
 """
-    solve_powerflow!(pf::ACPowerFlow{<:ACPowerFlowSolverType}, system::PSY.System; kwargs...)
+    solve_and_store_power_flow!(pf::ACPowerFlow{<:ACPowerFlowSolverType}, system::PSY.System; kwargs...)
 
 Solves the power flow in the system and writes the solution into the relevant structs.
 Updates active and reactive power setpoints for generators and active and reactive
@@ -28,16 +28,16 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 # Examples
 
 ```julia
-solve_powerflow!(pf, sys)
+solve_and_store_power_flow!(pf, sys)
 
 # Passing kwargs
-solve_powerflow!(pf, sys; correct_bustypes = true)
+solve_and_store_power_flow!(pf, sys; correct_bustypes = true)
 
 # Passing keyword arguments
-solve_powerflow!(pf, sys; maxIterations=100)
+solve_and_store_power_flow!(pf, sys; maxIterations=100)
 ```
 """
-function solve_powerflow!(
+function solve_and_store_power_flow!(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
     kwargs...,
@@ -71,7 +71,7 @@ function solve_powerflow!(
 end
 
 """
-Similar to solve_powerflow!(pf, sys) but does not update the system struct with results.
+Similar to [solve\\_and\\_store\\_power\\_flow!](@ref) but does not update the system struct with results.
 Returns the results in a dictionary of dataframes.
 
 ## Examples

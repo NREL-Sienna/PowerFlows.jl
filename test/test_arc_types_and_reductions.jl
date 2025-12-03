@@ -28,7 +28,7 @@ function test_all_powerflow_types(
         )
         solve_powerflow!(data; pf = pf) # should run without errors.
         @test !isempty(data.arc_activepower_flow_from_to)
-        solve_powerflow!(
+        solve_and_store_power_flow!(
             pf,
             sys;
             network_reductions = deepcopy(network_reductions),
