@@ -22,110 +22,53 @@ We implement the control logic of LCC based on the principle of maintaining the 
 
 The AC power flow calculation in Sienna is modified to directly solve for tap steps and thyristor angles of the LCC system. To this end, the state vector, the Jacobian matrix, the residuals are modified. The state vector is extended by 4 additional variables for each LCC system, namely 2 for tap positions and 2 for thyristor angles of the rectifier and inverter sides of the LCC system. The Jacobian matrix is extended by additional terms that represent the relevant partial derivatives. The residuals are extended by 4 terms per LCC system to match the additional state variables. The first two account for the active power set point and active power balance in the LCC system using the tap steps. The other two residual terms control for keeping the thyristor angles at their respective minimum limits. This approach follows the method in Panosyan, A. (2010). Modeling of Advanced Power Transmission System Controllers (PhD dissertation).
 
-The complex apparent power for a rectifier or inverter is calculated as $S = V * t * \frac{\sqrt{6}}{\pi} * I_{dc} * e^{j * \phi}$, where $V$ is the magnitude of AC voltage at the terminal, $I_{dc}$ is the DC current in the LCC system (positive for flow direction rectifier to inverter, and vice versa), and $\phi$ is the angle between AC voltage and current.
+The complex apparent power for a rectifier or inverter is calculated as $S = V t \frac{\sqrt{6}}{\pi} I_{dc} e^{j \phi}$, where $V$ is the magnitude of AC voltage at the terminal, $I_{dc}$ is the DC current in the LCC system (positive for flow direction rectifier to inverter, and vice versa), and $\phi$ is the angle between AC voltage and current.
 
 To allow for the Jacobian implementation, a simplified calculation of the angle between the AC current and voltage at the LCC terminals was used. The equation below represents the calculation used for the angle:
+```math
+\phi = \arccos\left(\cos(\alpha) \text{sign}(I_{dc}) - \frac{x I_{dc}}{\sqrt{2} t V}\right)
+```
 
-$$
-\phi = arccos(cos(\alpha) * sign(I_{dc}) - \frac{x * I_{dc}}{\sqrt{2} * t * V})
-$$
+In the equation above, the variable ``\alpha`` represents the thyristor angle. The active and reactive powers for a converter station are 
 
-In the equation above, the variable $\alpha$ represents the thyristor angle. The active and reactive powers for a converter station are 
-
-$$
-P = V * t * \frac{\sqrt{6}}{\pi} * I_{dc} * cos(\phi) = V * t * \frac{\sqrt{6}}{\pi} * I_{dc} * cos(\alpha) - \frac{\sqrt{6}}{\pi} * x * I_{dc}^2
-$$
-
-Accordingly, the reactive power is calculated as
-
-$$
-Q = V * t * \frac{\sqrt{6}}{\pi} * I_{dc} * sin(\phi) = V * t * \frac{\sqrt{6}}{\pi} * I_{dc} * sin(arccos(cos(\alpha) * sign(I_{dc}) - \frac{x * I_{dc}}{\sqrt{2} * t * V}))
-$$
+```math
+\begin{aligned}
+P &= V t \frac{\sqrt{6}}{\pi} I_{dc} \cos(\phi) = V t \frac{\sqrt{6}}{\pi} I_{dc} \cos(\alpha) - \frac{\sqrt{6}}{\pi} x I_{dc}^2 \\
+Q &= V t \frac{\sqrt{6}}{\pi} I_{dc} \sin(\phi) = V t \frac{\sqrt{6}}{\pi} I_{dc} \sin\left(\arccos\left(\cos(\alpha) \text{sign}(I_{dc}) - \frac{x I_{dc}}{\sqrt{2} t V}\right)\right)
+\end{aligned}
+```
 
 The relevant non-zero entries in the Jacobian matrix for the rectifier (r) and inverter (i) sides are:
 
-$$
-\frac{\partial P_r}{\partial V_r} = t_r * \frac{\sqrt{6}}{\pi} * I_{dc} * \cos(\alpha_r)
-$$
-
-$$
-\frac{\partial Q_r}{\partial V_r} = V_r * t_r * \frac{\sqrt{6}}{\pi} * I_{dc} * \left(\sin(\phi_r) - \cos(\phi_r) * \frac{x_r * I_{dc}}{\sqrt{2} * V_r * t_r * \sin^2(\phi_r)}\right)
-$$
-
-$$
-\frac{\partial Q_r}{\partial t_r} = V_r * t_r * \frac{\sqrt{6}}{\pi} * I_{dc} * \left(\frac{\sin(\phi_r)}{t_r} - \cos(\phi_r) * \frac{x_r * I_{dc}}{\sqrt{2} * V_r * t_r^2 * \sin^2(\phi_r)}\right)
-$$
-
-$$
-\frac{\partial Q_r}{\partial \alpha_r} = V_r * t_r * \frac{\sqrt{6}}{\pi} * I_{dc} * \frac{\cos(\phi_r) * \sin(\alpha_r)}{\sin(\phi_r)}
-$$
-
-$$
-\frac{\partial P_r}{\partial t_r} = V_r * \frac{\sqrt{6}}{\pi} * I_{dc} * \cos(\alpha_r)
-$$
-
-$$
-\frac{\partial P_r}{\partial \alpha_r} = -V_r * \frac{\sqrt{6}}{\pi} * I_{dc} * t_r * \sin(\alpha_r)
-$$
-
-$$
-\frac{\partial F_{t_i}}{\partial V_i} = t_i * \frac{\sqrt{6}}{\pi} * (-I_{dc}) * \cos(\alpha_i)
-$$
-
-$$
-\frac{\partial F_{t_r}}{\partial t_r} = V_r * \frac{\sqrt{6}}{\pi} * I_{dc} * \cos(\alpha_r)
-$$
-
-$$
-\frac{\partial F_{t_r}}{\partial \alpha_r} = -V_r * \frac{\sqrt{6}}{\pi} * I_{dc} * t_r * \sin(\alpha_r)
-$$
-
-$$
-\frac{\partial F_{t_i}}{\partial t_i} = V_i * \frac{\sqrt{6}}{\pi} * (-I_{dc}) * \cos(\alpha_i)
-$$
-
-$$
-\frac{\partial F_{t_r}}{\partial V_r} = t_r * \frac{\sqrt{6}}{\pi} * I_{dc} * \cos(\alpha_r)
-$$
-
-$$
-\frac{\partial F_{t_i}}{\partial V_r} = t_r * \frac{\sqrt{6}}{\pi} * I_{dc} * \cos(\alpha_r)
-$$
-
-$$
-\frac{\partial F_{t_i}}{\partial t_r} = V_r * \frac{\sqrt{6}}{\pi} * I_{dc} * \cos(\alpha_r)
-$$
-
-$$
-\frac{\partial F_{t_i}}{\partial \alpha_i} = -V_i * \frac{\sqrt{6}}{\pi} * (-I_{dc}) * t_i * \sin(\alpha_i)
-$$
-
-$$
-\frac{\partial F_{t_i}}{\partial \alpha_r} = -V_r * \frac{\sqrt{6}}{\pi} * I_{dc} * t_r * \sin(\alpha_r)
-$$
-
-$$
-\frac{\partial F_{\alpha_r}}{\partial \alpha_r} = 1
-$$
-
-$$
-\frac{\partial F_{\alpha_i}}{\partial \alpha_i} = 1
-$$
+```math
+\begin{aligned}
+\frac{\partial P_r}{\partial V_r} &= t_r \frac{\sqrt{6}}{\pi} I_{dc} \cos(\alpha_r) \\
+\frac{\partial Q_r}{\partial V_r} &= V_r t_r \frac{\sqrt{6}}{\pi} I_{dc} \left(\sin(\phi_r) - \cos(\phi_r) \frac{x_r I_{dc}}{\sqrt{2} V_r t_r \sin^2(\phi_r)}\right) \\
+\frac{\partial Q_r}{\partial t_r} &= V_r t_r \frac{\sqrt{6}}{\pi} I_{dc} \left(\frac{\sin(\phi_r)}{t_r} - \cos(\phi_r) \frac{x_r I_{dc}}{\sqrt{2} V_r t_r^2 \sin^2(\phi_r)}\right) \\
+\frac{\partial Q_r}{\partial \alpha_r} &= V_r t_r \frac{\sqrt{6}}{\pi} I_{dc} \frac{\cos(\phi_r) \sin(\alpha_r)}{\sin(\phi_r)} \\
+\frac{\partial P_r}{\partial t_r} &= V_r \frac{\sqrt{6}}{\pi} I_{dc} \cos(\alpha_r) \\
+\frac{\partial P_r}{\partial \alpha_r} &= -V_r \frac{\sqrt{6}}{\pi} I_{dc} t_r \sin(\alpha_r) \\
+\frac{\partial F_{t_i}}{\partial V_i} &= t_i \frac{\sqrt{6}}{\pi} (-I_{dc}) \cos(\alpha_i) \\
+\frac{\partial F_{t_r}}{\partial t_r} &= V_r \frac{\sqrt{6}}{\pi} I_{dc} \cos(\alpha_r) \\
+\frac{\partial F_{t_r}}{\partial \alpha_r} &= -V_r \frac{\sqrt{6}}{\pi} I_{dc} t_r \sin(\alpha_r) \\
+\frac{\partial F_{t_i}}{\partial t_i} &= V_i \frac{\sqrt{6}}{\pi} (-I_{dc}) \cos(\alpha_i) \\
+\frac{\partial F_{t_r}}{\partial V_r} &= t_r \frac{\sqrt{6}}{\pi} I_{dc} \cos(\alpha_r) \\
+\frac{\partial F_{t_i}}{\partial V_r} &= t_r \frac{\sqrt{6}}{\pi} I_{dc} \cos(\alpha_r) \\
+\frac{\partial F_{t_i}}{\partial t_r} &= V_r \frac{\sqrt{6}}{\pi} I_{dc} \cos(\alpha_r) \\
+\frac{\partial F_{t_i}}{\partial \alpha_i} &= -V_i \frac{\sqrt{6}}{\pi} (-I_{dc}) t_i \sin(\alpha_i) \\
+\frac{\partial F_{t_i}}{\partial \alpha_r} &= -V_r \frac{\sqrt{6}}{\pi} I_{dc} t_r \sin(\alpha_r) \\
+\frac{\partial F_{\alpha_r}}{\partial \alpha_r} &= 1 \\
+\frac{\partial F_{\alpha_i}}{\partial \alpha_i} &= 1
+\end{aligned}
+```
 
 The residuals are defined as follows:
 
-$$
-F_{t_r} = P_r - P_{\text{set}, r}
-$$
-
-$$
-F_{t_i} = P_r + P_i - I_{dc} * R_{dc}^2
-$$
-
-$$
-F_{\alpha_r} = \alpha_r - \alpha_{r, \min}
-$$
-
-$$
-F_{\alpha_i} = \alpha_i - \alpha_{i, \min}
-$$
+```math
+\begin{aligned}
+F_{t_r} &= P_r - P_{\text{set}, r} \\
+F_{t_i} &= P_r + P_i - I_{dc} R_{dc}^2 \\
+F_{\alpha_r} &= \alpha_r - \alpha_{r, \min} \\
+F_{\alpha_i} &= \alpha_i - \alpha_{i, \min}
+\end{aligned}
+```

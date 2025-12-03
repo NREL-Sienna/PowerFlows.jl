@@ -14,6 +14,7 @@ pages = OrderedDict(
     "Explanation" => "explanation/stub.md",
     "Reference" => Any[
         "Code Base Developer Guide" => "reference/developers/developer.md",
+        "LCC Model Implementation" => "reference/developers/lcc_model.md",
         "Public API Reference" => "reference/api/public.md",
         "Internal API Reference" => "reference/api/internal.md"],
 )
@@ -24,6 +25,7 @@ makedocs(;
     plugins = [links],
     sitename = "PowerFlows.jl",
     pages = Any[p for p in pages],
+    warnonly = true,
 )
 
 deploydocs(;

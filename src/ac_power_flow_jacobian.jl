@@ -136,7 +136,7 @@ end
 
 """
 Create the Jacobian matrix structure for a PV bus. Currently unused: we \
-fill all four values even for PV buses with structural zeros using the same function as for PQ buses.
+fill all four values even for PV buses with structiural zeros using the same function as for PQ buses.
 """
 function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
     columns::Vector{Int32},
@@ -201,43 +201,70 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
 end
 
 """
-    _create_jacobian_matrix_structure_lcc(data::ACPowerFlowData, rows::Vector{Int32},
-    columns::Vector{Int32},
-    values::Vector{Float64},
-    num_buses::Int)
+    _create_jacobian_matrix_structure_lcc(
+        data::ACPowerFlowData,
+        rows::Vector{Int32},
+        columns::Vector{Int32},
+        values::Vector{Float64},
+        num_buses::Int
+    )
 
-    Create the Jacobian matrix structure for LCC HVDC.
+Create the Jacobian matrix structure for LCC HVDC systems.
 
-    The function iterates over each LCC and adds the non-zero entries to the Jacobian matrix structure.
-    The state vector for every LCC contains 4 variables (tap and angle for both rectifier and inverter).
-    The indices of non-zero entries correspond to the positions of these variables in the state vector.
+# Description
 
-    For example, suppose we have a system with 2 buses connected by one LCC:
-    - Bus 1 is connected to the rectifier side,
-    - Bus 2 is connected to the inverter side.
+The function iterates over each LCC system and adds the non-zero entries to the Jacobian matrix structure.
+The state vector for every LCC contains 4 variables: tap position and thyristor angle for both the rectifier and inverter sides.
+The indices of non-zero entries correspond to the positions of these variables in the extended state vector.
 
-    The Jacobian matrix structure entries correspond to partial derivatives of the mismatch equations
-    with respect to these state variables.
+For an LCC system connecting bus ``i`` (rectifier side) and bus ``j`` (inverter side), the state variables are:
+- ``t_i``: tap position at rectifier
+- ``t_j``: tap position at inverter  
+- ``\\alpha_i``: thyristor angle at rectifier
+- ``\\alpha_j``: thyristor angle at inverter
 
-    The Jacobian matrix would have non-zero entries at positions like:
+The residuals include:
+- ``F_{t_i}``: Active power balance at rectifier (controls ``P_i`` to match setpoint)
+- ``F_{t_j}``: Total active power balance across LCC system
+- ``F_{\\alpha_i}``: Rectifier thyristor angle constraint (maintains ``\\alpha_i`` at minimum)
+- ``F_{\\alpha_j}``: Inverter thyristor angle constraint (maintains ``\\alpha_j`` at minimum)
 
-    |           | V₁         | δ₁ | V₂         | δ₂ | t₁         | t₂         | a₁         | a₂         |
-    |-----------|------------|----|------------|----|------------|------------|------------|------------|
-    | P₁        | ∂P₁/∂V₁    |    |            |    | ∂P₁/∂t₁    |            | ∂P₁/∂a₁    |            |
-    | Q₁        | ∂Q₁/∂V₁    |    |            |    | ∂Q₁/∂t₁    |            | ∂Q₁/∂a₁    |            |
-    | P₂        |            |    |            |    |            |            |            |            |
-    | Q₂        |            |    |            |    |            |            |            |            |
-    | Fₜ₁       | ∂Fₜ₁/∂V₁    |    |            |    | ∂Fₜ₁/∂t₁    |            | ∂Fₜ₁/∂a₁   |            |
-    | Fₜ₂       | ∂Fₜ₂/∂V₁    |    | ∂Fₜ₂/∂V₂    |    | ∂Fₜ₂/∂t₁   | ∂Fₜ₂/∂t₂    | ∂Fₜ₂/∂a₁   | ∂Fₜ₂/∂a₂    |
-    | Fₐ₁       |            |    |            |    |            |            | ∂Fₐ₁/∂a₁   |            |
-    | Fₐ₂       |            |    |            |    |            |            |            | ∂Fₐ₂/∂a₂   |
+# Example Structure
 
-    This function sets up the indices of these non-zero entries in the sparse Jacobian matrix.
+For a system with 2 buses connected by one LCC where bus 1 is the rectifier side and bus 2 is the inverter side,
+the Jacobian matrix would have non-zero entries at positions like:
+
+```math
+\\begin{array}{c|cccccccc}
+ & V_1 & \\delta_1 & V_2 & \\delta_2 & t_1 & t_2 & \\alpha_1 & \\alpha_2 \\\\
+\\hline
+P_1 & \\frac{\\partial P_1}{\\partial V_1} & & & & \\frac{\\partial P_1}{\\partial t_1} & & \\frac{\\partial P_1}{\\partial \\alpha_1} & \\\\
+Q_1 & \\frac{\\partial Q_1}{\\partial V_1} & & & & \\frac{\\partial Q_1}{\\partial t_1} & & \\frac{\\partial Q_1}{\\partial \\alpha_1} & \\\\
+P_2 & & & & & & & & \\\\
+Q_2 & & & & & & & & \\\\
+F_{t_1} & \\frac{\\partial F_{t_1}}{\\partial V_1} & & & & \\frac{\\partial F_{t_1}}{\\partial t_1} & & \\frac{\\partial F_{t_1}}{\\partial \\alpha_1} & \\\\
+F_{t_2} & \\frac{\\partial F_{t_2}}{\\partial V_1} & & \\frac{\\partial F_{t_2}}{\\partial V_2} & & \\frac{\\partial F_{t_2}}{\\partial t_1} & \\frac{\\partial F_{t_2}}{\\partial t_2} & \\frac{\\partial F_{t_2}}{\\partial \\alpha_1} & \\frac{\\partial F_{t_2}}{\\partial \\alpha_2} \\\\
+F_{\\alpha_1} & & & & & & & \\frac{\\partial F_{\\alpha_1}}{\\partial \\alpha_1} & \\\\
+F_{\\alpha_2} & & & & & & & & \\frac{\\partial F_{\\alpha_2}}{\\partial \\alpha_2}
+\\end{array}
+```
+
+This function sets up the indices of these non-zero entries in the sparse Jacobian matrix structure.
+
+# Arguments
+- `data::ACPowerFlowData`: The power flow data containing LCC system information.
+- `rows::Vector{Int32}`: Vector to store row indices of non-zero Jacobian entries.
+- `columns::Vector{Int32}`: Vector to store column indices of non-zero Jacobian entries.
+- `values::Vector{Float64}`: Vector to store initial values of non-zero Jacobian entries.
+- `num_buses::Int`: Total number of buses in the system.
 """
-function _create_jacobian_matrix_structure_lcc(data::ACPowerFlowData, rows::Vector{Int32},
+function _create_jacobian_matrix_structure_lcc(
+    data::ACPowerFlowData,
+    rows::Vector{Int32},
     columns::Vector{Int32},
     values::Vector{Float64},
-    num_buses::Int)
+    num_buses::Int,
+)
     for (i, (fb, tb)) in enumerate(data.lcc.bus_indices)
         idx_p_fb = 2 * fb - 1
         idx_q_fb = 2 * fb
@@ -279,7 +306,7 @@ end
 """
     _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64) -> SparseMatrixCSC{Float64, Int32}
 
-Create the structure of the Jacobian matrix for an AC power flow problem. Inputs are the grid model as an instance of `ACPowerFlowData` at a given time step.
+Create the structure of the Jacobian matrix for an AC power flow problem.
 
 # Arguments
 - `data::ACPowerFlowData`: The power flow model.
@@ -289,11 +316,12 @@ Create the structure of the Jacobian matrix for an AC power flow problem. Inputs
 - `SparseMatrixCSC{Float64, Int32}`: A sparse matrix with structural zeros representing the structure of the Jacobian matrix.
 
 # Description
+
 This function initializes the structure of the Jacobian matrix for an AC power flow problem. 
 The Jacobian matrix is used in power flow analysis to represent the partial derivatives of bus active and reactive power injections with respect to bus voltage magnitudes and angles.
 
 Unlike some commonly used approaches where the Jacobian matrix is constructed as four submatrices, each grouping values for the four types of partial derivatives,
-this function groups the partial derivatives by bus. The structure is organized as groups of 4 values per bus. See the example below for details.
+this function groups the partial derivatives by bus. The structure is organized as groups of 4 values per bus.
 
 This approach is more memory-efficient. Furthermore, this structure results in a more efficient factorization because the values are more likely to be grouped close to the diagonal.
 Refer to Electric Energy Systems: Analysis and Operation by Antonio Gomez-Exposito and Fernando L. Alvarado for more details.
@@ -307,19 +335,28 @@ Depending on the bus type, the function adds the appropriate entries to the Jaco
 - For `PV` buses, entries are added for active and reactive power with respect to angle, and for local reactive power.
 - For `PQ` buses, entries are added for active and reactive power with respect to voltage magnitude and angle.
 
-For example, suppose we have a system with 3 buses: bus 1 is `REF`, bus 2 is `PV`, and bus 3 is `PQ`.
-Let ΔPⱼ, ΔQⱼ be the active, reactive power balance at the `j`th bus. Let Pⱼ and Qⱼ be the
-active and reactive power generated at the `j`th bus (`REF` and `PV` only). Then the state vector is
-[P₁, Q₁, Q₂, θ₂, V₃, θ₃], and the Jacobian matrix is
+# Example Structure
 
-| ∂ΔP₁/∂P₁ | ∂ΔP₁/∂Q₁ | ∂ΔP₁/∂Q₂ | ∂ΔP₁/∂θ₂ | ∂ΔP₁/∂V₃ | ∂ΔP₁/∂θ₃ |  
-| ∂ΔQ₁/∂P₁ | ∂ΔQ₁/∂Q₁ | ∂ΔQ₁/∂Q₂ | ∂ΔQ₁/∂θ₂ | ∂ΔQ₁/∂V₃ | ∂ΔQ₁/∂θ₃ |
-| ∂ΔP₂/∂P₁ | ∂ΔP₂/∂Q₁ | ∂ΔP₂/∂Q₂ | ∂ΔP₂/∂θ₂ | ∂ΔP₂/∂V₃ | ∂ΔP₂/∂θ₃ |
-| ∂ΔQ₂/∂P₁ | ∂ΔQ₂/∂Q₁ | ∂ΔQ₂/∂Q₂ | ∂ΔQ₂/∂θ₂ | ∂ΔQ₂/∂V₃ | ∂ΔQ₂/∂θ₃ |
-| ∂ΔP₃/∂P₁ | ∂ΔP₃/∂Q₁ | ∂ΔP₃/∂Q₂ | ∂ΔP₃/∂θ₂ | ∂ΔP₃/∂V₃ | ∂ΔP₃/∂θ₃ |
-| ∂ΔQ₃/∂P₁ | ∂ΔQ₃/∂Q₁ | ∂ΔQ₃/∂Q₂ | ∂ΔQ₃/∂θ₂ | ∂ΔQ₃/∂V₃ | ∂ΔQ₃/∂θ₃ |
+For a system with 3 buses where bus 1 is `REF`, bus 2 is `PV`, and bus 3 is `PQ`:
 
-In reality, for large networks, this matrix would be sparse, and each 2x2 block would only be nonzero
+Let ``\\Delta P_j``, ``\\Delta Q_j`` be the active, reactive power balance at the ``j``th bus. Let ``P_j`` and ``Q_j`` be the
+active and reactive power generated at the ``j``th bus (`REF` and `PV` only). The state vector is
+``x = [P_1, Q_1, Q_2, \\theta_2, V_3, \\theta_3]``, and the residual vector is ``F(x) = [\\Delta P_1, \\Delta Q_1, \\Delta P_2, \\Delta Q_2, \\Delta P_3, \\Delta Q_3]``.
+
+The Jacobian matrix ``J = \\nabla F(x)`` has the structure:
+
+```math
+J = \\begin{bmatrix}
+\\frac{\\partial \\vec{F}}{\\partial P_1} & 
+\\frac{\\partial \\vec{F}}{\\partial Q_1} & 
+\\frac{\\partial \\vec{F}}{\\partial Q_2} & 
+\\frac{\\partial \\vec{F}}{\\partial \\theta_2} & 
+\\frac{\\partial \\vec{F}}{\\partial V_3} & 
+\\frac{\\partial \\vec{F}}{\\partial \\theta_3}
+\\end{bmatrix}
+```
+
+In reality, for large networks, this matrix would be sparse, and each 2×2 block would only be nonzero
 when there's a line between the respective buses.
 
 Finally, the function constructs a sparse matrix from the collected indices and values and returns it.
@@ -668,10 +705,7 @@ The results are stored in the `voltage_stability_factors` matrix in the `data` i
 The factor for the grid as a whole (σ) is stored in the position of the REF bus.
 The values of the singular vector `v` indicate the sensitivity of the buses and are stored in the positions of the PQ buses.
 The values of `v` for PV buses are set to zero. 
-The function uses the method described in the following publication:
-
-    P.-A. Lof, T. Smed, G. Andersson, and D. J. Hill, "Fast calculation of a voltage stability index," in IEEE Transactions on Power Systems, vol. 7, no. 1, pp. 54-64, Feb. 1992, doi: 10.1109/59.141687.
-
+The function uses the method described in \"Fast calculation of a voltage stability index\" by PA Lof et. al.
 # Arguments
 - `data::ACPowerFlowData`: The instance containing the grid model data.
 - `J::ACPowerFlowJacobian`: The Jacobian matrix cache.
@@ -685,7 +719,7 @@ function _calculate_voltage_stability_factors(
     ref, pv, pq = bus_type_idx(data, time_step)
     pvpq = [pv; pq]
     npvpq = length(pvpq)
-    rows, cols = block_J_indices(pvpq, pq)
+    rows, cols = _block_J_indices(pvpq, pq)
     σ, left, right = _singular_value_decomposition(Jv[rows, cols], npvpq)
     data.voltage_stability_factors[ref, time_step] .= 0.0
     data.voltage_stability_factors[first(ref), time_step] = σ
@@ -695,12 +729,16 @@ function _calculate_voltage_stability_factors(
 end
 
 """
-    block_J_indices(data::ACPowerFlowData, time_step::Int) -> (Vector{Int32}, Vector{Int32})
+    _block_J_indices(data::ACPowerFlowData, time_step::Int) -> (Vector{Int32}, Vector{Int32})
     
 Get the indices to reindex the Jacobian matrix from the interleaved form to the block form:
 
-| dP_dθ | dP_dV |
-| dQ_dθ | dQ_dV |
+```math
+\\begin{bmatrix}
+\\frac{\\partial P}{\\partial \\theta} & \\frac{\\partial P}{\\partial V} \\\\
+\\frac{\\partial Q}{\\partial \\theta} & \\frac{\\partial Q}{\\partial V}
+\\end{bmatrix}
+```
 
 # Arguments
 - `pvpq::Vector{Int32}`: Indices of the buses that are PV or PQ buses.
@@ -710,7 +748,7 @@ Get the indices to reindex the Jacobian matrix from the interleaved form to the 
 - `rows::Vector{Int32}`: Row indices for the block Jacobian matrix.
 - `cols::Vector{Int32}`: Column indices for the block Jacobian matrix.
 """
-function block_J_indices(pvpq::Vector{<:Integer}, pq::Vector{<:Integer})
+function _block_J_indices(pvpq::Vector{<:Integer}, pq::Vector{<:Integer})
     rows = vcat(2 .* pvpq .- 1, 2 .* pq)
     cols = vcat(2 .* pvpq, 2 .* pq .- 1)
 
@@ -723,9 +761,7 @@ end
 Estimate the smallest singular value `σ` and corresponding left and right singular vectors `u` and `v` of a sparse matrix `G_s` (a sub-matrix of `J`).
 This function uses an iterative method involving LU factorization of the Jacobian matrix to estimate the smallest singular value of `G_s`. 
 The algorithm alternates between updating `u` and `v`, normalizing, and checking for convergence based on the change in the estimated singular value `σ`.
-The function uses the method described in `Algorithm 3` in the following publication:
-
-    P.-A. Lof, T. Smed, G. Andersson, and D. J. Hill, "Fast calculation of a voltage stability index," in IEEE Transactions on Power Systems, vol. 7, no. 1, pp. 54-64, Feb. 1992, doi: 10.1109/59.141687.
+The function uses the method described in `Algorithm 3` of \"Fast calculation of a voltage stability index\" by PA Lof et. al.
 
 # Arguments
 - `J::SparseMatrixCSC{Float64, Int32}`: The sparse block-form Jacobian matrix.

@@ -126,26 +126,60 @@ function _create_hessian_matrix_structure(data::ACPowerFlowData, ::Int64)
     return SparseArrays.sparse(rows, columns, values)
 end
 
-"""Sets Hv equal to `F_1(x) H_{F_1}(x) + ...+ F_{2n}(x) H_{F_{2n}}(x)`,
-where F_k denotes the kth power balance equation and `H_{F_k}` its Hessian.
-This isn't the full Hessian of our function: it's only the terms in that come
-from the second derivatives of our power balance equations. (There's also a `J'*J` term.)
+"""
+    _update_hessian_matrix_values!(
+        Hv::SparseMatrixCSC{Float64, Int32},
+        F_value::Vector{Float64},
+        data::ACPowerFlowData,
+        time_step::Int64
+    )
 
-What's the sparse structure of that expression? It's split into 2x2 blocks, each 
-corresponding to a pair of buses. The sparse structure of a block for a pair of buses 
-connected by a branch is:
-   | REF| PV | PQ 
----+----+----+----
-REF|    |    |   
-   |    |    |
----+----+----+----
-PV |    |    |
-   |    |   .| . .
----+----+----+----
-PQ |    |   .| . .
-   |    |   .| . .
-Diagonal blocks follow the same pattern as above (as if each bus is its own neighbor).
-Off-diagonal blocks for a pair of buses not connected by a branch are structurally zero.
+Update the Hessian matrix values for the robust homotopy power flow solver.
+
+# Description
+
+This function sets `Hv` equal to:
+
+```math
+\\sum_{k=1}^{2n} F_k(x) H_{F_k}(x)
+```
+
+where ``F_k`` denotes the ``k``th power balance equation and ``H_{F_k}`` denotes its Hessian matrix.
+
+This computes only the terms in the Hessian that come from the second derivatives of the power balance equations. 
+The full Hessian of the objective function also includes a ``J^T J`` term, which is computed separately.
+
+# Sparse Structure
+
+The Hessian is organized into 2×2 blocks, each corresponding to a pair of buses. For a pair of buses ``i`` and ``k`` 
+connected by a branch, the sparse structure of their block depends on the bus types:
+
+```math
+\\begin{array}{c|cc|cc|cc}
+ & \\text{REF} & & \\text{PV} & & \\text{PQ} & \\\\
+ & P_i & Q_i & Q_i & V_i & V_i & \\theta_i \\\\
+\\hline
+\\text{REF: } P_k & & & & & & \\\\
+Q_k & & & & & & \\\\
+\\hline
+\\text{PV: } Q_k & & & & & & \\\\
+V_k & & & & \\bullet & \\bullet & \\bullet \\\\
+\\hline
+\\text{PQ: } V_k & & & & \\bullet & \\bullet & \\bullet \\\\
+\\theta_k & & & & \\bullet & \\bullet & \\bullet
+\\end{array}
+```
+
+where ``\\bullet`` represents a potentially non-zero entry.
+
+Diagonal blocks (where ``i = k``) follow the same pattern as if each bus is its own neighbor.
+Off-diagonal blocks for pairs of buses not connected by a branch are structurally zero.
+
+# Arguments
+- `Hv::SparseMatrixCSC{Float64, Int32}`: The Hessian matrix to be updated (modified in-place).
+- `F_value::Vector{Float64}`: Current values of the power balance residuals.
+- `data::ACPowerFlowData`: The power flow data containing bus and network information.
+- `time_step::Int64`: The time step for which to compute the Hessian.
 """
 function _update_hessian_matrix_values!(
     Hv::SparseArrays.SparseMatrixCSC{Float64, Int32},

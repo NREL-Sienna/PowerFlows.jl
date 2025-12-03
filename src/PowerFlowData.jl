@@ -16,6 +16,8 @@ abstract type SystemPowerFlowContainer <: PowerFlowContainer end
 get_system(container::SystemPowerFlowContainer) = container.system
 
 """
+    PowerFlowData{M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+
 Structure containing all the data required for the evaluation of the power
 flows and angles, as well as these ones.
 
@@ -26,10 +28,10 @@ the network reduction.\" Similarly, we use \"arcs\" instead of \"branches\" to d
 between network elements (post-reduction) and system objects (pre-reduction).
 
 Generally, do not construct this directly. Instead, use one of the later constructors to 
-pass in a [`PowerFlowEvaluationModel`](@ref) and a [`PowerSystems.System`](@extref). 
-`aux_network_matrix` and `power_network_matrix` will then be set to the appropriate 
-matrices that are needed for computing that type of powerflow. See also [`ACPowerFlowData`](@ref),
-[`ABAPowerFlowData`](@ref), [`PTDFPowerFlowData`](@ref), and [`vPTDFPowerFlowData`](@ref): 
+pass in a `PowerFlowEvaluationModel` and a `PowerSystems.System`. 
+`aux\\_network\\_matrix` and `power\\_network\\_matrix` will then be set to the appropriate 
+matrices that are needed for computing that type of powerflow. See also `ACPowerFlowData`,
+`ABAPowerFlowData`, `PTDFPowerFlowData`, and `vPTDFPowerFlowData`: 
 these are all aliases for `PowerFlowData{N, M}` with specific `N`,`M`, that are used for 
 the respective type of power flow evaluations.
 
@@ -120,6 +122,8 @@ struct PowerFlowData{
 end
 
 # aliases for specific type parameter combinations.
+"""A type alias for a `PowerFlowData` struct whose type parameters
+are configured for the `ACPowerFlow` method."""
 const ACPowerFlowData = PowerFlowData{
     PNM.Ybus{
         Tuple{Vector{Int64}, Vector{Int64}},
@@ -134,6 +138,8 @@ const ACPowerFlowData = PowerFlowData{
 }
 get_metadata_matrix(pfd::ACPowerFlowData) = pfd.power_network_matrix
 
+"""A type alias for a `PowerFlowData` struct whose type parameters
+are configured for the `PTDFDCPowerFlow` method ."""
 const PTDFPowerFlowData = PowerFlowData{
     PNM.PTDF{
         Tuple{Vector{Int64}, Vector{Tuple{Int, Int}}},
@@ -147,6 +153,8 @@ const PTDFPowerFlowData = PowerFlowData{
     },
 }
 
+"""A type alias for a `PowerFlowData` struct whose type parameters
+are configured for the `vPTDFDCPowerFlow` method."""
 const vPTDFPowerFlowData = PowerFlowData{
     PNM.VirtualPTDF{
         Tuple{Vector{Tuple{Int, Int}}, Vector{Int64}},
@@ -162,6 +170,8 @@ const vPTDFPowerFlowData = PowerFlowData{
 get_metadata_matrix(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
     pfd.power_network_matrix
 
+"""A type alias for a `PowerFlowData` struct whose type parameters
+are configured for the `DCPowerFlow` method."""
 const ABAPowerFlowData = PowerFlowData{
     PNM.ABA_Matrix{
         Tuple{Vector{Int64}, Vector{Int64}},
@@ -605,7 +615,6 @@ returns an [`PTDFPowerFlowData`](@ref) object.
         names of the time periods defined by the argument `time_steps`. Default
         value = `String[]`.
 """
-
 function PowerFlowData(
     pf::PTDFDCPowerFlow,
     sys::PSY.System;
@@ -648,6 +657,8 @@ Calling this function will not evaluate the power flows and angles.
 Note that first input is of type [`vPTDFDCPowerFlow`](@ref): this version is used to solve 
 DC powerflows using a virtual Power Transfer Distribution Factor (PTDF) matrix. This 
 function returns a [`vPTDFPowerFlowData`](@ref) object.
+
+For internal usage: generally, do not construct this directly.
 
 # Arguments:
 - [`::PTDFDCPowerFlow`](@ref PTDFDCPowerFlow):

@@ -19,17 +19,6 @@ Pages = [
 ]
 ```
 
-## Powerflow Data Structs and Types
-```@autodocs
-Modules = [PowerFlows]
-Public = false
-Private = true
-Pages = [
-    "PowerFlowData.jl",
-    "powerflow_data_type_aliases.jl"
-]
-```
-
 ## Solving Powerflows
 ```@autodocs
 Modules = [PowerFlows]
@@ -45,14 +34,12 @@ Pages = [
 ]
 ```
 
-## Misc.
+## PowerFlowData
 ```@autodocs
 Modules = [PowerFlows]
 Public = true
 Private = false
 Pages = [
-    "PowerFlows.jl",
-    "common.jl",
-    "definitions.jl"
+    "PowerFlowData.jl",
 ]
 ```

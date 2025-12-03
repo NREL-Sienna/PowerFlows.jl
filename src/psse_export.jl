@@ -56,7 +56,6 @@ const WINDING_GROUP_NUMBER_TO_DEGREES = Dict(
     11 => 30,             # GROUP_11: 30 Degrees
 )
 
-
 # Each of the groups in the PSS/3 v33 standard
 const PSSE_GROUPS = [
     "Case Identification Data",
@@ -251,7 +250,7 @@ Update the `PSSEExporter` with new `data`.
 
 # Arguments:
   - `exporter::PSSEExporter`: the exporter to update
-  - `data::PSY.System`: system containing the new data. Must be fundamentally the same
+  - `data::PSY.System`: system containing the new data. Must be fundamentally the same \
   [`System`](@extref PowerSystems.System) as the one with which the exporter was 
     constructed, just with different values — this is the user's responsibility, we do not 
     exhaustively verify it.
@@ -680,9 +679,9 @@ end
 """
 Try to make an informative one or two character name for the load/generator/etc.
 
-  - "generator-1234-AB" -> "AB"
-  - "123_CT_7" -> "7"
-  - "load1234" -> "34"
+  - generator-1234-AB -> AB
+  - 123\\_CT\\_7 -> 7
+  - load1234 -> 34
 """
 function _first_choice_gen_id(name::String)
     my_split = argmax(length, [split(name, "-"), split(name, "_")])

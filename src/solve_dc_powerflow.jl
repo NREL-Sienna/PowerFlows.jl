@@ -183,8 +183,7 @@ the input `PSY.System` at that timestep.
         container gathering the system data.
 
 Note that `data` must have been created from the [System](@extref PowerSystems.System) 
-`sys` using one of the [`PowerFlowData`](@ref) constructors, such as 
-`PTDFPowerFlowData(sys)` or `vPTDFPowerFlowData(sys)`.
+`sys` using one of the [`PowerFlowData`](@ref) constructors.
 
 # Example
 ```julia

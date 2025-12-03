@@ -153,6 +153,8 @@ get_calculate_loss_factors(pf::ACPowerFlow) = pf.calculate_loss_factors
 get_calculate_voltage_stability_factors(pf::ACPowerFlow) =
     pf.calculate_voltage_stability_factors
 
+"""An abstract supertype for all DC power flow evaluation models.
+Subtypes: [`DCPowerFlow`](@ref), [`PTDFDCPowerFlow`](@ref), and [`vPTDFDCPowerFlow`](@ref)."""
 abstract type AbstractDCPowerFlow <: PowerFlowEvaluationModel end
 
 # only make sense for AC power flows, but convenient to have for code reuse reasons.
