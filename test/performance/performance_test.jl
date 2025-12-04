@@ -21,7 +21,6 @@ for (group, name) in systems
         try
             pf = ACPowerFlow{solver}()
             pf_data = PF.PowerFlowData(pf, sys; correct_bustypes = true)
-            n = size(PF.get_bus_type(pf_data), 1)
             _, time_solve_1, _, _ = @timed solve_powerflow!(pf_data; pf = pf)
             open("solve_time.txt", "a") do io
                 write(
@@ -31,7 +30,6 @@ for (group, name) in systems
             end
             pf = ACPowerFlow{solver}()
             pf_data = PF.PowerFlowData(pf, sys; correct_bustypes = true)
-            n = size(PF.get_bus_type(pf_data), 1)
             _, time_solve_2, _, _ = @timed solve_powerflow!(pf_data; pf = pf)
             open("solve_time.txt", "a") do io
                 write(
