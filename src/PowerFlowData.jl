@@ -143,7 +143,7 @@ const PTDFPowerFlowData = PowerFlowData{
 """A type alias for a `PowerFlowData` struct whose type parameters
 are configured for the `vPTDFDCPowerFlow` method."""
 const vPTDFPowerFlowData = PowerFlowData{
-    PNM.DC_vPTDF_Matrix,
+    <:PNM.DC_vPTDF_Matrix,
     PNM.DC_ABA_Matrix_Factorized,
 }
 get_metadata_matrix(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
