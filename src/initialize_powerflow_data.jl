@@ -104,9 +104,18 @@ function initialize_powerflow_data!(
         n_buses,
         data.bus_type,
     )
-    # LCCs: initialize parameters.
+    # LCCs: initialize parameters. For DC power flow, this also writes the fixed flows to
+    # data.lcc.arc_activepower_flow_from_to and data.lcc.arc_activepower_flow_to_from.
     initialize_LCCParameters!(data, sys, bus_lookup, reverse_bus_search_map)
-    # generic HVDC lines: fixed power injections at terminals
+    # LCCs, DC only: accumulate net power into bus_hvdc_net_power.
+    lcc_fixed_injections!(data, sys, bus_lookup, reverse_bus_search_map)
+    # generic HVDC lines: calculate fixed flows and save to generic_hvdc_flows.
+    initialize_generic_hvdc_flows!(
+        data,
+        sys,
+        reverse_bus_search_map,
+    )
+    # generic HVDC lines: accumulate net power into bus_hvdc_net_power.
     hvdc_fixed_injections!(
         data,
         PSY.TwoTerminalGenericHVDCLine,
@@ -114,7 +123,5 @@ function initialize_powerflow_data!(
         bus_lookup,
         reverse_bus_search_map,
     )
-    # LCC lines: fixed power injections at terminals for DC. Does nothing for AC: LCC model is more complex.
-    lcc_fixed_injections!(data, sys, bus_lookup, reverse_bus_search_map)
     return data
 end

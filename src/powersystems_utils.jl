@@ -155,7 +155,8 @@ _eval_loss_function(curve::PSY.LinearCurve, x::Float64) = curve(x)
 _eval_loss_function(pwl::PSY.PiecewiseIncrementalCurve, x::Float64) =
     IS.InputOutputCurve(pwl)(x)
 
-function hvdc_injections_natural_units(hvdc::PSY.TwoTerminalHVDC)
+# returns the tuple (P_dc, P_loss, flow_reversed), first two in natural units
+function hvdc_power_loss_natural_units(hvdc::PSY.TwoTerminalHVDC)
     P_dc = with_units_base(hvdc, "NATURAL_UNITS") do
         PSY.get_active_power_flow(hvdc)
     end
@@ -170,7 +171,22 @@ function hvdc_injections_natural_units(hvdc::PSY.TwoTerminalHVDC)
     P_loss < 0.0 && @warn "The loss curve of $(PSY.summary(hvdc)) " *
           "indicates negative losses for transmitted power $P_dc. " *
           "Setting the loss equal to zero instead."
-    P_received = P_dc - clamp(P_loss, 0.0, P_dc)
+    return (P_dc, clamp(P_loss, 0.0, P_dc), flow_reversed)
+end
+
+function get_hvdc_power_loss(
+    hvdc::PSY.TwoTerminalHVDC,
+    sys::PSY.System,
+)
+    base_power = PSY.get_base_power(sys)
+    (P_dc, P_loss, flow_reversed) = hvdc_power_loss_natural_units(hvdc)
+    return (P_dc / base_power, P_loss / base_power, flow_reversed)
+end
+
+# returns the tuple (P_net_from, P_net_to), both in natural units
+function hvdc_injections_natural_units(hvdc::PSY.TwoTerminalHVDC)
+    P_dc, P_loss, flow_reversed = hvdc_power_loss_natural_units(hvdc)
+    P_received = P_dc - P_loss
     @assert P_received >= 0.0 - eps() && P_received <= P_dc + eps()
     # (from, to) net powers: reversed means from is receiving power.
     return flow_reversed ? (P_received, -P_dc) : (-P_dc, P_received)
@@ -182,8 +198,15 @@ function get_hvdc_injections(
 )
     base_power = PSY.get_base_power(sys)
     (P_from, P_to) = hvdc_injections_natural_units(hvdc)
-    if hvdc isa PSY.TwoTerminalLCCLine
-        @assert P_from <= eps() && P_to >= -eps()
-    end
     return (P_from / base_power, P_to / base_power)
+end
+
+# somewhat duplicative of code in PNM. But currently we're passing around just the reverse
+# bus search map, rather than the full network reduction data.
+function get_arc_tuple(arc::PSY.Arc, reverse_bus_search_map::Dict{Int, Int})
+    from_bus, to_bus = PSY.get_number(PSY.get_from(arc)), PSY.get_number(PSY.get_to(arc))
+    return (
+        get(reverse_bus_search_map, from_bus, from_bus),
+        get(reverse_bus_search_map, to_bus, to_bus),
+    )
 end

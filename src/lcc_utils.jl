@@ -148,7 +148,10 @@ function initialize_LCCParameters!(
 
     # for DC power flow calculations, LCC arc flows are known from quantities from setup.
     for (i, lcc_branch) in enumerate(lccs)
-        data.lcc.arc_activepower_flow_from_to[i, :] .= PSY.get_active_power_flow(lcc_branch)
+        # it's an LCC, so flow can't be reversed; rhs will error if it is.
+        (P_from_to, P_to_from, _) = get_hvdc_power_loss(lcc_branch, sys)
+        data.lcc.arc_activepower_flow_from_to[i, :] .= P_from_to
+        data.lcc.arc_activepower_flow_to_from[i, :] .= P_to_from
     end
     return
 end
@@ -229,7 +232,7 @@ function hvdc_fixed_injections!(
 )
     for hvdc in PSY.get_available_components(hvdc_type, sys)
         arc = PSY.get_arc(hvdc)
-        (P_from, P_to) = get_hvdc_injections(hvdc, sys)
+        (P_net_from, P_net_to) = get_hvdc_injections(hvdc, sys)
         from_bus_ix = _get_bus_ix(
             bus_lookup,
             reverse_bus_search_map,
@@ -240,10 +243,8 @@ function hvdc_fixed_injections!(
             reverse_bus_search_map,
             PSY.get_number(PSY.get_to(arc)),
         )
-        # the power injections are used in post processing for balancing. Store 
-        # the contributions as negative withdrawals to avoid messing with those numbers.
-        data.bus_activepower_withdrawals[from_bus_ix, :] .-= P_from
-        data.bus_activepower_withdrawals[to_bus_ix, :] .-= P_to
+        data.bus_hvdc_net_power[from_bus_ix, :] .+= P_net_from
+        data.bus_hvdc_net_power[to_bus_ix, :] .+= P_net_to
     end
     return
 end
@@ -267,3 +268,20 @@ lcc_fixed_injections!(
     bus_lookup,
     reverse_bus_search_map,
 )
+
+function initialize_generic_hvdc_flows!(
+    data::PowerFlowData,
+    sys::PSY.System,
+    reverse_bus_search_map::Dict{Int, Int},
+)
+    for comp in PSY.get_available_components(PSY.TwoTerminalGenericHVDCLine, sys)
+        (P_dc, P_loss, flow_reversed) = get_hvdc_power_loss(comp, sys)
+        arc = PSY.get_arc(comp)
+        arc_tuple = get_arc_tuple(arc, reverse_bus_search_map)
+        if !flow_reversed
+            data.generic_hvdc_flows[arc_tuple] = (P_dc, P_loss - P_dc)
+        else
+            data.generic_hvdc_flows[arc_tuple] = (P_loss - P_dc, P_dc)
+        end
+    end
+end

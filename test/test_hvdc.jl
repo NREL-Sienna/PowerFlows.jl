@@ -189,7 +189,8 @@ function test_generic_hvdc_on_big_system(pf_type::Type{<:PF.PowerFlowEvaluationM
         # check that the b in our Ax = b is the same
         rhs_original = (
             data_original.bus_activepower_injection .-
-            data_original.bus_activepower_withdrawals
+            data_original.bus_activepower_withdrawals .+
+            data_original.bus_hvdc_net_power
         )
         rhs_modified = (
             data_modified.bus_activepower_injection .-
