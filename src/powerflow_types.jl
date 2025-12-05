@@ -1,5 +1,7 @@
 """An abstract supertype for all types of power flows.
-Subtypes: [`ACPowerFlow`](@ref) and [`AbstractDCPowerFlow`](@ref)."""
+Subtypes: [`ACPowerFlow`](@ref), [`AbstractDCPowerFlow`](@ref), and 
+[`PSSEExportPowerFlow`](@ref). The last isn't a power flow in the usual sense, but it is 
+implemented that way (with writing the export file as solving the power flow) for interface reasons."""
 abstract type PowerFlowEvaluationModel end
 
 """An abstract supertype for all iterative methods.

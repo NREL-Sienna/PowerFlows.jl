@@ -9,6 +9,8 @@ export LevenbergMarquardtACPowerFlow
 export RobustHomotopyPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
+export AbstractDCPowerFlow
+export PowerFlowEvaluationModel
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
 export PSSEExportPowerFlow

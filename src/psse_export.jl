@@ -56,7 +56,7 @@ const WINDING_GROUP_NUMBER_TO_DEGREES = Dict(
     11 => 30,             # GROUP_11: 30 Degrees
 )
 
-# Each of the groups in the PSS/3 v33 standard
+# Each of the groups in the PSS/E v33 standard
 const PSSE_GROUPS = [
     "Case Identification Data",
     "Bus Data",
