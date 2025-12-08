@@ -1,8 +1,7 @@
 module PowerFlows
 
 export solve_powerflow
-export solve_powerflow!
-export PowerFlowData
+export solve_and_store_power_flow!
 export DCPowerFlow
 export NewtonRaphsonACPowerFlow
 export TrustRegionACPowerFlow
@@ -10,14 +9,17 @@ export LevenbergMarquardtACPowerFlow
 export RobustHomotopyPowerFlow
 export ACPowerFlow
 export ACPowerFlowSolverType
+export AbstractDCPowerFlow
+export PowerFlowEvaluationModel
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
 export PSSEExportPowerFlow
-export write_results
 export PSSEExporter
 export update_exporter!
 export write_export
 export get_psse_export_paths
+# "protected" (semi-stable because used in PSI) but not exported:
+# PowerFlowData and related type aliases, solve_powerflow!, write_results
 
 import Base: @kwdef
 import Logging
@@ -44,6 +46,7 @@ const IS = InfrastructureSystems
 const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
 
+include("definitions.jl")
 include("psi_utils.jl")
 include("powersystems_utils.jl")
 include("powerflow_types.jl")

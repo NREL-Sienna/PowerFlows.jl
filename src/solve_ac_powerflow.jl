@@ -1,5 +1,5 @@
 """
-    solve_powerflow!(pf::ACPowerFlow{<:ACPowerFlowSolverType}, system::PSY.System; kwargs...)
+    solve_and_store_power_flow!(pf::ACPowerFlow{<:ACPowerFlowSolverType}, system::PSY.System; kwargs...)
 
 Solves the power flow in the system and writes the solution into the relevant structs.
 Updates active and reactive power setpoints for generators and active and reactive
@@ -10,12 +10,14 @@ Supports passing kwargs to the PF solver.
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver instance, can be `NewtonRaphsonACPowerFlow` or `LUACPowerFlow` (to be used for testing only).
-- `system::PSY.System`: The power system model.
+- [`pf::ACPowerFlow{<:ACPowerFlowSolverType}`](@ref ACPowerFlow): The power flow solver instance.
+- `system::PSY.System`: The power system model, a [`PowerSystems.System`](@extref) struct.
 - `kwargs...`: Additional keyword arguments.
 
 ## Keyword Arguments
-- 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
+- `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
+- `check_reactive_power_limits::Bool`: if `true`, the reactive power limits are 
+    enforced by changing the respective bus types from PV to PQ. Default is `false`.
 - `tol`: Infinite norm of residuals under which convergence is declared. Default is `1e-9`.
 - `maxIterations`: Maximum number of Newton-Raphson iterations. Default is `30`.
 
@@ -26,16 +28,16 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 # Examples
 
 ```julia
-solve_powerflow!(pf, sys)
+solve_and_store_power_flow!(pf, sys)
 
 # Passing kwargs
-solve_powerflow!(pf, sys; correct_bustypes = true)
+solve_and_store_power_flow!(pf, sys; correct_bustypes = true)
 
 # Passing keyword arguments
-solve_powerflow!(pf, sys; maxIterations=100)
+solve_and_store_power_flow!(pf, sys; maxIterations=100)
 ```
 """
-function solve_powerflow!(
+function solve_and_store_power_flow!(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
     kwargs...,
@@ -69,7 +71,7 @@ function solve_powerflow!(
 end
 
 """
-Similar to solve_powerflow!(pf, sys) but does not update the system struct with results.
+Similar to [solve\\_and\\_store\\_power\\_flow!](@ref) but does not update the system struct with results.
 Returns the results in a dictionary of dataframes.
 
 ## Examples
@@ -117,12 +119,14 @@ Solve the multiperiod AC power flow problem for the given power flow data.
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- `data::ACPowerFlowData`: The power flow data containing the grid information and initial conditions.
-- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver type. Defaults to `NewtonRaphsonACPowerFlow`.
+- [`data::ACPowerFlowData`](@ref ACPowerFlowData): The power flow data containing the grid information and initial conditions.
+- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver type. Defaults to [`NewtonRaphsonACPowerFlow`](@ref).
 - `kwargs...`: Additional keyword arguments.
 
 # Keyword Arguments
-- 'check_reactive_power_limits': if `true`, the reactive power limits are enforced by changing the respective bus types from PV to PQ. Default is `false`.
+- `check_connectivity::Bool`: Checks if the grid is connected. Default is `true`.
+- `check_reactive_power_limits::Bool`: if `true`, the reactive power limits are 
+    enforced by changing the respective bus types from PV to PQ. Default is `false`.
 - `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `data.timestep_map`.
 
 # Description

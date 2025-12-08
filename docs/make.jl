@@ -1,4 +1,11 @@
 using Documenter, PowerSystems, DocStringExtensions, PowerFlows, DataStructures
+using DocumenterInterLinks
+
+links = InterLinks(
+    "DocumenterInterLinks" => "http://juliadocs.org/DocumenterInterLinks.jl/stable/",
+    "PowerSystems" => "https://nrel-sienna.github.io/PowerSystems.jl/stable/",
+    "PowerNetworkMatrices" => "https://nrel-sienna.github.io/PowerNetworkMatrices.jl/stable/",
+)
 
 pages = OrderedDict(
     "Welcome Page" => "index.md",
@@ -7,6 +14,7 @@ pages = OrderedDict(
     "Explanation" => "explanation/stub.md",
     "Reference" => Any[
         "Code Base Developer Guide" => "reference/developers/developer.md",
+        "LCC Model Implementation" => "reference/developers/lcc_model.md",
         "Public API Reference" => "reference/api/public.md",
         "Internal API Reference" => "reference/api/internal.md"],
 )
@@ -14,6 +22,7 @@ pages = OrderedDict(
 makedocs(;
     modules = [PowerFlows],
     format = Documenter.HTML(; mathengine = Documenter.MathJax()),
+    plugins = [links],
     sitename = "PowerFlows.jl",
     pages = Any[p for p in pages],
 )

@@ -34,8 +34,8 @@ Create an instance of `ACPowerFlowResidual` for a given time step.
 - `time_step::Int64`: The time step for which the power flow calculation is executed.
 
 # Returns
-- `ACPowerFlowResidual`: An instance containing the residual values, net bus active power injections,
-and net bus reactive power injections.
+- `ACPowerFlowResidual`: An instance containing the residual values, net bus active power injections, 
+    and net bus reactive power injections.
 """
 function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     n_buses = first(size(data.bus_type))

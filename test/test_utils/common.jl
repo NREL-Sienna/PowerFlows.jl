@@ -162,7 +162,7 @@ function _check_ds_pf(
         original_bus_power,
     )
 
-    solve_powerflow!(pf, sys; kwargs...)
+    solve_and_store_power_flow!(pf, sys; kwargs...)
     p_solve, _ = _system_generation_power(sys, bus_numbers)
 
     @test isapprox(p_solve, res["bus_results"][:, :P_gen]; atol = 1e-6, rtol = 0)

@@ -108,7 +108,7 @@ end
                         sum(arc_flows[ix, "P_from_to"]) +
                         im * sum(arc_flows[ix, "Q_from_to"])
                 end
-                @test solve_powerflow!(
+                @test solve_and_store_power_flow!(
                     pf,
                     sys;
                     correct_bustypes = true,
@@ -201,7 +201,7 @@ end
     )
     pf = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(; skip_redistribution = true)
     PF.solve_powerflow!(unreduced; pf = pf)
-    PF.solve_powerflow!(
+    PF.solve_and_store_power_flow!(
         pf,
         sys;
         correct_bustypes = true,
@@ -252,7 +252,7 @@ end
     )
     pf = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(; skip_redistribution = true)
     PF.solve_powerflow!(unreduced; pf = pf)
-    PF.solve_powerflow!(
+    PF.solve_and_store_power_flow!(
         pf,
         sys;
         correct_bustypes = true,

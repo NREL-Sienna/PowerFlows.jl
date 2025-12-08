@@ -31,6 +31,11 @@ const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
 const PF = PowerFlows
 
+# used to be public, no longer: import here so we can use in tests
+import PowerFlows: PowerFlowData
+import PowerFlows: ACPowerFlowData, PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData
+import PowerFlows: solve_powerflow!, write_results
+
 const BASE_DIR = dirname(dirname(Base.find_package("PowerFlows")))
 const TEST_DATA_DIR = joinpath(
     dirname(dirname(Base.find_package("PowerFlows"))),

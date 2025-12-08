@@ -36,8 +36,6 @@ const DEFAULT_Δt_k = 0.2
 
 const AC_PF_KW = []
 
-const PSSE_DEFAULT_EXPORT_NAME = "export"
-
 const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN = 0.8
 const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX = 1.2
 
@@ -73,3 +71,6 @@ const BUS_TYPE_PRIORITIES = Dict{PSY.ACBusTypes, Int}(
     PSY.ACBusTypes.PV => 2,
     PSY.ACBusTypes.PQ => 1,
 )
+
+const PSSE_DEFAULT_EXPORT_NAME = "export"
+const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33, :v35]

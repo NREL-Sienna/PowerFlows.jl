@@ -1,18 +1,19 @@
-"""Cache for non-linear methods
+"""Cache for non-linear methods.
+
 # Fields
--`x::Vector{Float64}`: the current state vector.
--`r::Vector{Float64}`: the current residual.
--`Δx_nr::Vector{Float64}`: the step under the Newton-Raphson method.
+- `x::Vector{Float64}`: the current state vector.
+- `r::Vector{Float64}`: the current residual.
+- `Δx_nr::Vector{Float64}`: the step under the Newton-Raphson method.
 The remainder of the fields are only used in the `TrustRegionACPowerFlow`:
--`r_predict::Vector{Float64}`: the predicted residual at `x+Δx_proposed`,
+- `r_predict::Vector{Float64}`: the predicted residual at `x+Δx_proposed`,
     under a linear approximation: i.e `J_x⋅(x+Δx_proposed)`.
--`Δx_proposed::Vector{Float64}`: the suggested step `Δx`, selected among `Δx_nr`, 
+- `Δx_proposed::Vector{Float64}`: the suggested step `Δx`, selected among `Δx_nr`, 
     `Δx_cauchy`, and the dogleg interpolation between the two. The first is chosen when
     `x+Δx_nr` is inside the trust region, the second when both `x+Δx_cauchy`
     and `x+Δx_nr` are outside the trust region, and the third when `x+Δx_cauchy`
     is inside and `x+Δx_nr` outside. The dogleg step selects the point where the line
     from `x+Δx_cauchy` to `x+Δx_nr` crosses the boundary of the trust region.
--`Δx_cauchy::Vector{Float64}`: the step to the Cauchy point if the Cauchy point
+- `Δx_cauchy::Vector{Float64}`: the step to the Cauchy point if the Cauchy point
     lies within the trust region, otherwise a step in that direction."""
 struct StateVectorCache
     x::Vector{Float64}

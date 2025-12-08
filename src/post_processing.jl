@@ -343,21 +343,48 @@ function _reactive_power_redistribution_pv(
 end
 
 """
-Calculate series voltages at buses removed in degree 2 reduction.
-Method: number the nodes in the series segment 0, 1, ..., n. Number the segments by
-their concluding node: 1, 2, ... n. The currents in the segments are given by:
-[y^i_ff y^i_ft; y^i_tf y^i_tt] * [V_{i-1}; V_i] = [I_{i-1, i}; I_{i, i-1}]
-where I'm using upper indices to denote the segment number.
-There are no loads or generators at the internal nodes, so I_{i, i+1} + I_{i, i-1} = 0.
-Substitute the above expressions for the currents and group by V_i:
-y^i_{tf} V_{i-1} + (y_{tt}^i + y_{ff}^{i+1}) V_i + y_{ft}^{i+1} V_{i+1} = 0
-For i = 1 and i = n-1, move the terms involving V_0 and V_n [known] to the other side.
-This gives a tridiagonal system for x = [V_1, ..., V_{n-1}]:
-A * x = [-y^1_{tf} * V_0, 0, ..., 0, -y^{n}_{ft} * V_n]
-where A has diagonal entries y_{tt}^i + y_{ff}^{i+1}, subdiagonal
-entries y_{tf}^{i+1}, and superdiagonal entries y_{ft}^i.
+    _set_series_voltages_and_flows!(
+        sys::PSY.System,
+        segment_sequence::PNM.BranchesSeries,
+        equivalent_arc::Tuple{Int, Int},
+        V_endpoints::Tuple{ComplexF64, ComplexF64},
+        temp_bus_map::Dict{Int, String},
+    )
 
-In the below, I use y_11 instead of y_ff, y_12 instead of y_ft, etc.
+Calculate series voltages at buses removed in degree 2 reduction.
+
+# Method
+
+Number the nodes in the series segment 0, 1, ..., n. Number the segments by
+their concluding node: 1, 2, ... n. The currents in the segments are given by:
+
+```math
+\\begin{bmatrix} y^i_{ff} & y^i_{ft} \\\\ y^i_{tf} & y^i_{tt} \\end{bmatrix} 
+\\begin{bmatrix} V_{i-1} \\\\ V_i \\end{bmatrix} = 
+\\begin{bmatrix} I_{i-1, i} \\\\ I_{i, i-1} \\end{bmatrix}
+```
+
+where upper indices denote the segment number.
+
+There are no loads or generators at the internal nodes, so ``I_{i, i+1} + I_{i, i-1} = 0``.
+Substitute the above expressions for the currents and group by ``V_i``:
+
+```math
+y^i_{tf} V_{i-1} + (y_{tt}^i + y_{ff}^{i+1}) V_i + y_{ft}^{i+1} V_{i+1} = 0
+```
+
+For ``i = 1`` and ``i = n-1``, move the terms involving ``V_0`` and ``V_n`` (known) to 
+the other side. This gives a tridiagonal system for ``x = [V_1, \\ldots, V_{n-1}]``:
+
+```math
+A x = [-y^1_{tf} V_0, 0, \\ldots, 0, -y^{n}_{ft} V_n]
+```
+
+where ``A`` has diagonal entries ``y_{tt}^i + y_{ff}^{i+1}``, subdiagonal
+entries ``y_{tf}^{i+1}``, and superdiagonal entries ``y_{ft}^i``.
+
+In the implementation, ``y_{11}`` is used instead of ``y_{ff}``, ``y_{12}`` instead of 
+``y_{ft}``, etc.
 """
 function _set_series_voltages_and_flows!(
     sys::PSY.System,
@@ -818,15 +845,20 @@ function get_lcc_names(data::PowerFlowData, sys::PSY.System)
 end
 
 """
+    write_results(
+        data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
+        sys::PSY.System,
+    )
+
 Returns a dictionary containing the DC power flow results. Each key corresponds
-to the name of the considered time periods, storing a DataFrame with the PF
+to the name of the considered time periods, storing a `DataFrame` with the powerflow
 results.
 
 # Arguments:
 - `data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}`:
         PowerFlowData structure containing power flows and bus angles.
 - `sys::PSY.System`:
-        container storing the system information.
+        A [`PowerSystems.System`](@extref) object storing the system information.
 """
 function write_results(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
@@ -879,10 +911,17 @@ function write_results(
 end
 
 """
+    write_results(
+        ::ACPowerFlow{<:ACPowerFlowSolverType},
+        sys::PSY.System,
+        data::ACPowerFlowData,
+        time_step::Int64,
+    ) -> Dict{String, DataFrames.DataFrame}
+
 Returns a dictionary containing the AC power flow results.
 
-Only single-period evaluation is supported at the moment for AC Power flows. Resulting
-dictionary will therefore feature just one key linked to one DataFrame.
+Only single-period evaluation is supported at the moment for AC Power flows. The resulting
+dictionary will therefore feature just one key linked to one `DataFrame`.
 
 # Arguments:
 - `::ACPowerFlow`:
@@ -951,10 +990,13 @@ function write_results(
 end
 
 """
-Modify the values in the given `System` to correspond to the given `PowerFlowData` such that
-if a new `PowerFlowData` is constructed from the resulting system it is the same as `data`.
-See also `write_powerflow_solution!`. NOTE that this assumes that `data` was initialized
-from `sys` and then solved with no further modifications.
+     update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
+
+Modify the values in the given [`System`](@extref PowerSystems.System) to correspond to the 
+given `PowerFlowData` such that if a new `PowerFlowData` is constructed from the resulting 
+system it is the same as `data`. See also [`write_powerflow_solution!`](@ref). NOTE this 
+assumes that `data` was initialized from `sys` and then solved with no further 
+modifications.
 """
 function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
     check_unit_setting(sys)

@@ -43,25 +43,25 @@
     x1 = _calc_x(data, 1)
     # this fails at 1e-6, likely due to the change of the B allocation
     @test LinearAlgebra.norm(result_14 - x1, Inf) <= 3e-6
-    # Test that solve_powerflow! succeeds
+    # Test that solve_and_store_power_flow! succeeds
     solved1 = deepcopy(sys)
-    @test solve_powerflow!(pf, solved1)
+    @test solve_and_store_power_flow!(pf, solved1)
 
     # Test that passing check_reactive_power_limits=false is the default and violates limits
     solved2 = deepcopy(sys)
-    @test solve_powerflow!(pf, solved2; check_reactive_power_limits = false)
+    @test solve_and_store_power_flow!(pf, solved2; check_reactive_power_limits = false)
     @test IS.compare_values(solved1, solved2)
     @test get_reactive_power(get_component(ThermalStandard, solved2, "Bus8")) >
           get_reactive_power_limits(get_component(ThermalStandard, solved2, "Bus8")).max
 
     # Test that passing check_reactive_power_limits=true fixes that
     solved3 = deepcopy(sys)
-    @test solve_powerflow!(pf, solved3; check_reactive_power_limits = true)
+    @test solve_and_store_power_flow!(pf, solved3; check_reactive_power_limits = true)
     @test get_reactive_power(get_component(ThermalStandard, solved3, "Bus8")) <=
           get_reactive_power_limits(get_component(ThermalStandard, solved3, "Bus8")).max
 
     # Test Newton method
-    @test solve_powerflow!(pf, deepcopy(sys))
+    @test solve_and_store_power_flow!(pf, deepcopy(sys))
 
     # Test enforcing the reactive power limits in closer detail
     set_reactive_power!(get_component(PowerLoad, sys, "Bus4"), 0.0)
@@ -83,7 +83,7 @@ function test_ac_line_configurations(ACSolver)
     branch = first(PSY.get_components(Line, sys))
     dyn_branch = DynamicBranch(branch)
     add_component!(sys, dyn_branch)
-    @test dyn_pf = solve_powerflow!(pf, sys; correct_bustypes = true)
+    @test dyn_pf = solve_and_store_power_flow!(pf, sys; correct_bustypes = true)
     dyn_pf = solve_powerflow(pf, sys; correct_bustypes = true)
     @test LinearAlgebra.norm(
         dyn_pf["bus_results"].Vm - base_res["bus_results"].Vm,
@@ -93,7 +93,7 @@ function test_ac_line_configurations(ACSolver)
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     line = get_component(Line, sys, "Line4")
     PSY.set_available!(line, false)
-    solve_powerflow!(pf, sys; correct_bustypes = true)
+    solve_and_store_power_flow!(pf, sys; correct_bustypes = true)
     @test PSY.get_active_power_flow(line) == 0.0
     test_bus = get_component(PSY.ACBus, sys, "Bus 4")
     @test isapprox(PSY.get_magnitude(test_bus), 1.002; atol = 1e-3, rtol = 0)
@@ -148,7 +148,7 @@ function test_ac_convergence_fail(ACSolver)
     @test_logs(
         (:error, "The powerflow solver returned convergence = false"),
         match_mode = :any,
-        @test !solve_powerflow!(pf, pf_sys5_re)
+        @test !solve_and_store_power_flow!(pf, pf_sys5_re)
     )
 end
 
@@ -173,7 +173,7 @@ end
     # remove skip_redistribution once redistribution is working properly.
     pf = ACPowerFlow(; skip_redistribution = true)
 
-    pf1 = solve_powerflow!(pf, system; correct_bustypes = true)
+    pf1 = solve_and_store_power_flow!(pf, system; correct_bustypes = true)
     @test pf1
     pf_result_df = solve_powerflow(pf, system; correct_bustypes = true)
 
@@ -201,13 +201,13 @@ function test_ac_multiple_sources_at_ref(ACSolver)
     s2 = _add_simple_source!(sys, b, -0.5, -0.1)
 
     pf = ACPowerFlow{ACSolver}()
-    @test solve_powerflow!(pf, sys; correct_bustypes = true)
+    @test solve_and_store_power_flow!(pf, sys; correct_bustypes = true)
 
     #Create power mismatch, test for error
     set_active_power!(s1, -0.4)
     @test_throws ErrorException(
         "Sources do not match P and/or Q requirements for reference bus.",
-    ) solve_powerflow!(pf, sys)
+    ) solve_and_store_power_flow!(pf, sys)
 end
 
 @testset "AC Multiple sources at ref" begin
@@ -228,11 +228,11 @@ function test_ac_multiple_sources_at_pv(ACSolver)
 
     pf = ACPowerFlow{ACSolver}()
 
-    @test solve_powerflow!(pf, sys; correct_bustypes = true)
+    @test solve_and_store_power_flow!(pf, sys; correct_bustypes = true)
 
     #Create power mismatch, test for error
     set_reactive_power!(s3, -0.5)
-    @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_powerflow!(
+    @test_throws ErrorException("Sources do not match Q requirements for PV bus.") solve_and_store_power_flow!(
         pf,
         sys,
         correct_bustypes = true,
@@ -254,7 +254,7 @@ function test_ac_source_and_non_source_at_ref(ACSolver)
 
     pf = ACPowerFlow{ACSolver}()
 
-    @test solve_powerflow!(pf, sys)
+    @test solve_and_store_power_flow!(pf, sys)
     @test isapprox(get_active_power(s1), 0.5; atol = 0.001)
     @test isapprox(get_reactive_power(s1), 0.1; atol = 0.001)
 end
@@ -277,7 +277,7 @@ function test_ac_source_and_non_source_at_pv(ACSolver)
 
     pf = ACPowerFlow{ACSolver}()
 
-    @test solve_powerflow!(pf, sys; correct_bustypes = true)
+    @test solve_and_store_power_flow!(pf, sys; correct_bustypes = true)
     @test isapprox(get_active_power(s2), 0.5; atol = 0.001)
     @test isapprox(get_reactive_power(s2), 1.1; atol = 0.001)
 end
@@ -722,14 +722,14 @@ end
     sys, lcc = simple_lcc_system()
     pf = ACPowerFlow()
     lcc_results = solve_powerflow(pf, sys)["lcc_results"]
-    solve_powerflow!(pf, sys)
+    solve_and_store_power_flow!(pf, sys)
     check_lcc_consistency(lcc, lcc_results)
 
     # repeat with a different setpoint
     sys, lcc = simple_lcc_system()
     PSY.set_transfer_setpoint!(lcc, -25.0)
     lcc_results = solve_powerflow(pf, sys)["lcc_results"]
-    solve_powerflow!(pf, sys)
+    solve_and_store_power_flow!(pf, sys)
     check_lcc_consistency(lcc, lcc_results)
 
     # could add one with 2+ LCCs.
@@ -773,7 +773,7 @@ function test_lcc_ac_solver(ACSolver)
         data.bus_reactivepower_injection[1];
         atol = 1e-5, rtol = 0,
     )
-    solve_powerflow!(pf, sys)
+    solve_and_store_power_flow!(pf, sys)
 
     @test get_active_power_flow(lcc) ==
           data.lcc.arc_activepower_flow_from_to[1, 1]
@@ -788,7 +788,7 @@ function test_lcc_ac_solver(ACSolver)
         atol = 1e-6, rtol = 0,
     )
 
-    solve_powerflow!(pf, sys)
+    solve_and_store_power_flow!(pf, sys)
 
     @test get_active_power_flow(lcc) ==
           data.lcc.arc_activepower_flow_from_to[1, 1]

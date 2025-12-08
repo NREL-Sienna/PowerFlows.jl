@@ -10,70 +10,69 @@ supports_multi_period(x::PowerFlowContainer) =
             "supports_multi_period must be implemented for $(typeof(x))"),
     )
 
-"A `PowerFlowContainer` that represents its data as a `PSY.System`"
+"A `PowerFlowContainer` that represents its data as a `PSY.System`."
 abstract type SystemPowerFlowContainer <: PowerFlowContainer end
 
 get_system(container::SystemPowerFlowContainer) = container.system
 
 """
+    PowerFlowData{M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+
 Structure containing all the data required for the evaluation of the power
 flows and angles, as well as these ones.
 
-In the below descriptions, "number of buses" should be understood as "number of buses remaining,
-after the network reduction." Similarly, we use "arcs" instead of "branches" to distinguish 
+All fields starting with `bus_` are ordered according to `bus_lookup`, and all fields 
+starting with `arc_` are ordered according to `arc_lookup`: one row per bus/arc, 
+one column per time period. Here, buses should be understood as \"buses remaining, after 
+the network reduction.\" Similarly, we use \"arcs\" instead of \"branches\" to distinguish 
 between network elements (post-reduction) and system objects (pre-reduction).
-# Arguments:
+
+Generally, do not construct this directly. Instead, use one of the later constructors to 
+pass in a `PowerFlowEvaluationModel` and a `PowerSystems.System`. 
+`aux\\_network\\_matrix` and `power\\_network\\_matrix` will then be set to the appropriate 
+matrices that are needed for computing that type of powerflow. See also `ACPowerFlowData`,
+`ABAPowerFlowData`, `PTDFPowerFlowData`, and `vPTDFPowerFlowData`: 
+these are all aliases for `PowerFlowData{N, M}` with specific `N`,`M`, that are used for 
+the respective type of power flow evaluations.
+
+# Fields:
 - `bus_activepower_injection::Matrix{Float64}`:
-        "(b, t)" matrix containing the bus active power injection. b: number of
-        buses, t: number of time period.
+        matrix containing the bus active power injection.
 - `bus_reactivepower_injection::Matrix{Float64}`:
-        "(b, t)" matrix containing the bus reactive power injection. b: number
-        of buses, t: number of time period.
+        matrix containing the bus reactive power injection.
 - `bus_activepower_withdrawals::Matrix{Float64}`:
-        "(b, t)" matrix containing the bus reactive power withdrawals. b:
-        number of buses, t: number of time period.
+        matrix containing the bus reactive power withdrawals.
 - `bus_reactivepower_withdrawals::Matrix{Float64}`:
-        "(b, t)" matrix containing the bus reactive power withdrawals. b:
-        number of buses, t: number of time period.
+        matrix containing the bus reactive power withdrawals.
 - `bus_activepower_constant_current_withdrawals::Matrix{Float64}`:
-        "(b, t)" matrix containing the bus active power constant current
-        withdrawals. b: number of buses, t: number of time period.
+        matrix containing the bus active power constant current
+        withdrawals.
 - `bus_reactivepower_constant_current_withdrawals::Matrix{Float64}`:
-        "(b, t)" matrix containing the bus reactive power constant current
-        withdrawals. b: number of buses, t: number of time period.
+        matrix containing the bus reactive power constant current
+        withdrawals.
 - `bus_activepower_constant_impedance_withdrawals::Matrix{Float64}`:
-        "(b, t)" matrix containing the bus active power constant impedance
-        withdrawals. b: number of buses, t: number of time period.
+        matrix containing the bus active power constant impedance
+        withdrawals.
 - `bus_reactivepower_constant_impedance_withdrawals::Matrix{Float64}`:  
-        "(b, t)" matrix containing the bus reactive power constant impedance
-        withdrawals. b: number of buses, t: number of time period.
+        matrix containing the bus reactive power constant impedance
+        withdrawals.
 - `bus_reactivepower_bounds::Matrix{Float64}`:
-        "(b, t)" matrix containing upper and lower bounds for the reactive supply at each
+        matrix containing upper and lower bounds for the reactive supply at each
         bus at each time period.
 - `bus_type::Matrix{PSY.ACBusTypes}`:
-        "(b, t)" matrix containing type of buses present in the system, ordered
-        according to "bus_lookup," at each time period.
+        matrix containing type of buses present in the system.
 - `bus_magnitude::Matrix{Float64}`:
-        "(b, t)" matrix containing the bus magnitudes, ordered according to
-        "bus_lookup". b: number of buses, t: number of time period.
+        matrix containing the bus voltage magnitudes.
 - `bus_angles::Matrix{Float64}`:
-        "(b, t)" matrix containing the bus angles, ordered according to
-        "bus_lookup". b: number of buses, t: number of time period.
+        matrix containing the bus voltage angles.
 - `arc_activepower_flow_from_to::Matrix{Float64}`:
-        "(br, t)" matrix containing the active power flows measured at the `from` bus,
-        ordered according to "arc_lookup". br: number of arcs, t: number of time
-        period.
+        matrix containing the active power flows measured at the `from` bus.
 - `arc_reactivepower_flow_from_to::Matrix{Float64}`:
-        "(br, t)" matrix containing the reactive power flows measured at the `from` bus,
-        ordered according to "arc_lookup". br: number of arcs, t: number of time
-        period.
+        matrix containing the reactive power flows measured at the `from` bus.
 - `arc_activepower_flow_to_from::Matrix{Float64}`:
-        "(br, t)" matrix containing the active power flows measured at the `to` bus, ordered
-        according to "arc_lookup". br: number of arcs, t: number of time period.
+        matrix containing the active power flows measured at the `to` bus.
 - `arc_reactivepower_flow_to_from::Matrix{Float64}`:
-        "(br, t)" matrix containing the reactive power flows measured at the `to` bus,
-        ordered according to "arc_lookup". br: number of arcs, t: number of time
-        period.
+        matrix containing the reactive power flows measured at the `to` bus.
 - `generic_hvdc_flows::Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}`:
         dictionary mapping each generic HVDC line (represented as a tuple of the from and to bus
         numbers) to a tuple of `(P_from_to, P_to_from)` active power flows.
@@ -132,57 +131,38 @@ struct PowerFlowData{
 end
 
 # aliases for specific type parameter combinations.
+"""A type alias for a `PowerFlowData` struct whose type parameters
+are configured for the `ACPowerFlow` method."""
 const ACPowerFlowData = PowerFlowData{
-    PNM.Ybus{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-    },
+    PNM.AC_Ybus_Matrix,
     <:Union{
-        PNM.ABA_Matrix{Tuple{Vector{Int64}, Vector{Int64}},
-            Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-            Nothing},
+        PNM.DC_ABA_Matrix_Unfactorized,
         Nothing,
     },
 }
 get_metadata_matrix(pfd::ACPowerFlowData) = pfd.power_network_matrix
 
+"""A type alias for a `PowerFlowData` struct whose type parameters
+are configured for the `PTDFDCPowerFlow` method ."""
 const PTDFPowerFlowData = PowerFlowData{
-    PNM.PTDF{
-        Tuple{Vector{Int64}, Vector{Tuple{Int, Int}}},
-        Tuple{Dict{Int64, Int64}, Dict{Tuple{Int, Int}, Int64}},
-        Matrix{Float64},
-    },
-    PNM.ABA_Matrix{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64},
-    },
+    PNM.DC_PTDF_Matrix,
+    PNM.DC_ABA_Matrix_Factorized,
 }
 
+"""A type alias for a `PowerFlowData` struct whose type parameters
+are configured for the `vPTDFDCPowerFlow` method."""
 const vPTDFPowerFlowData = PowerFlowData{
-    PNM.VirtualPTDF{
-        Tuple{Vector{Tuple{Int, Int}}, Vector{Int64}},
-        Tuple{Dict{Tuple{Int, Int}, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64},
-    },
-    PNM.ABA_Matrix{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64},
-    },
+    <:PNM.DC_vPTDF_Matrix,
+    PNM.DC_ABA_Matrix_Factorized,
 }
 get_metadata_matrix(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
     pfd.power_network_matrix
 
+"""A type alias for a `PowerFlowData` struct whose type parameters
+are configured for the `DCPowerFlow` method."""
 const ABAPowerFlowData = PowerFlowData{
-    PNM.ABA_Matrix{
-        Tuple{Vector{Int64}, Vector{Int64}},
-        Tuple{Dict{Int64, Int64}, Dict{Int64, Int64}},
-        PNM.KLU.KLUFactorization{Float64, Int64},
-    },
-    PNM.BA_Matrix{
-        Tuple{Vector{Int64}, Vector{Tuple{Int, Int}}},
-        Tuple{Dict{Int64, Int64}, Dict{Tuple{Int, Int}, Int64}}},
+    PNM.DC_ABA_Matrix_Factorized,
+    PNM.DC_BA_Matrix,
 }
 get_metadata_matrix(pfd::ABAPowerFlowData) = pfd.aux_network_matrix
 
@@ -457,24 +437,37 @@ function make_and_initialize_powerflow_data(
 end
 
 """
-Function for the definition of the PowerFlowData structure given the System
-data, number of time periods to consider and their names.
+    PowerFlowData(
+        pf::ACPowerFlow{<:ACPowerFlowSolverType},
+        sys::PSY.System;
+        time_steps::Int = 1,
+        timestep_names::Vector{String} = String[],
+        check_connectivity::Bool = true
+    ) -> ACPowerFlowData{<:ACPowerFlowSolverType} 
+
+Creates the structure for an AC power flow calculation, given the 
+[`System`](@extref PowerSystems.System) `sys`, the number of time periods to 
+consider, and their names.
+
 Calling this function will not evaluate the power flows and angles.
-NOTE: use it for AC power flow computations.
+Note that first input is of type [`ACPowerFlow`](@ref): this version is used to solve 
+AC powerflows, and returns an [`ACPowerFlowData`](@ref) object.
 
 # Arguments:
-- `::ACPowerFlow`:
-        use ACPowerFlow() to evaluate the AC PF.
+- [`pf::ACPowerFlow`](@ref ACPowerFlow):
+        the settings for the AC power flow solver.
 - `sys::PSY.System`:
-        container storing the system data to consider in the PowerFlowData
-        structure.
+        A [`System`](@extref PowerSystems.System) object that represents the power 
+        grid under consideration.
 - `time_steps::Int`:
-        number of time periods to consider in the PowerFlowData structure. It
+        number of time periods to consider in the `PowerFlowData` structure. It
         defines the number of columns of the matrices used to store data.
-        Default value = 1.
+        Default value = `1`.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argument "time_steps". Default
-        value = String[].
+        names of the time periods defined by the argument `time_steps`. Default
+        value = `String[]`.
+- `check_connectivity::Bool`:
+        Perform connectivity check on the network matrix. Default value = `true`.
 
 WARNING: functions for the evaluation of the multi-period AC PF still to be implemented.
 """
@@ -515,25 +508,38 @@ end
 
 # DC Power Flow Data based on ABA and BA matrices
 """
-Function for the definition of the PowerFlowData structure given the System
-data, number of time periods to consider and their names.
+    PowerFlowData(
+        ::DCPowerFlow,
+        sys::PSY.System;
+        time_steps::Int = 1,
+        timestep_names::Vector{String} = String[],
+        check_connectivity::Bool = true
+    ) -> ABAPowerFlowData
+
+Creates a `PowerFlowData` structure configured for a stnadard DC power flow calculation, 
+given the [`System`](@extref PowerSystems.System) `sys`, the number of time periods to 
+consider, and their names.
+
 Calling this function will not evaluate the power flows and angles.
-NOTE: use it for DC power flow computations.
+Note that first input is of type [`DCPowerFlow`](@ref): this version is 
+used to solve DC powerflows, and returns an [`ABAPowerFlowData`](@ref) object.
 
 # Arguments:
-- `::DCPowerFlow`:
-        use DCPowerFlow() to store the ABA matrix as power_network_matrix and
-        the BA matrix as aux_network_matrix.
+- [`::DCPowerFlow`](@ref PowerFlows.DCPowerFlow):
+        Run a DC powerflow: internally, store the ABA matrix as `power_network_matrix` and
+        the BA matrix as `aux_network_matrix`.
 - `sys::PSY.System`:
-        container storing the system data to consider in the PowerFlowData
-        structure.
+        A [`System`](@extref PowerSystems.System) object that represents the power 
+        grid under consideration.
 - `time_steps::Int`:
-        number of time periods to consider in the PowerFlowData structure. It
+        number of time periods to consider in the `PowerFlowData` structure. It
         defines the number of columns of the matrices used to store data.
-        Default value = 1.
+        Default value = `1`.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argument "time_steps". Default
-        value = String[].
+        names of the time periods defined by the argument `time_steps`. Default
+        value = `String[]`.
+- `check_connectivity::Bool`:
+        Perform connectivity check on the network matrix. Default value = `true`.
 """
 function PowerFlowData(
     pf::DCPowerFlow,
@@ -561,27 +567,38 @@ end
 
 # DC Power Flow Data with PTDF matrix
 """
-Function for the definition of the PowerFlowData structure given the System
-data, number of time periods to consider and their names.
+    function PowerFlowData(
+        ::PTDFDCPowerFlow,
+        sys::PSY.System;
+        time_steps::Int = 1,
+        timestep_names::Vector{String} = String[]
+    ) -> PTDFPowerFlowData
+
+Creates a `PowerFlowData` structure configured for a Partial Transfer 
+Distribution Factor Matrix DC power flow calculation, given the 
+[`System`](@extref PowerSystems.System) `sys`, the number of time periods to 
+consider, and their names.
+
 Calling this function will not evaluate the power flows and angles.
-NOTE: use it for DC power flow computations.
+Note that first input is of type [`PTDFDCPowerFlow`](@ref): this version is used to solve 
+DC powerflows via the Power Transfer Distribution Factor (PTDF) matrix. This function 
+returns an [`PTDFPowerFlowData`](@ref) object.
 
 # Arguments:
-- `::PTDFDCPowerFlow`:
-        use PTDFDCPowerFlow() to store the PTDF matrix as power_network_matrix
-        and the ABA matrix as aux_network_matrix.
+- [`::PTDFDCPowerFlow`](@ref PowerFlows.PTDFDCPowerFlow):
+        Run a DC powerflow with PTDF matrix: internally, store the PTDF matrix
+        as `power_network_matrix` and the ABA matrix as `aux_network_matrix`.
 - `sys::PSY.System`:
-        container storing the system data to consider in the PowerFlowData
-        structure.
+        A [`System`](@extref PowerSystems.System) object that represents the power 
+        grid under consideration.
 - `time_steps::Int`:
-        number of time periods to consider in the PowerFlowData structure. It
+        number of time periods to consider in the `PowerFlowData` structure. It
         defines the number of columns of the matrices used to store data.
-        Default value = 1.
+        Default value = `1`.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argument "time_steps". Default
-        value = String[].
+        names of the time periods defined by the argument `time_steps`. Default
+        value = `String[]`.
 """
-
 function PowerFlowData(
     pf::PTDFDCPowerFlow,
     sys::PSY.System;
@@ -608,25 +625,39 @@ end
 
 # DC Power Flow Data with virtual PTDF matrix
 """
-Function for the definition of the PowerFlowData structure given the System
-data, number of time periods to consider and their names.
+    function PowerFlowData(
+        ::vPTDFDCPowerFlow,
+        sys::PSY.System;
+        time_steps::Int = 1,
+        timestep_names::Vector{String} = String[]
+    ) -> vPTDFPowerFlowData
+
+Creates a `PowerFlowData` structure configured for a virtual Partial Transfer 
+Distribution Factor Matrix DC power flow calculation, given the 
+[`System`](@extref PowerSystems.System) `sys`, the number of time periods to consider, and 
+their names.
+
 Calling this function will not evaluate the power flows and angles.
-NOTE: use it for DC power flow computations.
+Note that first input is of type [`vPTDFDCPowerFlow`](@ref): this version is used to solve 
+DC powerflows using a virtual Power Transfer Distribution Factor (PTDF) matrix. This 
+function returns a [`vPTDFPowerFlowData`](@ref) object.
+
+For internal usage: generally, do not construct this directly.
 
 # Arguments:
-- `::PTDFDCPowerFlow`:
-        use vPTDFDCPowerFlow() to store the Virtual PTDF matrix as
-        power_network_matrix and the ABA matrix as aux_network_matrix.
+- [`::PTDFDCPowerFlow`](@ref PTDFDCPowerFlow):
+        Run a virtual PTDF powerflow: internally, store the virtual PTDF matrix
+        `power_network_matrix` and the ABA matrix as `aux_network_matrix`.
 - `sys::PSY.System`:
-        container storing the system data to consider in the PowerFlowData
-        structure.
+        A [`System`](@extref PowerSystems.System) object that represents the power 
+        grid under consideration.
 - `time_steps::Int`:
         number of time periods to consider in the PowerFlowData structure. It
         defines the number of columns of the matrices used to store data.
-        Default value = 1.
+        Default value = `1`.
 - `timestep_names::Vector{String}`:
-        names of the time periods defines by the argument "time_steps". Default
-        value = String[].
+        names of the time periods defined by the argument "time_steps". Default
+        value = `String[]`.
 """
 function PowerFlowData(
     pf::vPTDFDCPowerFlow,
@@ -658,7 +689,8 @@ Create an appropriate `PowerFlowContainer` for the given `PowerFlowEvaluationMod
 
 # Arguments:
 - `pfem::PowerFlowEvaluationModel`: power flow model to construct a container for (e.g., `DCPowerFlow()`)
-- `sys::PSY.System`: the system from which to initialize the power flow container
+- `sys::PSY.System`: the [System](@extref PowerSystems.System) from which to initialize the 
+    power flow container
 - `time_steps::Int`: number of time periods to consider (default is `1`)
 - `timestep_names::Vector{String}`: names of the time periods defines by the argument "time_steps". Default value is `String[]`.
 """

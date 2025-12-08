@@ -1,4 +1,3 @@
-const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33, :v35]
 const PSSE_DEFAULT = ""  # Used below in cases where we want to insert an empty field to signify the PSSE default
 const PSSE_INFINITY = 9999.0
 const PSSE_BUS_TYPE_MAP = Dict(
@@ -91,10 +90,53 @@ const PSSE_V35_EXTRA_GROUPS = [
 const PSSE_RAW_BUFFER_SIZEHINT = 1024
 const PSSE_MD_BUFFER_SIZEHINT = 1024
 
+@kwdef struct PSSEExportPowerFlow <: PowerFlowEvaluationModel
+    psse_version::Symbol
+    export_dir::AbstractString
+    name::AbstractString = PSSE_DEFAULT_EXPORT_NAME
+    write_comments::Bool = false
+    overwrite::Bool = false
+end
+
+"""
+    PSSEExportPowerFlow(psse_version::Symbol, export_dir::AbstractString; kwargs...)
+
+An evaluation model for exporting power flow results to PSSE format.
+
+Arguments:
+- `psse_version::Symbol`: The version of PSSE to export to. Must be among `$PSSE_EXPORT_SUPPORTED_VERSIONS`.
+- `export_dir::AbstractString`: The directory where the PSSE files will be exported.
+Optional keyword arguments:
+- `name::AbstractString`: The base name for the exported files. Defaults to `\"$PSSE_DEFAULT_EXPORT_NAME\"`.
+- `write_comments::Bool`: Whether to write comments in the exported files. Defaults to `false`.
+- `overwrite::Bool`: Whether to overwrite the file if it exists already. Defaults to `false`.
+"""
+PSSEExportPowerFlow(psse_version::Symbol, export_dir::AbstractString; kwargs...) =
+    PSSEExportPowerFlow(; psse_version = psse_version, export_dir = export_dir, kwargs...)
+
+get_exporter(pfem::PowerFlowEvaluationModel) = pfem.exporter
+get_exporter(::PSSEExportPowerFlow) = nothing
+
+"""
+Expand a single `PowerFlowEvaluationModel` into its possibly multiple parts for separate
+evaluation. Namely, if `pfem` contains a non-nothing `exporter`, return `[pfem, exporter]`,
+else return `[pfem]`.
+"""
+function flatten_power_flow_evaluation_model(pfem::PowerFlowEvaluationModel)
+    exporter = get_exporter(pfem)
+    return if isnothing(exporter)
+        PowerFlowEvaluationModel[pfem]
+    else
+        PowerFlowEvaluationModel[pfem, exporter]
+    end
+end
+
 """
 Structure to perform an export from a Sienna System, plus optional updates from
-`PowerFlowData`, to the PSS/E format. Construct from a `System` and a PSS/E version, update
-using `update_exporter` with any new data as relevant, and perform the export with
+`PowerFlowData`, to the PSS/E format.
+
+Construct this object from a [`System`](@extref PowerSystems.System) and a PSS/E version, 
+update using `update_exporter` with any new data as relevant, and perform the export with
 `write_export`. Writes a `<name>.raw` file and a `<name>_export_metadata.json` file with
 transformations that had to be made to conform to PSS/E naming rules, which can be parsed by
 PowerSystems.jl to perform a round trip with the names restored.
@@ -103,14 +145,14 @@ PowerSystems.jl to perform a round trip with the names restored.
   - `base_system::PSY.System`: the system to be exported. Later updates may change power
     flow-related values but may not fundamentally alter the system
   - `psse_version::Symbol`: the version of PSS/E to target, must be one of
-    `PSSE_EXPORT_SUPPORTED_VERSIONS`
-  - `write_comments::Bool` = false: whether to add the customary-but-not-in-spec-annotations
+    `$PSSE_EXPORT_SUPPORTED_VERSIONS`
+  - `write_comments::Bool = false`: whether to add the customary-but-not-in-spec-annotations
     after a slash on the first line and at group boundaries
   - `name::AbstractString = "export"`: the base name of the export
   - `step::Any = nothing`: optional step data to append to the base export name. User is
     responsible for updating the step data. If the step data is `nothing`, it is not used;
-    if it is a tuple or vector, it is joined with '_' and concatted; else it is concatted
-    after '_'.
+    if it is a tuple or vector, it is joined with \\_ and concatted; else it is concatted
+    after \\_.
   - `overwrite::Bool = false`: `true` to silently overwrite existing exports, `false` to
     throw an error if existing results are encountered
 """
@@ -187,8 +229,8 @@ Update the `PSSEExporter` with new `data`.
 
 # Arguments:
   - `exporter::PSSEExporter`: the exporter to update
-  - `data::PSY.PowerFlowData`: the new data. Must correspond to the `System` with which the
-    exporter was constructor
+  - `data::PSY.PowerFlowData`: the new data. Must correspond to the 
+    [`System`](@extref PowerSystems.System) with which the exporter was constructed.
 """
 function update_exporter!(exporter::PSSEExporter, data::PowerFlowData)
     # NOTE this relies on exporter.system being a deepcopy of the original system so we're not changing that one here
@@ -208,9 +250,10 @@ Update the `PSSEExporter` with new `data`.
 
 # Arguments:
   - `exporter::PSSEExporter`: the exporter to update
-  - `data::PSY.System`: system containing the new data. Must be fundamentally the same
-  `System` as the one with which the exporter was constructed, just with different values —
-  this is the user's responsibility, we do not exhaustively verify it.
+  - `data::PSY.System`: system containing the new data. Must be fundamentally the same \
+  [`System`](@extref PowerSystems.System) as the one with which the exporter was 
+    constructed, just with different values — this is the user's responsibility, we do not 
+    exhaustively verify it.
 """
 function update_exporter!(exporter::PSSEExporter, data::PSY.System)
     _validate_same_system(exporter.system, data) || throw(
@@ -636,9 +679,9 @@ end
 """
 Try to make an informative one or two character name for the load/generator/etc.
 
-  - "generator-1234-AB" -> "AB"
-  - "123_CT_7" -> "7"
-  - "load1234" -> "34"
+  - generator-1234-AB -> AB
+  - 123\\_CT\\_7 -> 7
+  - load1234 -> 34
 """
 function _first_choice_gen_id(name::String)
     my_split = argmax(length, [split(name, "-"), split(name, "_")])
