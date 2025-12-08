@@ -140,33 +140,18 @@ function initialize_LCCParameters!(
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
 )
+    check_unit_setting(sys)
     lccs = collect(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys))
     isempty(lccs) && return
 
     initialize_LCC_arcs_and_buses!(data, lccs, bus_lookup, reverse_bus_search_map)
 
-    # use the LCCParameter's arc_activepower_flow_{from_to/to_from} field to save the 
-    # power injection at the {rectifier/inverter} respectively.
-
+    # for DC power flow calculations, LCC arc flows are known from quantities from setup.
     for (i, lcc_branch) in enumerate(lccs)
-        data.lcc.arc_activepower_flow_from_to[i, 1] = PSY.get_active_power_flow(lcc_branch)
-        # loss curve is always in natural units.
-        P_dc = with_units_base(sys, PSY.UnitSystem.NATURAL_UNITS) do
-            PSY.get_active_power_flow(lcc_branch)
-        end
-        P_dc == 0.0 && @warn "The active_power_flow field of $(PSY.get_name(lcc_branch)) " *
-              " is zero. This may lead to unexpected results in DC power flow calculations."
-        lcc_loss_curve = PSY.get_loss(lcc_branch)
-        loss_fcn = PSY.get_function_data(lcc_loss_curve)
-        loss_constant = PSY.get_input_at_zero(lcc_loss_curve)
-        loss_constant_float = isnothing(loss_constant) ? 0.0 : loss_constant
-        P_loss = loss_fcn(P_dc) + loss_constant_float
-        P_loss > P_dc && @warn "The loss curve of LCC $(PSY.get_name(lcc_branch)) " *
-              "indicates the losses are greater than the transmitted power $P_dc. " *
-              "Using 0.0 as the inverter received power."
-        # convert back to per unit.
-        inverter_received_power = max((P_dc - P_loss) / PSY.get_base_power(sys), 0.0)
-        data.lcc.arc_activepower_flow_to_from[i, 1] = inverter_received_power
+        # it's an LCC, so flow can't be reversed; rhs will error if it is.
+        (P_from_to, P_to_from, _) = get_hvdc_power_loss(lcc_branch, sys)
+        data.lcc.arc_activepower_flow_from_to[i, :] .= P_from_to
+        data.lcc.arc_activepower_flow_to_from[i, :] .= P_to_from
     end
     return
 end
@@ -177,6 +162,7 @@ function initialize_LCCParameters!(
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
 )
+    check_unit_setting(sys)
     lccs = collect(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys))
     isempty(lccs) && return
 
@@ -231,4 +217,71 @@ function initialize_LCCParameters!(
     lcc_inverter_min_gamma .=
         [x.min for x in PSY.get_inverter_extinction_angle_limits.(lccs)]
     return
+end
+
+"""
+Adjust the power injection/withdrawal vectors to account for all HVDC lines of a given type,
+modeling those HVDC lines as a simple fixed injection/withdrawal at each terminal.
+"""
+function hvdc_fixed_injections!(
+    data::PowerFlowData,
+    hvdc_type::Type{<:PSY.TwoTerminalHVDC},
+    sys::PSY.System,
+    bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
+)
+    for hvdc in PSY.get_available_components(hvdc_type, sys)
+        arc = PSY.get_arc(hvdc)
+        (P_net_from, P_net_to) = get_hvdc_injections(hvdc, sys)
+        from_bus_ix = _get_bus_ix(
+            bus_lookup,
+            reverse_bus_search_map,
+            PSY.get_number(PSY.get_from(arc)),
+        )
+        to_bus_ix = _get_bus_ix(
+            bus_lookup,
+            reverse_bus_search_map,
+            PSY.get_number(PSY.get_to(arc)),
+        )
+        data.bus_hvdc_net_power[from_bus_ix, :] .+= P_net_from
+        data.bus_hvdc_net_power[to_bus_ix, :] .+= P_net_to
+    end
+    return
+end
+
+lcc_fixed_injections!(
+    ::ACPowerFlowData,
+    ::PSY.System,
+    ::Dict{Int, Int},
+    ::Dict{Int, Int},
+) = nothing
+
+lcc_fixed_injections!(
+    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
+    sys::PSY.System,
+    bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
+) = hvdc_fixed_injections!(
+    data,
+    PSY.TwoTerminalLCCLine,
+    sys,
+    bus_lookup,
+    reverse_bus_search_map,
+)
+
+function initialize_generic_hvdc_flows!(
+    data::PowerFlowData,
+    sys::PSY.System,
+    reverse_bus_search_map::Dict{Int, Int},
+)
+    for comp in PSY.get_available_components(PSY.TwoTerminalGenericHVDCLine, sys)
+        (P_dc, P_loss, flow_reversed) = get_hvdc_power_loss(comp, sys)
+        arc = PSY.get_arc(comp)
+        arc_tuple = get_arc_tuple(arc, reverse_bus_search_map)
+        if !flow_reversed
+            data.generic_hvdc_flows[arc_tuple] = (P_dc, P_loss - P_dc)
+        else
+            data.generic_hvdc_flows[arc_tuple] = (P_loss - P_dc, P_dc)
+        end
+    end
 end

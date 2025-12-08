@@ -74,6 +74,13 @@ between network elements (post-reduction) and system objects (pre-reduction).
         "(br, t)" matrix containing the reactive power flows measured at the `to` bus,
         ordered according to "arc_lookup". br: number of arcs, t: number of time
         period.
+- `generic_hvdc_flows::Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}`:
+        dictionary mapping each generic HVDC line (represented as a tuple of the from and to bus
+        numbers) to a tuple of `(P_from_to, P_to_from)` active power flows.
+- `bus_hvdc_net_power::Matrix{Float64}`:
+        "(b, t)" matrix containing the net power injection from all HVDC lines at each bus.
+        b: number of buses, t: number of time period. Only contains HVDCs handled as
+        separate injection/withdrawal pairs: LCCs and generic for DC, or just generic for AC.
 - `timestep_map::Dict{Int, S}`:
         dictionary mapping the number of the time periods (corresponding to the
         column number of the previously mentioned matrices) and their names.
@@ -110,6 +117,8 @@ struct PowerFlowData{
     arc_reactivepower_flow_from_to::Matrix{Float64}
     arc_activepower_flow_to_from::Matrix{Float64}
     arc_reactivepower_flow_to_from::Matrix{Float64}
+    generic_hvdc_flows::Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}
+    bus_hvdc_net_power::Matrix{Float64}
     timestep_map::Dict{Int, String}
     power_network_matrix::M
     aux_network_matrix::N
@@ -342,6 +351,8 @@ function PowerFlowData(
         zeros(n_arcs, n_timesteps), # arc_reactivepower_flow_from_to
         zeros(n_arcs, n_timesteps), # arc_activepower_flow_to_from
         zeros(n_arcs, n_timesteps), # arc_reactivepower_flow_to_from
+        Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}(), # generic_hvdc_flows
+        zeros(n_buses, n_timesteps), # bus_hvdc_net_power
         timestep_map,
         power_network_matrix,
         aux_network_matrix,

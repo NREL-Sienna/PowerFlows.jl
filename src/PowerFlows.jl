@@ -45,12 +45,12 @@ const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
 
 include("psi_utils.jl")
+include("powersystems_utils.jl")
 include("powerflow_types.jl")
 include("lcc_parameters.jl")
 include("PowerFlowData.jl")
 include("lcc_utils.jl")
 include("common.jl")
-include("powersystems_utils.jl")
 include("definitions.jl")
 include("initialize_powerflow_data.jl")
 include("psse_export.jl")
