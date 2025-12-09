@@ -118,7 +118,8 @@ function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
     valid_ix = get_valid_ix(data)
     p_inj =
         data.bus_activepower_injection[valid_ix, time_step] -
-        data.bus_activepower_withdrawals[valid_ix, time_step]
+        data.bus_activepower_withdrawals[valid_ix, time_step] +
+        data.bus_hvdc_net_power[valid_ix, time_step]
     # assumption: the linear algebra backend we're using implements and exports ldiv!
     ldiv!(solver_cache, p_inj)
     data.bus_angles[valid_ix, time_step] .= p_inj
