@@ -231,7 +231,7 @@ function _ac_powerflow(
     time_step::Int64;
     kwargs...,
 )
-    check_reactive_power_limits = get(kwargs, :check_reactive_power_limits, false)
+    check_reactive_power_limits = pf.check_reactive_power_limits
 
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
         converged = _newton_powerflow(pf, data, time_step; kwargs...)
@@ -253,32 +253,18 @@ function _check_q_limit_bounds!(
     within_limits = true
     bus_types = view(data.bus_type, :, time_step)
     for (ix, bt) in enumerate(bus_types)
-        if bt == PSY.ACBusTypes.PV
-            Q_gen = data.bus_reactivepower_injection[ix, time_step]
-        else
-            continue
-        end
+        bt != PSY.ACBusTypes.PV && continue
+        Q_gen = data.bus_reactivepower_injection[ix, time_step]
+
         Q_max = data.bus_reactivepower_bounds[ix, time_step][2]
         Q_min = data.bus_reactivepower_bounds[ix, time_step][1]
 
-        if isnan(Q_min) && isnan(Q_max)
-            @warn "Reactive power limits are uninitialized for bus $(bus_names[ix])" maxlog =
-                PF_MAX_LOG
-            continue
-        end
-
-        if Q_gen <= Q_min
+        if !(Q_min - BOUNDS_TOLERANCE <= Q_gen <= Q_max + BOUNDS_TOLERANCE)
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
             data.bus_reactivepower_injection[ix, time_step] =
-                data.bus_reactivepower_bounds[ix, time_step][1]
-        elseif Q_gen >= Q_max
-            @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
-            within_limits = false
-            data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
-            data.bus_reactivepower_injection[ix, time_step] =
-                data.bus_reactivepower_bounds[ix, time_step][2]
+                clamp(Q_gen, Q_min, Q_max)
         else
             @debug "Within Limits"
         end
