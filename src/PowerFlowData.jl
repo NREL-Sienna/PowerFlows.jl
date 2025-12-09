@@ -136,7 +136,7 @@ are configured for the `ACPowerFlow` method."""
 const ACPowerFlowData = PowerFlowData{
     PNM.AC_Ybus_Matrix,
     <:Union{
-        PNM.DC_ABA_Matrix_Unfactorized,
+        PNM.DC_ABA_Matrix_Factorized,
         Nothing,
     },
 }
@@ -489,7 +489,8 @@ function PowerFlowData(
     neighbors = _calculate_neighbors(power_network_matrix)
 
     if get_robust_power_flow(pf)
-        aux_network_matrix = PNM.ABA_Matrix(sys; network_reductions = network_reductions)
+        aux_network_matrix =
+            PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
     else
         aux_network_matrix = nothing
     end

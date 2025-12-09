@@ -113,17 +113,14 @@ flow as a fallback. This runs a DC powerflow on `data::ACPowerFlowData` for the 
 function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
     # dev note: for DC, we can efficiently solve for all timesteps at once, and we want branch
     # flows. For AC fallback, we're only interested in the current timestep, and no branch flows
-    # PERF: if multi-period and multiple time steps have bad initial guesses,
-    #       we're re-creating this factorization for each time step. Store it inside
-    #       data.aux_network_matrix instead.
-    ABA_matrix = data.aux_network_matrix.data
-    solver_cache = KLULinSolveCache(ABA_matrix)
-    full_factor!(solver_cache, ABA_matrix)
+    solver_cache = get_aux_network_matrix(data).K
+    # factored in constructor; no need to factor again (as long as network is same)
     valid_ix = get_valid_ix(data)
     p_inj =
         data.bus_activepower_injection[valid_ix, time_step] -
         data.bus_activepower_withdrawals[valid_ix, time_step]
-    solve!(solver_cache, p_inj)
+    # assumption: the linear algebra backend we're using implements and exports ldiv!
+    ldiv!(solver_cache, p_inj)
     data.bus_angles[valid_ix, time_step] .= p_inj
 end
 
