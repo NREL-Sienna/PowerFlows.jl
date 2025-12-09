@@ -204,6 +204,10 @@ function _reactive_power_redistribution_pv(
     end
     if length(devices_) == 1
         @debug "Only one generator in the bus"
+        q_limits = PSY.get_reactive_power_limits(first(devices_))
+        if !(q_limits.min - BOUNDS_TOLERANCE <= Q_gen <= q_limits.max + BOUNDS_TOLERANCE)
+            @warn "Reactive power at ref bus is outside limits."
+        end
         PSY.set_reactive_power!(first(devices_), Q_gen)
         return
     elseif length(devices_) > 1
