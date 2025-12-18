@@ -1843,11 +1843,20 @@ function write_to_buffers!(
             NAME = transformer_3w_name_mapping[PSY.get_name(transformer)]
             NAME = _psse_quote_string(NAME)
 
-            if PSY.get_available_primary(transformer) == false
+            primary = PSY.get_available_primary(transformer)
+            secondary = PSY.get_available_secondary(transformer)
+            tertiary = PSY.get_available_tertiary(transformer)
+
+            if !primary && !secondary && !tertiary
+                STAT = 0
+            elseif (!primary && !secondary) || (!primary && !tertiary) ||
+                   (!secondary && !tertiary)
+                STAT = 0
+            elseif !primary
                 STAT = 4
-            elseif PSY.get_available_secondary(transformer) == false
+            elseif !secondary
                 STAT = 2
-            elseif PSY.get_available_tertiary(transformer) == false
+            elseif !tertiary
                 STAT = 3
             else
                 STAT = PSY.get_available(transformer) ? 1 : 0
