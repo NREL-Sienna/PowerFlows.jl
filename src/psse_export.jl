@@ -1740,6 +1740,7 @@ function write_to_buffers!(
             RMA1 = get_ext_key_or_default(transformer, "RMA1")
             RMI1 = get_ext_key_or_default(transformer, "RMI1")
             NTP1 = get_ext_key_or_default(transformer, "NTP1")
+            NTP1 = NTP1 isa Float64 ? Int(NTP1) : NTP1
             NOD1 = get_ext_key_or_default(transformer, "NOD1")
 
             if (transformer isa PSY.PhaseShiftingTransformer)
@@ -1919,7 +1920,7 @@ function write_to_buffers!(
                 RMI = get_ext_key_or_default(transformer, "RMI$prefix")
                 VMA = get_ext_key_or_default(transformer, "VMA$prefix")
                 VMI = get_ext_key_or_default(transformer, "VMI$prefix")
-                NTP = get_ext_key_or_default(transformer, "NTP$prefix")
+                NTP = Int(get_ext_key_or_default(transformer, "NTP$prefix"))
                 TAB = 0
                 for icd_tr in supp_attr
                     if PSY.get_transformer_winding(icd_tr) == category
