@@ -356,8 +356,8 @@ end
 # Parses "1" and "1.0" as 1, returns nothing on "1.5" and "a"
 function _permissive_parse_int(x)
     n = tryparse(Float64, x)
-    isnothing(n) && return nothing
-    (round(n) == n) || return nothing
+    isnothing(n) && return PSSE_DEFAULT
+    (round(n) == n) || return PSSE_DEFAULT
     return Int64(n)
 end
 
@@ -1740,6 +1740,7 @@ function write_to_buffers!(
             RMA1 = get_ext_key_or_default(transformer, "RMA1")
             RMI1 = get_ext_key_or_default(transformer, "RMI1")
             NTP1 = get_ext_key_or_default(transformer, "NTP1")
+            NTP1 = NTP1 isa Float64 ? Int(NTP1) : NTP1
             NOD1 = get_ext_key_or_default(transformer, "NOD1")
 
             if (transformer isa PSY.PhaseShiftingTransformer)
@@ -1842,11 +1843,20 @@ function write_to_buffers!(
             NAME = transformer_3w_name_mapping[PSY.get_name(transformer)]
             NAME = _psse_quote_string(NAME)
 
-            if PSY.get_available_primary(transformer) == false
+            primary = PSY.get_available_primary(transformer)
+            secondary = PSY.get_available_secondary(transformer)
+            tertiary = PSY.get_available_tertiary(transformer)
+
+            if !primary && !secondary && !tertiary
+                STAT = 0
+            elseif (!primary && !secondary) || (!primary && !tertiary) ||
+                   (!secondary && !tertiary)
+                STAT = 0
+            elseif !primary
                 STAT = 4
-            elseif PSY.get_available_secondary(transformer) == false
+            elseif !secondary
                 STAT = 2
-            elseif PSY.get_available_tertiary(transformer) == false
+            elseif !tertiary
                 STAT = 3
             else
                 STAT = PSY.get_available(transformer) ? 1 : 0
@@ -1919,7 +1929,7 @@ function write_to_buffers!(
                 RMI = get_ext_key_or_default(transformer, "RMI$prefix")
                 VMA = get_ext_key_or_default(transformer, "VMA$prefix")
                 VMI = get_ext_key_or_default(transformer, "VMI$prefix")
-                NTP = get_ext_key_or_default(transformer, "NTP$prefix")
+                NTP = Int(get_ext_key_or_default(transformer, "NTP$prefix"))
                 TAB = 0
                 for icd_tr in supp_attr
                     if PSY.get_transformer_winding(icd_tr) == category
