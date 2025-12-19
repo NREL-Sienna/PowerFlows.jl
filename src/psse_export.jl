@@ -356,8 +356,8 @@ end
 # Parses "1" and "1.0" as 1, returns nothing on "1.5" and "a"
 function _permissive_parse_int(x)
     n = tryparse(Float64, x)
-    isnothing(n) && return nothing
-    (round(n) == n) || return nothing
+    isnothing(n) && return PSSE_DEFAULT
+    (round(n) == n) || return PSSE_DEFAULT
     return Int64(n)
 end
 
