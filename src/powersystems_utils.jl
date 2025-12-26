@@ -114,6 +114,12 @@ function must_be_PV(sys::System)
     for gen in PSY.get_available_components(PSY.SynchronousCondenser, sys)
         push!(gen_buses, PSY.get_number(PSY.get_bus(gen)))
     end
+    # Also include HVDC terminal buses.
+    for hvdc in PSY.get_available_components(PSY.TwoTerminalHVDC, sys)
+        arc = PSY.get_arc(hvdc)
+        push!(gen_buses, PSY.get_number(PSY.get_from(arc)))
+        push!(gen_buses, PSY.get_number(PSY.get_to(arc)))
+    end
     return gen_buses
 end
 
