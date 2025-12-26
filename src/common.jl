@@ -306,6 +306,22 @@ function _initialize_bus_data!(
     )
     return
 end
+
+handle_zip_loads!(
+    ::PowerFlowData,
+    ::ACPowerFlow{<:ACPowerFlowSolverType},
+) = nothing
+
+handle_zip_loads!(
+    data::PowerFlowData,
+    ::AbstractDCPowerFlow,
+) = convert_zip_to_constant_power!(
+    data.bus_activepower_withdrawals,
+    data.bus_activepower_constant_current_withdrawals,
+    data.bus_activepower_constant_impedance_withdrawals,
+    1.0,
+) # we could do same for reactive power fields, but it's DC so no need.
+
 ##############################################################################
 # Matrix Methods #############################################################
 
