@@ -1,67 +1,170 @@
 # Solving a Power Flow
 
+In this tutorial, you'll solve power flows on a 5-bus test system using three different solvers and compare their results.
+
 ```@setup basic_tutorial
 using PowerSystemCaseBuilder
 using PowerFlows
 using PowerSystems
+using Logging
 ```
 
-## Step 1: Build a System
+## Building a System
 
-Create a [System](@extref System) object. Here, we'll use a pre-made case from `PowerSystemCaseBuilder.jl`.
+Create a [`System`](@extref PowerSystems.System) from [PowerSystemCaseBuilder.jl](https://github.com/NREL-Sienna/PowerSystemCaseBuilder.jl):
 
 ```@repl basic_tutorial
-sys = build_system(MatpowerTestSystems, "matpower_case5_sys")
+sys = with_logger(SimpleLogger(stderr, Logging.Error)) do
+    build_system(MatpowerTestSystems, "matpower_case5_sys")
+end
 ```
 
-`display(sys)` reveals that this system has 5 [thermal generators](@extref ThermalStandard) and 3 [fixed loads](@extref PowerLoad). We could go check their names, locations, set points with the various getters...but for that, refer to the PowerSystems.jl tutorial. 
+## DC Power Flow
 
-## Step 2: Define the Power Flow
-Initialize a power flow solver. Here, we'll highlight two options, [ACPowerFlow](@ref) and [DCPowerFlow](@ref)
+Create a [`DCPowerFlow`](@ref) solver:
+
 ```@repl basic_tutorial
-pf_ac = ACPowerFlow()
 pf_dc = DCPowerFlow()
 ```
-There's also [PTDFDCPowerFlow](@ref) and [vPTDFDCPowerFlow](@ref).
 
-## Step 3: Solve
+Solve the power flow with [`solve_powerflow`](@ref):
 
 ```@repl basic_tutorial
-ac_results = solve_powerflow(pf_ac, sys)
-dc_results = solve_powerflow(pf_dc, sys)
+dc_results = with_logger(SimpleLogger(stderr, Logging.Error)) do
+    solve_powerflow(pf_dc, sys)
+end
 ```
-Now, we can inspect the power injections/withdrawals at the buses:
+
+Look at the bus results:
+
 ```@repl basic_tutorial
 dc_results["1"]["bus_results"]
+```
+
+Notice that `Vm` is 1.0 for all buses, and `Q_gen` and `Q_load` are 0. This is expected for DC power flow.
+
+Look at the line flows:
+
+```@repl basic_tutorial
+dc_results["1"]["flow_results"]
+```
+
+Notice that `Q_from_to` and `Q_to_from` are zero.
+
+## PTDF DC Power Flow
+
+Create a [`PTDFDCPowerFlow`](@ref) solver:
+
+```@repl basic_tutorial
+pf_ptdf = PTDFDCPowerFlow()
+```
+
+Solve the power flow:
+
+```@repl basic_tutorial
+ptdf_results = with_logger(SimpleLogger(stderr, Logging.Error)) do
+    solve_powerflow(pf_ptdf, sys)
+end
+```
+
+Look at the bus results:
+
+```@repl basic_tutorial
+ptdf_results["1"]["bus_results"]
+```
+
+The results match `DCPowerFlow`. For very large systems, consider [`vPTDFDCPowerFlow`](@ref) instead.
+
+## AC Power Flow
+
+Create an [`ACPowerFlow`](@ref) solver:
+
+```@repl basic_tutorial
+pf_ac = ACPowerFlow()
+```
+
+Solve the power flow:
+
+```@repl basic_tutorial
+ac_results = with_logger(SimpleLogger(stderr, Logging.Error)) do
+    solve_powerflow(pf_ac, sys)
+end
+```
+
+Look at the bus results:
+
+```@repl basic_tutorial
 ac_results["bus_results"]
 ```
 
-Notice that the `P_load` column is exactly the same between the two results: our power flow 
-solves for generator setpoints, and leaves the load numbers alone. The `P_gen` column is 
-*almost* the same between the two results: the differences reflect the choice of model.
+Notice that `Vm` now varies across buses (not all 1.0), and `Q_gen` has non-zero values.
 
-Similarly, we can compare the line flows:
+Look at the line flows:
+
 ```@repl basic_tutorial
-dc_results["1"]["flow_results"]
 ac_results["flow_results"]
 ```
 
-## Step 4 (Optional): Adjust the System and Solve Again
+Notice that `Q_from_to` and `Q_to_from` now show reactive power flows, and `P_from_to` differs from `P_to_from` due to losses.
 
-Let's increase the load at bus 2 and then solve a power flow again. First, inspect the current load:
+## When AC Power Flow Fails
+
+Let's create a system with data issues to see what failure looks like.
+
 ```@repl basic_tutorial
-load_2 = get_component(PowerLoad, sys, "bus2")
+bad_sys = with_logger(SimpleLogger(stderr, Logging.Error)) do
+    build_system(PSITestSystems, "c_sys5_re"; add_forecasts = false)
+end
 ```
 
-The load's active power and its max active power are both `3` (per unit). 
-Let's increase both of those numbers by 10%:
+Remove some lines and increase impedance on another to create an infeasible case:
+
 ```@repl basic_tutorial
-set_max_active_power!(load_2, get_max_active_power(load_2) * 1.10)
-set_active_power!(load_2, get_active_power(load_2) * 1.10)
+remove_component!(Line, bad_sys, "1")
 ```
 
-Now we can solve for this higher load scenario, using the same power flow solvers as before:
 ```@repl basic_tutorial
-new_ac_results = solve_powerflow(pf_ac, sys)
-new_dc_results = solve_powerflow(pf_dc, sys)
+remove_component!(Line, bad_sys, "2")
 ```
+
+```@repl basic_tutorial
+br = get_component(Line, bad_sys, "6")
+```
+
+```@repl basic_tutorial
+set_x!(br, 20.0)
+```
+
+```@repl basic_tutorial
+set_r!(br, 2.0)
+```
+
+Now try to solve:
+
+```@repl basic_tutorial
+bad_results = solve_powerflow(ACPowerFlow(), bad_sys)
+```
+
+The solver returns `nothing` when it fails to converge. You can try a more robust solver, but if the system is truly infeasible, no solver will converge:
+
+```@repl basic_tutorial
+bad_results_robust = solve_powerflow(ACPowerFlow{TrustRegionACPowerFlow}(), bad_sys)
+```
+
+Let's decrease the resistance and impedance on that line and try again:
+```@repl basic_tutorial
+set_x!(br, 0.03)
+set_r!(br, 0.003)
+```
+
+```@repl basic_tutorial
+good_results_robust = solve_powerflow(ACPowerFlow{TrustRegionACPowerFlow}(), bad_sys)
+```
+
+## Summary
+
+| Solver | Voltage Magnitudes | Reactive Power | Use Case |
+|--------|-------------------|----------------|----------|
+| [`DCPowerFlow`](@ref) | All 1.0 | All 0 | Quick screening, large systems |
+| [`PTDFDCPowerFlow`](@ref) | All 1.0 | All 0 | Multiple scenarios, same topology |
+| [`ACPowerFlow`](@ref) | Calculated | Calculated | Accurate analysis, voltage studies |
