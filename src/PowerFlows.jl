@@ -46,6 +46,26 @@ const IS = InfrastructureSystems
 const PSY = PowerSystems
 const PNM = PowerNetworkMatrices
 
+function __init__()
+    # Auto-load optimal BLAS backend if available in the user's environment.
+    # Oddity: PNM's __init__() runs first, so messages there appear before this one.
+    if Sys.isapple()
+        try
+            Base.require(Main, :AppleAccelerate)
+            @info "Using AppleAccelerate BLAS backend for improved performance on macOS."
+        catch
+            # AppleAccelerate not installed - will use default OpenBLAS
+        end
+    elseif Sys.iswindows()
+        try
+            Base.require(Main, :MKL)
+            @info "Using MKL BLAS backend for improved performance on Intel CPUs."
+        catch
+            # MKL not installed - will use default OpenBLAS
+        end
+    end
+end
+
 include("definitions.jl")
 include("psi_utils.jl")
 include("powersystems_utils.jl")
