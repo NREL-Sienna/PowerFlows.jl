@@ -14,9 +14,9 @@ function improve_x0(pf::ACPowerFlow,
     end
     if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
        get_robust_power_flow(pf)
-        dc_powerflow_start!(x0, data, time_step, residual)
+        dc_power_flow_start!(x0, data, time_step, residual)
     else
-        @debug "skipping running DC powerflow fallback"
+        @debug "skipping running DC power_flow fallback"
     end
     residual(x0, time_step)  # re-calculate residual for new x0: might have changed.
 
@@ -64,14 +64,14 @@ end
 """If initial residual is large, run a DC power flow and see if that gives
 a better starting point for angles. If so, then overwrite `x0` with the result of the DC
 power flow. If not, keep the original `x0`."""
-function dc_powerflow_start!(x0::Vector{Float64},
+function dc_power_flow_start!(x0::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
     residual::ACPowerFlowResidual,
 )
-    _dc_powerflow_fallback!(data, time_step)
+    _dc_power_flow_fallback!(data, time_step)
     newx0 = calculate_x0(data, time_step)
-    _pick_better_x0(x0, newx0, time_step, residual, "DC powerflow fallback")
+    _pick_better_x0(x0, newx0, time_step, residual, "DC power_flow fallback")
     return
 end
 
@@ -108,24 +108,24 @@ function _enhanced_flat_start(
 end
 
 """When solving AC power flows, if the initial guess has large residual, we run a DC power 
-flow as a fallback. This runs a DC powerflow on `data::ACPowerFlowData` for the given
+flow as a fallback. This runs a DC power_flow on `data::ACPowerFlowData` for the given
 `time_step`, and writes the solution to `data.bus_angles`."""
-function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
-    # dev note: for DC, we can efficiently solve for all timesteps at once, and we want branch
-    # flows. For AC fallback, we're only interested in the current timestep, and no branch flows
+function _dc_power_flow_fallback!(data::ACPowerFlowData, time_step::Int)
+    # dev note: for DC, we can efficiently solve for all time_steps at once, and we want branch
+    # flows. For AC fallback, we're only interested in the current time_step, and no branch flows
     solver_cache = get_aux_network_matrix(data).K
     # factored in constructor; no need to factor again (as long as network is same)
     valid_ix = get_valid_ix(data)
     p_inj =
-        data.bus_activepower_injection[valid_ix, time_step] -
-        data.bus_activepower_withdrawals[valid_ix, time_step] +
+        data.bus_active_power_injections[valid_ix, time_step] -
+        data.bus_active_power_withdrawals[valid_ix, time_step] +
         data.bus_hvdc_net_power[valid_ix, time_step]
     # assumption: the linear algebra backend we're using implements and exports ldiv!
     ldiv!(solver_cache, p_inj)
     data.bus_angles[valid_ix, time_step] .= p_inj
 end
 
-function initialize_powerflow_variables(pf::ACPowerFlow{T},
+function initialize_power_flow_variables(pf::ACPowerFlow{T},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...,

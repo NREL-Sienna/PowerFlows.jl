@@ -25,7 +25,7 @@ end
     # See issue 210: would be better to compare against external program.
     data = PowerFlowData(DCPowerFlow(), sys; correct_bustypes = true)
     power_injection =
-        deepcopy(data.bus_activepower_injection - data.bus_activepower_withdrawals)
+        deepcopy(data.bus_active_power_injections - data.bus_active_power_withdrawals)
     matrix_data = deepcopy(data.power_network_matrix.K)       # LU factorization of ABA
     aux_network_matrix = deepcopy(data.aux_network_matrix)    # BA matrix
 
@@ -34,7 +34,7 @@ end
         PNM.get_ref_bus_position(data.aux_network_matrix),
     )
     ref_bus_angles = deepcopy(data.bus_angles)
-    ref_flow_values = deepcopy(data.arc_activepower_flow_from_to)
+    ref_flow_values = deepcopy(data.arc_active_power_flow_from_to)
 
     ref_bus_angles[valid_ix] = matrix_data \ power_injection[valid_ix]
     ref_flow_values = transpose(aux_network_matrix.data) * ref_bus_angles
@@ -42,7 +42,7 @@ end
     basepower = PSY.get_base_power(sys)
     arc_lookup = PF.get_arc_lookup(data)
     # CASE 1: ABA and BA matrices
-    solved_data_ABA = solve_powerflow(DCPowerFlow(), sys; correct_bustypes = true)
+    solved_data_ABA = solve_power_flow(DCPowerFlow(), sys; correct_bustypes = true)
     ABA_branch_flows = solved_data_ABA["1"]["flow_results"]
     @test isapprox(
         1 / basepower .* flows_from_dataframe(ABA_branch_flows, arc_lookup, :P_from_to),
@@ -57,7 +57,7 @@ end
     @test isapprox(solved_data_ABA["1"]["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 
     # CASE 2: PTDF and ABA MATRICES
-    solved_data_PTDF = solve_powerflow(PTDFDCPowerFlow(), sys; correct_bustypes = true)
+    solved_data_PTDF = solve_power_flow(PTDFDCPowerFlow(), sys; correct_bustypes = true)
     PTDF_branch_flows = solved_data_PTDF["1"]["flow_results"]
     @test isapprox(
         1 / basepower .* flows_from_dataframe(PTDF_branch_flows, arc_lookup, :P_from_to),
@@ -72,7 +72,7 @@ end
     @test isapprox(solved_data_PTDF["1"]["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 
     # CASE 3: VirtualPTDF and ABA MATRICES
-    solved_data_vPTDF = solve_powerflow(vPTDFDCPowerFlow(), sys; correct_bustypes = true)
+    solved_data_vPTDF = solve_power_flow(vPTDFDCPowerFlow(), sys; correct_bustypes = true)
     vPTDF_branch_flows = solved_data_vPTDF["1"]["flow_results"]
     @test isapprox(
         1 / basepower .* flows_from_dataframe(vPTDF_branch_flows, arc_lookup, :P_from_to),
@@ -93,7 +93,7 @@ end
     @assert get_units_base(sys) == "SYSTEM_BASE" "Test system unit setting changed."
     set_active_power_flow!(lcc, 0.3)
     for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
-        results = solve_powerflow(T(), sys; correct_bustypes = true)
+        results = solve_power_flow(T(), sys; correct_bustypes = true)
         lcc_flow = results["1"]["lcc_results"][1, :P_from_to]
         # 1st arg must be lcc, not sys, else test fails. See issue #1590 in PowerSystems.jl
         with_units_base(lcc, PSY.UnitSystem.NATURAL_UNITS) do

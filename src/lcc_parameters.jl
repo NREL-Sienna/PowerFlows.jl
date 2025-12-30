@@ -7,11 +7,11 @@ struct LCCConverterParameters
     min_thyristor_angle::Vector{Float64}
 end
 
-LCCConverterParameters(n_timesteps::Int, n_lccs::Int) = LCCConverterParameters(
+LCCConverterParameters(n_time_steps::Int, n_lccs::Int) = LCCConverterParameters(
     zeros(Int, n_lccs),
-    zeros(Float64, n_lccs, n_timesteps),
-    zeros(Float64, n_lccs, n_timesteps),
-    zeros(Float64, n_lccs, n_timesteps),
+    zeros(Float64, n_lccs, n_time_steps),
+    zeros(Float64, n_lccs, n_time_steps),
+    zeros(Float64, n_lccs, n_time_steps),
     zeros(Float64, n_lccs),
     zeros(Float64, n_lccs),
 )
@@ -26,10 +26,10 @@ struct LCCParameters
     bus_indices::Vector{Tuple{Int, Int}}
     # (y_ff, y_tt) admittance pairs
     branch_admittances::Vector{Tuple{ComplexF64, ComplexF64}}
-    arc_activepower_flow_from_to::Matrix{Float64}
-    arc_activepower_flow_to_from::Matrix{Float64}
-    arc_reactivepower_flow_from_to::Matrix{Float64}
-    arc_reactivepower_flow_to_from::Matrix{Float64}
+    arc_active_power_flow_from_to::Matrix{Float64}
+    arc_active_power_flow_to_from::Matrix{Float64}
+    arc_reactive_power_flow_from_to::Matrix{Float64}
+    arc_reactive_power_flow_to_from::Matrix{Float64}
     setpoint_at_rectifier::Vector{Bool}
     p_set::Matrix{Float64}
     i_dc::Matrix{Float64}
@@ -38,18 +38,18 @@ struct LCCParameters
     inverter::LCCConverterParameters
 end
 
-LCCParameters(n_timesteps::Int, n_lccs::Int) = LCCParameters(
+LCCParameters(n_time_steps::Int, n_lccs::Int) = LCCParameters(
     fill((-1, -1), n_lccs),
     fill((-1, -1), n_lccs),
     fill((0, 0), n_lccs),
-    zeros(Float64, n_lccs, n_timesteps),
-    zeros(Float64, n_lccs, n_timesteps),
-    zeros(Float64, n_lccs, n_timesteps),
-    zeros(Float64, n_lccs, n_timesteps),
+    zeros(Float64, n_lccs, n_time_steps),
+    zeros(Float64, n_lccs, n_time_steps),
+    zeros(Float64, n_lccs, n_time_steps),
+    zeros(Float64, n_lccs, n_time_steps),
     falses(n_lccs),
-    zeros(Float64, n_lccs, n_timesteps),
-    zeros(Float64, n_lccs, n_timesteps),
+    zeros(Float64, n_lccs, n_time_steps),
+    zeros(Float64, n_lccs, n_time_steps),
     zeros(Float64, n_lccs),
-    LCCConverterParameters(n_timesteps, n_lccs),
-    LCCConverterParameters(n_timesteps, n_lccs),
+    LCCConverterParameters(n_time_steps, n_lccs),
+    LCCConverterParameters(n_time_steps, n_lccs),
 )

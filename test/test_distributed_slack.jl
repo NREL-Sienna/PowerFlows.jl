@@ -44,8 +44,8 @@
             # allocate timeseries data from csv
             prepare_ts_data!(data, time_steps)
 
-            init_p_injections = copy(data.bus_activepower_injection)
-            solve_powerflow!(data; pf = pf)
+            init_p_injections = copy(data.bus_active_power_injections)
+            solve_power_flow!(data; pf = pf)
 
             # check results
             subnetworks = PowerFlows._find_subnetworks_for_reference_buses(
@@ -55,7 +55,7 @@
             for time_step in 1:time_steps
                 _check_distributed_slack_consistency(
                     subnetworks,
-                    data.bus_activepower_injection[:, time_step],
+                    data.bus_active_power_injections[:, time_step],
                     collect(data.bus_slack_participation_factors[:, time_step]),
                     init_p_injections[:, time_step],
                 )
@@ -164,8 +164,8 @@ end
             data = PowerFlowData(pf, sys; correct_bustypes = true)
             original_bus_power, original_gen_power =
                 _system_generation_power(sys, bus_numbers)
-            data_original_bus_power = copy(data.bus_activepower_injection[:, 1])
-            res1 = solve_powerflow(pf, sys; correct_bustypes = true)
+            data_original_bus_power = copy(data.bus_active_power_injections[:, 1])
+            res1 = solve_power_flow(pf, sys; correct_bustypes = true)
 
             bus_slack_participation_factors = zeros(Float64, length(bus_numbers))
             bus_slack_participation_factors[ref_n] .= 1.0
@@ -177,7 +177,7 @@ end
                     bus_slack_participation_factors,
                 ),
             )
-            res2 = solve_powerflow(pf2, sys; correct_bustypes = true)
+            res2 = solve_power_flow(pf2, sys; correct_bustypes = true)
 
             # basic test: if we pass the same slack participation factors as the default ones, the results
             # should be the same

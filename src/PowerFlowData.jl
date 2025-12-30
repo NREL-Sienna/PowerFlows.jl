@@ -30,33 +30,33 @@ between network elements (post-reduction) and system objects (pre-reduction).
 Generally, do not construct this directly. Instead, use one of the later constructors to 
 pass in a `PowerFlowEvaluationModel` and a `PowerSystems.System`. 
 `aux\\_network\\_matrix` and `power\\_network\\_matrix` will then be set to the appropriate 
-matrices that are needed for computing that type of powerflow. See also `ACPowerFlowData`,
+matrices that are needed for computing that type of power_flow. See also `ACPowerFlowData`,
 `ABAPowerFlowData`, `PTDFPowerFlowData`, and `vPTDFPowerFlowData`: 
 these are all aliases for `PowerFlowData{N, M}` with specific `N`,`M`, that are used for 
 the respective type of power flow evaluations.
 
 # Fields:
-- `bus_activepower_injection::Matrix{Float64}`:
+- `bus_active_power_injections::Matrix{Float64}`:
         matrix containing the bus active power injection.
-- `bus_reactivepower_injection::Matrix{Float64}`:
+- `bus_reactive_power_injections::Matrix{Float64}`:
         matrix containing the bus reactive power injection.
-- `bus_activepower_withdrawals::Matrix{Float64}`:
+- `bus_active_power_withdrawals::Matrix{Float64}`:
         matrix containing the bus reactive power withdrawals.
-- `bus_reactivepower_withdrawals::Matrix{Float64}`:
+- `bus_reactive_power_withdrawals::Matrix{Float64}`:
         matrix containing the bus reactive power withdrawals.
-- `bus_activepower_constant_current_withdrawals::Matrix{Float64}`:
+- `bus_active_power_constant_current_withdrawals::Matrix{Float64}`:
         matrix containing the bus active power constant current
         withdrawals.
-- `bus_reactivepower_constant_current_withdrawals::Matrix{Float64}`:
+- `bus_reactive_power_constant_current_withdrawals::Matrix{Float64}`:
         matrix containing the bus reactive power constant current
         withdrawals.
-- `bus_activepower_constant_impedance_withdrawals::Matrix{Float64}`:
+- `bus_active_power_constant_impedance_withdrawals::Matrix{Float64}`:
         matrix containing the bus active power constant impedance
         withdrawals.
-- `bus_reactivepower_constant_impedance_withdrawals::Matrix{Float64}`:  
+- `bus_reactive_power_constant_impedance_withdrawals::Matrix{Float64}`:  
         matrix containing the bus reactive power constant impedance
         withdrawals.
-- `bus_reactivepower_bounds::Matrix{Float64}`:
+- `bus_reactive_power_bounds::Matrix{Float64}`:
         matrix containing upper and lower bounds for the reactive supply at each
         bus at each time period.
 - `bus_type::Matrix{PSY.ACBusTypes}`:
@@ -65,13 +65,13 @@ the respective type of power flow evaluations.
         matrix containing the bus voltage magnitudes.
 - `bus_angles::Matrix{Float64}`:
         matrix containing the bus voltage angles.
-- `arc_activepower_flow_from_to::Matrix{Float64}`:
+- `arc_active_power_flow_from_to::Matrix{Float64}`:
         matrix containing the active power flows measured at the `from` bus.
-- `arc_reactivepower_flow_from_to::Matrix{Float64}`:
+- `arc_reactive_power_flow_from_to::Matrix{Float64}`:
         matrix containing the reactive power flows measured at the `from` bus.
-- `arc_activepower_flow_to_from::Matrix{Float64}`:
+- `arc_active_power_flow_to_from::Matrix{Float64}`:
         matrix containing the active power flows measured at the `to` bus.
-- `arc_reactivepower_flow_to_from::Matrix{Float64}`:
+- `arc_reactive_power_flow_to_from::Matrix{Float64}`:
         matrix containing the reactive power flows measured at the `to` bus.
 - `generic_hvdc_flows::Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}`:
         dictionary mapping each generic HVDC line (represented as a tuple of the from and to bus
@@ -80,7 +80,7 @@ the respective type of power flow evaluations.
         "(b, t)" matrix containing the net power injection from all HVDC lines at each bus.
         b: number of buses, t: number of time period. Only contains HVDCs handled as
         separate injection/withdrawal pairs: LCCs and generic for DC, or just generic for AC.
-- `timestep_map::Dict{Int, S}`:
+- `time_step_map::Dict{Int, S}`:
         dictionary mapping the number of the time periods (corresponding to the
         column number of the previously mentioned matrices) and their names.
 - `power_network_matrix::M`:
@@ -95,15 +95,15 @@ struct PowerFlowData{
     M <: PNM.PowerNetworkMatrix,
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
 } <: PowerFlowContainer
-    bus_activepower_injection::Matrix{Float64}
-    bus_reactivepower_injection::Matrix{Float64}
-    bus_activepower_withdrawals::Matrix{Float64}
-    bus_reactivepower_withdrawals::Matrix{Float64}
-    bus_activepower_constant_current_withdrawals::Matrix{Float64}
-    bus_reactivepower_constant_current_withdrawals::Matrix{Float64}
-    bus_activepower_constant_impedance_withdrawals::Matrix{Float64}
-    bus_reactivepower_constant_impedance_withdrawals::Matrix{Float64}
-    bus_reactivepower_bounds::Matrix{Tuple{Float64, Float64}}
+    bus_active_power_injections::Matrix{Float64}
+    bus_reactive_power_injections::Matrix{Float64}
+    bus_active_power_withdrawals::Matrix{Float64}
+    bus_reactive_power_withdrawals::Matrix{Float64}
+    bus_active_power_constant_current_withdrawals::Matrix{Float64}
+    bus_reactive_power_constant_current_withdrawals::Matrix{Float64}
+    bus_active_power_constant_impedance_withdrawals::Matrix{Float64}
+    bus_reactive_power_constant_impedance_withdrawals::Matrix{Float64}
+    bus_reactive_power_bounds::Matrix{Tuple{Float64, Float64}}
     generator_slack_participation_factors::Union{
         Vector{Dict{Tuple{DataType, String}, Float64}},
         Nothing,
@@ -112,13 +112,13 @@ struct PowerFlowData{
     bus_type::Matrix{PSY.ACBusTypes}
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
-    arc_activepower_flow_from_to::Matrix{Float64}
-    arc_reactivepower_flow_from_to::Matrix{Float64}
-    arc_activepower_flow_to_from::Matrix{Float64}
-    arc_reactivepower_flow_to_from::Matrix{Float64}
+    arc_active_power_flow_from_to::Matrix{Float64}
+    arc_reactive_power_flow_from_to::Matrix{Float64}
+    arc_active_power_flow_to_from::Matrix{Float64}
+    arc_reactive_power_flow_to_from::Matrix{Float64}
     generic_hvdc_flows::Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}
     bus_hvdc_net_power::Matrix{Float64}
-    timestep_map::Dict{Int, String}
+    time_step_map::Dict{Int, String}
     power_network_matrix::M
     aux_network_matrix::N
     neighbors::Vector{Set{Int}}
@@ -167,19 +167,19 @@ const ABAPowerFlowData = PowerFlowData{
 get_metadata_matrix(pfd::ABAPowerFlowData) = pfd.aux_network_matrix
 
 # true getters for fields:
-get_bus_activepower_injection(pfd::PowerFlowData) = pfd.bus_activepower_injection
-get_bus_reactivepower_injection(pfd::PowerFlowData) = pfd.bus_reactivepower_injection
-get_bus_activepower_withdrawals(pfd::PowerFlowData) = pfd.bus_activepower_withdrawals
-get_bus_activepower_constant_current_withdrawals(pfd::PowerFlowData) =
-    pfd.bus_activepower_constant_current_withdrawals
-get_bus_activepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
-    pfd.bus_activepower_constant_impedance_withdrawals
-get_bus_reactivepower_withdrawals(pfd::PowerFlowData) = pfd.bus_reactivepower_withdrawals
-get_bus_reactivepower_constant_current_withdrawals(pfd::PowerFlowData) =
-    pfd.bus_reactivepower_constant_current_withdrawals
-get_bus_reactivepower_constant_impedance_withdrawals(pfd::PowerFlowData) =
-    pfd.bus_reactivepower_constant_impedance_withdrawals
-get_bus_reactivepower_bounds(pfd::PowerFlowData) = pfd.bus_reactivepower_bounds
+get_bus_active_power_injectionss(pfd::PowerFlowData) = pfd.bus_active_power_injections
+get_bus_reactive_power_injectionss(pfd::PowerFlowData) = pfd.bus_reactive_power_injections
+get_bus_active_power_withdrawals(pfd::PowerFlowData) = pfd.bus_active_power_withdrawals
+get_bus_active_power_constant_current_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_active_power_constant_current_withdrawals
+get_bus_active_power_constant_impedance_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_active_power_constant_impedance_withdrawals
+get_bus_reactive_power_withdrawals(pfd::PowerFlowData) = pfd.bus_reactive_power_withdrawals
+get_bus_reactive_power_constant_current_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_reactive_power_constant_current_withdrawals
+get_bus_reactive_power_constant_impedance_withdrawals(pfd::PowerFlowData) =
+    pfd.bus_reactive_power_constant_impedance_withdrawals
+get_bus_reactive_power_bounds(pfd::PowerFlowData) = pfd.bus_reactive_power_bounds
 get_bus_slack_participation_factors(pfd::PowerFlowData) =
     pfd.bus_slack_participation_factors
 get_generator_slack_participation_factors(pfd::PowerFlowData) =
@@ -187,15 +187,15 @@ get_generator_slack_participation_factors(pfd::PowerFlowData) =
 get_bus_type(pfd::PowerFlowData) = pfd.bus_type
 get_bus_magnitude(pfd::PowerFlowData) = pfd.bus_magnitude
 get_bus_angles(pfd::PowerFlowData) = pfd.bus_angles
-get_arc_activepower_flow_from_to(pfd::PowerFlowData) =
-    pfd.arc_activepower_flow_from_to
-get_arc_reactivepower_flow_from_to(pfd::PowerFlowData) =
-    pfd.arc_reactivepower_flow_from_to
-get_arc_activepower_flow_to_from(pfd::PowerFlowData) =
-    pfd.arc_activepower_flow_to_from
-get_arc_reactivepower_flow_to_from(pfd::PowerFlowData) =
-    pfd.arc_reactivepower_flow_to_from
-get_timestep_map(pfd::PowerFlowData) = pfd.timestep_map
+get_arc_active_power_flow_from_to(pfd::PowerFlowData) =
+    pfd.arc_active_power_flow_from_to
+get_arc_reactive_power_flow_from_to(pfd::PowerFlowData) =
+    pfd.arc_reactive_power_flow_from_to
+get_arc_active_power_flow_to_from(pfd::PowerFlowData) =
+    pfd.arc_active_power_flow_to_from
+get_arc_reactive_power_flow_to_from(pfd::PowerFlowData) =
+    pfd.arc_reactive_power_flow_to_from
+get_time_step_map(pfd::PowerFlowData) = pfd.time_step_map
 get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
 get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
 get_neighbor(pfd::PowerFlowData) = pfd.neighbors
@@ -275,30 +275,30 @@ bus_count(::DCPowerFlow,
     length(PNM.get_bus_axis(aux_network_matrix))
 
 """
-Sets the two `PowerNetworkMatrix` fields and a few others (`timesteps`, `timestep_map`), 
+Sets the two `PowerNetworkMatrix` fields and a few others (`time_steps`, `time_step_map`), 
 then creates arrays of default values (usually zeros) for the rest.
 """
 function PowerFlowData(
     pf::T,
     power_network_matrix::M,
     aux_network_matrix::N,
-    n_timesteps::Int,
+    n_time_steps::Int,
     n_lccs::Int;
-    timestep_names::Vector{String} = String[],
+    time_step_names::Vector{String} = String[],
     neighbors = Vector{Set{Int}}(),
 ) where {
     T <: PowerFlowEvaluationModel,
     M <: PNM.PowerNetworkMatrix,
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
 }
-    if n_timesteps != 0
-        if length(timestep_names) == 0
-            timestep_names = [string(i) for i in 1:n_timesteps]
-        elseif length(timestep_names) != n_timesteps
-            error("timestep_names field must have same length as n_timesteps")
+    if n_time_steps != 0
+        if length(time_step_names) == 0
+            time_step_names = [string(i) for i in 1:n_time_steps]
+        elseif length(time_step_names) != n_time_steps
+            error("time_step_names field must have same length as n_time_steps")
         end
     end
-    timestep_map = Dict(zip([i for i in 1:n_timesteps], timestep_names))
+    time_step_map = Dict(zip([i for i in 1:n_time_steps], time_step_names))
 
     n_buses = bus_count(pf, power_network_matrix, aux_network_matrix)
     n_arcs = arc_count(pf, power_network_matrix, aux_network_matrix)
@@ -306,75 +306,75 @@ function PowerFlowData(
     calculate_voltage_stability_factors = get_calculate_voltage_stability_factors(pf)
     if !isnothing(get_slack_participation_factors(pf))
         empty_slack_participation_factors = Dict{Tuple{DataType, String}, Float64}[]
-        sizehint!(empty_slack_participation_factors, n_timesteps)
+        sizehint!(empty_slack_participation_factors, n_time_steps)
     else
         empty_slack_participation_factors = nothing
     end
 
-    lcc_parameters = LCCParameters(n_timesteps, n_lccs)
+    lcc_parameters = LCCParameters(n_time_steps, n_lccs)
     return PowerFlowData(
-        zeros(n_buses, n_timesteps), # bus_activepower_injection
-        zeros(n_buses, n_timesteps), # bus_reactivepower_injection
-        zeros(n_buses, n_timesteps), # bus_activepower_withdrawals
-        zeros(n_buses, n_timesteps), # bus_reactivepower_withdrawals
-        zeros(n_buses, n_timesteps), # bus_activepower_constant_current_withdrawals
-        zeros(n_buses, n_timesteps), # bus_reactivepower_constant_current_withdrawals
-        zeros(n_buses, n_timesteps), # bus_activepower_constant_impedance_withdrawals
-        zeros(n_buses, n_timesteps), # bus_reactivepower_constant_impedance_withdrawals
-        fill((-Inf, Inf), (n_buses, n_timesteps)), # bus_reactivepower_bounds
+        zeros(n_buses, n_time_steps), # bus_active_power_injections
+        zeros(n_buses, n_time_steps), # bus_reactive_power_injections
+        zeros(n_buses, n_time_steps), # bus_active_power_withdrawals
+        zeros(n_buses, n_time_steps), # bus_reactive_power_withdrawals
+        zeros(n_buses, n_time_steps), # bus_active_power_constant_current_withdrawals
+        zeros(n_buses, n_time_steps), # bus_reactive_power_constant_current_withdrawals
+        zeros(n_buses, n_time_steps), # bus_active_power_constant_impedance_withdrawals
+        zeros(n_buses, n_time_steps), # bus_reactive_power_constant_impedance_withdrawals
+        fill((-Inf, Inf), (n_buses, n_time_steps)), # bus_reactive_power_bounds
         empty_slack_participation_factors, # generator_slack_participation_factors
-        spzeros(n_buses, n_timesteps), # bus_slack_participation_factors
-        fill(PSY.ACBusTypes.PQ, (n_buses, n_timesteps)), # bus_type
-        ones(n_buses, n_timesteps), # bus_magnitude
-        zeros(n_buses, n_timesteps), # bus_angles
-        zeros(n_arcs, n_timesteps), # arc_activepower_flow_from_to
-        zeros(n_arcs, n_timesteps), # arc_reactivepower_flow_from_to
-        zeros(n_arcs, n_timesteps), # arc_activepower_flow_to_from
-        zeros(n_arcs, n_timesteps), # arc_reactivepower_flow_to_from
+        spzeros(n_buses, n_time_steps), # bus_slack_participation_factors
+        fill(PSY.ACBusTypes.PQ, (n_buses, n_time_steps)), # bus_type
+        ones(n_buses, n_time_steps), # bus_magnitude
+        zeros(n_buses, n_time_steps), # bus_angles
+        zeros(n_arcs, n_time_steps), # arc_active_power_flow_from_to
+        zeros(n_arcs, n_time_steps), # arc_reactive_power_flow_from_to
+        zeros(n_arcs, n_time_steps), # arc_active_power_flow_to_from
+        zeros(n_arcs, n_time_steps), # arc_reactive_power_flow_to_from
         Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}(), # generic_hvdc_flows
-        zeros(n_buses, n_timesteps), # bus_hvdc_net_power
-        timestep_map,
+        zeros(n_buses, n_time_steps), # bus_hvdc_net_power
+        time_step_map,
         power_network_matrix,
         aux_network_matrix,
         neighbors,
-        falses(n_timesteps), # converged
-        calculate_loss_factors ? zeros(n_buses, n_timesteps) : nothing, # loss_factors
+        falses(n_time_steps), # converged
+        calculate_loss_factors ? zeros(n_buses, n_time_steps) : nothing, # loss_factors
         calculate_loss_factors,
-        calculate_voltage_stability_factors ? zeros(n_buses, n_timesteps) : nothing, # voltage_stability_factors
+        calculate_voltage_stability_factors ? zeros(n_buses, n_time_steps) : nothing, # voltage_stability_factors
         calculate_voltage_stability_factors,
         lcc_parameters,
     )
 end
 
-function get_bus_activepower_total_withdrawals(pfd::PowerFlowData, ix::Int, time_step::Int)
-    return pfd.bus_activepower_withdrawals[ix, time_step] +
-           pfd.bus_activepower_constant_current_withdrawals[ix, time_step] *
+function get_bus_active_power_total_withdrawals(pfd::PowerFlowData, ix::Int, time_step::Int)
+    return pfd.bus_active_power_withdrawals[ix, time_step] +
+           pfd.bus_active_power_constant_current_withdrawals[ix, time_step] *
            pfd.bus_magnitude[ix, time_step] +
-           pfd.bus_activepower_constant_impedance_withdrawals[ix, time_step] *
+           pfd.bus_active_power_constant_impedance_withdrawals[ix, time_step] *
            pfd.bus_magnitude[ix, time_step]^2
 end
 
-function get_bus_reactivepower_total_withdrawals(
+function get_bus_reactive_power_total_withdrawals(
     pfd::PowerFlowData,
     ix::Int,
     time_step::Int,
 )
-    return pfd.bus_reactivepower_withdrawals[ix, time_step] +
-           pfd.bus_reactivepower_constant_current_withdrawals[ix, time_step] *
+    return pfd.bus_reactive_power_withdrawals[ix, time_step] +
+           pfd.bus_reactive_power_constant_current_withdrawals[ix, time_step] *
            pfd.bus_magnitude[ix, time_step] +
-           pfd.bus_reactivepower_constant_impedance_withdrawals[ix, time_step] *
+           pfd.bus_reactive_power_constant_impedance_withdrawals[ix, time_step] *
            pfd.bus_magnitude[ix, time_step]^2
 end
 
 function clear_injection_data!(pfd::PowerFlowData)
-    pfd.bus_activepower_injection .= 0.0
-    pfd.bus_reactivepower_injection .= 0.0
-    pfd.bus_activepower_withdrawals .= 0.0
-    pfd.bus_activepower_constant_current_withdrawals .= 0.0
-    pfd.bus_activepower_constant_impedance_withdrawals .= 0.0
-    pfd.bus_reactivepower_withdrawals .= 0.0
-    pfd.bus_reactivepower_constant_current_withdrawals .= 0.0
-    pfd.bus_reactivepower_constant_impedance_withdrawals .= 0.0
+    pfd.bus_active_power_injections .= 0.0
+    pfd.bus_reactive_power_injections .= 0.0
+    pfd.bus_active_power_withdrawals .= 0.0
+    pfd.bus_active_power_constant_current_withdrawals .= 0.0
+    pfd.bus_active_power_constant_impedance_withdrawals .= 0.0
+    pfd.bus_reactive_power_withdrawals .= 0.0
+    pfd.bus_reactive_power_constant_current_withdrawals .= 0.0
+    pfd.bus_reactive_power_constant_impedance_withdrawals .= 0.0
     return
 end
 
@@ -410,13 +410,13 @@ function network_reduction_message(
     return
 end
 
-function make_and_initialize_powerflow_data(
+function make_and_initialize_power_flow_data(
     pf::PowerFlowEvaluationModel,
     sys::PSY.System,
     power_network_matrix::M,
     aux_network_matrix::N;
     time_steps::Int = 1,
-    timestep_names::Vector{String} = String[],
+    time_step_names::Vector{String} = String[],
     neighbors = Vector{Set{Int}}(),
     correct_bustypes::Bool = false,
 ) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
@@ -428,11 +428,11 @@ function make_and_initialize_powerflow_data(
         aux_network_matrix,
         time_steps,
         n_lccs;
-        timestep_names = timestep_names,
+        time_step_names = time_step_names,
         neighbors = neighbors,
     )
     @assert length(data.lcc.setpoint_at_rectifier) == n_lccs
-    initialize_powerflow_data!(data, pf, sys; correct_bustypes = correct_bustypes)
+    initialize_power_flow_data!(data, pf, sys; correct_bustypes = correct_bustypes)
     return data
 end
 
@@ -441,7 +441,7 @@ end
         pf::ACPowerFlow{<:ACPowerFlowSolverType},
         sys::PSY.System;
         time_steps::Int = 1,
-        timestep_names::Vector{String} = String[],
+        time_step_names::Vector{String} = String[],
         check_connectivity::Bool = true
     ) -> ACPowerFlowData{<:ACPowerFlowSolverType} 
 
@@ -451,7 +451,7 @@ consider, and their names.
 
 Calling this function will not evaluate the power flows and angles.
 Note that first input is of type [`ACPowerFlow`](@ref): this version is used to solve 
-AC powerflows, and returns an [`ACPowerFlowData`](@ref) object.
+AC power_flows, and returns an [`ACPowerFlowData`](@ref) object.
 
 # Arguments:
 - [`pf::ACPowerFlow`](@ref ACPowerFlow):
@@ -463,7 +463,7 @@ AC powerflows, and returns an [`ACPowerFlowData`](@ref) object.
         number of time periods to consider in the `PowerFlowData` structure. It
         defines the number of columns of the matrices used to store data.
         Default value = `1`.
-- `timestep_names::Vector{String}`:
+- `time_step_names::Vector{String}`:
         names of the time periods defined by the argument `time_steps`. Default
         value = `String[]`.
 - `check_connectivity::Bool`:
@@ -476,7 +476,7 @@ function PowerFlowData(
     sys::PSY.System;
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
-    timestep_names::Vector{String} = String[],
+    time_step_names::Vector{String} = String[],
     correct_bustypes::Bool = false,
 )
     network_reduction_message(network_reductions, pf)
@@ -495,13 +495,13 @@ function PowerFlowData(
         aux_network_matrix = nothing
     end
 
-    return make_and_initialize_powerflow_data(
+    return make_and_initialize_power_flow_data(
         pf,
         sys,
         power_network_matrix,
         aux_network_matrix;
         time_steps = time_steps,
-        timestep_names = timestep_names,
+        time_step_names = time_step_names,
         neighbors = neighbors,
         correct_bustypes = correct_bustypes,
     )
@@ -513,7 +513,7 @@ end
         ::DCPowerFlow,
         sys::PSY.System;
         time_steps::Int = 1,
-        timestep_names::Vector{String} = String[],
+        time_step_names::Vector{String} = String[],
         check_connectivity::Bool = true
     ) -> ABAPowerFlowData
 
@@ -523,11 +523,11 @@ consider, and their names.
 
 Calling this function will not evaluate the power flows and angles.
 Note that first input is of type [`DCPowerFlow`](@ref): this version is 
-used to solve DC powerflows, and returns an [`ABAPowerFlowData`](@ref) object.
+used to solve DC power_flows, and returns an [`ABAPowerFlowData`](@ref) object.
 
 # Arguments:
 - [`::DCPowerFlow`](@ref PowerFlows.DCPowerFlow):
-        Run a DC powerflow: internally, store the ABA matrix as `power_network_matrix` and
+        Run a DC power_flow: internally, store the ABA matrix as `power_network_matrix` and
         the BA matrix as `aux_network_matrix`.
 - `sys::PSY.System`:
         A [`System`](@extref PowerSystems.System) object that represents the power 
@@ -536,7 +536,7 @@ used to solve DC powerflows, and returns an [`ABAPowerFlowData`](@ref) object.
         number of time periods to consider in the `PowerFlowData` structure. It
         defines the number of columns of the matrices used to store data.
         Default value = `1`.
-- `timestep_names::Vector{String}`:
+- `time_step_names::Vector{String}`:
         names of the time periods defined by the argument `time_steps`. Default
         value = `String[]`.
 - `check_connectivity::Bool`:
@@ -547,7 +547,7 @@ function PowerFlowData(
     sys::PSY.System;
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
-    timestep_names::Vector{String} = String[],
+    time_step_names::Vector{String} = String[],
     correct_bustypes = false,
 )
     network_reduction_message(network_reductions, DCPowerFlow())
@@ -555,13 +555,13 @@ function PowerFlowData(
     power_network_matrix =
         PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
     aux_network_matrix = PNM.BA_Matrix(sys; network_reductions = network_reductions)
-    return make_and_initialize_powerflow_data(
+    return make_and_initialize_power_flow_data(
         pf,
         sys,
         power_network_matrix,
         aux_network_matrix;
         time_steps = time_steps,
-        timestep_names = timestep_names,
+        time_step_names = time_step_names,
         correct_bustypes = correct_bustypes,
     )
 end
@@ -572,7 +572,7 @@ end
         ::PTDFDCPowerFlow,
         sys::PSY.System;
         time_steps::Int = 1,
-        timestep_names::Vector{String} = String[]
+        time_step_names::Vector{String} = String[]
     ) -> PTDFPowerFlowData
 
 Creates a `PowerFlowData` structure configured for a Partial Transfer 
@@ -582,12 +582,12 @@ consider, and their names.
 
 Calling this function will not evaluate the power flows and angles.
 Note that first input is of type [`PTDFDCPowerFlow`](@ref): this version is used to solve 
-DC powerflows via the Power Transfer Distribution Factor (PTDF) matrix. This function 
+DC power_flows via the Power Transfer Distribution Factor (PTDF) matrix. This function 
 returns an [`PTDFPowerFlowData`](@ref) object.
 
 # Arguments:
 - [`::PTDFDCPowerFlow`](@ref PowerFlows.PTDFDCPowerFlow):
-        Run a DC powerflow with PTDF matrix: internally, store the PTDF matrix
+        Run a DC power_flow with PTDF matrix: internally, store the PTDF matrix
         as `power_network_matrix` and the ABA matrix as `aux_network_matrix`.
 - `sys::PSY.System`:
         A [`System`](@extref PowerSystems.System) object that represents the power 
@@ -596,7 +596,7 @@ returns an [`PTDFPowerFlowData`](@ref) object.
         number of time periods to consider in the `PowerFlowData` structure. It
         defines the number of columns of the matrices used to store data.
         Default value = `1`.
-- `timestep_names::Vector{String}`:
+- `time_step_names::Vector{String}`:
         names of the time periods defined by the argument `time_steps`. Default
         value = `String[]`.
 """
@@ -605,7 +605,7 @@ function PowerFlowData(
     sys::PSY.System;
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
-    timestep_names::Vector{String} = String[],
+    time_step_names::Vector{String} = String[],
     correct_bustypes = false,
 )
     network_reduction_message(network_reductions, PTDFDCPowerFlow())
@@ -613,13 +613,13 @@ function PowerFlowData(
     power_network_matrix = PNM.PTDF(sys; network_reductions = network_reductions)
     aux_network_matrix =
         PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
-    return make_and_initialize_powerflow_data(
+    return make_and_initialize_power_flow_data(
         pf,
         sys,
         power_network_matrix,
         aux_network_matrix;
         time_steps = time_steps,
-        timestep_names = timestep_names,
+        time_step_names = time_step_names,
         correct_bustypes = correct_bustypes,
     )
 end
@@ -630,7 +630,7 @@ end
         ::vPTDFDCPowerFlow,
         sys::PSY.System;
         time_steps::Int = 1,
-        timestep_names::Vector{String} = String[]
+        time_step_names::Vector{String} = String[]
     ) -> vPTDFPowerFlowData
 
 Creates a `PowerFlowData` structure configured for a virtual Partial Transfer 
@@ -640,14 +640,14 @@ their names.
 
 Calling this function will not evaluate the power flows and angles.
 Note that first input is of type [`vPTDFDCPowerFlow`](@ref): this version is used to solve 
-DC powerflows using a virtual Power Transfer Distribution Factor (PTDF) matrix. This 
+DC power_flows using a virtual Power Transfer Distribution Factor (PTDF) matrix. This 
 function returns a [`vPTDFPowerFlowData`](@ref) object.
 
 For internal usage: generally, do not construct this directly.
 
 # Arguments:
 - [`::PTDFDCPowerFlow`](@ref PTDFDCPowerFlow):
-        Run a virtual PTDF powerflow: internally, store the virtual PTDF matrix
+        Run a virtual PTDF power_flow: internally, store the virtual PTDF matrix
         `power_network_matrix` and the ABA matrix as `aux_network_matrix`.
 - `sys::PSY.System`:
         A [`System`](@extref PowerSystems.System) object that represents the power 
@@ -656,7 +656,7 @@ For internal usage: generally, do not construct this directly.
         number of time periods to consider in the PowerFlowData structure. It
         defines the number of columns of the matrices used to store data.
         Default value = `1`.
-- `timestep_names::Vector{String}`:
+- `time_step_names::Vector{String}`:
         names of the time periods defined by the argument "time_steps". Default
         value = `String[]`.
 """
@@ -665,7 +665,7 @@ function PowerFlowData(
     sys::PSY.System;
     network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
     time_steps::Int = 1,
-    timestep_names::Vector{String} = String[],
+    time_step_names::Vector{String} = String[],
     correct_bustypes = false)
     network_reduction_message(network_reductions, vPTDFDCPowerFlow())
 
@@ -674,13 +674,13 @@ function PowerFlowData(
     aux_network_matrix =
         PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
 
-    return make_and_initialize_powerflow_data(
+    return make_and_initialize_power_flow_data(
         pf,
         sys,
         power_network_matrix,
         aux_network_matrix;
         time_steps = time_steps,
-        timestep_names = timestep_names,
+        time_step_names = time_step_names,
         correct_bustypes = correct_bustypes,
     )
 end
@@ -693,7 +693,7 @@ Create an appropriate `PowerFlowContainer` for the given `PowerFlowEvaluationMod
 - `sys::PSY.System`: the [System](@extref PowerSystems.System) from which to initialize the 
     power flow container
 - `time_steps::Int`: number of time periods to consider (default is `1`)
-- `timestep_names::Vector{String}`: names of the time periods defines by the argument "time_steps". Default value is `String[]`.
+- `time_step_names::Vector{String}`: names of the time periods defines by the argument "time_steps". Default value is `String[]`.
 """
 function make_power_flow_container end
 
