@@ -257,7 +257,8 @@ function _set_state_variables_at_bus!(
         data.bus_active_power_constant_impedance_withdrawals[ix, time_step] *
         (vm_1^2 - vm_2^2)
     Q_net[ix] +=
-        data.bus_reactive_power_constant_current_withdrawals[ix, time_step] * (vm_1 - vm_2) +
+        data.bus_reactive_power_constant_current_withdrawals[ix, time_step] *
+        (vm_1 - vm_2) +
         data.bus_reactive_power_constant_impedance_withdrawals[ix, time_step] *
         (vm_1^2 - vm_2^2)
     # set the active and reactive power injections at the bus
