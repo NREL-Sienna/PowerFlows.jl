@@ -34,7 +34,7 @@ const PF = PowerFlows
 # used to be public, no longer: import here so we can use in tests
 import PowerFlows: PowerFlowData
 import PowerFlows: ACPowerFlowData, PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData
-import PowerFlows: solve_powerflow!, write_results
+import PowerFlows: solve_power_flow!, write_results
 
 const BASE_DIR = dirname(dirname(Base.find_package("PowerFlows")))
 const TEST_DATA_DIR = joinpath(
@@ -53,7 +53,7 @@ include("test_utils/common.jl")
 include("test_utils/psse_results_compare.jl")
 include("test_utils/penalty_factors_brute_force.jl")
 include("test_utils/legacy_pf.jl")
-include("test_utils/validate_reduced_powerflow.jl")
+include("test_utils/validate_reduced_power_flow.jl")
 
 const AC_SOLVERS_TO_TEST = (
     LUACPowerFlow,

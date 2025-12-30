@@ -481,8 +481,8 @@ function set_branch_flows_for_dict!(
         @assert arc in keys(arc_lookup) "disagreement between keys of " *
                                         "map and arc axis at arc $arc"
         arc_ix = arc_lookup[arc]
-        p_branch = data.arc_activepower_flow_from_to[arc_ix, time_step]
-        q_branch = data.arc_reactivepower_flow_from_to[arc_ix, time_step]
+        p_branch = data.arc_active_power_flow_from_to[arc_ix, time_step]
+        q_branch = data.arc_reactive_power_flow_from_to[arc_ix, time_step]
         # TODO: now br could be a BranchesParallel or a ThreeWindingTransformerWinding object.
         set_power_flow!(br, p_branch + im * q_branch)
     end
@@ -491,7 +491,7 @@ end
 """
 Updates system voltages and powers with power flow results
 """
-function write_powerflow_solution!(
+function write_power_flow_solution!(
     sys::PSY.System,
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     data::ACPowerFlowData,
@@ -527,11 +527,11 @@ function write_powerflow_solution!(
                 PSY.set_bustype!(bus, bustype)
             end
             if bustype == PSY.ACBusTypes.REF && !pf.skip_redistribution
-                P_gen = data.bus_activepower_injection[ix, time_step]
-                Q_gen = data.bus_reactivepower_injection[ix, time_step]
+                P_gen = data.bus_active_power_injections[ix, time_step]
+                Q_gen = data.bus_reactive_power_injections[ix, time_step]
                 _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations, gspf)
             elseif bustype == PSY.ACBusTypes.PV
-                Q_gen = data.bus_reactivepower_injection[ix, time_step]
+                Q_gen = data.bus_reactive_power_injections[ix, time_step]
                 bus.angle = data.bus_angles[ix, time_step]
                 # If the PV bus has a nonzero slack participation factor,
                 # then not only reactive power but also active power could have been changed
@@ -539,7 +539,7 @@ function write_powerflow_solution!(
                 # active and reactive power redistribution step as for the REF bus.
                 if data.bus_slack_participation_factors[ix, time_step] != 0.0 &&
                    !pf.skip_redistribution
-                    P_gen = data.bus_activepower_injection[ix, time_step]
+                    P_gen = data.bus_active_power_injections[ix, time_step]
                     _power_redistribution_ref(
                         sys,
                         P_gen,
@@ -596,7 +596,7 @@ function write_powerflow_solution!(
             )
             PSY.set_active_power_flow!(
                 lcc,
-                data.lcc.arc_activepower_flow_from_to[i, time_step],
+                data.lcc.arc_active_power_flow_from_to[i, time_step],
             )
         end
     end
@@ -665,8 +665,8 @@ function lcc_results_dataframe(
 )
     get_lcc_count(data) == 0 && return empty_lcc_results()
 
-    P_from_to = data.lcc.arc_activepower_flow_from_to[:, time_step]
-    P_to_from = data.lcc.arc_activepower_flow_to_from[:, time_step]
+    P_from_to = data.lcc.arc_active_power_flow_from_to[:, time_step]
+    P_to_from = data.lcc.arc_active_power_flow_to_from[:, time_step]
     n_lccs = get_lcc_count(data)
     return DataFrames.DataFrame(;
         line_name = lcc_names,
@@ -706,10 +706,10 @@ function lcc_results_dataframe(
     inverter_tap = data.lcc.inverter.tap[:, time_step]
     rectifier_angle = data.lcc.rectifier.thyristor_angle[:, time_step]
     inverter_angle = data.lcc.inverter.thyristor_angle[:, time_step]
-    P_from_to = data.lcc.arc_activepower_flow_from_to[:, time_step]
-    P_to_from = data.lcc.arc_activepower_flow_to_from[:, time_step]
-    Q_from_to = data.lcc.arc_reactivepower_flow_from_to[:, time_step]
-    Q_to_from = data.lcc.arc_reactivepower_flow_to_from[:, time_step]
+    P_from_to = data.lcc.arc_active_power_flow_from_to[:, time_step]
+    P_to_from = data.lcc.arc_active_power_flow_to_from[:, time_step]
+    Q_from_to = data.lcc.arc_reactive_power_flow_from_to[:, time_step]
+    Q_to_from = data.lcc.arc_reactive_power_flow_to_from[:, time_step]
 
     lcc_df = DataFrames.DataFrame(;
         line_name = lcc_names,
@@ -743,13 +743,13 @@ function _allocate_results_data(
     Q_gen_vect::Vector{Float64},
     P_load_vect::Vector{Float64},
     Q_load_vect::Vector{Float64},
-    arc_activepower_flow_from_to::Vector{Float64},
-    arc_reactivepower_flow_from_to::Vector{Float64},
-    arc_activepower_flow_to_from::Vector{Float64},
-    arc_reactivepower_flow_to_from::Vector{Float64},
-    arc_activepower_losses::Vector{Float64},
-    arc_reactivepower_losses::Vector{Float64},
-    timestep::Int,
+    arc_active_power_flow_from_to::Vector{Float64},
+    arc_reactive_power_flow_from_to::Vector{Float64},
+    arc_active_power_flow_to_from::Vector{Float64},
+    arc_reactive_power_flow_to_from::Vector{Float64},
+    arc_active_power_losses::Vector{Float64},
+    arc_reactive_power_losses::Vector{Float64},
+    time_step::Int,
 )
     bus_df = DataFrames.DataFrame(;
         bus_number = buses,
@@ -768,12 +768,12 @@ function _allocate_results_data(
         line_name = branch_names,
         bus_from = from_bus,
         bus_to = to_bus,
-        P_from_to = sys_basepower .* arc_activepower_flow_from_to,
-        Q_from_to = sys_basepower .* arc_reactivepower_flow_from_to,
-        P_to_from = sys_basepower .* arc_activepower_flow_to_from,
-        Q_to_from = sys_basepower .* arc_reactivepower_flow_to_from,
-        P_losses = sys_basepower .* arc_activepower_losses,
-        Q_losses = sys_basepower .* arc_reactivepower_losses,
+        P_from_to = sys_basepower .* arc_active_power_flow_from_to,
+        Q_from_to = sys_basepower .* arc_reactive_power_flow_from_to,
+        P_to_from = sys_basepower .* arc_active_power_flow_to_from,
+        Q_to_from = sys_basepower .* arc_reactive_power_flow_to_from,
+        P_losses = sys_basepower .* arc_active_power_losses,
+        Q_losses = sys_basepower .* arc_reactive_power_losses,
     )
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
@@ -781,7 +781,7 @@ function _allocate_results_data(
         data,
         lcc_names,
         sys_basepower,
-        timestep,
+        time_step,
     )
 
     get_lcc_count(data) > 0 && DataFrames.sort!(lcc_df, [:bus_from, :bus_to])
@@ -855,7 +855,7 @@ end
     )
 
 Returns a dictionary containing the DC power flow results. Each key corresponds
-to the name of the considered time periods, storing a `DataFrame` with the powerflow
+to the name of the considered time periods, storing a `DataFrame` with the power_flow
 results.
 
 # Arguments:
@@ -886,7 +886,7 @@ function write_results(
     end
 
     result_dict = Dict{String, Dict{String, DataFrames.DataFrame}}()
-    for i in 1:length(data.timestep_map)
+    for i in 1:length(data.time_step_map)
         temp_dict = _allocate_results_data(
             data,
             arc_names,
@@ -897,19 +897,19 @@ function write_results(
             to_bus,
             data.bus_magnitude[:, i],
             data.bus_angles[:, i],
-            data.bus_activepower_injection[:, i],
-            data.bus_reactivepower_injection[:, i],
-            data.bus_activepower_withdrawals[:, i],
-            data.bus_reactivepower_withdrawals[:, i],
-            data.arc_activepower_flow_from_to[:, i],
-            data.arc_reactivepower_flow_from_to[:, i],
-            data.arc_activepower_flow_to_from[:, i],
-            data.arc_reactivepower_flow_to_from[:, i],
+            data.bus_active_power_injections[:, i],
+            data.bus_reactive_power_injections[:, i],
+            data.bus_active_power_withdrawals[:, i],
+            data.bus_reactive_power_withdrawals[:, i],
+            data.arc_active_power_flow_from_to[:, i],
+            data.arc_reactive_power_flow_from_to[:, i],
+            data.arc_active_power_flow_to_from[:, i],
+            data.arc_reactive_power_flow_to_from[:, i],
             zeros(size(arc_names)),
             zeros(size(arc_names)),
             i,
         )
-        result_dict[data.timestep_map[i]] = temp_dict
+        result_dict[data.time_step_map[i]] = temp_dict
     end
     return result_dict
 end
@@ -945,8 +945,8 @@ function write_results(
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
     busIxToFAPower = _calculate_fixed_admittance_powers(sys, data, time_step)
     for (bus_ix, fa_power) in busIxToFAPower
-        data.bus_activepower_withdrawals[bus_ix, time_step] += fa_power[1]
-        data.bus_reactivepower_withdrawals[bus_ix, time_step] += fa_power[2]
+        data.bus_active_power_withdrawals[bus_ix, time_step] += fa_power[1]
+        data.bus_reactive_power_withdrawals[bus_ix, time_step] += fa_power[2]
     end
 
     # NOTE: this may be different than get_bus_numbers(sys) if there's a network reduction!
@@ -962,12 +962,12 @@ function write_results(
               "'TransformerName-secondary', and 'TransformerName-tertiary'."
     end
 
-    arc_activepower_losses =
-        data.arc_activepower_flow_from_to[:, time_step] .+
-        data.arc_activepower_flow_to_from[:, time_step]
-    arc_reactivepower_losses =
-        data.arc_reactivepower_flow_from_to[:, time_step] .+
-        data.arc_reactivepower_flow_to_from[:, time_step]
+    arc_active_power_losses =
+        data.arc_active_power_flow_from_to[:, time_step] .+
+        data.arc_active_power_flow_to_from[:, time_step]
+    arc_reactive_power_losses =
+        data.arc_reactive_power_flow_from_to[:, time_step] .+
+        data.arc_reactive_power_flow_to_from[:, time_step]
 
     return _allocate_results_data(
         data,
@@ -979,16 +979,16 @@ function write_results(
         to_bus,
         data.bus_magnitude[:, time_step],
         data.bus_angles[:, time_step],
-        data.bus_activepower_injection[:, time_step],
-        data.bus_reactivepower_injection[:, time_step],
-        data.bus_activepower_withdrawals[:, time_step],
-        data.bus_reactivepower_withdrawals[:, time_step],
-        data.arc_activepower_flow_from_to[:, time_step],
-        data.arc_reactivepower_flow_from_to[:, time_step],
-        data.arc_activepower_flow_to_from[:, time_step],
-        data.arc_reactivepower_flow_to_from[:, time_step],
-        arc_activepower_losses,
-        arc_reactivepower_losses,
+        data.bus_active_power_injections[:, time_step],
+        data.bus_reactive_power_injections[:, time_step],
+        data.bus_active_power_withdrawals[:, time_step],
+        data.bus_reactive_power_withdrawals[:, time_step],
+        data.arc_active_power_flow_from_to[:, time_step],
+        data.arc_reactive_power_flow_from_to[:, time_step],
+        data.arc_active_power_flow_to_from[:, time_step],
+        data.arc_reactive_power_flow_to_from[:, time_step],
+        arc_active_power_losses,
+        arc_reactive_power_losses,
         time_step,
     )
 end
@@ -998,7 +998,7 @@ end
 
 Modify the values in the given [`System`](@extref PowerSystems.System) to correspond to the 
 given `PowerFlowData` such that if a new `PowerFlowData` is constructed from the resulting 
-system it is the same as `data`. See also [`write_powerflow_solution!`](@ref). NOTE this 
+system it is the same as `data`. See also [`write_power_flow_solution!`](@ref). NOTE this 
 assumes that `data` was initialized from `sys` and then solved with no further 
 modifications.
 """
@@ -1013,13 +1013,13 @@ function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
         bus_type = data.bus_type[bus_index, time_step]  # use this instead of bus.bustype to account for PV -> PQ
         if bus_type == PSY.ACBusTypes.REF
             # For REF bus, voltage and angle are fixed; update active and reactive
-            P_gen = data.bus_activepower_injection[bus_index, time_step]
-            Q_gen = data.bus_reactivepower_injection[bus_index, time_step]
+            P_gen = data.bus_active_power_injections[bus_index, time_step]
+            Q_gen = data.bus_reactive_power_injections[bus_index, time_step]
             _power_redistribution_ref(sys, P_gen, Q_gen, bus,
                 DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
         elseif bus_type == PSY.ACBusTypes.PV
             # For PV bus, active and voltage are fixed; update reactive and angle
-            Q_gen = data.bus_reactivepower_injection[bus_index, time_step]
+            Q_gen = data.bus_reactive_power_injections[bus_index, time_step]
             _reactive_power_redistribution_pv(sys, Q_gen, bus,
                 DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
             PSY.set_angle!(bus, data.bus_angles[bus_index, time_step])
@@ -1030,7 +1030,7 @@ function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
             PSY.set_angle!(bus, data.bus_angles[bus_index, time_step])
             # if it used to be a PV bus, also set the Q value:
             if bus.bustype == PSY.ACBusTypes.PV
-                Q_gen = data.bus_reactivepower_injection[bus_index, time_step]
+                Q_gen = data.bus_reactive_power_injections[bus_index, time_step]
                 _reactive_power_redistribution_pv(sys, Q_gen, bus,
                     DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
                 # now both the Q and the Vm, Va are correct for this kind of buses

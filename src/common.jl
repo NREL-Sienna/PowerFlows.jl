@@ -10,8 +10,8 @@ considers_reactive_power(::AbstractDCPowerFlow) = false
 
 function _get_injections!(
     pf::PowerFlowEvaluationModel,
-    bus_activepower_injection::Vector{Float64},
-    bus_reactivepower_injection::Vector{Float64},
+    bus_active_power_injections::Vector{Float64},
+    bus_reactive_power_injections::Vector{Float64},
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
@@ -22,7 +22,7 @@ function _get_injections!(
            active_power_contribution_type(source) == PowerContributionType.INJECTION
             bus = PSY.get_bus(source)
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-            bus_activepower_injection[bus_ix] += PSY.get_active_power(source)
+            bus_active_power_injections[bus_ix] += PSY.get_active_power(source)
         end
         if considers_reactive_power(pf) && contributes_reactive_power(source) &&
            reactive_power_contribution_type(source) == PowerContributionType.INJECTION
@@ -30,10 +30,10 @@ function _get_injections!(
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
             # yet to implement control mode etc. for FACTS devices.
             if source isa PSY.FACTSControlDevice
-                bus_reactivepower_injection[bus_ix] +=
+                bus_reactive_power_injections[bus_ix] +=
                     PSY.get_reactive_power_required(source)
             else
-                bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power(source)
+                bus_reactive_power_injections[bus_ix] += PSY.get_reactive_power(source)
             end
         end
     end
@@ -43,12 +43,12 @@ end
 
 function _get_withdrawals!(
     pf::PowerFlowEvaluationModel,
-    bus_activepower_withdrawals::Vector{Float64},
-    bus_reactivepower_withdrawals::Vector{Float64},
-    bus_activepower_constant_current_withdrawals::Vector{Float64},
-    bus_reactivepower_constant_current_withdrawals::Vector{Float64},
-    bus_activepower_constant_impedance_withdrawals::Vector{Float64},
-    bus_reactivepower_constant_impedance_withdrawals::Vector{Float64},
+    bus_active_power_withdrawals::Vector{Float64},
+    bus_reactive_power_withdrawals::Vector{Float64},
+    bus_active_power_constant_current_withdrawals::Vector{Float64},
+    bus_reactive_power_constant_current_withdrawals::Vector{Float64},
+    bus_active_power_constant_impedance_withdrawals::Vector{Float64},
+    bus_reactive_power_constant_impedance_withdrawals::Vector{Float64},
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
@@ -59,13 +59,13 @@ function _get_withdrawals!(
            active_power_contribution_type(l) == PowerContributionType.WITHDRAWAL
             bus = PSY.get_bus(l)
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-            bus_activepower_withdrawals[bus_ix] += PSY.get_active_power(l)
+            bus_active_power_withdrawals[bus_ix] += PSY.get_active_power(l)
         end
         if considers_reactive_power(pf) && contributes_reactive_power(l) &&
            reactive_power_contribution_type(l) == PowerContributionType.WITHDRAWAL
             bus = PSY.get_bus(l)
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-            bus_reactivepower_withdrawals[bus_ix] += PSY.get_reactive_power(l)
+            bus_reactive_power_withdrawals[bus_ix] += PSY.get_reactive_power(l)
         end
     end
     # handle StandardLoad: they have constant current and constant impedance withdrawals,
@@ -76,15 +76,15 @@ function _get_withdrawals!(
     )
         bus = PSY.get_bus(l)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-        bus_activepower_withdrawals[bus_ix] += PSY.get_constant_active_power(l)
-        bus_reactivepower_withdrawals[bus_ix] += PSY.get_constant_reactive_power(l)
-        bus_activepower_constant_current_withdrawals[bus_ix] +=
+        bus_active_power_withdrawals[bus_ix] += PSY.get_constant_active_power(l)
+        bus_reactive_power_withdrawals[bus_ix] += PSY.get_constant_reactive_power(l)
+        bus_active_power_constant_current_withdrawals[bus_ix] +=
             PSY.get_current_active_power(l)
-        bus_activepower_constant_impedance_withdrawals[bus_ix] +=
+        bus_active_power_constant_impedance_withdrawals[bus_ix] +=
             PSY.get_impedance_active_power(l)
-        bus_reactivepower_constant_current_withdrawals[bus_ix] +=
+        bus_reactive_power_constant_current_withdrawals[bus_ix] +=
             PSY.get_current_reactive_power(l)
-        bus_reactivepower_constant_impedance_withdrawals[bus_ix] +=
+        bus_reactive_power_constant_impedance_withdrawals[bus_ix] +=
             PSY.get_impedance_reactive_power(l)
     end
     # FixedAdmittance components are already included in the Ybus matrix.
@@ -97,13 +97,13 @@ function _get_withdrawals!(
         # the following is equivalent to S = V * conj(Y * V) for V = 1.0 p.u.
         # As conj(Y) = G - jB, we have P = G and Q = -B
         # (we could use +=real(conj(Y)) and +=imag(conj(Y)) as well).
-        bus_activepower_constant_impedance_withdrawals[bus_ix] += real(Y)
-        bus_reactivepower_constant_impedance_withdrawals[bus_ix] -= imag(Y)
+        bus_active_power_constant_impedance_withdrawals[bus_ix] += real(Y)
+        bus_reactive_power_constant_impedance_withdrawals[bus_ix] -= imag(Y)
     end
     for sc in PSY.get_available_components(PSY.SynchronousCondenser, sys)
         bus = PSY.get_bus(sc)
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-        bus_activepower_withdrawals[bus_ix] += PSY.get_active_power_losses(sc)
+        bus_active_power_withdrawals[bus_ix] += PSY.get_active_power_losses(sc)
         # reactive power handled already:
         # contributes_reactive_power(PSY.SynchronousCondenser) is true.
     end
@@ -111,7 +111,7 @@ function _get_withdrawals!(
 end
 
 function _get_reactive_power_bound!(
-    bus_reactivepower_bounds::Vector{Tuple{Float64, Float64}},
+    bus_reactive_power_bounds::Vector{Tuple{Float64, Float64}},
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
@@ -124,13 +124,13 @@ function _get_reactive_power_bound!(
         reactive_power_limits = get_reactive_power_limits_for_power_flow(source)
         if !isnothing(reactive_power_limits) && !isinf(reactive_power_limits.min) &&
            !isinf(reactive_power_limits.max)
-            bus_reactivepower_bounds[bus_ix] = (
-                bus_reactivepower_bounds[bus_ix][1] + reactive_power_limits.min,
-                bus_reactivepower_bounds[bus_ix][2] + reactive_power_limits.max,
+            bus_reactive_power_bounds[bus_ix] = (
+                bus_reactive_power_bounds[bus_ix][1] + reactive_power_limits.min,
+                bus_reactive_power_bounds[bus_ix][2] + reactive_power_limits.max,
             )
         else
             @warn("Reactive Power Bounds at Bus $(PSY.get_name(bus)) set to (-Inf, Inf)")
-            bus_reactivepower_bounds[bus_ix] = (-Inf, Inf)
+            bus_reactive_power_bounds[bus_ix] = (-Inf, Inf)
         end
     end
     return

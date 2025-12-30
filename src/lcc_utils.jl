@@ -150,8 +150,8 @@ function initialize_LCCParameters!(
     for (i, lcc_branch) in enumerate(lccs)
         # it's an LCC, so flow can't be reversed; rhs will error if it is.
         (P_from_to, P_to_from, _) = get_hvdc_power_loss(lcc_branch, sys)
-        data.lcc.arc_activepower_flow_from_to[i, :] .= P_from_to
-        data.lcc.arc_activepower_flow_to_from[i, :] .= P_to_from
+        data.lcc.arc_active_power_flow_from_to[i, :] .= P_from_to
+        data.lcc.arc_active_power_flow_to_from[i, :] .= P_to_from
     end
     return
 end

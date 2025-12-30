@@ -47,7 +47,7 @@ end
         sys;
         correct_bustypes = true,
     )
-    solve_powerflow!(data; pf = pf)
+    solve_power_flow!(data; pf = pf)
     @test all(data.converged)
 end
 
@@ -60,7 +60,7 @@ end
             pf,
             sys;
         )
-        solve_powerflow!(data)
+        solve_power_flow!(data)
         @test all(data.converged)
     end
 end
@@ -149,7 +149,7 @@ function test_generic_hvdc_on_big_system(pf_type::Type{<:PF.PowerFlowEvaluationM
         sys_original;
         correct_bustypes = true,
     )
-    solve_powerflow!(data_original)
+    solve_power_flow!(data_original)
     ref_bus_inds = findall(data_original.bus_type .== (PSY.ACBusTypes.REF,))
     @test all(data_original.bus_angles[ref_bus_inds] .== 0.0)
 
@@ -162,7 +162,7 @@ function test_generic_hvdc_on_big_system(pf_type::Type{<:PF.PowerFlowEvaluationM
         sys_modified;
         correct_bustypes = true,
     )
-    solve_powerflow!(data_modified)
+    solve_power_flow!(data_modified)
 
     # verify assumptions
     @assert !isempty(get_components(PSY.TwoTerminalGenericHVDCLine, sys_original))
@@ -188,13 +188,13 @@ function test_generic_hvdc_on_big_system(pf_type::Type{<:PF.PowerFlowEvaluationM
         # no need to check arc flows: since angles and aux matrices match, flows match.
         # check that the b in our Ax = b is the same
         rhs_original = (
-            data_original.bus_activepower_injection .-
-            data_original.bus_activepower_withdrawals .+
+            data_original.bus_active_power_injections .-
+            data_original.bus_active_power_withdrawals .+
             data_original.bus_hvdc_net_power
         )
         rhs_modified = (
-            data_modified.bus_activepower_injection .-
-            data_modified.bus_activepower_withdrawals
+            data_modified.bus_active_power_injections .-
+            data_modified.bus_active_power_withdrawals
         )
         @test all(abs.(rhs_original - rhs_modified) .< TIGHT_TOLERANCE)
     end
@@ -208,8 +208,8 @@ function test_generic_hvdc_on_big_system(pf_type::Type{<:PF.PowerFlowEvaluationM
         )
     end
 
-    for fieldname in (:arc_activepower_flow_from_to, :arc_activepower_flow_to_from,
-        :arc_reactivepower_flow_from_to, :arc_reactivepower_flow_to_from)
+    for fieldname in (:arc_active_power_flow_from_to, :arc_active_power_flow_to_from,
+        :arc_reactive_power_flow_from_to, :arc_reactive_power_flow_to_from)
         for (original_arc_ind, arc) in enumerate(PF.get_arc_axis(data_original))
             modified_arc_ind = PF.get_arc_lookup(data_modified)[arc]
             @test isapprox(

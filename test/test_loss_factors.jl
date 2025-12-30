@@ -21,7 +21,7 @@
             prepare_ts_data!(data_brute_force, time_steps)
 
             # get power flows with NR KLU method and write results
-            solve_powerflow!(data_loss_factors; pf = pf_lf)
+            solve_power_flow!(data_loss_factors; pf = pf_lf)
 
             # get loss factors using brute force approach (sequential power flow evaluations for each bus)
             bf_loss_factors = penalty_factors_brute_force(data_brute_force, pf)
@@ -37,7 +37,7 @@
             )
 
             # get power flow results without loss factors
-            solve_powerflow!(data_brute_force; pf = pf)
+            solve_power_flow!(data_brute_force; pf = pf)
             @test isnothing(data_brute_force.loss_factors)
         end
     end

@@ -62,7 +62,7 @@ end
                     sys_original;
                     correct_bustypes = true,
                 )
-            modify_rts_powerflow!(data_modified)
+            modify_rts_power_flow!(data_modified)
 
             # update_system! with unmodified PowerFlowData should result in system that yields unmodified PowerFlowData
             # (NOTE does NOT necessarily yield original system due to power redistribution)
@@ -75,19 +75,19 @@ end
                     sys_null_updated;
                     correct_bustypes = true,
                 )
-            @test IS.compare_values(powerflow_match_fn, data_null_updated, data_original)
+            @test IS.compare_values(power_flow_match_fn, data_null_updated, data_original)
 
             # Modified versions should not be the same as unmodified versions
             @test !@test_logs((:error, r"values do not match"),
                 match_mode = :any, min_level = Logging.Error,
-                IS.compare_values(powerflow_match_fn, data_original, data_modified))
+                IS.compare_values(power_flow_match_fn, data_original, data_modified))
             @test !@test_logs((:error, r"values do not match"),
                 match_mode = :any, min_level = Logging.Error,
-                IS.compare_values(powerflow_match_fn, sys_original, sys_modified))
+                IS.compare_values(power_flow_match_fn, sys_original, sys_modified))
 
             # Constructing PowerFlowData from modified system should result in data_modified
             @test IS.compare_values(
-                powerflow_match_fn,
+                power_flow_match_fn,
                 PowerFlowData(
                     ACPowerFlow{ACSolver}(),
                     sys_modified;
@@ -108,7 +108,7 @@ end
                     correct_bustypes = true,
                 ),
             )
-            @test IS.compare_values(powerflow_match_fn, sys_modify_updated, sys_mod_redist)
+            @test IS.compare_values(power_flow_match_fn, sys_modify_updated, sys_mod_redist)
         end
     end
 end
@@ -172,7 +172,7 @@ end
     )
     @assert PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
     # on the other hand, DC power flow is fine: PV vs PQ doesn't matter.
-    solve_powerflow(PF.DCPowerFlow(), sys)
+    solve_power_flow(PF.DCPowerFlow(), sys)
     # No available generators at REF bus does error for DC power flow.
     ref_bus = findfirst(bus -> PSY.get_bustype(bus) == PSY.ACBusTypes.REF, buses)
     ref_bus = buses[ref_bus]

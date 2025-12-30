@@ -41,7 +41,7 @@
         correct_bustypes = true,
     )
     #Compare results between finite diff methods and Jacobian method
-    converged1 = PowerFlows._ac_powerflow(data, pf, 1)
+    converged1 = PowerFlows._ac_power_flow(data, pf, 1)
     x1 = _calc_x(data, 1)
     # this fails at 1e-6, likely due to the change of the B allocation
     @test LinearAlgebra.norm(result_14 - x1, Inf) <= 3e-6
@@ -72,7 +72,7 @@
         sys;
         correct_bustypes = true,
     )
-    converged2 = PowerFlows._ac_powerflow(data, pf_w_limits, 1)
+    converged2 = PowerFlows._ac_power_flow(data, pf_w_limits, 1)
     x2 = _calc_x(data, 1)
     @test LinearAlgebra.norm(result_14 - x2, Inf) >= 1e-6
     @test 1.08 <= x2[15] <= 1.09
@@ -81,12 +81,12 @@ end
 function test_ac_line_configurations(ACSolver)
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     pf = ACPowerFlow{ACSolver}()
-    base_res = solve_powerflow(pf, sys; correct_bustypes = true)
+    base_res = solve_power_flow(pf, sys; correct_bustypes = true)
     branch = first(PSY.get_components(Line, sys))
     dyn_branch = DynamicBranch(branch)
     add_component!(sys, dyn_branch)
     @test dyn_pf = solve_and_store_power_flow!(pf, sys; correct_bustypes = true)
-    dyn_pf = solve_powerflow(pf, sys; correct_bustypes = true)
+    dyn_pf = solve_power_flow(pf, sys; correct_bustypes = true)
     @test LinearAlgebra.norm(
         dyn_pf["bus_results"].Vm - base_res["bus_results"].Vm,
         Inf,
@@ -104,7 +104,7 @@ function test_ac_line_configurations(ACSolver)
     line = get_component(Line, sys, "Line4")
     from_to = PNM.get_arc_tuple(line)
     PSY.set_available!(line, false)
-    res = solve_powerflow(pf, sys; correct_bustypes = true)
+    res = solve_power_flow(pf, sys; correct_bustypes = true)
     for row in eachrow(res["flow_results"])
         if (row["bus_from"], row["bus_to"]) == from_to
             @test row["P_from_to"] == 0.0
@@ -126,7 +126,7 @@ function test_ac_3bus_fixed_admittance(ACSolver)
     fix_shunt = PSY.FixedAdmittance("FixAdmBus3", true, bus_103, 0.0 + 0.2im)
     add_component!(sys_3bus, fix_shunt)
     pf = ACPowerFlow{ACSolver}()
-    df = solve_powerflow(pf, sys_3bus; correct_bustypes = true)
+    df = solve_power_flow(pf, sys_3bus; correct_bustypes = true)
     @test isapprox(df["bus_results"].P_gen, p_gen_matpower_3bus, atol = 1e-4)
     @test isapprox(df["bus_results"].Q_gen, q_gen_matpower_3bus, atol = 1e-4)
 end
@@ -148,7 +148,7 @@ function test_ac_convergence_fail(ACSolver)
 
     # This is a negative test. The data passed for sys5_re is known to be infeasible.
     @test_logs(
-        (:error, "The powerflow solver returned convergence = false"),
+        (:error, "The power_flow solver returned convergence = false"),
         match_mode = :any,
         @test !solve_and_store_power_flow!(pf, pf_sys5_re)
     )
@@ -177,7 +177,7 @@ end
 
     pf1 = solve_and_store_power_flow!(pf, system; correct_bustypes = true)
     @test pf1
-    pf_result_df = solve_powerflow(pf, system; correct_bustypes = true)
+    pf_result_df = solve_power_flow(pf, system; correct_bustypes = true)
 
     v_diff, angle_diff, number = psse_bus_results_compare(pf_bus_result_file, pf_result_df)
     p_diff, q_diff, names = psse_gen_results_compare(pf_gen_result_file, system)
@@ -307,9 +307,9 @@ end
 
     time_step = 1
 
-    res_default = solve_powerflow(pf_default, sys; correct_bustypes = true)  # must be the same as KLU
-    res_lu = solve_powerflow(pf_lu, sys; correct_bustypes = true)
-    res_newton = solve_powerflow(pf_newton, sys; correct_bustypes = true)
+    res_default = solve_power_flow(pf_default, sys; correct_bustypes = true)  # must be the same as KLU
+    res_lu = solve_power_flow(pf_lu, sys; correct_bustypes = true)
+    res_newton = solve_power_flow(pf_newton, sys; correct_bustypes = true)
 
     @test all(
         isapprox.(
@@ -362,8 +362,8 @@ end
         correct_bustypes = true,
     )
     time_step = 1
-    solve_powerflow!(data_lu; pf = pf_lu)
-    solve_powerflow!(data_newton; pf = pf_newton)
+    solve_power_flow!(data_lu; pf = pf_lu)
+    solve_power_flow!(data_newton; pf = pf_newton)
     @test all(
         isapprox.(
             data_lu.voltage_stability_factors,
@@ -402,7 +402,7 @@ end
                                                                     "change `force_build` to `true` in the test."
     pf_tr = ACPowerFlow{TrustRegionACPowerFlow}()
     data_tr = PowerFlowData(pf_tr, sys; correct_bustypes = true)
-    solve_powerflow!(
+    solve_power_flow!(
         data_tr;
         pf = pf_tr,
         maxIterations = 200,
@@ -425,10 +425,10 @@ function PowerFlowData_to_DataFrame(data::PowerFlowData)
         Vm = data.bus_magnitude[:, 1],
         bus_type = data.bus_type[:, 1],
         angle = data.bus_angles[:, 1],
-        generator_p = data.bus_activepower_injection[:, 1],
-        generator_q = data.bus_reactivepower_injection[:, 1],
-        load_p = data.bus_activepower_withdrawals[:, 1],
-        load_q = data.bus_reactivepower_withdrawals[:, 1],
+        generator_p = data.bus_active_power_injections[:, 1],
+        generator_q = data.bus_reactive_power_injections[:, 1],
+        load_p = data.bus_active_power_withdrawals[:, 1],
+        load_q = data.bus_reactive_power_withdrawals[:, 1],
     )
     sort!(df, :bus_number)
     return df
@@ -441,7 +441,7 @@ end
     sys_sienna = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
     pf_sienna = ACPowerFlow()
     data_sienna = PowerFlowData(pf_sienna, sys_sienna; correct_bustypes = true)
-    solve_powerflow!(data_sienna; pf = pf_sienna, tol = 1e-11)
+    solve_power_flow!(data_sienna; pf = pf_sienna, tol = 1e-11)
     sienna_df = PowerFlowData_to_DataFrame(data_sienna)
     @assert all(sienna_df[!, "bus_number"] .== matpower_df[!, "bus_number"])
     # The bus types don't match, so we don't compare them here. (We changed PQ with 
@@ -464,7 +464,7 @@ if PF.OVERRIDE_x0
                 x0[2 * i - 1] = 2.0 # set voltage magnitude of PQ bus to 2.0 p.u.
             end
         end
-        @test_logs (:warn, r".*voltage magnitudes outside of range.*") match_mode = :any solve_powerflow!(
+        @test_logs (:warn, r".*voltage magnitudes outside of range.*") match_mode = :any solve_power_flow!(
             data;
             pf = pf,
             x0 = x0,
@@ -478,7 +478,7 @@ end
     data = PowerFlowData(pf, sys; correct_bustypes = true)
     x0 = PF.calculate_x0(data, 1)
     x0_enhanced = PF._enhanced_flat_start(x0, data, 1)
-    solve_powerflow!(
+    solve_power_flow!(
         data;
         pf = pf,
     )
@@ -497,12 +497,12 @@ end
         constant_current_reactive_power = 1.0,
     )
     data = PowerFlowData(ACPowerFlow(), sys; correct_bustypes = true)
-    solve_powerflow!(data)
+    solve_power_flow!(data)
 
     # here we calculate the current that is observed in the power flow solution
     # supplied through the line to the load, which is a constant current load.
     s_t =
-        data.arc_activepower_flow_to_from + 1im * data.arc_reactivepower_flow_to_from
+        data.arc_active_power_flow_to_from + 1im * data.arc_reactive_power_flow_to_from
     i_t = abs(s_t[1]) / data.bus_magnitude[2, 1] / sqrt(3)
 
     # get the load inputs from the load component
@@ -528,8 +528,8 @@ end
 
     @test isapprox(i_t, load_input_current; atol = 1e-6, rtol = 0)
 
-    @test isapprox(data.bus_activepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
-    @test isapprox(data.bus_reactivepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
+    @test isapprox(data.bus_active_power_injections[2, 1], 0.0, atol = 1e-12, rtol = 0)
+    @test isapprox(data.bus_reactive_power_injections[2, 1], 0.0, atol = 1e-12, rtol = 0)
 end
 
 @testset "Test ZIP loads: constant impedance" begin
@@ -545,12 +545,12 @@ end
         constant_impedance_reactive_power = 1.0,
     )
     data = PowerFlowData(ACPowerFlow(), sys; correct_bustypes = true)
-    solve_powerflow!(data)
+    solve_power_flow!(data)
 
     # here we calculate the current that is observed in the power flow solution
     # supplied through the line to the load, which is a constant impedance load.
     s_t =
-        data.arc_activepower_flow_to_from + 1im * data.arc_reactivepower_flow_to_from
+        data.arc_active_power_flow_to_from + 1im * data.arc_reactive_power_flow_to_from
     i_t = abs(s_t[1]) / data.bus_magnitude[2, 1] / sqrt(3)
 
     # get the load inputs from the load component
@@ -576,8 +576,8 @@ end
     @test isapprox(load_expected_impedance, load_input_impedance; atol = 1e-6, rtol = 0)
 
     s_zip_load =
-        PF.get_bus_activepower_total_withdrawals(data, 2, 1) +
-        1im * PF.get_bus_reactivepower_total_withdrawals(data, 2, 1)
+        PF.get_bus_active_power_total_withdrawals(data, 2, 1) +
+        1im * PF.get_bus_reactive_power_total_withdrawals(data, 2, 1)
 
     @test isapprox(
         Sbus[2],
@@ -600,8 +600,8 @@ end
         rtol = 0,
     )
 
-    @test isapprox(data.bus_activepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
-    @test isapprox(data.bus_reactivepower_injection[2, 1], 0.0, atol = 1e-12, rtol = 0)
+    @test isapprox(data.bus_active_power_injections[2, 1], 0.0, atol = 1e-12, rtol = 0)
+    @test isapprox(data.bus_reactive_power_injections[2, 1], 0.0, atol = 1e-12, rtol = 0)
 end
 
 @testset "Test phase shift in transformers" for Transformer in
@@ -637,7 +637,7 @@ end
 
     pf = ACPowerFlow()
     data = PowerFlowData(pf, sys; correct_bustypes = true)
-    solve_powerflow!(data; pf = pf)
+    solve_power_flow!(data; pf = pf)
     # Check that the phase shift is correctly applied
     a1 = data.bus_angles[1, 1]
     a2 = data.bus_angles[2, 1]
@@ -681,9 +681,9 @@ end
 
     data1.power_network_matrix.data[2, 2] += Y
 
-    solve_powerflow!(data1)
+    solve_power_flow!(data1)
 
-    solve_powerflow!(data2)
+    solve_power_flow!(data2)
 
     # Make sure the results are the same for both cases:
     #  1. The switched admittance is included in the Ybus matrix
@@ -723,14 +723,14 @@ end
 @testset "Test LCC consistency" begin
     sys, lcc = simple_lcc_system()
     pf = ACPowerFlow()
-    lcc_results = solve_powerflow(pf, sys)["lcc_results"]
+    lcc_results = solve_power_flow(pf, sys)["lcc_results"]
     solve_and_store_power_flow!(pf, sys)
     check_lcc_consistency(lcc, lcc_results)
 
     # repeat with a different setpoint
     sys, lcc = simple_lcc_system()
     PSY.set_transfer_setpoint!(lcc, -25.0)
-    lcc_results = solve_powerflow(pf, sys)["lcc_results"]
+    lcc_results = solve_power_flow(pf, sys)["lcc_results"]
     solve_and_store_power_flow!(pf, sys)
     check_lcc_consistency(lcc, lcc_results)
 
@@ -743,65 +743,65 @@ function test_lcc_ac_solver(ACSolver)
     sys, lcc = simple_lcc_system()
     pf = ACPowerFlow{ACSolver}()
     data = PowerFlowData(pf, sys; correct_bustypes = true)
-    solve_powerflow!(data; pf = pf)
+    solve_power_flow!(data; pf = pf)
 
     lcc_arc = PNM.get_arc_tuple(PSY.get_arc(lcc))
 
     @test isapprox(
         data.lcc.p_set[1],
-        data.lcc.arc_activepower_flow_from_to[1, 1];
+        data.lcc.arc_active_power_flow_from_to[1, 1];
         atol = 1e-6, rtol = 0,
     )
 
     LCC_active_flow =
-        data.lcc.arc_activepower_flow_from_to[1, 1] +
-        data.lcc.arc_activepower_flow_to_from[1, 1]
+        data.lcc.arc_active_power_flow_from_to[1, 1] +
+        data.lcc.arc_active_power_flow_to_from[1, 1]
     LCC_reactive_flow =
-        data.lcc.arc_reactivepower_flow_from_to[1, 1] +
-        data.lcc.arc_reactivepower_flow_to_from[1, 1]
+        data.lcc.arc_reactive_power_flow_from_to[1, 1] +
+        data.lcc.arc_reactive_power_flow_to_from[1, 1]
     @test isapprox(
         sum(
-            data.arc_activepower_flow_from_to .+ data.arc_activepower_flow_to_from,
-        ) + sum(data.bus_activepower_withdrawals[:, 1]) + LCC_active_flow,
-        data.bus_activepower_injection[1];
+            data.arc_active_power_flow_from_to .+ data.arc_active_power_flow_to_from,
+        ) + sum(data.bus_active_power_withdrawals[:, 1]) + LCC_active_flow,
+        data.bus_active_power_injections[1];
         atol = 1e-5, rtol = 0,
     )
 
     @test isapprox(
         sum(
-            data.arc_reactivepower_flow_from_to .+
-            data.arc_reactivepower_flow_to_from,
-        ) + sum(data.bus_reactivepower_withdrawals[:, 1]) + LCC_reactive_flow,
-        data.bus_reactivepower_injection[1];
+            data.arc_reactive_power_flow_from_to .+
+            data.arc_reactive_power_flow_to_from,
+        ) + sum(data.bus_reactive_power_withdrawals[:, 1]) + LCC_reactive_flow,
+        data.bus_reactive_power_injections[1];
         atol = 1e-5, rtol = 0,
     )
     solve_and_store_power_flow!(pf, sys)
 
     @test get_active_power_flow(lcc) ==
-          data.lcc.arc_activepower_flow_from_to[1, 1]
+          data.lcc.arc_active_power_flow_from_to[1, 1]
 
     PSY.set_transfer_setpoint!(lcc, -25.0)
     data = PowerFlowData(pf, sys; correct_bustypes = true)
-    solve_powerflow!(data; pf = pf)
+    solve_power_flow!(data; pf = pf)
 
     @test isapprox(
         -data.lcc.p_set[1],
-        data.lcc.arc_activepower_flow_to_from[1, 1];
+        data.lcc.arc_active_power_flow_to_from[1, 1];
         atol = 1e-6, rtol = 0,
     )
 
     solve_and_store_power_flow!(pf, sys)
 
     @test get_active_power_flow(lcc) ==
-          data.lcc.arc_activepower_flow_from_to[1, 1]
+          data.lcc.arc_active_power_flow_from_to[1, 1]
 
     PSY.set_transfer_setpoint!(lcc, 0.0)
     data = PowerFlowData(pf, sys; correct_bustypes = true)
-    solve_powerflow!(data; pf = pf)
+    solve_power_flow!(data; pf = pf)
 
     PSY.remove_component!(sys, lcc)
     data2 = PowerFlowData(pf, sys; correct_bustypes = true)
-    solve_powerflow!(data2; pf = pf)
+    solve_power_flow!(data2; pf = pf)
 
     @test isapprox(
         data.bus_magnitude[:, 1],
@@ -816,38 +816,38 @@ function test_lcc_ac_solver(ACSolver)
     )
 
     @test isapprox(
-        data.bus_activepower_injection[:, 1],
-        data2.bus_activepower_injection[:, 1];
+        data.bus_active_power_injections[:, 1],
+        data2.bus_active_power_injections[:, 1];
         atol = 1e-6, rtol = 0,
     )
 
     @test isapprox(
-        data.bus_reactivepower_injection[:, 1],
-        data2.bus_reactivepower_injection[:, 1];
+        data.bus_reactive_power_injections[:, 1],
+        data2.bus_reactive_power_injections[:, 1];
         atol = 1e-6, rtol = 0,
     )
 
     @test isapprox(
-        data.arc_activepower_flow_from_to[1:2, :],
-        data2.arc_activepower_flow_from_to[1:2, :];
+        data.arc_active_power_flow_from_to[1:2, :],
+        data2.arc_active_power_flow_from_to[1:2, :];
         atol = 1e-6, rtol = 0,
     )
 
     @test isapprox(
-        data.arc_activepower_flow_to_from[1:2, :],
-        data2.arc_activepower_flow_to_from[1:2, :];
+        data.arc_active_power_flow_to_from[1:2, :],
+        data2.arc_active_power_flow_to_from[1:2, :];
         atol = 1e-6, rtol = 0,
     )
 
     @test isapprox(
-        data.arc_reactivepower_flow_from_to[1:2, :],
-        data2.arc_reactivepower_flow_from_to[1:2, :];
+        data.arc_reactive_power_flow_from_to[1:2, :],
+        data2.arc_reactive_power_flow_from_to[1:2, :];
         atol = 1e-6, rtol = 0,
     )
 
     @test isapprox(
-        data.arc_reactivepower_flow_to_from[1:2, :],
-        data2.arc_reactivepower_flow_to_from[1:2, :];
+        data.arc_reactive_power_flow_to_from[1:2, :],
+        data2.arc_reactive_power_flow_to_from[1:2, :];
         atol = 1e-6, rtol = 0,
     )
 end

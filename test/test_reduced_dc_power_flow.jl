@@ -1,4 +1,4 @@
-dc_powerflows = (
+dc_power_flows = (
     PF.DCPowerFlow(),
     PF.PTDFDCPowerFlow(),
     PF.vPTDFDCPowerFlow(),
@@ -16,10 +16,10 @@ dc_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
                                            InteractiveUtils.subtypes(PF.AbstractDCPowerFlow)
             dc_pf = pf_type()
             unreduced = PF.PowerFlowData(dc_pf, sys; correct_bustypes = true)
-            PF.solve_powerflow!(unreduced)
+            PF.solve_power_flow!(unreduced)
             @assert all(unreduced.converged)
-            validate_reduced_powerflow(dc_pf, sys, v, unreduced)
-            results = PF.solve_powerflow(
+            validate_reduced_power_flow(dc_pf, sys, v, unreduced)
+            results = PF.solve_power_flow(
                 dc_pf,
                 sys;
                 network_reductions = deepcopy(v),

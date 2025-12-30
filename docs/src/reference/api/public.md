@@ -14,7 +14,7 @@ Modules = [PowerFlows]
 Public = true
 Private = false
 Pages = [
-    "powerflow_types.jl",
+    "power_flow_types.jl",
 ]
 ```
 
@@ -24,11 +24,11 @@ Modules = [PowerFlows]
 Public = true
 Private = false
 Pages = [
-    "solve_dc_powerflow.jl",
-    "solve_ac_powerflow.jl",
+    "solve_dc_power_flow.jl",
+    "solve_ac_power_flow.jl",
     "ac_power_flow_residual.jl",
     "ac_power_flow_jacobian.jl",
-    "powerflow_method.jl",
+    "power_flow_method.jl",
     "post_processing.jl"
 ]
 ```

@@ -1,12 +1,12 @@
 const SYSTEM_REIMPORT_COMPARISON_TOLERANCE = 1e-10
 const POWERFLOW_COMPARISON_TOLERANCE = 3e-4  # TODO refine -- most comparisons can be made much tighter
 
-powerflow_match_fn(
+power_flow_match_fn(
     a::T,
     b::T,
 ) where {T <: Union{AbstractFloat, AbstractArray{<:AbstractFloat}}} =
     isapprox(a, b; atol = POWERFLOW_COMPARISON_TOLERANCE) || IS.isequivalent(a, b)
-powerflow_match_fn(a, b) = IS.isequivalent(a, b)
+power_flow_match_fn(a, b) = IS.isequivalent(a, b)
 
 # TODO another temporary hack
 "Create a version of the RTS_GMLC system that plays nice with the current implementation of AC power flow"
@@ -63,14 +63,14 @@ function modify_rts_system!(sys::System)
 end
 
 "Make the same changes to the PowerFlowData that modify_rts_system! makes to the System"
-function modify_rts_powerflow!(data::PowerFlowData)
+function modify_rts_power_flow!(data::PowerFlowData)
     bus_lookup = PF.get_bus_lookup(data)
     # For REF bus, voltage and angle are fixed; update active and reactive
-    data.bus_activepower_injection[bus_lookup[113]] = 2.4375
-    data.bus_reactivepower_injection[bus_lookup[113]] = 0.1875
+    data.bus_active_power_injections[bus_lookup[113]] = 2.4375
+    data.bus_reactive_power_injections[bus_lookup[113]] = 0.1875
 
     # For PV bus, active and voltage are fixed; update reactive and angle
-    data.bus_reactivepower_injection[bus_lookup[202]] = 0.37267
+    data.bus_reactive_power_injections[bus_lookup[202]] = 0.37267
     data.bus_angles[bus_lookup[202]] = -0.13778
 
     # For PQ bus, active and reactive are fixed; update voltage and angle
@@ -147,7 +147,7 @@ function _check_ds_pf(
     data_original_bus_power::Vector{Float64};
     kwargs...,
 )
-    res = solve_powerflow(pf, sys; kwargs...)
+    res = solve_power_flow(pf, sys; kwargs...)
 
     data = PowerFlowData(pf, sys; kwargs...)
     subnetworks = PowerFlows._find_subnetworks_for_reference_buses(
@@ -174,11 +174,11 @@ function _check_ds_pf(
     @test original_gen_power == p_gen_reset
 
     @test data.bus_slack_participation_factors[:, 1] == bus_slack_participation_factors
-    solve_powerflow!(data; pf = pf)
+    solve_power_flow!(data; pf = pf)
     # now check the slack power distribution logic
     _check_distributed_slack_consistency(
         subnetworks,
-        data.bus_activepower_injection[:, 1],
+        data.bus_active_power_injections[:, 1],
         bus_slack_participation_factors,
         data_original_bus_power,
     )
@@ -443,8 +443,8 @@ function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
     injs = Matrix(injections)
     withs = Matrix(withdrawals)
 
-    data.bus_activepower_injection .= deepcopy(injs[:, 1:time_steps])
-    data.bus_activepower_withdrawals .= deepcopy(withs[:, 1:time_steps])
+    data.bus_active_power_injections .= deepcopy(injs[:, 1:time_steps])
+    data.bus_active_power_withdrawals .= deepcopy(withs[:, 1:time_steps])
     return nothing
 end
 
@@ -468,7 +468,7 @@ function power_flow_with_units(
     units::PSY.UnitSystem,
 )
     with_units_base(sys, units) do
-        results = solve_powerflow(T(), sys; correct_bustypes = true)
+        results = solve_power_flow(T(), sys; correct_bustypes = true)
         if "1" in keys(results)
             first_line_flow = results["1"]["flow_results"][1, :]
         else

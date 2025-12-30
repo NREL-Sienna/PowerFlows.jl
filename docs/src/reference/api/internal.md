@@ -14,7 +14,7 @@ Modules = [PowerFlows]
 Public = false
 Private = true
 Pages = [
-    "powerflow_types.jl",
+    "power_flow_types.jl",
 ]
 ```
 
@@ -38,8 +38,8 @@ Modules = [PowerFlows]
 Public = false
 Private = true
 Pages = [
-    "solve_ac_powerflow.jl",
-    "solve_dc_powerflow.jl"
+    "solve_ac_power_flow.jl",
+    "solve_dc_power_flow.jl"
 ]
 ```
 
@@ -51,8 +51,8 @@ Public = true
 Private = true
 Pages = [
     "state_indexing_helpers.jl",
-    "initialize_powerflow_data.jl",
-    "powerflow_setup.jl",
+    "initialize_power_flow_data.jl",
+    "power_flow_setup.jl",
 ]
 ```
 
@@ -100,7 +100,7 @@ Modules = [PowerFlows]
 Public = false
 Private = true
 Pages = [
-    "powerflow_method.jl",
+    "power_flow_method.jl",
 ]
 ```
 
@@ -113,7 +113,7 @@ Private = true
 Pages = [
     "RobustHomotopy/homotopy_hessian.jl",
     "RobustHomotopy/homotopy_initialization.jl",
-    "RobustHomotopy/homotopy_powerflow.jl",
+    "RobustHomotopy/homotopy_power_flow.jl",
     "RobustHomotopy/homotopy_residual.jl",
 ]
 ```
