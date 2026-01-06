@@ -377,6 +377,54 @@ function _add_simple_zip_load!(
     return zip_load
 end
 
+function _add_simple_vsc!(
+    sys,
+    bus1::ACBus,
+    bus2::ACBus;
+    active_power_flow::Float64 = 0.5,
+    loss_coefficient::Float64 = 0.01,
+)
+    vsc = TwoTerminalVSCLine(;
+        name = _check_name(
+            sys,
+            "VSC_$(get_number(bus1))_$(get_number(bus2))",
+            TwoTerminalVSCLine,
+        ),
+        available = true,
+        arc = Arc(bus1, bus2),
+        active_power_flow = active_power_flow,
+        rating = 1.0,
+        active_power_limits_from = (min = -1.0, max = 1.0),
+        active_power_limits_to = (min = -1.0, max = 1.0),
+        g = 0.0,
+        dc_current = 0.0,
+        reactive_power_from = 0.0,
+        dc_voltage_control_from = false,
+        ac_voltage_control_from = false,
+        dc_setpoint_from = 0.0,
+        ac_setpoint_from = 1.0,
+        converter_loss_from = LinearCurve(loss_coefficient),
+        max_dc_current_from = 1.0,
+        rating_from = 1.0,
+        reactive_power_limits_from = (min = -1.0, max = 1.0),
+        power_factor_weighting_fraction_from = 0.0,
+        voltage_limits_from = (min = 0.9, max = 1.1),
+        reactive_power_to = 0.0,
+        dc_voltage_control_to = false,
+        ac_voltage_control_to = false,
+        dc_setpoint_to = 0.0,
+        ac_setpoint_to = 1.0,
+        converter_loss_to = LinearCurve(loss_coefficient),
+        max_dc_current_to = 1.0,
+        rating_to = 1.0,
+        reactive_power_limits_to = (min = -1.0, max = 1.0),
+        power_factor_weighting_fraction_to = 0.0,
+        voltage_limits_to = (min = 0.9, max = 1.1),
+    )
+    add_component!(sys, vsc)
+    return vsc
+end
+
 function _add_simple_lcc!(
     sys,
     bus1::ACBus,
