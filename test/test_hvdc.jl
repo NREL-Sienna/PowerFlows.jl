@@ -283,3 +283,33 @@ end
 @testset "Test Generic HVDC on big network: DC power flow" begin
     test_generic_hvdc_on_big_system(PF.DCPowerFlow)
 end
+
+@testset "Test AC power flow with multiple LCC lines" begin
+    # This test covers the bug fix for LCC matrix indexing in solve_ac_powerflow.jl
+    # where [time_step, i] was incorrectly used instead of [i, time_step]
+    # The bug only manifested when there were multiple LCC lines.
+    raw_path = joinpath(TEST_DATA_DIR, "case5_2_lcc.raw")
+    sys = System(raw_path)
+
+    # Verify we have multiple LCC lines
+    lcc_components = collect(get_components(TwoTerminalLCCLine, sys))
+    @test length(lcc_components) == 2
+
+    # Run AC power flow
+    pf_results = solve_powerflow(ACPowerFlow(), sys)
+    @test !ismissing(pf_results)
+
+    # Verify results structure
+    @test haskey(pf_results, "bus_results")
+    @test haskey(pf_results, "flow_results")
+    @test haskey(pf_results, "lcc_results")
+
+    # Verify LCC results have correct number of rows
+    lcc_results = pf_results["lcc_results"]
+    @test nrow(lcc_results) == 2
+
+    # Verify all buses have valid voltage magnitudes
+    bus_results = pf_results["bus_results"]
+    @test all(bus_results.Vm .> 0.9)
+    @test all(bus_results.Vm .< 1.1)
+end
