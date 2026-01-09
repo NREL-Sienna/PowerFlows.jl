@@ -383,7 +383,7 @@ function make_bus_slack_participation_factors!(
 
     data.bus_slack_participation_factors .= sparse(I, J, V, n_buses, time_steps)
     append!(
-        data.generator_slack_participation_factors,
+        get_computed_gspf(data),
         repeat([generator_slack_participation_factors_input], time_steps),
     )
     return
@@ -432,7 +432,7 @@ function make_bus_slack_participation_factors!(
         )
     end
     append!(
-        data.generator_slack_participation_factors,
+        get_computed_gspf(data),
         generator_slack_participation_factors_input,
     )
 

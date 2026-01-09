@@ -126,15 +126,18 @@ end
 
 """
     solve_powerflow(
-        ::T,
-        sys::PSY.System;
+        pf::T,
+        sys::PSY.System
     ) where T <: AbstractDCPowerFlow
 
 
-Evaluates the provided DC power flow method `T` on the [PowerSystems.System](@extref) `sys`, 
+Evaluates the provided DC power flow method `pf` on the [PowerSystems.System](@extref) `sys`,
 returning a dictionary of `DataFrame`s containing the calculated branch flows and bus angles.
 
-Provided for convenience: this interface bypasses the need to create a `PowerFlowData` 
+Configuration options like `time_steps`, `time_step_names`, `network_reductions`, and
+`correct_bustypes` should be set on the power flow object (e.g., `DCPowerFlow(; time_steps=2)`).
+
+Provided for convenience: this interface bypasses the need to create a `PowerFlowData`
 struct, but that's still what's happening under the hood.
 
 # Example
@@ -147,12 +150,11 @@ display(d["1"]["bus_results"])
 ```
 """
 function solve_powerflow(
-    ::T,
-    sys::PSY.System;
-    kargs...,
+    pf::T,
+    sys::PSY.System,
 ) where {T <: AbstractDCPowerFlow}
     with_units_base(sys, PSY.UnitSystem.SYSTEM_BASE) do
-        data = PowerFlowData(T(), sys; kargs...)
+        data = PowerFlowData(pf, sys)
         solve_powerflow!(data)
         return write_results(data, sys)
     end
@@ -181,7 +183,7 @@ Note that `data` must have been created from the [System](@extref PowerSystems.S
 ```julia
 using PowerFlows, PowerSystemCaseBuilder
 sys = build_system(PSITestSystems, "c_sys14")
-data = PowerFlowData(PTDFDCPowerFlow(), sys, time_steps = 2)
+data = PowerFlowData(PTDFDCPowerFlow(; time_steps = 2), sys)
 d = solve_powerflow(data, sys)
 display(d["2"]["flow_results"])
 ```

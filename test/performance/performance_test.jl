@@ -19,8 +19,8 @@ for (group, name) in systems
     for solver in solvers
         sys = build_system(group, name)
         try
-            pf = ACPowerFlow{solver}()
-            pf_data = PF.PowerFlowData(pf, sys; correct_bustypes = true)
+            pf = ACPowerFlow{solver}(; correct_bustypes = true)
+            pf_data = PF.PowerFlowData(pf, sys)
             _, time_solve_1, _, _ = @timed PF.solve_powerflow!(pf_data; pf = pf)
             open("solve_time.txt", "a") do io
                 write(
@@ -28,8 +28,8 @@ for (group, name) in systems
                     "| $(ARGS[1])-$(name)-$(solver)- first solve | $(time_solve_1) |\n",
                 )
             end
-            pf = ACPowerFlow{solver}()
-            pf_data = PF.PowerFlowData(pf, sys; correct_bustypes = true)
+            pf = ACPowerFlow{solver}(; correct_bustypes = true)
+            pf_data = PF.PowerFlowData(pf, sys)
             _, time_solve_2, _, _ = @timed PF.solve_powerflow!(pf_data; pf = pf)
             open("solve_time.txt", "a") do io
                 write(
