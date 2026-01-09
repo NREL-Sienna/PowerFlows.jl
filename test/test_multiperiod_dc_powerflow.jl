@@ -27,20 +27,16 @@
     # create structure for multi-period case
     time_steps = 24
     data_1 =
-        PowerFlowData(DCPowerFlow(), sys; time_steps = time_steps, correct_bustypes = true)
+        PowerFlowData(DCPowerFlow(; time_steps = time_steps, correct_bustypes = true), sys)
     data_2 =
         PowerFlowData(
-            PTDFDCPowerFlow(),
-            sys;
-            time_steps = time_steps,
-            correct_bustypes = true,
+            PTDFDCPowerFlow(; time_steps = time_steps, correct_bustypes = true),
+            sys,
         )
     data_3 =
         PowerFlowData(
-            vPTDFDCPowerFlow(),
-            sys;
-            time_steps = time_steps,
-            correct_bustypes = true,
+            vPTDFDCPowerFlow(; time_steps = time_steps, correct_bustypes = true),
+            sys,
         )
 
     # allocate data from csv

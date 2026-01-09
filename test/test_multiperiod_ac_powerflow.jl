@@ -6,23 +6,23 @@
             sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
             # create structure for multi-period case
-            pf = ACPowerFlow(ACSolver)
             time_steps = 24
-            data = PowerFlowData(pf, sys; time_steps = time_steps)
+            pf = ACPowerFlow(ACSolver; time_steps = time_steps)
+            data = PowerFlowData(pf, sys)
 
             # allocate timeseries data from csv
             prepare_ts_data!(data, time_steps)
 
             # get power flows with NR KLU method and write results
-            solve_powerflow!(data; pf = pf)
+            solve_powerflow!(data)
 
             # check results
-            # for t in 1:length(data.timestep_map)
+            # for t in 1:length(get_timestep_map(data))
             #     res_t = solve_powerflow(pf, sys, t)  # does not work - ts data not set in sys
             #     flow_ft = res_t["flow_results"].P_from_to
             #     flow_tf = res_t["flow_results"].P_to_from
-            #     ts_flow_ft = results[data.timestep_map[t]]["flow_results"].P_from_to
-            #     ts_flow_tf = results[data.timestep_map[t]]["flow_results"].P_to_from
+            #     ts_flow_ft = results[get_timestep_map(data)[t]]["flow_results"].P_from_to
+            #     ts_flow_tf = results[get_timestep_map(data)[t]]["flow_results"].P_to_from
             #     @test isapprox(ts_flow_ft, flow_ft, atol = 1e-9)
             #     @test isapprox(ts_flow_tf, flow_tf, atol = 1e-9)
             # end
@@ -35,20 +35,20 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
 
     # create structure for multi-period case
-    pf_lu = ACPowerFlow(LUACPowerFlow)
-    pf_test = ACPowerFlow(NewtonRaphsonACPowerFlow)
-
     time_steps = 24
-    data_lu = PowerFlowData(pf_lu, sys; time_steps = time_steps)
-    data_test = PowerFlowData(pf_test, sys; time_steps = time_steps)
+    pf_lu = ACPowerFlow(LUACPowerFlow; time_steps = time_steps)
+    pf_test = ACPowerFlow(NewtonRaphsonACPowerFlow; time_steps = time_steps)
+
+    data_lu = PowerFlowData(pf_lu, sys)
+    data_test = PowerFlowData(pf_test, sys)
 
     # allocate timeseries data from csv
     prepare_ts_data!(data_lu, time_steps)
     prepare_ts_data!(data_test, time_steps)
 
     # get power flows with NR KLU method and write results
-    solve_powerflow!(data_lu; pf = pf_lu)
-    solve_powerflow!(data_test; pf = pf_test)
+    solve_powerflow!(data_lu)
+    solve_powerflow!(data_test)
 
     # check results
     @test isapprox(data_lu.bus_magnitude, data_test.bus_magnitude, atol = 1e-9)

@@ -5,14 +5,16 @@ Solves the power flow in the system and writes the solution into the relevant st
 Updates active and reactive power setpoints for generators and active and reactive
 power flows for branches (calculated in the From - To direction and in the To - From direction).
 
-Supports passing kwargs to the PF solver.
+Configuration options like `time_steps`, `time_step_names`, `network_reductions`, and
+`correct_bustypes` should be set on the `ACPowerFlow` object.
 
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- [`pf::ACPowerFlow{<:ACPowerFlowSolverType}`](@ref ACPowerFlow): The power flow solver instance.
+- [`pf::ACPowerFlow{<:ACPowerFlowSolverType}`](@ref ACPowerFlow): The power flow solver instance,
+    including configuration options.
 - `system::PSY.System`: The power system model, a [`PowerSystems.System`](@extref) struct.
-- `kwargs...`: Additional keyword arguments.
+- `kwargs...`: Additional keyword arguments passed to the solver.
 
 ## Keyword Arguments
 - `tol`: Infinite norm of residuals under which convergence is declared. Default is `1e-9`.
@@ -27,10 +29,11 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 ```julia
 solve_and_store_power_flow!(pf, sys)
 
-# Passing kwargs
-solve_and_store_power_flow!(pf, sys; correct_bustypes = true)
+# With correct_bustypes enabled (set on the ACPowerFlow object)
+pf = ACPowerFlow(; correct_bustypes = true)
+solve_and_store_power_flow!(pf, sys)
 
-# Passing keyword arguments
+# Passing solver keyword arguments
 solve_and_store_power_flow!(pf, sys; maxIterations=100)
 ```
 """
@@ -42,14 +45,9 @@ function solve_and_store_power_flow!(
     # converged must be defined in the outer scope to be visible for return
     converged = false
     with_units_base(system, PSY.UnitSystem.SYSTEM_BASE) do
-        data = PowerFlowData(
-            pf,
-            system;
-            correct_bustypes = get(kwargs, :correct_bustypes, false),
-            network_reductions = get(kwargs, :network_reductions, PNM.NetworkReduction[]),
-        )
+        data = PowerFlowData(pf, system)
 
-        converged = solve_powerflow!(data; pf = pf, kwargs...)
+        converged = solve_powerflow!(data; kwargs...)
 
         if converged
             write_powerflow_solution!(
@@ -87,14 +85,9 @@ function solve_powerflow(
     converged = false
     time_step = 1
     with_units_base(system, PSY.UnitSystem.SYSTEM_BASE) do
-        data = PowerFlowData(
-            pf,
-            system;
-            correct_bustypes = get(kwargs, :correct_bustypes, false),
-            network_reductions = get(kwargs, :network_reductions, PNM.NetworkReduction[]),
-        )
+        data = PowerFlowData(pf, system)
 
-        converged = solve_powerflow!(data; pf = pf, kwargs...)
+        converged = solve_powerflow!(data; kwargs...)
 
         if converged
             @info("PowerFlow solve converged, the results are exported in DataFrames")
@@ -109,26 +102,26 @@ function solve_powerflow(
 end
 
 """
-    solve_powerflow!(data::ACPowerFlowData; pf::ACPowerFlow{<:ACPowerFlowSolverType} = ACPowerFlow(), kwargs...)
+    solve_powerflow!(data::ACPowerFlowData; kwargs...)
 
 Solve the multiperiod AC power flow problem for the given power flow data.
 
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
+The power flow solver settings are taken from the `ACPowerFlow` object stored in `data`.
 
 # Arguments
 - [`data::ACPowerFlowData`](@ref ACPowerFlowData): The power flow data containing the grid information and initial conditions.
-- `pf::ACPowerFlow{<:ACPowerFlowSolverType}`: The power flow solver type. Defaults to [`NewtonRaphsonACPowerFlow`](@ref).
 - `kwargs...`: Additional keyword arguments.
 
 # Keyword Arguments
-- `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `data.timestep_map`.
+- `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `get_timestep_map(data)`.
 
 # Description
-This function solves the AC power flow problem for each time step specified in `data`. 
-It preallocates memory for the results and iterates over the sorted time steps. 
-    For each time step, it calls the `_ac_powerflow` function to solve the power flow equations and updates the `data` object with the results. 
-    If the power flow converges, it updates the active and reactive power injections, as well as the voltage magnitudes and angles for different bus types (REF, PV, PQ). 
-    If the power flow does not converge, it sets the corresponding entries in `data` to `NaN`. 
+This function solves the AC power flow problem for each time step specified in `data`.
+It preallocates memory for the results and iterates over the sorted time steps.
+    For each time step, it calls the `_ac_powerflow` function to solve the power flow equations and updates the `data` object with the results.
+    If the power flow converges, it updates the active and reactive power injections, as well as the voltage magnitudes and angles for different bus types (REF, PV, PQ).
+    If the power flow does not converge, it sets the corresponding entries in `data` to `NaN`.
     Finally, it calculates the branch power flows and updates the `data` object.
 
 # Notes
@@ -142,10 +135,13 @@ solve_powerflow!(data)
 """
 function solve_powerflow!(
     data::ACPowerFlowData;
-    pf::ACPowerFlow{<:ACPowerFlowSolverType} = ACPowerFlow(),
     kwargs...,
 )
-    sorted_time_steps = get(kwargs, :time_steps, sort(collect(keys(data.timestep_map))))
+    pf = get_pf(data)
+    # Merge solver_kwargs from pf with any explicitly passed kwargs (explicit kwargs take precedence)
+    merged_kwargs = merge(get_solver_kwargs(pf), kwargs)
+    sorted_time_steps =
+        get(merged_kwargs, :time_steps, sort(collect(keys(get_timestep_map(data)))))
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
 
@@ -161,7 +157,7 @@ function solve_powerflow!(
     @assert length(fb_ix) == length(arcs)
 
     for time_step in sorted_time_steps
-        converged = _ac_powerflow(data, pf, time_step; kwargs...)
+        converged = _ac_powerflow(data, pf, time_step; merged_kwargs...)
         ts_converged[time_step] = converged
 
         if OVERWRITE_NON_CONVERGED && !converged

@@ -8,20 +8,22 @@
         @testset "AC Solver: $(ACSolver)" begin
             sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
 
-            pf = ACPowerFlow(ACSolver)
-            pf_lf = ACPowerFlow(ACSolver; calculate_loss_factors = true)
             time_steps = 24
-            data_loss_factors =
-                PowerFlowData(pf_lf, sys; time_steps = time_steps)
-            data_brute_force =
-                PowerFlowData(pf, sys; time_steps = time_steps)
+            pf = ACPowerFlow(ACSolver; time_steps = time_steps)
+            pf_lf = ACPowerFlow(
+                ACSolver;
+                calculate_loss_factors = true,
+                time_steps = time_steps,
+            )
+            data_loss_factors = PowerFlowData(pf_lf, sys)
+            data_brute_force = PowerFlowData(pf, sys)
 
             # allocate timeseries data from csv
             prepare_ts_data!(data_loss_factors, time_steps)
             prepare_ts_data!(data_brute_force, time_steps)
 
             # get power flows with NR KLU method and write results
-            solve_powerflow!(data_loss_factors; pf = pf_lf)
+            solve_powerflow!(data_loss_factors)
 
             # get loss factors using brute force approach (sequential power flow evaluations for each bus)
             bf_loss_factors = penalty_factors_brute_force(data_brute_force, pf)
@@ -37,7 +39,7 @@
             )
 
             # get power flow results without loss factors
-            solve_powerflow!(data_brute_force; pf = pf)
+            solve_powerflow!(data_brute_force)
             @test isnothing(data_brute_force.loss_factors)
         end
     end
