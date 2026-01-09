@@ -9,9 +9,8 @@
             sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
 
             time_steps = 24
-            pf = ACPowerFlow(ACSolver; time_steps = time_steps)
-            pf_lf = ACPowerFlow(
-                ACSolver;
+            pf = ACPowerFlow{ACSolver}(; time_steps = time_steps)
+            pf_lf = ACPowerFlow{ACSolver}(;
                 calculate_loss_factors = true,
                 time_steps = time_steps,
             )

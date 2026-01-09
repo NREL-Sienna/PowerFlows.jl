@@ -11,8 +11,8 @@ Configuration options like `time_steps`, `time_step_names`, `network_reductions`
 The bus types can be changed from PV to PQ if the reactive power limits are violated.
 
 # Arguments
-- [`pf::ACPowerFlow{<:ACPowerFlowSolverType}`](@ref ACPowerFlow): The power flow solver instance,
-    including configuration options.
+- [`pf::ACPowerFlow{<:ACPowerFlowSolverType}`](@ref ACPowerFlow): the power flow struct,
+    which contains configuration options.
 - `system::PSY.System`: The power system model, a [`PowerSystems.System`](@extref) struct.
 - `kwargs...`: Additional keyword arguments passed to the solver.
 
@@ -29,7 +29,7 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 ```julia
 solve_and_store_power_flow!(pf, sys)
 
-# With correct_bustypes enabled (set on the ACPowerFlow object)
+# With correct_bustypes enabled
 pf = ACPowerFlow(; correct_bustypes = true)
 solve_and_store_power_flow!(pf, sys)
 
@@ -111,7 +111,8 @@ The power flow solver settings are taken from the `ACPowerFlow` object stored in
 
 # Arguments
 - [`data::ACPowerFlowData`](@ref ACPowerFlowData): The power flow data containing the grid information and initial conditions.
-- `kwargs...`: Additional keyword arguments.
+- `kwargs...`: Additional keyword arguments. If these overlap with those in the 
+    `solver_kwargs` of the `ACPowerFlow` object, the values in `kwargs` take precedence.
 
 # Keyword Arguments
 - `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `get_timestep_map(data)`.

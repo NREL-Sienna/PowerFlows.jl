@@ -32,7 +32,7 @@
 
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
-    pf = ACPowerFlow(PF.TrustRegionACPowerFlow; correct_bustypes = true)
+    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}(; correct_bustypes = true)
     pf_w_limits =
         ACPowerFlow{PF.TrustRegionACPowerFlow}(;
             check_reactive_power_limits = true,
@@ -293,8 +293,8 @@ end
 
     PSY.set_units_base_system!(sys, "SYSTEM_BASE")
     pf_default = ACPowerFlow(; correct_bustypes = true)
-    pf_lu = ACPowerFlow(LUACPowerFlow; correct_bustypes = true)
-    pf_newton = ACPowerFlow(NewtonRaphsonACPowerFlow; correct_bustypes = true)
+    pf_lu = ACPowerFlow{LUACPowerFlow}(; correct_bustypes = true)
+    pf_newton = ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = true)
     data = PowerFlowData(pf_default, sys)
 
     time_step = 1
@@ -340,17 +340,14 @@ end
 
 @testset "voltage_stability_factors" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    pf_lu = ACPowerFlow(
-        LUACPowerFlow;
+    pf_lu = ACPowerFlow{LUACPowerFlow}(;
         calculate_voltage_stability_factors = true,
         correct_bustypes = true,
     )
-    pf_newton =
-        ACPowerFlow(
-            NewtonRaphsonACPowerFlow;
-            calculate_voltage_stability_factors = true,
-            correct_bustypes = true,
-        )
+    pf_newton = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        calculate_voltage_stability_factors = true,
+        correct_bustypes = true,
+    )
     data_lu = PowerFlowData(pf_lu, sys)
     data_newton = PowerFlowData(pf_newton, sys)
     time_step = 1

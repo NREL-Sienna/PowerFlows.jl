@@ -40,7 +40,7 @@ struct RobustHomotopyPowerFlow <: ACPowerFlowSolverType end
 
 """
     ACPowerFlow{ACSolver}(; kwargs...) where {ACSolver <: ACPowerFlowSolverType}
-    ACPowerFlow(ACSolver::Type = NewtonRaphsonACPowerFlow; kwargs...)
+    ACPowerFlow(; kwargs...)
 
 An evaluation model for a standard
 [AC powerflow](https://en.wikipedia.org/wiki/Power-flow_study#Power-flow_problem_formulation)
@@ -48,7 +48,7 @@ with the specified solver type.
 
 # Arguments
 - `ACSolver`: The type of AC power flow solver to use, which must be a subtype of [`ACPowerFlowSolverType`](@ref).
-    Default is [`NewtonRaphsonACPowerFlow`](@ref).
+    If not specified, defaults to [`NewtonRaphsonACPowerFlow`](@ref).
 - `check_reactive_power_limits::Bool`: Whether to check reactive power limits during the power flow solution.
     Default is `false`.
 - `exporter::Union{Nothing, PowerFlowEvaluationModel}`: An optional exporter for the power flow results.
@@ -63,7 +63,8 @@ with the specified solver type.
     `(component_type, component_name)` tuples to participation factors. If a `Vector` of such
     dictionaries, different participation factors can be used for different time steps. Default is `nothing`.
 - `enhanced_flat_start::Bool`: Whether to use enhanced flat start initialization. Default is `true`.
-- `robust_power_flow::Bool`: Whether to use robust power flow methods for difficult cases. Default is `false`.
+- `robust_power_flow::Bool`: Whether to use run a DC power flow as a fallback if the initial residual is large.
+    Default is `false`.
 - `skip_redistribution::Bool`: Whether to skip slack redistribution. Default is `false`.
 - `network_reductions::Vector{PNM.NetworkReduction}`: Network reductions to apply.
     Default is an empty vector.
@@ -114,6 +115,9 @@ function ACPowerFlow{ACSolver}(;
     correct_bustypes::Bool = false,
     solver_kwargs::Dict{Symbol, Any} = Dict{Symbol, Any}(),
 ) where {ACSolver <: ACPowerFlowSolverType}
+    if calculate_loss_factors && ACSolver == LevenbergMarquardtACPowerFlow
+        error("Loss factor calculation is not supported by the Levenberg-Marquardt solver.")
+    end
     return ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,
@@ -131,17 +135,8 @@ function ACPowerFlow{ACSolver}(;
     )
 end
 
-# Convenience constructor that allows specifying solver type as positional argument
-function ACPowerFlow(ACSolver::Type{<:ACPowerFlowSolverType}; kwargs...)
-    if get(kwargs, :calculate_loss_factors, false) &&
-       ACSolver == LevenbergMarquardtACPowerFlow
-        error("Loss factor calculation is not supported by the Levenberg-Marquardt solver.")
-    end
-    return ACPowerFlow{ACSolver}(; kwargs...)
-end
-
 # Default constructor: ACPowerFlow() defaults to NewtonRaphsonACPowerFlow solver
-ACPowerFlow(; kwargs...) = ACPowerFlow(NewtonRaphsonACPowerFlow; kwargs...)
+ACPowerFlow(; kwargs...) = ACPowerFlow{NewtonRaphsonACPowerFlow}(; kwargs...)
 
 get_enhanced_flat_start(pf::ACPowerFlow) = pf.enhanced_flat_start
 get_robust_power_flow(pf::ACPowerFlow) = pf.robust_power_flow

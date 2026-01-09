@@ -7,7 +7,7 @@
 
             # create structure for multi-period case
             time_steps = 24
-            pf = ACPowerFlow(ACSolver; time_steps = time_steps)
+            pf = ACPowerFlow{ACSolver}(; time_steps = time_steps)
             data = PowerFlowData(pf, sys)
 
             # allocate timeseries data from csv
@@ -36,8 +36,8 @@ end
 
     # create structure for multi-period case
     time_steps = 24
-    pf_lu = ACPowerFlow(LUACPowerFlow; time_steps = time_steps)
-    pf_test = ACPowerFlow(NewtonRaphsonACPowerFlow; time_steps = time_steps)
+    pf_lu = ACPowerFlow{LUACPowerFlow}(; time_steps = time_steps)
+    pf_test = ACPowerFlow{NewtonRaphsonACPowerFlow}(; time_steps = time_steps)
 
     data_lu = PowerFlowData(pf_lu, sys)
     data_test = PowerFlowData(pf_test, sys)
