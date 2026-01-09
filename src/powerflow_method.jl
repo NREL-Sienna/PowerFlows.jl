@@ -37,7 +37,7 @@ end
 
 """Solve for the Newton-Raphson step, given the factorization object for `J.Jv` 
 (if non-singular) or its stand-in (if singular)."""
-function _solve_Δx_nr!(stateVector::StateVectorCache, cache::KLULinSolveCache{Int32})
+function _solve_Δx_nr!(stateVector::StateVectorCache, cache::KLULinSolveCache{J_INDEX_TYPE})
     copyto!(stateVector.Δx_nr, stateVector.r)
     solve!(cache, stateVector.Δx_nr)
     return
@@ -45,8 +45,8 @@ end
 
 """Check error and do refinement."""
 function _do_refinement!(stateVector::StateVectorCache,
-    A::SparseMatrixCSC{Float64, Int32},
-    cache::KLULinSolveCache{Int32},
+    A::SparseMatrixCSC{Float64, J_INDEX_TYPE},
+    cache::KLULinSolveCache{J_INDEX_TYPE},
     refinement_threshold::Float64,
     refinement_eps::Float64,
 )
@@ -68,7 +68,7 @@ end
 `J.Jv` might be singular."""
 function _set_Δx_nr!(stateVector::StateVectorCache,
     J::ACPowerFlowJacobian,
-    linSolveCache::KLULinSolveCache{Int32},
+    linSolveCache::KLULinSolveCache{J_INDEX_TYPE},
     solver::ACPowerFlowSolverType,
     refinement_threshold::Float64,
     refinement_eps::Float64)
@@ -103,7 +103,7 @@ function _set_Δx_nr!(stateVector::StateVectorCache,
 end
 
 """Returns a stand-in matrix for singular J's."""
-function _singular_J_fallback(Jv::SparseMatrixCSC{Float64, Int32},
+function _singular_J_fallback(Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
     x::Vector{Float64})
     fjac2 = Jv' * Jv
     lambda = NR_SINGULAR_SCALING * sqrt(length(x) * eps()) * norm(fjac2, 1)
@@ -117,7 +117,7 @@ function _dogleg!(Δx_proposed::Vector{Float64},
     Δx_cauchy::Vector{Float64},
     Δx_nr::Vector{Float64},
     r::Vector{Float64},
-    Jv::SparseMatrixCSC{Float64, Int32},
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
     d::Vector{Float64},
     delta::Float64,
 )
@@ -169,7 +169,7 @@ the value of the Jacobian at the new `x`, if needed. Unlike
 `_simple_step`, this has a return value, the updated value of `delta``."""
 function _trust_region_step(time_step::Int,
     stateVector::StateVectorCache,
-    linSolveCache::KLULinSolveCache{Int32},
+    linSolveCache::KLULinSolveCache{J_INDEX_TYPE},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     delta::Float64,
@@ -256,7 +256,7 @@ end
  fields of the `stateVector`, and computes the Jacobian at the new `x`."""
 function _simple_step(time_step::Int,
     stateVector::StateVectorCache,
-    linSolveCache::KLULinSolveCache{Int32},
+    linSolveCache::KLULinSolveCache{J_INDEX_TYPE},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD,
@@ -294,7 +294,7 @@ end
     $DEFAULT_REFINEMENT_EPS """
 function _run_powerflow_method(time_step::Int,
     stateVector::StateVectorCache,
-    linSolveCache::KLULinSolveCache{Int32},
+    linSolveCache::KLULinSolveCache{J_INDEX_TYPE},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::Type{NewtonRaphsonACPowerFlow};
@@ -348,7 +348,7 @@ end
     Default: $DEFAULT_TRUST_REGION_ETA."""
 function _run_powerflow_method(time_step::Int,
     stateVector::StateVectorCache,
-    linSolveCache::KLULinSolveCache{Int32},
+    linSolveCache::KLULinSolveCache{J_INDEX_TYPE},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::Type{TrustRegionACPowerFlow};
