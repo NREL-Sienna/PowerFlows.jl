@@ -41,7 +41,7 @@ end
 @testset "Test AC on generic HVDC" begin
     sys = build_system(MatpowerTestSystems, "matpower_case5_dc_sys")
 
-    pf = ACPowerFlow(TrustRegionACPowerFlow; correct_bustypes = true)
+    pf = ACPowerFlow{TrustRegionACPowerFlow}(; correct_bustypes = true)
     data = PF.PowerFlowData(pf, sys)
     solve_power_flow!(data)
     @test all(data.converged)

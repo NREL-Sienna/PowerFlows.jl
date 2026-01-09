@@ -1,7 +1,7 @@
 @testset "NewtonRaphsonACPowerFlow kwargs" begin
     # test NR kwargs.
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
-    nr_pf = ACPowerFlow(NewtonRaphsonACPowerFlow;
+    nr_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
         solver_kwargs = Dict{Symbol, Any}(
             :maxIterations => 50,
             :tol => 1e-10,
@@ -15,7 +15,7 @@ end
 @testset "TrustRegionACPowerFlow kwargs" begin
     # test trust region kwargs.
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
-    tr_pf = ACPowerFlow(TrustRegionACPowerFlow;
+    tr_pf = ACPowerFlow{TrustRegionACPowerFlow}(;
         solver_kwargs = Dict{Symbol, Any}(
             :eta => 1e-5,
             :tol => 1e-10,
@@ -36,19 +36,19 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
 
     # Small trust region size => Cauchy or dogleg step
-    tr_pf_small = ACPowerFlow(TrustRegionACPowerFlow;
+    tr_pf_small = ACPowerFlow{TrustRegionACPowerFlow}(;
         solver_kwargs = Dict{Symbol, Any}(:factor => 0.01, :maxIterations => 1))
     @test_logs (:debug, r"(Dogleg step selected|Cauchy step selected)") match_mode = :any min_level =
         Logging.Debug PF.solve_power_flow(tr_pf_small, sys)
 
     # Large trust region size => Newton-Raphson step
-    tr_pf_large = ACPowerFlow(TrustRegionACPowerFlow;
+    tr_pf_large = ACPowerFlow{TrustRegionACPowerFlow}(;
         solver_kwargs = Dict{Symbol, Any}(:factor => 10.0, :maxIterations => 1))
     @test_logs (:debug, r"Newton-Raphson step selected.*") match_mode = :any min_level =
         Logging.Debug PF.solve_power_flow(tr_pf_large, sys)
 
     # Large eta => step rejected
-    tr_pf_large_eta = ACPowerFlow(TrustRegionACPowerFlow;
+    tr_pf_large_eta = ACPowerFlow{TrustRegionACPowerFlow}(;
         solver_kwargs = Dict{Symbol, Any}(:eta => 2.0, :maxIterations => 1))
     @test_logs (:debug, r"Step rejected.*") match_mode = :any min_level = Logging.Debug PF.solve_power_flow(
         tr_pf_large_eta,
@@ -56,7 +56,7 @@ end
     )
 
     # Small eta => step accepted
-    tr_pf_small_eta = ACPowerFlow(TrustRegionACPowerFlow;
+    tr_pf_small_eta = ACPowerFlow{TrustRegionACPowerFlow}(;
         solver_kwargs = Dict{Symbol, Any}(:eta => 1e-6, :maxIterations => 1))
     @test_logs (:debug, r"Step accepted.*") match_mode = :any min_level = Logging.Debug PF.solve_power_flow(
         tr_pf_small_eta,
@@ -65,11 +65,11 @@ end
 end
 
 @testset "dc fallback" begin
-    dc_pf = ACPowerFlow(NewtonRaphsonACPowerFlow;
+    dc_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
         robust_power_flow = true,
         enhanced_flat_start = false,
     )
-    no_dc_pf = ACPowerFlow(NewtonRaphsonACPowerFlow;
+    no_dc_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
         robust_power_flow = false,
         enhanced_flat_start = false,
     )
