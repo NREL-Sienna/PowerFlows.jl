@@ -3,13 +3,7 @@ function test_reduced_power_flow(
     sys::PSY.System,
     nrs::Vector{PNM.NetworkReduction},
 )
-    data = PF.PowerFlowData(
-        pf,
-        sys;
-        correct_bustypes = true,
-        time_steps = 1,
-        network_reductions = deepcopy(nrs),
-    )
+    data = PF.PowerFlowData(pf, sys)
     if pf isa PF.ACPowerFlow
         PF.solve_power_flow!(data; pf = pf)
     else
@@ -58,12 +52,7 @@ function validate_reduced_power_flow(
     nrs::Vector{PNM.NetworkReduction},
     unreduced_solved_data::PF.PowerFlowData,
 )
-    data = PF.PowerFlowData(
-        pf,
-        sys;
-        network_reductions = deepcopy(nrs),
-        correct_bustypes = true,
-    )
+    data = PF.PowerFlowData(pf, sys)
     if pf isa PF.ACPowerFlow
         PF.solve_power_flow!(data; pf = pf)
     else

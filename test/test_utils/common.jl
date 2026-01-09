@@ -144,12 +144,11 @@ function _check_ds_pf(
     bus_numbers::Vector{Int},
     original_bus_power::Vector{Float64},
     original_gen_power::Vector{Float64},
-    data_original_bus_power::Vector{Float64};
-    kwargs...,
+    data_original_bus_power::Vector{Float64},
 )
-    res = solve_power_flow(pf, sys; kwargs...)
+    res = solve_power_flow(pf, sys)
 
-    data = PowerFlowData(pf, sys; kwargs...)
+    data = PowerFlowData(pf, sys)
     subnetworks = PowerFlows._find_subnetworks_for_reference_buses(
         data.power_network_matrix.data,
         data.bus_type[:, 1],
@@ -162,7 +161,7 @@ function _check_ds_pf(
         original_bus_power,
     )
 
-    solve_and_store_power_flow!(pf, sys; kwargs...)
+    solve_and_store_power_flow!(pf, sys)
     p_solve, _ = _system_generation_power(sys, bus_numbers)
 
     @test isapprox(p_solve, res["bus_results"][:, :P_gen]; atol = 1e-6, rtol = 0)
@@ -174,7 +173,7 @@ function _check_ds_pf(
     @test original_gen_power == p_gen_reset
 
     @test data.bus_slack_participation_factors[:, 1] == bus_slack_participation_factors
-    solve_power_flow!(data; pf = pf)
+    solve_power_flow!(data)
     # now check the slack power distribution logic
     _check_distributed_slack_consistency(
         subnetworks,
@@ -468,7 +467,7 @@ function power_flow_with_units(
     units::PSY.UnitSystem,
 )
     with_units_base(sys, units) do
-        results = solve_power_flow(T(), sys; correct_bustypes = true)
+        results = solve_power_flow(T(; correct_bustypes = true), sys)
         if "1" in keys(results)
             first_line_flow = results["1"]["flow_results"][1, :]
         else

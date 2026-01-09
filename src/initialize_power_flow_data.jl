@@ -100,7 +100,7 @@ function initialize_power_flow_data!(
         get_slack_participation_factors(pf),
         bus_lookup,
         reverse_bus_search_map,
-        length(data.time_step_map),
+        length(get_timestep_map(data)),
         n_buses,
         data.bus_type,
     )

@@ -258,8 +258,9 @@ function test_power_flow(
     sys2::System;
     exclude_reactive_flow = false,
 )
-    result1 = solve_power_flow(pf, sys1; correct_bustypes = true)
-    result2 = solve_power_flow(pf, sys2; correct_bustypes = true)
+    pf_with_bustypes = ACPowerFlow{typeof(pf).parameters[1]}(; correct_bustypes = true)
+    result1 = solve_power_flow(pf_with_bustypes, sys1)
+    result2 = solve_power_flow(pf_with_bustypes, sys2)
     reactive_power_tol =
         exclude_reactive_flow ? nothing : POWERFLOW_COMPARISON_TOLERANCE
     @test compare_df_within_tolerance("bus_results", result1["bus_results"],
@@ -276,8 +277,9 @@ function test_power_flow(
     sys1::System,
     sys2::System,
 )
-    result1 = solve_power_flow(pf, sys1; correct_bustypes = true)
-    result2 = solve_power_flow(pf, sys2; correct_bustypes = true)
+    pf_with_bustypes = DCPowerFlow(; correct_bustypes = true)
+    result1 = solve_power_flow(pf_with_bustypes, sys1)
+    result2 = solve_power_flow(pf_with_bustypes, sys2)
     @test compare_df_within_tolerance("bus_results", result1["1"]["bus_results"],
         result2["1"]["bus_results"], POWERFLOW_COMPARISON_TOLERANCE)
     @test compare_df_within_tolerance("flow_results",

@@ -195,7 +195,7 @@ function PowerFlows._newton_power_flow(
     end
 
     if !converged
-        if data.calculate_loss_factors
+        if PowerFlows.get_calculate_loss_factors(data)
             data.loss_factors[:, time_step] .= NaN
         end
         @error("The legacy power flow solver with LU did not converge after $i iterations")
