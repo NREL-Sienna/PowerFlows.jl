@@ -677,23 +677,24 @@ function _calculate_loss_factors(
     Jv::SparseMatrixCSC{Float64, Int32},
     time_step::Int,
 )
-    bus_numbers = 1:first(size(data.bus_type))
     ref_mask = data.bus_type[:, time_step] .== (PSY.ACBusTypes.REF,)
-    pvpq_mask = .!ref_mask
-    ref = bus_numbers[ref_mask]
-    pvpq = bus_numbers[pvpq_mask]
-    pvpq_coords = Int32[]
-    for i in pvpq
-        push!(pvpq_coords, 2 * i - 1)  # 2x - 1
-        push!(pvpq_coords, 2 * i)      # 2x
+    if count(ref_mask) > 1
+        @warn(
+            "Loss factors with multiple REF buses isn't supported. " *
+            "Ignoring all but the first REF bus."
+        )
     end
-    J_t = sparse(transpose(Jv[pvpq_coords, pvpq_coords]))
-    dSbus_dV_ref = collect(Jv[2 .* ref .- 1, pvpq_coords])[:]
-    fact = KLU.klu(J_t)
-    lf = fact \ dSbus_dV_ref
-    idx = 1:2:(2 * length(pvpq) - 1)  # only take the dPref_dP loss factors, ignore dPref_dQ
-    data.loss_factors[pvpq_mask, time_step] .= lf[idx]
-    data.loss_factors[ref_mask, time_step] .= 1.0
+    ref = findfirst(ref_mask)
+    new_ref_mask = falses(size(ref_mask))
+    new_ref_mask[ref] = true
+    pvpq_mask = .!(new_ref_mask)
+    pvpq_coord_mask = repeat(pvpq_mask; inner = 2)
+    J_t = sparse(transpose(Jv[pvpq_coord_mask, pvpq_coord_mask]))
+    dSbus_dV_ref = collect(Jv[2 .* ref .- 1, pvpq_coord_mask])[:]
+    lf = KLU.klu(J_t) \ dSbus_dV_ref
+    # only take the dPref_dP loss factors, ignore dPref_dQ
+    data.loss_factors[pvpq_mask, time_step] .= lf[1:2:end]
+    data.loss_factors[new_ref_mask, time_step] .= 1.0
 end
 
 """
@@ -718,11 +719,12 @@ function _calculate_voltage_stability_factors(
 )
     ref, pv, pq = bus_type_idx(data, time_step)
     pvpq = [pv; pq]
-    npvpq = length(pvpq)
     rows, cols = _block_J_indices(pvpq, pq)
-    σ, left, right = _singular_value_decomposition(Jv[rows, cols], npvpq)
-    data.voltage_stability_factors[ref, time_step] .= 0.0
+    σ, _, right = _singular_value_decomposition(Jv[rows, cols], length(pvpq))
+    # Store σ at REF bus, set remaining REF buses (if any) to zero
     data.voltage_stability_factors[first(ref), time_step] = σ
+    data.voltage_stability_factors[ref[2:end], time_step] .= 0.0
+    # PV buses have zero sensitivity, PQ buses get the right singular vector
     data.voltage_stability_factors[pv, time_step] .= 0.0
     data.voltage_stability_factors[pq, time_step] .= right
     return
