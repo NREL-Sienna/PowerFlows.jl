@@ -175,7 +175,7 @@ An evaluation model for a standard DC powerflow.
 
 This provides a fast approximate solution to the AC powerflow problem, by solving for the 
 bus voltage angles under some simplifying assumptions (lossless lines, constant voltage 
-magnitudes, etc.). For details, see 
+magnitudes, etc.). Branch flows are then calculated from the voltage angles. For details, see 
 [Wikipedia](https://en.wikipedia.org/wiki/Power-flow_study#DC_power_flow)
 or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.1.pdf). If 
 not `nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
@@ -193,9 +193,10 @@ An evaluation model that calculates line flows using the Power Transfer Distribu
 Matrix.
 
 This approximates the branch flows in the power grid, under some simplifying
-assumptions (lossless lines, constant voltage magnitudes, etc.). See section 4 of the 
-[MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.1.pdf) for details. If not 
-`nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
+assumptions (lossless lines, constant voltage magnitudes, etc.). In contrast to [`DCPowerFlow`](@ref), 
+branch flows are computed directly from bus power injections, without use of the voltage 
+angles. See section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.1.pdf) 
+for details. If not `nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
 """
 @kwdef struct PTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing

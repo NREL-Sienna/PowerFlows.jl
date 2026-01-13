@@ -160,11 +160,3 @@ set_r!(br, 0.003)
 ```@repl basic_tutorial
 good_results_robust = solve_powerflow(ACPowerFlow{TrustRegionACPowerFlow}(), bad_sys)
 ```
-
-## Summary
-
-| Solver | Voltage Magnitudes | Reactive Power | Use Case |
-|--------|-------------------|----------------|----------|
-| [`DCPowerFlow`](@ref) | All 1.0 | All 0 | Quick screening, large systems |
-| [`PTDFDCPowerFlow`](@ref) | All 1.0 | All 0 | Multiple scenarios, same topology |
-| [`ACPowerFlow`](@ref) | Calculated | Calculated | Accurate analysis, voltage studies |
