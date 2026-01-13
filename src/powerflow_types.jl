@@ -21,13 +21,18 @@ struct NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType end
 """
     TrustRegionACPowerFlow <: ACPowerFlowSolverType
 
-An [`ACPowerFlowSolverType`](@ref) corresponding to the Powell dogleg iterative method."""
+An [`ACPowerFlowSolverType`](@ref) corresponding to the Powell dogleg iterative method. 
+This is a bit more robust than the basic Newton-Raphson method and comparably lightweight."""
 struct TrustRegionACPowerFlow <: ACPowerFlowSolverType end
 
 """
     LevenbergMarquardtACPowerFlow <: ACPowerFlowSolverType
 
-An [`ACPowerFlowSolverType`](@ref) corresponding to the Levenberg-Marquardt iterative method."""
+An [`ACPowerFlowSolverType`](@ref) corresponding to the Levenberg-Marquardt iterative method.
+This is more robust than the basic Newton-Raphson method, but also more computationally
+intensive. Due to the difficulty of tuning meta parameters, this method may occasionally 
+fail to converge where other methods would succeed.
+"""
 struct LevenbergMarquardtACPowerFlow <: ACPowerFlowSolverType end
 
 """
@@ -35,7 +40,8 @@ struct LevenbergMarquardtACPowerFlow <: ACPowerFlowSolverType end
 
 An [`ACPowerFlowSolverType`](@ref) corresponding to a homotopy iterative method, based on the
 paper [\"Improving the robustness of Newton-based power flow methods to cope with poor 
-initial points\"](https://ieeexplore.ieee.org/document/6666905)."""
+initial points\"](https://ieeexplore.ieee.org/document/6666905). This is significantly more 
+robust than Newton-Raphson, but also slower by an order of magnitude or two."""
 struct RobustHomotopyPowerFlow <: ACPowerFlowSolverType end
 
 """A struct for evaluating power flow solutions in AC systems.

@@ -226,7 +226,6 @@ function _ac_powerflow(
     kwargs...,
 )
     check_reactive_power_limits = pf.check_reactive_power_limits
-    
     converged = false
 
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
