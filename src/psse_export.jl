@@ -1581,9 +1581,6 @@ function write_to_buffers!(
             )
             control_objective_mapping = OrderedDict{String, Any}()
             winding_group_category_mapping = OrderedDict{String, Any}()
-            transformer_resistance_mapping = OrderedDict{String, Any}()
-            transformer_reactance_mapping = OrderedDict{String, Any}()
-            transformer_tap_mapping = OrderedDict{String, Any}()
             for (transformer, _) in transformers_with_numbers
                 name = PSY.get_name(transformer)
                 # Control objective mapping (only store if UNDEFINED)
@@ -1602,27 +1599,14 @@ function write_to_buffers!(
                         winding_group_category_mapping[name] = ang1.value
                     end
                 end
-                # Store resistance, reactance, and tap values
-                transformer_resistance_mapping[name] = PSY.get_r(transformer)
-                transformer_reactance_mapping[name] = PSY.get_x(transformer)
-                if transformer isa PSY.TapTransformer ||
-                   transformer isa PSY.PhaseShiftingTransformer
-                    transformer_tap_mapping[name] = PSY.get_tap(transformer)
-                end
             end
             md["transformer_control_objective_mapping"] = control_objective_mapping
             md["transformer_winding_group_category_mapping"] =
                 winding_group_category_mapping
-            md["transformer_resistance_mapping"] = transformer_resistance_mapping
-            md["transformer_reactance_mapping"] = transformer_reactance_mapping
-            md["transformer_tap_mapping"] = transformer_tap_mapping
         else
             md["transformer_name_mapping"] = OrderedDict{String, String}()
             md["transformer_control_objective_mapping"] = OrderedDict{String, Any}()
             md["transformer_winding_group_category_mapping"] = OrderedDict{String, Any}()
-            md["transformer_resistance_mapping"] = OrderedDict{String, Any}()
-            md["transformer_reactance_mapping"] = OrderedDict{String, Any}()
-            md["transformer_tap_mapping"] = OrderedDict{String, Any}()
         end
 
         # Handle 3W transformers separately if needed
@@ -1703,8 +1687,8 @@ function write_to_buffers!(
                 "WINDV1",
                 PSY.get_base_voltage_primary(transformer),
             )
-            # Adding the Float64, for some reason when reading the new EI for 0.0 resistance values
-            # it was getting just a get_r is a 0, leading it to break the reading of the files since 
+            # Adding the Float64, for some reason when reading the new EI for 0.0 resistance values,
+            # it was getting a zero int value, leading it to break the reading of the files since 
             # 0 at the beginning is considered as file termination.
             R1_2 = Float64(get_ext_key_or_default(
                 transformer,
