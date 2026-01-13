@@ -25,11 +25,11 @@ Aqua.test_ambiguities(PowerFlows)
 Aqua.test_stale_deps(PowerFlows)
 Aqua.test_deps_compat(PowerFlows)
 
-const IS = InfrastructureSystems
-const PSB = PowerSystemCaseBuilder
-const PSY = PowerSystems
-const PNM = PowerNetworkMatrices
-const PF = PowerFlows
+import InfrastructureSystems as IS
+import PowerSystemCaseBuilder as PSB
+import PowerSystems as PSY
+import PowerNetworkMatrices as PNM
+import PowerFlows as PF
 
 # used to be public, no longer: import here so we can use in tests
 import PowerFlows: PowerFlowData

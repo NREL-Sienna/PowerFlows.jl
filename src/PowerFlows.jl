@@ -25,7 +25,7 @@ import Base: @kwdef
 import Logging
 import DataFrames
 import DataFrames: Not
-import PowerSystems
+import PowerSystems as PSY
 import PowerSystems: System, with_units_base
 import LinearAlgebra
 import LinearAlgebra: norm, dot, ldiv!
@@ -33,8 +33,8 @@ import LinearAlgebra: norm, dot
 import JSON3
 import KLU
 import SparseArrays
-import InfrastructureSystems
-import PowerNetworkMatrices
+import InfrastructureSystems as IS
+import PowerNetworkMatrices as PNM
 import SparseArrays:
     SparseMatrixCSC, SparseVector, sparse, sparsevec, AbstractSparseMatrix, spzeros
 import StaticArrays: MVector
@@ -42,9 +42,7 @@ import DataStructures: OrderedDict
 import Dates
 import LineSearches: BackTracking
 
-const IS = InfrastructureSystems
-const PSY = PowerSystems
-const PNM = PowerNetworkMatrices
+
 
 include("definitions.jl")
 include("psi_utils.jl")
