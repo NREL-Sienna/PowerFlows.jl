@@ -1,21 +1,24 @@
 
 struct KLUHessianSolver <: HessianSolver
-    linearSolver::KLULinSolveCache{Int32}
+    linearSolver::KLULinSolveCache{J_INDEX_TYPE}
 end
 
-function KLUHessianSolver(H::SparseMatrixCSC{Float64, Int32})
+function KLUHessianSolver(H::SparseMatrixCSC{Float64, J_INDEX_TYPE})
     linearSolver = KLULinSolveCache(H)
     return KLUHessianSolver(linearSolver)
 end
 
-function symbolic_factor!(hSolver::KLUHessianSolver, H::SparseMatrixCSC{Float64, Int32})
+function symbolic_factor!(
+    hSolver::KLUHessianSolver,
+    H::SparseMatrixCSC{Float64, J_INDEX_TYPE},
+)
     symbolic_factor!(hSolver.linearSolver.K, H)
     return
 end
 
 function modify_and_numeric_factor!(
     hSolver::KLUHessianSolver,
-    H::SparseMatrixCSC{Float64, Int32},
+    H::SparseMatrixCSC{Float64, J_INDEX_TYPE},
 )
     minDiagElem = minimum(H[i, i] for i in axes(H, 1))
     τ_old = 0.0

@@ -10,12 +10,12 @@ and can be called as a function at the same time. Calling the instance as a func
 # Fields
 - `data::ACPowerFlowData`: The grid model data used for power flow calculations.
 - `Jf!::Function`: A function that calculates the Jacobian matrix inplace.
-- `Jv::SparseArrays.SparseMatrixCSC{Float64, Int32}`: The Jacobian matrix, which is updated by the function `Jf!`.
+- `Jv::SparseArrays.SparseMatrixCSC{Float64, $J_INDEX_TYPE}`: The Jacobian matrix, which is updated by the function `Jf!`.
 """
 struct ACPowerFlowJacobian
     data::ACPowerFlowData
     Jf!::Function   # This is the function that calculates the Jacobian matrix and updates Jv inplace
-    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32}  # This is the Jacobian matrix, that is updated by the function Jf
+    Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE}  # This is the Jacobian matrix, that is updated by the function Jf
     diag_elements::MVector{4, Float64}  # Temporary storage for diagonal elements during Jacobian update
 end
 
@@ -41,7 +41,7 @@ function (J::ACPowerFlowJacobian)(time_step::Int64)
 end
 
 """
-    (J::ACPowerFlowJacobian)(J::SparseArrays.SparseMatrixCSC{Float64, Int32}, time_step::Int64)
+    (J::ACPowerFlowJacobian)(J::SparseArrays.SparseMatrixCSC{Float64, $J_INDEX_TYPE}, time_step::Int64)
 
 Use the `ACPowerFlowJacobian` to update the provided Jacobian matrix `J` inplace.
 
@@ -50,18 +50,18 @@ Update the internally stored Jacobian matrix `Jv` using the function `Jf!` and t
 This method allows an instance of ACPowerFlowJacobian to be called as a function, following the functor pattern.
 
 # Arguments
-- `J::SparseArrays.SparseMatrixCSC{Float64, Int32}``: A sparse matrix to be updated with new values of the Jacobian matrix.
+- `J::SparseArrays.SparseMatrixCSC{Float64, $J_INDEX_TYPE}`: A sparse matrix to be updated with new values of the Jacobian matrix.
 - `time_step::Int64`: The time step for the calculations.
 
 # Example
 ```julia
 J = ACPowerFlowJacobian(data, time_step)
-Jv = SparseArrays.sparse(Float64[], Int32[], Int32[])
+Jv = SparseArrays.sparse(Float64[], J_INDEX_TYPE[], J_INDEX_TYPE[])
 J(Jv, time_step)  # Updates the Jacobian matrix Jv and writes it to J
 ```
 """
 function (J::ACPowerFlowJacobian)(
-    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     time_step::Int64,
 )
     J.Jf!(J.Jv, J.data, time_step, J.diag_elements)
@@ -111,8 +111,8 @@ end
 Create the Jacobian matrix structure for a reference bus (REF). Currently unused: we \
 fill all four values even for PV buses with structiural zeros using the same function as for PQ buses.
 """
-function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
-    columns::Vector{Int32},
+function _create_jacobian_matrix_structure_bus!(rows::Vector{J_INDEX_TYPE},
+    columns::Vector{J_INDEX_TYPE},
     values::Vector{Float64},
     bus_from::Int,
     bus_to::Int,
@@ -138,8 +138,8 @@ end
 Create the Jacobian matrix structure for a PV bus. Currently unused: we \
 fill all four values even for PV buses with structiural zeros using the same function as for PQ buses.
 """
-function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
-    columns::Vector{Int32},
+function _create_jacobian_matrix_structure_bus!(rows::Vector{J_INDEX_TYPE},
+    columns::Vector{J_INDEX_TYPE},
     values::Vector{Float64},
     bus_from::Int,
     bus_to::Int,
@@ -170,8 +170,8 @@ Create the Jacobian matrix structure for a PQ bus. Using this for all buses beca
     a) for REF buses it doesn't matter if there are 2 values or 4 values - there are not many of them in the grid
     b) for PV buses we fill all four values because we can have a PV -> PQ transition and then we need to fill all four values
 """
-function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
-    columns::Vector{Int32},
+function _create_jacobian_matrix_structure_bus!(rows::Vector{J_INDEX_TYPE},
+    columns::Vector{J_INDEX_TYPE},
     values::Vector{Float64},
     bus_from::Int,
     bus_to::Int,
@@ -203,8 +203,8 @@ end
 """
     _create_jacobian_matrix_structure_lcc(
         data::ACPowerFlowData,
-        rows::Vector{Int32},
-        columns::Vector{Int32},
+        rows::Vector{$J_INDEX_TYPE},
+        columns::Vector{$J_INDEX_TYPE},
         values::Vector{Float64},
         num_buses::Int
     )
@@ -253,15 +253,15 @@ This function sets up the indices of these non-zero entries in the sparse Jacobi
 
 # Arguments
 - `data::ACPowerFlowData`: The power flow data containing LCC system information.
-- `rows::Vector{Int32}`: Vector to store row indices of non-zero Jacobian entries.
-- `columns::Vector{Int32}`: Vector to store column indices of non-zero Jacobian entries.
+- `rows::Vector{$J_INDEX_TYPE}`: Vector to store row indices of non-zero Jacobian entries.
+- `columns::Vector{$J_INDEX_TYPE}`: Vector to store column indices of non-zero Jacobian entries.
 - `values::Vector{Float64}`: Vector to store initial values of non-zero Jacobian entries.
 - `num_buses::Int`: Total number of buses in the system.
 """
 function _create_jacobian_matrix_structure_lcc(
     data::ACPowerFlowData,
-    rows::Vector{Int32},
-    columns::Vector{Int32},
+    rows::Vector{J_INDEX_TYPE},
+    columns::Vector{J_INDEX_TYPE},
     values::Vector{Float64},
     num_buses::Int,
 )
@@ -304,7 +304,7 @@ function _create_jacobian_matrix_structure_lcc(
 end
 
 """
-    _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64) -> SparseMatrixCSC{Float64, Int32}
+    _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64) -> SparseMatrixCSC{Float64, $J_INDEX_TYPE}
 
 Create the structure of the Jacobian matrix for an AC power flow problem.
 
@@ -313,7 +313,7 @@ Create the structure of the Jacobian matrix for an AC power flow problem.
 - `time_step::Int64`: The specific time step for which the Jacobian matrix structure is created.
 
 # Returns
-- `SparseMatrixCSC{Float64, Int32}`: A sparse matrix with structural zeros representing the structure of the Jacobian matrix.
+- `SparseMatrixCSC{Float64, $J_INDEX_TYPE}`: A sparse matrix with structural zeros representing the structure of the Jacobian matrix.
 
 # Description
 
@@ -364,8 +364,8 @@ Finally, the function constructs a sparse matrix from the collected indices and 
 function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64)
     # Create Jacobian structure
     # Initialize arrays to store the row indices, column indices, and values of the non-zero elements of the Jacobian matrix
-    rows = Int32[]      # I
-    columns = Int32[]   # J
+    rows = J_INDEX_TYPE[]      # I
+    columns = J_INDEX_TYPE[]   # J
     values = Float64[]  # V
 
     num_buses = first(size(data.bus_type))
@@ -404,7 +404,7 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
     return Jv0
 end
 
-function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32},
+function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     Y_from_to::ComplexF32,
     Vm_from::Float64,
     Vm_to::Float64,
@@ -429,7 +429,7 @@ function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32
     return
 end
 
-function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     Y_from_to::ComplexF32,
     Vm_from::Float64,
     Vm_to::Float64,
@@ -463,7 +463,7 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     return
 end
 
-function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     Y_from_to::ComplexF32,
     Vm_from::Float64,
     Vm_to::Float64,
@@ -498,7 +498,7 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
 end
 
 function _set_entries_for_lcc(data::ACPowerFlowData,
-    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     num_buses::Int,
     time_step::Int)
     sqrt6_div_pi = sqrt(6) / π
@@ -568,7 +568,7 @@ end
 
 """Used to update Jv based on the bus voltages, angles, etc. in data."""
 function _update_jacobian_matrix_values!(
-    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     data::ACPowerFlowData,
     time_step::Int64,
     diag_elements::MVector{4, Float64},
@@ -658,7 +658,7 @@ function _update_jacobian_matrix_values!(
 end
 
 """
-    calculate_loss_factors(data::ACPowerFlowData, Jv::SparseMatrixCSC{Float64, Int32}, time_step::Int)
+    calculate_loss_factors(data::ACPowerFlowData, Jv::SparseMatrixCSC{Float64, $J_INDEX_TYPE}, time_step::Int)
 
 Calculate and store the active power loss factors in the `loss_factors` matrix of the `ACPowerFlowData` structure for a given time step.
 
@@ -669,31 +669,39 @@ KLU is used to factorize the sparse Jacobian matrix to solve for the loss factor
 
 # Arguments
 - `data::ACPowerFlowData`: The data structure containing power flow information, including the `loss_factors` matrix.
-- `Jv::SparseMatrixCSC{Float64, Int32}`: The sparse Jacobian matrix of the power flow system.
+- `Jv::SparseMatrixCSC{Float64, $J_INDEX_TYPE}`: The sparse Jacobian matrix of the power flow system.
 - `time_step::Int`: The time step index for which the loss factors are calculated.
 """
 function _calculate_loss_factors(
     data::ACPowerFlowData,
-    Jv::SparseMatrixCSC{Float64, Int32},
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
     time_step::Int,
 )
-    bus_numbers = 1:first(size(data.bus_type))
     ref_mask = data.bus_type[:, time_step] .== (PSY.ACBusTypes.REF,)
+    if count(ref_mask) > 1
+        error(
+            "Loss factors with multiple REF buses isn't supported."
+        )
+    end
     pvpq_mask = .!ref_mask
     ref = bus_numbers[ref_mask]
     pvpq = bus_numbers[pvpq_mask]
-    pvpq_coords = Int32[]
+    pvpq_coords = J_INDEX_TYPE[]
     for i in pvpq
         push!(pvpq_coords, 2 * i - 1)  # 2x - 1
         push!(pvpq_coords, 2 * i)      # 2x
     end
-    J_t = sparse(transpose(Jv[pvpq_coords, pvpq_coords]))
-    dSbus_dV_ref = collect(Jv[2 .* ref .- 1, pvpq_coords])[:]
-    fact = KLU.klu(J_t)
-    lf = fact \ dSbus_dV_ref
-    idx = 1:2:(2 * length(pvpq) - 1)  # only take the dPref_dP loss factors, ignore dPref_dQ
-    data.loss_factors[pvpq_mask, time_step] .= lf[idx]
-    data.loss_factors[ref_mask, time_step] .= 1.0
+    ref = findfirst(ref_mask)
+    new_ref_mask = falses(size(ref_mask))
+    new_ref_mask[ref] = true
+    pvpq_mask = .!(new_ref_mask)
+    pvpq_coord_mask = repeat(pvpq_mask; inner = 2)
+    J_t = sparse(transpose(Jv[pvpq_coord_mask, pvpq_coord_mask]))
+    dSbus_dV_ref = collect(Jv[2 .* ref .- 1, pvpq_coord_mask])[:]
+    lf = KLU.klu(J_t) \ dSbus_dV_ref
+    # only take the dPref_dP loss factors, ignore dPref_dQ
+    data.loss_factors[pvpq_mask, time_step] .= lf[1:2:end]
+    data.loss_factors[new_ref_mask, time_step] .= 1.0
 end
 
 """
@@ -713,23 +721,24 @@ The function uses the method described in \"Fast calculation of a voltage stabil
 """
 function _calculate_voltage_stability_factors(
     data::ACPowerFlowData,
-    Jv::SparseMatrixCSC{Float64, Int32},
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
     time_step::Integer,
 )
     ref, pv, pq = bus_type_idx(data, time_step)
     pvpq = [pv; pq]
-    npvpq = length(pvpq)
     rows, cols = _block_J_indices(pvpq, pq)
-    σ, left, right = _singular_value_decomposition(Jv[rows, cols], npvpq)
-    data.voltage_stability_factors[ref, time_step] .= 0.0
+    σ, _, right = _singular_value_decomposition(Jv[rows, cols], length(pvpq))
+    # Store σ at REF bus, set remaining REF buses (if any) to zero
     data.voltage_stability_factors[first(ref), time_step] = σ
+    data.voltage_stability_factors[ref[2:end], time_step] .= 0.0
+    # PV buses have zero sensitivity, PQ buses get the right singular vector
     data.voltage_stability_factors[pv, time_step] .= 0.0
     data.voltage_stability_factors[pq, time_step] .= right
     return
 end
 
 """
-    _block_J_indices(data::ACPowerFlowData, time_step::Int) -> (Vector{Int32}, Vector{Int32})
+    _block_J_indices(data::ACPowerFlowData, time_step::Int) -> (Vector{$J_INDEX_TYPE}, Vector{$J_INDEX_TYPE})
     
 Get the indices to reindex the Jacobian matrix from the interleaved form to the block form:
 
@@ -741,12 +750,12 @@ Get the indices to reindex the Jacobian matrix from the interleaved form to the 
 ```
 
 # Arguments
-- `pvpq::Vector{Int32}`: Indices of the buses that are PV or PQ buses.
-- `pq::Vector{Int32}`: Indices of the buses that are PQ buses.
+- `pvpq::Vector{$J_INDEX_TYPE}`: Indices of the buses that are PV or PQ buses.
+- `pq::Vector{$J_INDEX_TYPE}`: Indices of the buses that are PQ buses.
 
 # Returns
-- `rows::Vector{Int32}`: Row indices for the block Jacobian matrix.
-- `cols::Vector{Int32}`: Column indices for the block Jacobian matrix.
+- `rows::Vector{$J_INDEX_TYPE}`: Row indices for the block Jacobian matrix.
+- `cols::Vector{$J_INDEX_TYPE}`: Column indices for the block Jacobian matrix.
 """
 function _block_J_indices(pvpq::Vector{<:Integer}, pq::Vector{<:Integer})
     rows = vcat(2 .* pvpq .- 1, 2 .* pq)
@@ -756,7 +765,7 @@ function _block_J_indices(pvpq::Vector{<:Integer}, pq::Vector{<:Integer})
 end
 
 """
-    _singular_value_decomposition(J::SparseMatrixCSC{Float64, Int32}, npvpq::Integer; tol::Float64 = 1e-9, max_iter::Integer = 100,)
+    _singular_value_decomposition(J::SparseMatrixCSC{Float64, $J_INDEX_TYPE}, npvpq::Integer; tol::Float64 = 1e-9, max_iter::Integer = 100,)
 
 Estimate the smallest singular value `σ` and corresponding left and right singular vectors `u` and `v` of a sparse matrix `G_s` (a sub-matrix of `J`).
 This function uses an iterative method involving LU factorization of the Jacobian matrix to estimate the smallest singular value of `G_s`. 
@@ -764,7 +773,7 @@ The algorithm alternates between updating `u` and `v`, normalizing, and checking
 The function uses the method described in `Algorithm 3` of \"Fast calculation of a voltage stability index\" by PA Lof et. al.
 
 # Arguments
-- `J::SparseMatrixCSC{Float64, Int32}`: The sparse block-form Jacobian matrix.
+- `J::SparseMatrixCSC{Float64, $J_INDEX_TYPE}`: The sparse block-form Jacobian matrix.
 - `npvpq::Integer`: Number of PV and PQ buses in J.
 
 # Keyword Arguments
@@ -777,7 +786,7 @@ The function uses the method described in `Algorithm 3` of \"Fast calculation of
 - `right::Vector{Float64}`: The estimated right singular vector (referred to as `v` in the cited paper).
 """
 function _singular_value_decomposition(
-    Jv::SparseMatrixCSC{Float64, Int32},
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
     npvpq::Integer;
     tol::Float64 = 1e-9,
     max_iter::Integer = 100,

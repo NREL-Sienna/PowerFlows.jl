@@ -215,9 +215,17 @@ function PowerFlows._newton_powerflow(
         end
 
         if PowerFlows.get_calculate_loss_factors(data)
+            if length(ref) > 1
+                @warn(
+                    "Loss factors with multiple REF buses isn't supported. " *
+                    "Ignoring all but the first REF bus."
+                )
+            end
+            ref_first = first(ref)
             dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus)
             J = _legacy_J(dSbus_dVa, dSbus_dVm, pvpq, pq)
-            dSbus_dV_ref = collect(real.(hcat(dSbus_dVa[ref, pvpq], dSbus_dVm[ref, pq]))[:])
+            dSbus_dV_ref =
+                collect(real.([dSbus_dVa[ref_first, pvpq]; dSbus_dVm[ref_first, pq]]))
             J_t = sparse(transpose(J))
             fact = PowerFlows.KLU.klu(J_t)
             lf = fact \ dSbus_dV_ref  # only take the dPref_dP loss factors, ignore dPref_dQ

@@ -7,6 +7,8 @@ abstract type PowerFlowEvaluationModel end
 """An abstract supertype for all iterative methods.
 Subtypes: [`NewtonRaphsonACPowerFlow`](@ref), [`TrustRegionACPowerFlow`](@ref), 
 [`LevenbergMarquardtACPowerFlow`](@ref), and [`RobustHomotopyPowerFlow`](@ref).
+
+See also: [`ACPowerFlow`](@ref).
 """
 abstract type ACPowerFlowSolverType end
 
@@ -15,19 +17,31 @@ abstract type ACPowerFlowSolverType end
 
 An [`ACPowerFlowSolverType`](@ref) corresponding to a basic Newton-Raphson iterative method. 
 The Newton step is taken verbatim at each iteration: no line search is performed.
+
+See also: [`ACPowerFlow`](@ref).
 """
 struct NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType end
 
 """
     TrustRegionACPowerFlow <: ACPowerFlowSolverType
 
-An [`ACPowerFlowSolverType`](@ref) corresponding to the Powell dogleg iterative method."""
+An [`ACPowerFlowSolverType`](@ref) corresponding to the [Powell dogleg](https://en.wikipedia.org/wiki/Powell%27s_dog_leg_method) iterative method. 
+This is a bit more robust than the basic Newton-Raphson method and comparably lightweight.
+
+See also: [`ACPowerFlow`](@ref).
+"""
 struct TrustRegionACPowerFlow <: ACPowerFlowSolverType end
 
 """
     LevenbergMarquardtACPowerFlow <: ACPowerFlowSolverType
 
-An [`ACPowerFlowSolverType`](@ref) corresponding to the Levenberg-Marquardt iterative method."""
+An [`ACPowerFlowSolverType`](@ref) corresponding to the [Levenberg-Marquardt](https://en.wikipedia.org/wiki/Levenberg–Marquardt_algorithm) iterative method.
+This is more robust than the basic Newton-Raphson method, but also more computationally
+intensive. Due to the difficulty of tuning meta parameters, this method may occasionally 
+fail to converge where other methods would succeed.
+
+See also: [`ACPowerFlow`](@ref).
+"""
 struct LevenbergMarquardtACPowerFlow <: ACPowerFlowSolverType end
 
 """
@@ -35,7 +49,11 @@ struct LevenbergMarquardtACPowerFlow <: ACPowerFlowSolverType end
 
 An [`ACPowerFlowSolverType`](@ref) corresponding to a homotopy iterative method, based on the
 paper [\"Improving the robustness of Newton-based power flow methods to cope with poor 
-initial points\"](https://ieeexplore.ieee.org/document/6666905)."""
+initial points\"](https://ieeexplore.ieee.org/document/6666905). This is significantly more 
+robust than Newton-Raphson, but also slower by an order of magnitude or two.
+
+See also: [`ACPowerFlow`](@ref).
+"""
 struct RobustHomotopyPowerFlow <: ACPowerFlowSolverType end
 
 """
@@ -173,9 +191,9 @@ get_correct_bustypes(pf::AbstractDCPowerFlow) = pf.correct_bustypes
 
 An evaluation model for a standard DC powerflow.
 
-This provides a fast approximate solution to the AC powerflow problem, by solving for the
-bus voltage angles under some simplifying assumptions (lossless lines, constant voltage
-magnitudes, etc.). For details, see
+This provides a fast approximate solution to the AC powerflow problem, by solving for the 
+bus voltage angles under some simplifying assumptions (lossless lines, constant voltage 
+magnitudes, etc.). Branch flows are then calculated from the voltage angles. For details, see 
 [Wikipedia](https://en.wikipedia.org/wiki/Power-flow_study#DC_power_flow)
 or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.1.pdf).
 
@@ -204,8 +222,10 @@ An evaluation model that calculates line flows using the Power Transfer Distribu
 Matrix.
 
 This approximates the branch flows in the power grid, under some simplifying
-assumptions (lossless lines, constant voltage magnitudes, etc.). See section 4 of the
-[MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.1.pdf) for details.
+assumptions (lossless lines, constant voltage magnitudes, etc.). In contrast to [`DCPowerFlow`](@ref), 
+branch flows are computed directly from bus power injections, without use of the voltage 
+angles. See section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.1.pdf) 
+for details.
 
 # Arguments
 - `exporter::Union{Nothing, PowerFlowEvaluationModel}`: An optional exporter for the power flow results.

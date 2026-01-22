@@ -210,3 +210,14 @@ function get_arc_tuple(arc::PSY.Arc, reverse_bus_search_map::Dict{Int, Int})
         get(reverse_bus_search_map, to_bus, to_bus),
     )
 end
+
+function convert_zip_to_constant_power!(p_load::AbstractArray{T, N},
+    i_load::AbstractArray{T, N},
+    z_load::AbstractArray{T, N},
+    voltage_magnitude::T,
+) where {T <: Real, N}
+    # faster with broadcast fusion via @. ?
+    p_load .+= voltage_magnitude .* i_load .+ voltage_magnitude^2 .* z_load
+    i_load .= zero(T)
+    z_load .= zero(T)
+end

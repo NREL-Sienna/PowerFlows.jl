@@ -114,3 +114,72 @@ end
         @test flow_natural == flow_system
     end
 end
+
+function set_zip_load_in_mva!(sys::PSY.System, tp::Tuple{Float64, Float64, Float64})
+    set_units_base_system!(sys, PSY.UnitSystem.NATURAL_UNITS)
+    load = only(get_components(StandardLoad, sys))
+    set_zip_loads_active_power!(load, tp)
+    set_units_base_system!(sys, PSY.UnitSystem.SYSTEM_BASE)
+end
+
+function set_zip_loads_active_power!(
+    load::StandardLoad,
+    tp::Tuple{Float64, Float64, Float64},
+)
+    set_constant_active_power!(load, tp[1])
+    set_impedance_active_power!(load, tp[2])
+    set_current_active_power!(load, tp[3])
+end
+
+@testset "DC power flow: StandardLoad" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    # change all loads to StandardLoad
+    dc_baseline = solve_powerflow(DCPowerFlow(), sys; correct_bustypes = true)
+    set_units_base_system!(sys, PSY.UnitSystem.NATURAL_UNITS)
+    load = first(get_components(PowerLoad, sys))
+    P = PSY.get_active_power(load)
+    println("original load draws: ", P, " MVA")
+    remove_component!(sys, load)
+    new_load = PSY.StandardLoad(;
+        name = get_name(load),
+        available = true,
+        bus = PSY.get_bus(load),
+        base_power = PSY.get_base_power(load),
+        constant_active_power = 0.0,
+        constant_reactive_power = 0.0,
+        impedance_active_power = 0.0,
+        impedance_reactive_power = 0.0,
+        current_active_power = 0.0,
+        current_reactive_power = 0.0,
+        max_constant_active_power = PSY.get_max_active_power(load),
+        max_constant_reactive_power = PSY.get_max_reactive_power(load),
+        max_impedance_active_power = PSY.get_max_active_power(load),
+        max_impedance_reactive_power = PSY.get_max_reactive_power(load),
+        max_current_active_power = PSY.get_max_active_power(load),
+        max_current_reactive_power = PSY.get_max_reactive_power(load),
+    )
+    add_component!(sys, new_load)
+    set_zip_load_in_mva!(sys, (0.0, P, 0.0))
+    impedance_solved = solve_powerflow(DCPowerFlow(), sys)
+    set_zip_load_in_mva!(sys, (0.0, 0.0, P))
+    current_solved = solve_powerflow(DCPowerFlow(), sys)
+
+    @test isapprox(
+        dc_baseline["1"]["bus_results"],
+        impedance_solved["1"]["bus_results"],
+        atol = 1e-6,
+    )
+    @test isapprox(
+        dc_baseline["1"]["bus_results"],
+        current_solved["1"]["bus_results"],
+        atol = 1e-6,
+    )
+
+    set_zip_load_in_mva!(sys, (P * 0.2, P * 0.3, P * 0.5))
+    combined_solved = solve_powerflow(DCPowerFlow(), sys)
+    @test isapprox(
+        dc_baseline["1"]["bus_results"],
+        combined_solved["1"]["bus_results"],
+        atol = 1e-6,
+    )
+end

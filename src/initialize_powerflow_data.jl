@@ -123,5 +123,8 @@ function initialize_powerflow_data!(
         bus_lookup,
         reverse_bus_search_map,
     )
+    # ZIP Loads, DC only: convert constant current and impedance components to constant
+    # powers via assuming V = 1.0 p.u.
+    handle_zip_loads!(data, pf)
     return data
 end
