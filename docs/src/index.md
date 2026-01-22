@@ -5,8 +5,8 @@ CurrentModule = PowerFlows
 ```
 
 ## Overview
-PowerFlows.jl is part of the National Renewable Energy Laboratory's
-[Sienna ecosystem](https://www.nrel.gov/analysis/sienna.html), an open source framework for
+PowerFlows.jl is part of the National Laboratory of the Rockies'
+[Sienna ecosystem](https://www.nlr.gov/analysis/sienna.html), an open source framework for
 scheduling problems and dynamic simulations for power systems. The Sienna ecosystem can be
 [found on github](https://github.com/NREL-Sienna/Sienna).
 The documentation is still in progress. 
