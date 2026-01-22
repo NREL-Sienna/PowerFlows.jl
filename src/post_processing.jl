@@ -870,7 +870,10 @@ function write_results(
 )
     check_unit_setting(sys)
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
-
+    @info(
+        "Constant impedance and constant current loads are included in the results " *
+        "export, by converting them to constant power loads at 1.0 p.u."
+    )
     ### non time-dependent variables
 
     # get bus and arcs
