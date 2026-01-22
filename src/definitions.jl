@@ -40,6 +40,7 @@ const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN = 0.8
 const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX = 1.2
 
 const TIs = Union{Int32, Int64}
+const J_INDEX_TYPE = Int32
 
 # voltage validation
 const DEFAULT_VALIDATE_VOLTAGES = true
