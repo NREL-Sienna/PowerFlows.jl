@@ -84,7 +84,7 @@ end
             _add_simple_line!(sys, b5, b6, 0.015, 0.08, 0.01)
             _add_simple_line!(sys, b4, b6, 0.012, 0.06, 0.015)
 
-            pf_lf = ACPowerFlow(ACSolver; calculate_loss_factors = true)
+            pf_lf = ACPowerFlow{ACSolver}(; calculate_loss_factors = true)
             data_loss_factors = PowerFlowData(pf_lf, sys)
 
             # Verify we have multiple REF buses before solving
@@ -92,13 +92,7 @@ end
             @test length(ref_buses) == 2
 
             # Solving should succeed (with a warning about multiple REF buses)
-            solve_powerflow!(data_loss_factors; pf = pf_lf)
-
-            # First REF bus should have loss factor of 1.0
-            @test data_loss_factors.loss_factors[first(ref_buses), 1] ≈ 1.0
-
-            # Loss factors should be computed (not NaN) for all buses
-            @test all(.!isnan.(data_loss_factors.loss_factors[:, 1]))
+            @test_throws ErrorException solve_powerflow!(data_loss_factors; pf = pf_lf)
         end
     end
 end

@@ -134,7 +134,7 @@ end
 @testset "DC power flow: StandardLoad" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
     # change all loads to StandardLoad
-    dc_baseline = solve_powerflow(DCPowerFlow(), sys; correct_bustypes = true)
+    dc_baseline = solve_powerflow(DCPowerFlow(; correct_bustypes = true), sys)
     set_units_base_system!(sys, PSY.UnitSystem.NATURAL_UNITS)
     load = first(get_components(PowerLoad, sys))
     P = PSY.get_active_power(load)

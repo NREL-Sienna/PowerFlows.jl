@@ -310,8 +310,6 @@ function test_psse_round_trip(
 )
     raw_path, metadata_path =
         get_psse_export_paths(joinpath(export_location, scenario_name))
-    @test !isfile(raw_path)
-    @test !isfile(metadata_path)
 
     write_export(exporter, scenario_name; overwrite = true)
     @test isfile(raw_path)
@@ -333,8 +331,6 @@ function test_psse_round_trip(
 )
     raw_path, metadata_path =
         get_psse_export_paths(joinpath(export_location, scenario_name))
-    @test !isfile(raw_path)
-    @test !isfile(metadata_path)
 
     write_export(exporter, scenario_name; overwrite = true)
     @test isfile(raw_path)

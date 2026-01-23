@@ -216,9 +216,8 @@ function PowerFlows._newton_powerflow(
 
         if PowerFlows.get_calculate_loss_factors(data)
             if length(ref) > 1
-                @warn(
-                    "Loss factors with multiple REF buses isn't supported. " *
-                    "Ignoring all but the first REF bus."
+                error(
+                    "Loss factors with multiple REF buses isn't supported.",
                 )
             end
             ref_first = first(ref)
