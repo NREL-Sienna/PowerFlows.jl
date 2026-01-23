@@ -8,7 +8,7 @@ using PowerSystems
 using PowerSystemCaseBuilder
 using PowerFlows
 using Logging
-const PF = PowerFlows
+import PowerFlows as PF
 
 configure_logging(; console_level = Logging.Info)
 systems = [
