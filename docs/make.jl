@@ -18,7 +18,8 @@ pages = OrderedDict(
         "Code Base Developer Guide" => "reference/developers/developer.md",
         "LCC Model Implementation" => "reference/developers/lcc_model.md",
         "Public API Reference" => "reference/api/public.md",
-        "Internal API Reference" => "reference/api/internal.md"],
+        "Internal API Reference" => "reference/api/internal.md",
+    ],
 )
 
 makedocs(;

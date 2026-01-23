@@ -74,6 +74,7 @@ function get_logging_level_from_env(env_name::String, default)
     return IS.get_logging_level(level)
 end
 
+# See also `load_tests.jl` for running tests interactively with ReTest.jl
 function run_tests(args...; kwargs...)
     logger = global_logger()
     try
