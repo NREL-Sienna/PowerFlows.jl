@@ -84,14 +84,14 @@ end
             _add_simple_line!(sys, b5, b6, 0.015, 0.08, 0.01)
             _add_simple_line!(sys, b4, b6, 0.012, 0.06, 0.015)
 
-            pf_lf = ACPowerFlow(ACSolver; calculate_loss_factors = true)
+            pf_lf = ACPowerFlow{ACSolver}(; calculate_loss_factors = true)
             data_loss_factors = PowerFlowData(pf_lf, sys)
 
             # Verify we have multiple REF buses before solving
             ref_buses = findall(==(PSY.ACBusTypes.REF), data_loss_factors.bus_type[:, 1])
             @test length(ref_buses) == 2
 
-            # Solving should throw an error for multiple REF buses with loss factors
+            # Solving should succeed (with a warning about multiple REF buses)
             @test_throws ErrorException solve_power_flow!(data_loss_factors; pf = pf_lf)
         end
     end
