@@ -2875,4 +2875,4 @@ make_power_flow_container(pfem::PSSEExportPowerFlow, sys::PSY.System; kwargs...)
         step = (0, 0),
     )
 
-solve_powerflow!(exporter::PSSEExporter) = write_export(exporter)
+solve_power_flow!(exporter::PSSEExporter) = write_export(exporter)

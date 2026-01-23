@@ -56,12 +56,12 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
 
     for (ix, bt) in zip(1:n_buses, bus_type)
         P_net[ix] =
-            data.bus_activepower_injection[ix, time_step] -
-            get_bus_activepower_total_withdrawals(data, ix, time_step) +
+            data.bus_active_power_injections[ix, time_step] -
+            get_bus_active_power_total_withdrawals(data, ix, time_step) +
             data.bus_hvdc_net_power[ix, time_step]
         Q_net[ix] =
-            data.bus_reactivepower_injection[ix, time_step] -
-            get_bus_reactivepower_total_withdrawals(data, ix, time_step)
+            data.bus_reactive_power_injections[ix, time_step] -
+            get_bus_reactive_power_total_withdrawals(data, ix, time_step)
         P_net_set[ix] = P_net[ix]
 
         bt ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
@@ -79,7 +79,7 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
         throw(ArgumentError("slack_participation_factors cannot be negative"))
     end
 
-    # sum_sl_weights could differ from the sum of the timestep column of 
+    # sum_sl_weights could differ from the sum of the time_step column of 
     # slack participation factors: maybe a PV bus with nonzero weight got switched to PQ.
 
     # bus slack participation factors relevant for the current time step:
@@ -181,11 +181,11 @@ function _setpq(
 )
     # Set the active and reactive power injections at the bus. 
     # same equation as in the constructor, just solved for bus injection instead of P/Q_net.
-    data.bus_activepower_injection[ix, time_step] =
-        P_net[ix] + get_bus_activepower_total_withdrawals(data, ix, time_step) -
+    data.bus_active_power_injections[ix, time_step] =
+        P_net[ix] + get_bus_active_power_total_withdrawals(data, ix, time_step) -
         data.bus_hvdc_net_power[ix, time_step]
-    data.bus_reactivepower_injection[ix, time_step] =
-        Q_net[ix] + get_bus_reactivepower_total_withdrawals(data, ix, time_step)
+    data.bus_reactive_power_injections[ix, time_step] =
+        Q_net[ix] + get_bus_reactive_power_total_withdrawals(data, ix, time_step)
 end
 
 # dispatching on Val for performance reasons.
@@ -253,12 +253,13 @@ function _set_state_variables_at_bus!(
     data.bus_angles[ix, time_step] = StateVector[2 * ix]
     # update P_net and Q_net for ZIP loads
     P_net[ix] +=
-        data.bus_activepower_constant_current_withdrawals[ix, time_step] * (vm_1 - vm_2) +
-        data.bus_activepower_constant_impedance_withdrawals[ix, time_step] *
+        data.bus_active_power_constant_current_withdrawals[ix, time_step] * (vm_1 - vm_2) +
+        data.bus_active_power_constant_impedance_withdrawals[ix, time_step] *
         (vm_1^2 - vm_2^2)
     Q_net[ix] +=
-        data.bus_reactivepower_constant_current_withdrawals[ix, time_step] * (vm_1 - vm_2) +
-        data.bus_reactivepower_constant_impedance_withdrawals[ix, time_step] *
+        data.bus_reactive_power_constant_current_withdrawals[ix, time_step] *
+        (vm_1 - vm_2) +
+        data.bus_reactive_power_constant_impedance_withdrawals[ix, time_step] *
         (vm_1^2 - vm_2^2)
     # set the active and reactive power injections at the bus
     _setpq(

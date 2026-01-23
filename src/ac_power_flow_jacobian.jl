@@ -664,7 +664,7 @@ Calculate and store the active power loss factors in the `loss_factors` matrix o
 
 The loss factors are computed using the Jacobian matrix `Jv` and the vector `dSbus_dV_ref`, which contains the 
 partial derivatives of slack power with respect to bus voltages. The function interprets changes in 
-slack active power injection as indicative of changes in grid active power losses. 
+slack active power injections as indicative of changes in grid active power losses. 
 KLU is used to factorize the sparse Jacobian matrix to solve for the loss factors.
 
 # Arguments
@@ -677,10 +677,11 @@ function _calculate_loss_factors(
     Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
     time_step::Int,
 )
+    bus_numbers = 1:first(size(data.bus_type))
     ref_mask = data.bus_type[:, time_step] .== (PSY.ACBusTypes.REF,)
     if count(ref_mask) > 1
         error(
-            "Loss factors with multiple REF buses isn't supported."
+            "Loss factors with multiple REF buses isn't supported.",
         )
     end
     pvpq_mask = .!ref_mask

@@ -21,7 +21,7 @@ for (group, name) in systems
         try
             pf = ACPowerFlow{solver}()
             pf_data = PF.PowerFlowData(pf, sys; correct_bustypes = true)
-            _, time_solve_1, _, _ = @timed PF.solve_powerflow!(pf_data; pf = pf)
+            _, time_solve_1, _, _ = @timed PF.solve_power_flow!(pf_data; pf = pf)
             open("solve_time.txt", "a") do io
                 write(
                     io,
@@ -30,7 +30,7 @@ for (group, name) in systems
             end
             pf = ACPowerFlow{solver}()
             pf_data = PF.PowerFlowData(pf, sys; correct_bustypes = true)
-            _, time_solve_2, _, _ = @timed PF.solve_powerflow!(pf_data; pf = pf)
+            _, time_solve_2, _, _ = @timed PF.solve_power_flow!(pf_data; pf = pf)
             open("solve_time.txt", "a") do io
                 write(
                     io,
@@ -40,7 +40,7 @@ for (group, name) in systems
         catch e
             @error exception = (e, catch_backtrace())
             open("solve_time.txt", "a") do io
-                write(io, "| $(ARGS[1])-$(name)-Solve powerflow | FAILED TO TEST |\n")
+                write(io, "| $(ARGS[1])-$(name)-Solve power flow | FAILED TO TEST |\n")
             end
         end
     end

@@ -1,4 +1,4 @@
-function _newton_powerflow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
+function _newton_power_flow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...)

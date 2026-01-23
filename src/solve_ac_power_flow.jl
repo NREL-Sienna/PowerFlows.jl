@@ -49,10 +49,10 @@ function solve_and_store_power_flow!(
             network_reductions = get(kwargs, :network_reductions, PNM.NetworkReduction[]),
         )
 
-        converged = solve_powerflow!(data; pf = pf, kwargs...)
+        converged = solve_power_flow!(data; pf = pf, kwargs...)
 
         if converged
-            write_powerflow_solution!(
+            write_power_flow_solution!(
                 system,
                 pf,
                 data,
@@ -60,7 +60,7 @@ function solve_and_store_power_flow!(
             )
             @info("PowerFlow solve converged, the results have been stored in the system")
         else
-            @error("The powerflow solver returned convergence = $converged")
+            @error("The power flow solver returned convergence = $converged")
         end
     end
 
@@ -74,10 +74,10 @@ Returns the results in a dictionary of dataframes.
 ## Examples
 
 ```julia
-res = solve_powerflow(pf, sys)
+res = solve_power_flow(pf, sys)
 ```
 """
-function solve_powerflow(
+function solve_power_flow(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
     kwargs...,
@@ -94,14 +94,14 @@ function solve_powerflow(
             network_reductions = get(kwargs, :network_reductions, PNM.NetworkReduction[]),
         )
 
-        converged = solve_powerflow!(data; pf = pf, kwargs...)
+        converged = solve_power_flow!(data; pf = pf, kwargs...)
 
         if converged
             @info("PowerFlow solve converged, the results are exported in DataFrames")
             df_results = write_results(pf, system, data, time_step)
         else
             df_results = missing
-            @error("The powerflow solver returned convergence = $(converged)")
+            @error("The power flow solver returned convergence = $(converged)")
         end
     end
 
@@ -109,7 +109,7 @@ function solve_powerflow(
 end
 
 """
-    solve_powerflow!(data::ACPowerFlowData; pf::ACPowerFlow{<:ACPowerFlowSolverType} = ACPowerFlow(), kwargs...)
+    solve_power_flow!(data::ACPowerFlowData; pf::ACPowerFlow{<:ACPowerFlowSolverType} = ACPowerFlow(), kwargs...)
 
 Solve the multiperiod AC power flow problem for the given power flow data.
 
@@ -121,12 +121,12 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 - `kwargs...`: Additional keyword arguments.
 
 # Keyword Arguments
-- `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `data.timestep_map`.
+- `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `data.time_step_map`.
 
 # Description
 This function solves the AC power flow problem for each time step specified in `data`. 
 It preallocates memory for the results and iterates over the sorted time steps. 
-    For each time step, it calls the `_ac_powerflow` function to solve the power flow equations and updates the `data` object with the results. 
+    For each time step, it calls the `_ac_power_flow` function to solve the power flow equations and updates the `data` object with the results. 
     If the power flow converges, it updates the active and reactive power injections, as well as the voltage magnitudes and angles for different bus types (REF, PV, PQ). 
     If the power flow does not converge, it sets the corresponding entries in `data` to `NaN`. 
     Finally, it calculates the branch power flows and updates the `data` object.
@@ -137,15 +137,15 @@ It preallocates memory for the results and iterates over the sorted time steps.
 
 # Examples
 ```julia
-solve_powerflow!(data)
+solve_power_flow!(data)
 ```
 """
-function solve_powerflow!(
+function solve_power_flow!(
     data::ACPowerFlowData;
     pf::ACPowerFlow{<:ACPowerFlowSolverType} = ACPowerFlow(),
     kwargs...,
 )
-    sorted_time_steps = get(kwargs, :time_steps, sort(collect(keys(data.timestep_map))))
+    sorted_time_steps = get(kwargs, :time_steps, sort(collect(keys(data.time_step_map))))
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
 
@@ -161,19 +161,19 @@ function solve_powerflow!(
     @assert length(fb_ix) == length(arcs)
 
     for time_step in sorted_time_steps
-        converged = _ac_powerflow(data, pf, time_step; kwargs...)
+        converged = _ac_power_flow(data, pf, time_step; kwargs...)
         ts_converged[time_step] = converged
 
         if OVERWRITE_NON_CONVERGED && !converged
             # set values to NaN for not converged time steps
-            data.bus_activepower_injection[:, time_step] .= NaN
-            data.bus_activepower_withdrawals[:, time_step] .= NaN
-            data.bus_activepower_constant_current_withdrawals[:, time_step] .= NaN
-            data.bus_activepower_constant_impedance_withdrawals[:, time_step] .= NaN
-            data.bus_reactivepower_injection[:, time_step] .= NaN
-            data.bus_reactivepower_withdrawals[:, time_step] .= NaN
-            data.bus_reactivepower_constant_current_withdrawals[:, time_step] .= NaN
-            data.bus_reactivepower_constant_impedance_withdrawals[:, time_step] .= NaN
+            data.bus_active_power_injections[:, time_step] .= NaN
+            data.bus_active_power_withdrawals[:, time_step] .= NaN
+            data.bus_active_power_constant_current_withdrawals[:, time_step] .= NaN
+            data.bus_active_power_constant_impedance_withdrawals[:, time_step] .= NaN
+            data.bus_reactive_power_injections[:, time_step] .= NaN
+            data.bus_reactive_power_withdrawals[:, time_step] .= NaN
+            data.bus_reactive_power_constant_current_withdrawals[:, time_step] .= NaN
+            data.bus_reactive_power_constant_impedance_withdrawals[:, time_step] .= NaN
             data.bus_magnitude[:, time_step] .= NaN
             data.bus_angles[:, time_step] .= NaN
         elseif get_lcc_count(data) > 0 && converged
@@ -187,13 +187,13 @@ function solve_powerflow!(
                 (rectifier_y, inverter_y) = self_admittances
                 S_inverter = V[inverter_ix] * conj(inverter_y * V[inverter_ix])
                 S_rectifier = V[rectifier_ix] * conj(rectifier_y * V[rectifier_ix])
-                data.lcc.arc_activepower_flow_from_to[time_step, i] =
+                data.lcc.arc_active_power_flow_from_to[time_step, i] =
                     real(S_rectifier)
-                data.lcc.arc_reactivepower_flow_from_to[time_step, i] =
+                data.lcc.arc_reactive_power_flow_from_to[time_step, i] =
                     imag(S_rectifier)
-                data.lcc.arc_activepower_flow_to_from[time_step, i] =
+                data.lcc.arc_active_power_flow_to_from[time_step, i] =
                     real(S_inverter)
-                data.lcc.arc_reactivepower_flow_to_from[time_step, i] =
+                data.lcc.arc_reactive_power_flow_to_from[time_step, i] =
                     imag(S_inverter)
             end
         end
@@ -209,17 +209,17 @@ function solve_powerflow!(
 
     Sft = ts_V[fb_ix, :] .* conj.(Yft.data * ts_V)
     Stf = ts_V[tb_ix, :] .* conj.(Ytf.data * ts_V)
-    data.arc_activepower_flow_from_to .= real.(Sft)
-    data.arc_reactivepower_flow_from_to .= imag.(Sft)
-    data.arc_activepower_flow_to_from .= real.(Stf)
-    data.arc_reactivepower_flow_to_from .= imag.(Stf)
+    data.arc_active_power_flow_from_to .= real.(Sft)
+    data.arc_reactive_power_flow_from_to .= imag.(Sft)
+    data.arc_active_power_flow_to_from .= real.(Stf)
+    data.arc_reactive_power_flow_to_from .= imag.(Stf)
 
     data.converged .= ts_converged
 
     return all(data.converged)
 end
 
-function _ac_powerflow(
+function _ac_power_flow(
     data::ACPowerFlowData,
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     time_step::Int64;
@@ -229,7 +229,7 @@ function _ac_powerflow(
     converged = false
 
     for _ in 1:MAX_REACTIVE_POWER_ITERATIONS
-        converged = _newton_powerflow(pf, data, time_step; kwargs...)
+        converged = _newton_power_flow(pf, data, time_step; kwargs...)
         if !converged || !check_reactive_power_limits ||
            _check_q_limit_bounds!(data, time_step)
             return converged
@@ -249,16 +249,16 @@ function _check_q_limit_bounds!(
     bus_types = view(data.bus_type, :, time_step)
     for (ix, bt) in enumerate(bus_types)
         bt != PSY.ACBusTypes.PV && continue
-        Q_gen = data.bus_reactivepower_injection[ix, time_step]
+        Q_gen = data.bus_reactive_power_injections[ix, time_step]
 
-        Q_max = data.bus_reactivepower_bounds[ix, time_step][2]
-        Q_min = data.bus_reactivepower_bounds[ix, time_step][1]
+        Q_max = data.bus_reactive_power_bounds[ix, time_step][2]
+        Q_min = data.bus_reactive_power_bounds[ix, time_step][1]
 
         if !(Q_min - BOUNDS_TOLERANCE <= Q_gen <= Q_max + BOUNDS_TOLERANCE)
             @info "Bus $(bus_names[ix]) changed to PSY.ACBusTypes.PQ"
             within_limits = false
             data.bus_type[ix, time_step] = PSY.ACBusTypes.PQ
-            data.bus_reactivepower_injection[ix, time_step] =
+            data.bus_reactive_power_injections[ix, time_step] =
                 clamp(Q_gen, Q_min, Q_max)
         else
             @debug "Within Limits"

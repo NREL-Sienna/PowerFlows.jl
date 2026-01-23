@@ -1,17 +1,17 @@
 """Driver for the LevenbergMarquardtACPowerFlow method: sets up the data 
-structures (e.g. residual), runs the powerflow method via calling `_run_powerflow_method` 
+structures (e.g. residual), runs the power flow method via calling `_run_power_flow_method` 
 on them, then handles post-processing (e.g. loss factors)."""
-function _newton_powerflow(
+function _newton_power_flow(
     pf::ACPowerFlow{LevenbergMarquardtACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     kwargs...,
 )
-    residual, J, x0 = initialize_powerflow_variables(pf, data, time_step; kwargs...)
+    residual, J, x0 = initialize_power_flow_variables(pf, data, time_step; kwargs...)
     converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
     i = 0
     if !converged
-        converged, i = _run_powerflow_method(
+        converged, i = _run_power_flow_method(
             time_step,
             x0,
             residual,
@@ -36,7 +36,7 @@ function _newton_powerflow(
     return false
 end
 
-function _run_powerflow_method(
+function _run_power_flow_method(
     time_step::Int,
     x::Vector{Float64},
     residual::ACPowerFlowResidual,

@@ -91,7 +91,7 @@ end
     ) where {ACSolver <: ACPowerFlowSolverType}
 
 An evaluation model for a standard 
-[AC powerflow](https://en.wikipedia.org/wiki/Power-flow_study#Power-flow_problem_formulation) 
+[AC power flow](https://en.wikipedia.org/wiki/Power-flow_study#Power-flow_problem_formulation) 
 with the specified solver type.
 
 
@@ -189,9 +189,9 @@ get_calculate_voltage_stability_factors(::AbstractDCPowerFlow) = false
         exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     )
 
-An evaluation model for a standard DC powerflow.
+An evaluation model for a standard DC power flow.
 
-This provides a fast approximate solution to the AC powerflow problem, by solving for the 
+This provides a fast approximate solution to the AC power flow problem, by solving for the 
 bus voltage angles under some simplifying assumptions (lossless lines, constant voltage 
 magnitudes, etc.). Branch flows are then calculated from the voltage angles. For details, see 
 [Wikipedia](https://en.wikipedia.org/wiki/Power-flow_study#DC_power_flow)
