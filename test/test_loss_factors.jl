@@ -21,7 +21,7 @@
             prepare_ts_data!(data_brute_force, time_steps)
 
             # get power flows with NR KLU method and write results
-            solve_powerflow!(data_loss_factors; pf = pf_lf)
+            solve_power_flow!(data_loss_factors; pf = pf_lf)
 
             # get loss factors using brute force approach (sequential power flow evaluations for each bus)
             bf_loss_factors = penalty_factors_brute_force(data_brute_force, pf)
@@ -37,7 +37,7 @@
             )
 
             # get power flow results without loss factors
-            solve_powerflow!(data_brute_force; pf = pf)
+            solve_power_flow!(data_brute_force; pf = pf)
             @test isnothing(data_brute_force.loss_factors)
         end
     end
@@ -90,14 +90,8 @@ end
             ref_buses = findall(==(PSY.ACBusTypes.REF), data_loss_factors.bus_type[:, 1])
             @test length(ref_buses) == 2
 
-            # Solving should succeed (with a warning about multiple REF buses)
-            solve_powerflow!(data_loss_factors; pf = pf_lf)
-
-            # First REF bus should have loss factor of 1.0
-            @test data_loss_factors.loss_factors[first(ref_buses), 1] ≈ 1.0
-
-            # Loss factors should be computed (not NaN) for all buses
-            @test all(.!isnan.(data_loss_factors.loss_factors[:, 1]))
+            # Solving should throw an error for multiple REF buses with loss factors
+            @test_throws ErrorException solve_power_flow!(data_loss_factors; pf = pf_lf)
         end
     end
 end

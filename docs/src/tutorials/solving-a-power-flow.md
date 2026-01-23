@@ -27,11 +27,11 @@ Create a [`DCPowerFlow`](@ref) solver:
 pf_dc = DCPowerFlow()
 ```
 
-Solve the power flow with [`solve_powerflow`](@ref):
+Solve the power flow with [`solve_power_flow`](@ref):
 
 ```@repl basic_tutorial
 dc_results = with_logger(SimpleLogger(stderr, Logging.Error)) do
-    solve_powerflow(pf_dc, sys)
+    solve_power_flow(pf_dc, sys)
 end
 ```
 
@@ -63,7 +63,7 @@ Solve the power flow:
 
 ```@repl basic_tutorial
 ptdf_results = with_logger(SimpleLogger(stderr, Logging.Error)) do
-    solve_powerflow(pf_ptdf, sys)
+    solve_power_flow(pf_ptdf, sys)
 end
 ```
 
@@ -87,7 +87,7 @@ Solve the power flow:
 
 ```@repl basic_tutorial
 ac_results = with_logger(SimpleLogger(stderr, Logging.Error)) do
-    solve_powerflow(pf_ac, sys)
+    solve_power_flow(pf_ac, sys)
 end
 ```
 
@@ -142,13 +142,13 @@ set_r!(br, 2.0)
 Now try to solve:
 
 ```@repl basic_tutorial
-bad_results = solve_powerflow(ACPowerFlow(), bad_sys)
+bad_results = solve_power_flow(ACPowerFlow(), bad_sys)
 ```
 
 The solver returns `nothing` when it fails to converge. You can try a more robust solver, but if the system is truly infeasible, no solver will converge:
 
 ```@repl basic_tutorial
-bad_results_robust = solve_powerflow(ACPowerFlow{TrustRegionACPowerFlow}(), bad_sys)
+bad_results_robust = solve_power_flow(ACPowerFlow{TrustRegionACPowerFlow}(), bad_sys)
 ```
 
 Let's decrease the resistance and impedance on that line and try again:
@@ -158,5 +158,5 @@ set_r!(br, 0.003)
 ```
 
 ```@repl basic_tutorial
-good_results_robust = solve_powerflow(ACPowerFlow{TrustRegionACPowerFlow}(), bad_sys)
+good_results_robust = solve_power_flow(ACPowerFlow{TrustRegionACPowerFlow}(), bad_sys)
 ```

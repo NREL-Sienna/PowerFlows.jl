@@ -3,7 +3,7 @@ import PowerFlows
 
 struct LUACPowerFlow <: ACPowerFlowSolverType end  # Only for testing, a basic implementation using LinearAlgebra.lu, allocates a lot of memory
 
-"""This function is to be able to compare the results of the legacy powerflow solver with the new one"""
+"""This function is to be able to compare the results of the legacy power flow solver with the new one"""
 function _calc_x(
     data::PowerFlows.ACPowerFlowData,
     time_step::Int64,
@@ -16,16 +16,16 @@ function _calc_x(
         if bt == PSY.ACBusTypes.REF
             # When bustype == REFERENCE PSY.ACBus, state variables are Active and Reactive Power Generated
             x[2 * ix - 1] =
-                data.bus_activepower_injection[ix, time_step] -
-                data.bus_activepower_withdrawals[ix, time_step]
+                data.bus_active_power_injections[ix, time_step] -
+                data.bus_active_power_withdrawals[ix, time_step]
             x[2 * ix] =
-                data.bus_reactivepower_injection[ix, time_step] -
-                data.bus_reactivepower_withdrawals[ix, time_step]
+                data.bus_reactive_power_injections[ix, time_step] -
+                data.bus_reactive_power_withdrawals[ix, time_step]
         elseif bt == PSY.ACBusTypes.PV
             # When bustype == PV PSY.ACBus, state variables are Reactive Power Generated and Voltage Angle
             x[2 * ix - 1] =
-                data.bus_reactivepower_injection[ix, time_step] -
-                data.bus_reactivepower_withdrawals[ix, time_step]
+                data.bus_reactive_power_injections[ix, time_step] -
+                data.bus_reactive_power_withdrawals[ix, time_step]
             x[2 * ix] = data.bus_angles[ix, time_step]
         elseif bt == PSY.ACBusTypes.PQ
             # When bustype == PQ PSY.ACBus, state variables are Voltage Magnitude and Voltage Angle
@@ -122,7 +122,7 @@ function _legacy_J(
 end
 
 # legacy NR implementation - here we do not care about allocations, we use this function only for testing purposes
-function PowerFlows._newton_powerflow(
+function PowerFlows._newton_power_flow(
     pf::ACPowerFlow{LUACPowerFlow},
     data::PowerFlows.ACPowerFlowData,
     time_step::Int64;
@@ -153,11 +153,11 @@ function PowerFlows._newton_powerflow(
     dx = zeros(Float64, npv + 2 * npq)
 
     Sbus =
-        data.bus_activepower_injection[:, time_step] -
-        data.bus_activepower_withdrawals[:, time_step] +
+        data.bus_active_power_injections[:, time_step] -
+        data.bus_active_power_withdrawals[:, time_step] +
         1im * (
-            data.bus_reactivepower_injection[:, time_step] -
-            data.bus_reactivepower_withdrawals[:, time_step]
+            data.bus_reactive_power_injections[:, time_step] -
+            data.bus_reactive_power_withdrawals[:, time_step]
         )
 
     mis = V .* conj.(Ybus * V) .- Sbus
@@ -198,28 +198,25 @@ function PowerFlows._newton_powerflow(
         if data.calculate_loss_factors
             data.loss_factors[:, time_step] .= NaN
         end
-        @error("The legacy powerflow solver with LU did not converge after $i iterations")
+        @error("The legacy power flow solver with LU did not converge after $i iterations")
     else
         Sbus_result = V .* conj.(Ybus * V)
         data.bus_magnitude[:, time_step] .= Vm
         data.bus_angles[:, time_step] .= Va
-        P_gen = real(Sbus_result) + data.bus_activepower_withdrawals[:, time_step]
-        Q_gen = imag(Sbus_result) + data.bus_reactivepower_withdrawals[:, time_step]
+        P_gen = real(Sbus_result) + data.bus_active_power_withdrawals[:, time_step]
+        Q_gen = imag(Sbus_result) + data.bus_reactive_power_withdrawals[:, time_step]
         for (ix, bt) in enumerate(data.bus_type[:, time_step])
             if bt == PSY.ACBusTypes.REF
-                data.bus_activepower_injection[ix, time_step] = P_gen[ix]
-                data.bus_reactivepower_injection[ix, time_step] = Q_gen[ix]
+                data.bus_active_power_injections[ix, time_step] = P_gen[ix]
+                data.bus_reactive_power_injections[ix, time_step] = Q_gen[ix]
             elseif bt == PSY.ACBusTypes.PV
-                data.bus_reactivepower_injection[ix, time_step] = Q_gen[ix]
+                data.bus_reactive_power_injections[ix, time_step] = Q_gen[ix]
             end
         end
 
         if PowerFlows.get_calculate_loss_factors(data)
             if length(ref) > 1
-                @warn(
-                    "Loss factors with multiple REF buses isn't supported. " *
-                    "Ignoring all but the first REF bus."
-                )
+                error("Loss factors with multiple REF buses isn't supported.")
             end
             ref_first = first(ref)
             dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus)
@@ -239,7 +236,7 @@ function PowerFlows._newton_powerflow(
             data.voltage_stability_factors[pv, time_step] .= 0.0
             data.voltage_stability_factors[pq, time_step] .= v
         end
-        @info("The legacy powerflow solver with LU converged after $i iterations")
+        @info("The legacy power flow solver with LU converged after $i iterations")
     end
     return converged
 end
