@@ -1,7 +1,7 @@
 """
 Sets the fields of a PowerFlowData struct to match the given System.
 """
-function initialize_powerflow_data!(
+function initialize_power_flow_data!(
     data::PowerFlowData,
     pf::PowerFlowEvaluationModel,
     sys::System;
@@ -36,61 +36,61 @@ function initialize_powerflow_data!(
     data.bus_magnitude[:, 1] .= bus_magnitude
 
     # active, reactive power injections, withdrawals
-    bus_activepower_injection = zeros(Float64, n_buses)
-    bus_reactivepower_injection = zeros(Float64, n_buses)
+    bus_active_power_injections = zeros(Float64, n_buses)
+    bus_reactive_power_injections = zeros(Float64, n_buses)
     _get_injections!(
         pf,
-        bus_activepower_injection,
-        bus_reactivepower_injection,
+        bus_active_power_injections,
+        bus_reactive_power_injections,
         bus_lookup,
         reverse_bus_search_map,
         sys,
     )
-    data.bus_activepower_injection[:, 1] .= bus_activepower_injection
-    data.bus_reactivepower_injection[:, 1] .= bus_reactivepower_injection
+    data.bus_active_power_injections[:, 1] .= bus_active_power_injections
+    data.bus_reactive_power_injections[:, 1] .= bus_reactive_power_injections
 
     # active power withdrawals, constant current and impedance withdrawals
-    bus_activepower_withdrawals = zeros(Float64, n_buses)
-    bus_reactivepower_withdrawals = zeros(Float64, n_buses)
-    bus_activepower_constant_current_withdrawals = zeros(Float64, n_buses)
-    bus_reactivepower_constant_current_withdrawals = zeros(Float64, n_buses)
-    bus_activepower_constant_impedance_withdrawals = zeros(Float64, n_buses)
-    bus_reactivepower_constant_impedance_withdrawals = zeros(Float64, n_buses)
+    bus_active_power_withdrawals = zeros(Float64, n_buses)
+    bus_reactive_power_withdrawals = zeros(Float64, n_buses)
+    bus_active_power_constant_current_withdrawals = zeros(Float64, n_buses)
+    bus_reactive_power_constant_current_withdrawals = zeros(Float64, n_buses)
+    bus_active_power_constant_impedance_withdrawals = zeros(Float64, n_buses)
+    bus_reactive_power_constant_impedance_withdrawals = zeros(Float64, n_buses)
     _get_withdrawals!(
         pf,
-        bus_activepower_withdrawals,
-        bus_reactivepower_withdrawals,
-        bus_activepower_constant_current_withdrawals,
-        bus_reactivepower_constant_current_withdrawals,
-        bus_activepower_constant_impedance_withdrawals,
-        bus_reactivepower_constant_impedance_withdrawals,
+        bus_active_power_withdrawals,
+        bus_reactive_power_withdrawals,
+        bus_active_power_constant_current_withdrawals,
+        bus_reactive_power_constant_current_withdrawals,
+        bus_active_power_constant_impedance_withdrawals,
+        bus_reactive_power_constant_impedance_withdrawals,
         bus_lookup,
         reverse_bus_search_map,
         sys,
     )
-    data.bus_activepower_withdrawals[:, 1] .= bus_activepower_withdrawals
-    data.bus_reactivepower_withdrawals[:, 1] .= bus_reactivepower_withdrawals
-    data.bus_activepower_constant_current_withdrawals[:, 1] .=
-        bus_activepower_constant_current_withdrawals
-    data.bus_reactivepower_constant_current_withdrawals[:, 1] .=
-        bus_reactivepower_constant_current_withdrawals
-    data.bus_activepower_constant_impedance_withdrawals[:, 1] .=
-        bus_activepower_constant_impedance_withdrawals
-    data.bus_reactivepower_constant_impedance_withdrawals[:, 1] .=
-        bus_reactivepower_constant_impedance_withdrawals
+    data.bus_active_power_withdrawals[:, 1] .= bus_active_power_withdrawals
+    data.bus_reactive_power_withdrawals[:, 1] .= bus_reactive_power_withdrawals
+    data.bus_active_power_constant_current_withdrawals[:, 1] .=
+        bus_active_power_constant_current_withdrawals
+    data.bus_reactive_power_constant_current_withdrawals[:, 1] .=
+        bus_reactive_power_constant_current_withdrawals
+    data.bus_active_power_constant_impedance_withdrawals[:, 1] .=
+        bus_active_power_constant_impedance_withdrawals
+    data.bus_reactive_power_constant_impedance_withdrawals[:, 1] .=
+        bus_reactive_power_constant_impedance_withdrawals
 
     # reactive power bounds
-    bus_reactivepower_bounds = Vector{Tuple{Float64, Float64}}(undef, n_buses)
+    bus_reactive_power_bounds = Vector{Tuple{Float64, Float64}}(undef, n_buses)
     for i in 1:n_buses
-        bus_reactivepower_bounds[i] = (0.0, 0.0)
+        bus_reactive_power_bounds[i] = (0.0, 0.0)
     end
     _get_reactive_power_bound!(
-        bus_reactivepower_bounds,
+        bus_reactive_power_bounds,
         bus_lookup,
         reverse_bus_search_map,
         sys,
     )
-    data.bus_reactivepower_bounds[:, 1] .= bus_reactivepower_bounds
+    data.bus_reactive_power_bounds[:, 1] .= bus_reactive_power_bounds
 
     # bus/generator participation factors
     # remark: everything after the 3rd argument here is contained inside data.
@@ -100,12 +100,12 @@ function initialize_powerflow_data!(
         get_slack_participation_factors(pf),
         bus_lookup,
         reverse_bus_search_map,
-        length(data.timestep_map),
+        length(data.time_step_map),
         n_buses,
         data.bus_type,
     )
     # LCCs: initialize parameters. For DC power flow, this also writes the fixed flows to
-    # data.lcc.arc_activepower_flow_from_to and data.lcc.arc_activepower_flow_to_from.
+    # data.lcc.arc_active_power_flow_from_to and data.lcc.arc_active_power_flow_to_from.
     initialize_LCCParameters!(data, sys, bus_lookup, reverse_bus_search_map)
     # LCCs, DC only: accumulate net power into bus_hvdc_net_power.
     lcc_fixed_injections!(data, sys, bus_lookup, reverse_bus_search_map)

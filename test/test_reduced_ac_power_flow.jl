@@ -23,7 +23,7 @@ ac_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
         sys;
         correct_bustypes = true,
     )
-    PF.solve_powerflow!(unreduced)
+    PF.solve_power_flow!(unreduced)
     @assert all(unreduced.converged)
     pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
     for (k, v) in ac_reduction_types
@@ -33,7 +33,7 @@ ac_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
             continue
         end
         @testset "$k reduction" begin
-            validate_reduced_powerflow(pf, sys, v, unreduced)
+            validate_reduced_power_flow(pf, sys, v, unreduced)
         end
     end
 end
@@ -48,7 +48,7 @@ end
             continue
         end
         @testset "$k reduction" begin
-            result = test_reduced_powerflow(pf, sys, v)
+            result = test_reduced_power_flow(pf, sys, v)
             @test all(result.converged)
         end
     end
@@ -57,7 +57,7 @@ end
     #=
     @testset "ward reduction" begin
         study_buses = [101, 114, 110, 111]
-        result = test_reduced_powerflow(
+        result = test_reduced_power_flow(
             pf,
             sys,
             PNM.NetworkReduction[PNM.WardReduction(study_buses)],
@@ -67,7 +67,7 @@ end
     =#
 end
 
-@testset "system + powerflow solver calls" begin
+@testset "system + power flow solver calls" begin
     for (k, v) in ac_reduction_types
         @testset "$k reduction" begin
             sys = build_system(
@@ -79,7 +79,7 @@ end
             if !supported
                 results = @test_logs((:error, r"failed to converge"),
                     match_mode = :any,
-                    solve_powerflow(
+                    solve_power_flow(
                         pf,
                         sys;
                         correct_bustypes = true,
@@ -87,7 +87,7 @@ end
                     )
                 )
             else
-                results = solve_powerflow(
+                results = solve_power_flow(
                     pf,
                     sys;
                     correct_bustypes = true,
@@ -178,8 +178,8 @@ function compare_power_flows(
     name = PSY.get_name(branch)
     arc_lookup = PF.get_arc_lookup(unreduced)
     arc_ix = arc_lookup[PNM.get_arc_tuple(branch)]
-    unreduced_active_flow = unreduced.arc_activepower_flow_from_to[arc_ix, 1]
-    unreduced_reactive_flow = unreduced.arc_reactivepower_flow_from_to[arc_ix, 1]
+    unreduced_active_flow = unreduced.arc_active_power_flow_from_to[arc_ix, 1]
+    unreduced_reactive_flow = unreduced.arc_reactive_power_flow_from_to[arc_ix, 1]
     reduced_active_flow =
         PSY.get_active_power_flow(PSY.get_component(PSY.Branch, sys, name))
     reduced_reactive_flow =
@@ -200,7 +200,7 @@ end
         correct_bustypes = true,
     )
     pf = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(; skip_redistribution = true)
-    PF.solve_powerflow!(unreduced; pf = pf)
+    PF.solve_power_flow!(unreduced; pf = pf)
     PF.solve_and_store_power_flow!(
         pf,
         sys;
@@ -218,11 +218,11 @@ end
     for (equiv_arc, branches) in parallel_br_map
         equiv_arc_ix = arc_lookup[equiv_arc]
         net_flow_from_to =
-            unreduced.arc_activepower_flow_from_to[equiv_arc_ix, 1] +
-            im * unreduced.arc_reactivepower_flow_from_to[equiv_arc_ix, 1]
+            unreduced.arc_active_power_flow_from_to[equiv_arc_ix, 1] +
+            im * unreduced.arc_reactive_power_flow_from_to[equiv_arc_ix, 1]
         net_flow_to_from =
-            unreduced.arc_activepower_flow_to_from[equiv_arc_ix, 1] +
-            im * unreduced.arc_reactivepower_flow_to_from[equiv_arc_ix, 1]
+            unreduced.arc_active_power_flow_to_from[equiv_arc_ix, 1] +
+            im * unreduced.arc_reactive_power_flow_to_from[equiv_arc_ix, 1]
         total_flow = zero(ComplexF32)
         expected_from_bus = equiv_arc[1]
         (from_bus_no, to_bus_no) = PNM.get_arc_tuple(first(branches))
@@ -251,7 +251,7 @@ end
         correct_bustypes = true,
     )
     pf = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(; skip_redistribution = true)
-    PF.solve_powerflow!(unreduced; pf = pf)
+    PF.solve_power_flow!(unreduced; pf = pf)
     PF.solve_and_store_power_flow!(
         pf,
         sys;
