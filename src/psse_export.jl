@@ -90,6 +90,44 @@ const PSSE_V35_EXTRA_GROUPS = [
 const PSSE_RAW_BUFFER_SIZEHINT = 1024
 const PSSE_MD_BUFFER_SIZEHINT = 1024
 
+# Header comments for v35 format (ordered by data section)
+const PSSE_V35_HEADERS = Dict{String, String}(
+    "Case Identification Data" => "@!IC,SBASE,REV,XFRRAT,NXFRAT,BASFRQ",
+    "Bus Data" => "@!   I,'NAME        ', BASKV, IDE,AREA,ZONE,OWNER, VM,        VA,    NVHI,   NVLO,   EVHI,   EVLO",
+    "Load Data" => "@!   I,'ID',STAT,AREA,ZONE,      PL,        QL,        IP,        IQ,        YP,        YQ, OWNER,SCALE,INTRPT,  DGENP,     DGENQ,DGENF,'  LOAD TYPE '",
+    "Fixed Shunt Data" => "@!   I,'ID',STATUS,  GL,        BL",
+    "Generator Data" => "@!   I,'ID',      PG,        QG,        QT,        QB,     VS,    IREG,NREG,     MBASE,     ZR,         ZX,         RT,         XT,     GTAP,STAT, RMPCT,      PT,        PB,BASLOD,O1,    F1,  O2,    F2,  O3,    F3,  O4,    F4,WMOD, WPF",
+    "Non-Transformer Branch Data" => "@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
+    "Switching Device Data" => "@!   I,     J,'CKT',          X,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12, STAT,NSTAT,  MET,STYPE,'NAME'",
+    "Transformer Data" => """
+@!   I,     J,     K,'CKT',CW,CZ,CM,     MAG1,        MAG2,NMETR,               'N A M E',               STAT,O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4,     'VECGRP', ZCOD
+@!   R1-2,       X1-2, SBASE1-2,     R2-3,       X2-3, SBASE2-3,     R3-1,       X3-1, SBASE3-1, VMSTAR,   ANSTAR
+@!WINDV1, NOMV1,   ANG1, RATE1-1, RATE1-2, RATE1-3, RATE1-4, RATE1-5, RATE1-6, RATE1-7, RATE1-8, RATE1-9,RATE1-10,RATE1-11,RATE1-12,COD1,CONT1,NOD1,  RMA1,   RMI1,   VMA1,   VMI1, NTP1,TAB1, CR1,    CX1,  CNXA1
+@!WINDV2, NOMV2,   ANG2, RATE2-1, RATE2-2, RATE2-3, RATE2-4, RATE2-5, RATE2-6, RATE2-7, RATE2-8, RATE2-9,RATE2-10,RATE2-11,RATE2-12,COD2,CONT2,NOD2,  RMA2,   RMI2,   VMA2,   VMI2, NTP2,TAB2, CR2,    CX2,  CNXA2
+@!WINDV3, NOMV3,   ANG3, RATE3-1, RATE3-2, RATE3-3, RATE3-4, RATE3-5, RATE3-6, RATE3-7, RATE3-8, RATE3-9,RATE3-10,RATE3-11,RATE3-12,COD3,CONT3,NOD3,  RMA3,   RMI3,   VMA3,   VMI3, NTP3,TAB3, CR3,    CX3,  CNXA3""",
+    "Two-Terminal DC Transmission Line Data" => """
+@!  'NAME',   MDC,    RDC,     SETVL,    VSCHD,    VCMOD,    RCOMP,   DELTI,METER,   DCVMIN,CCCITMX,CCCACC
+@! IPR,NBR,  ANMXR,  ANMNR,   RCR,    XCR,   EBASR,  TRR,    TAPR,   TMXR,   TMNR,   STPR,    ICR,NDR,   IFR,   ITR,'IDR', XCAPR
+@! IPI,NBI,  ANMXI,  ANMNI,   RCI,    XCI,   EBASI,  TRI,    TAPI,   TMXI,   TMNI,   STPI,    ICI,NDI,   IFI,   ITI,'IDI', XCAPI""",
+    "Voltage Source Converter (VSC) DC Transmission Line Data" => """
+@!  'NAME',   MDC,  RDC,   O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4
+@!IBUS,TYPE,MODE,  DCSET,  ACSET,  ALOSS,  BLOSS,MINLOSS,  SMAX,   IMAX,   PWF,     MAXQ,   MINQ, VSREG,NREG, RMPCT""",
+    "Transformer Impedance Correction Tables" => """
+@!I,  T1,   Re(F1), Im(F1),   T2,   Re(F2), Im(F2),   T3,   Re(F3), Im(F3),   T4,   Re(F4), Im(F4),   T5,   Re(F5), Im(F5),   T6,   Re(F6), Im(F6)
+@!    T7,   Re(F7), Im(F7),   T8,   Re(F8), Im(F8),   T9,   Re(F9), Im(F9),   T10, Re(F10),Im(F10),   T11, Re(F11),Im(F11),   T12, Re(F12),Im(F12)
+@!      ...""",
+    "Zone Data" => "@! I,   'ZONAME'",
+    "FACTS Device Data" => "@!  'NAME',         I,     J,MODE,PDES,   QDES,  VSET,   SHMX,   TRMX,   VTMN,   VTMX,   VSMX,    IMX,   LINX,   RMPCT,OWNER,  SET1,    SET2,VSREF, FCREG,NREG,   'MNAME'",
+    "Switched Shunt Data" => "@!   I,'ID',MODSW,ADJM,ST, VSWHI,  VSWLO, SWREG,NREG, RMPCT,   'RMIDNT',     BINIT,S1,N1,    B1, S2,N2,    B2, S3,N3,    B3, S4,N4,    B4, S5,N5,    B5, S6,N6,    B6, S7,N7,    B7, S8,N8,    B8",
+    "GNE Device Data" => """
+@!  'NAME',        'MODEL',     NTERM,BUS1...BUSNTERM,NREAL,NINTG,NCHAR
+@!ST,OWNER,NMETR
+@! REAL1...REAL(MIN(10,NREAL))
+@! INTG1...INTG(MIN(10,NINTG))
+@! CHAR1...CHAR(MIN(10,NCHAR))""",
+    "Induction Machine Data" => "@!   I,'ID',ST,SC,DC,AREA,ZONE,OWNER,TC,BC,  MBASE, RATEKV,PC,  PSET,      H,       A,       B,       D,       E,     RA,        XA,        XM,        R1,        X1,        R2,        X2,        X3,       E1,    SE1,   E2,    SE2,   IA1,   IA2, XAMULT",
+)
+
 @kwdef struct PSSEExportPowerFlow <: PowerFlowEvaluationModel
     psse_version::Symbol
     export_dir::AbstractString
@@ -207,6 +245,16 @@ end
 supports_multi_period(::PSSEExporter) = false
 
 _value_or_default(val, default) = isnothing(val) ? default : val
+
+"""
+Write v35 header comments for a given section if applicable.
+"""
+function write_v35_header(io::IO, exporter::PSSEExporter, section_name::String)
+    if exporter.psse_version == :v35 && haskey(PSSE_V35_HEADERS, section_name)
+        header = PSSE_V35_HEADERS[section_name]
+        println(io, header)
+    end
+end
 
 function update_version_group(psse_version::Symbol)
     groups = copy(PSSE_GROUPS)
@@ -353,9 +401,17 @@ function end_group(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name,
     exporter.md_valid || (md["record_groups"][group_name] = written)
 end
 
-# Parses "1" and "1.0" as 1, returns nothing on "1.5" and "a"
+"""
+Parse a value to Int64, handling strings, floats, and PSSE_DEFAULT.
+Returns PSSE_DEFAULT for non-whole numbers or invalid values.
+"""
+_to_float(x::Number) = Float64(x)
+_to_float(x::AbstractString) = tryparse(Float64, x)
+_to_float(::Any) = nothing
 function _permissive_parse_int(x)
-    n = tryparse(Float64, x)
+    (x == PSSE_DEFAULT || x == "") && return PSSE_DEFAULT
+
+    n = _to_float(x)
     isnothing(n) && return PSSE_DEFAULT
     (round(n) == n) || return PSSE_DEFAULT
     return Int64(n)
@@ -456,6 +512,7 @@ function write_to_buffers!(
     md = exporter.md_dict
 
     check_supported_version(exporter)
+    write_v35_header(io, exporter, "Case Identification Data")
     now = Dates.now()
 
     # Update version-specific values
@@ -463,11 +520,6 @@ function write_to_buffers!(
     version_string = exporter.psse_version == :v33 ? "33.3" : "35"
 
     md_string = "PSS/E $version_string RAW via PowerFlows.jl, $now"
-
-    # Add header format comment for v35
-    if exporter.psse_version == :v35
-        println(io, "@!IC,SBASE,REV,XFRRAT,NXFRAT,BASFRQ")
-    end
 
     # Record 1
     IC = 0
@@ -590,14 +642,9 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_supported_version(exporter)
 
-    if exporter.psse_version == :v35
-        println(
-            io,
-            "@!   I,'NAME        ', BASKV, IDE,AREA,ZONE,OWNER, VM,        VA,    NVHI,   NVLO,   EVHI,   EVLO",
-        )
-    end
+    check_supported_version(exporter)
+    write_v35_header(io, exporter, "Bus Data")
 
     tr3w_starbuses =
         PSY.get_name.(
@@ -774,14 +821,10 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
+
     check_supported_version(exporter)
 
-    if exporter.psse_version == :v35
-        println(
-            io,
-            "@!   I,'ID',STAT,AREA,ZONE,      PL,        QL,        IP,        IQ,        YP,        YQ, OWNER,SCALE,INTRPT,  DGENP,     DGENQ,DGENF,'  LOAD TYPE '",
-        )
-    end
+    write_v35_header(io, exporter, "Load Data")
 
     loads = get!(exporter.components_cache, "loads") do
         sort!(collect(PSY.get_components(PSY.StaticLoad, exporter.system)); by = PSY.get_name)
@@ -843,11 +886,9 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_supported_version(exporter)
 
-    if exporter.psse_version == :v35
-        println(io, "@!   I,'ID',STATUS,  GL,        BL")
-    end
+    check_supported_version(exporter)
+    write_v35_header(io, exporter, "Fixed Shunt Data")
 
     shunts = get!(exporter.components_cache, "shunts") do
         sort!(
@@ -983,14 +1024,9 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_supported_version(exporter)
 
-    if exporter.psse_version == :v35
-        println(
-            io,
-            "@!   I,'ID',      PG,        QG,        QT,        QB,     VS,    IREG,NREG,     MBASE,     ZR,         ZX,         RT,         XT,     GTAP,STAT, RMPCT,      PT,        PB,BASLOD,O1,    F1,  O2,    F2,  O3,    F3,  O4,    F4,WMOD, WPF",
-        )
-    end
+    check_supported_version(exporter)
+    write_v35_header(io, exporter, "Generator Data")
 
     generators = get!(exporter.components_cache, "generators") do
         temp_gens::Vector{PSY.StaticInjection} = sort!(
@@ -1245,15 +1281,9 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_supported_version(exporter)
 
-    # Add header comment for v35
-    if exporter.psse_version == :v35
-        println(
-            io,
-            "@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
-        )
-    end
+    check_supported_version(exporter)
+    write_v35_header(io, exporter, "Non-Transformer Branch Data")
 
     branches_with_numbers = get!(exporter.components_cache, "branches") do
         get_branches_with_numbers(exporter)
@@ -1363,17 +1393,9 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
+
     check_supported_version(exporter)
-
-    # Section exists only for v35
-    if exporter.psse_version != :v35
-        return
-    end
-
-    println(
-        io,
-        "@!   I,     J,'CKT',          X,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12, STAT,NSTAT,  MET,STYPE,'NAME'",
-    )
+    write_v35_header(io, exporter, "Switching Device Data")
 
     discrete_branches = get!(exporter.components_cache, "discrete_branches") do
         branches_with_numbers = get_branches_with_numbers(exporter)
@@ -1513,31 +1535,9 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_supported_version(exporter)
 
-    # Add header comments for v35
-    if exporter.psse_version == :v35
-        println(
-            io,
-            "@!   I,     J,     K,'CKT',CW,CZ,CM,     MAG1,        MAG2,NMETR,               'N A M E',               STAT,O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4,     'VECGRP', ZCOD",
-        )
-        println(
-            io,
-            "@!   R1-2,       X1-2, SBASE1-2,     R2-3,       X2-3, SBASE2-3,     R3-1,       X3-1, SBASE3-1, VMSTAR,   ANSTAR",
-        )
-        println(
-            io,
-            "@!WINDV1, NOMV1,   ANG1, RATE1-1, RATE1-2, RATE1-3, RATE1-4, RATE1-5, RATE1-6, RATE1-7, RATE1-8, RATE1-9,RATE1-10,RATE1-11,RATE1-12,COD1,CONT1,NOD1,  RMA1,   RMI1,   VMA1,   VMI1, NTP1,TAB1, CR1,    CX1,  CNXA1",
-        )
-        println(
-            io,
-            "@!WINDV2, NOMV2,   ANG2, RATE2-1, RATE2-2, RATE2-3, RATE2-4, RATE2-5, RATE2-6, RATE2-7, RATE2-8, RATE2-9,RATE2-10,RATE2-11,RATE2-12,COD2,CONT2,NOD2,  RMA2,   RMI2,   VMA2,   VMI2, NTP2,TAB2, CR2,    CX2,  CNXA2",
-        )
-        println(
-            io,
-            "@!WINDV3, NOMV3,   ANG3, RATE3-1, RATE3-2, RATE3-3, RATE3-4, RATE3-5, RATE3-6, RATE3-7, RATE3-8, RATE3-9,RATE3-10,RATE3-11,RATE3-12,COD3,CONT3,NOD3,  RMA3,   RMI3,   VMA3,   VMI3, NTP3,TAB3, CR3,    CX3,  CNXA3",
-        )
-    end
+    check_supported_version(exporter)
+    write_v35_header(io, exporter, "Transformer Data")
 
     transformers_with_numbers = get!(exporter.components_cache, "transformers") do
         transformers = sort!(
@@ -1723,8 +1723,7 @@ function write_to_buffers!(
             end
             RMA1 = get_ext_key_or_default(transformer, "RMA1")
             RMI1 = get_ext_key_or_default(transformer, "RMI1")
-            NTP1 = get_ext_key_or_default(transformer, "NTP1")
-            NTP1 = NTP1 isa Float64 ? Int(NTP1) : NTP1
+            NTP1 = _permissive_parse_int(get_ext_key_or_default(transformer, "NTP1"))
             NOD1 = get_ext_key_or_default(transformer, "NOD1")
 
             if (transformer isa PSY.PhaseShiftingTransformer)
@@ -1739,9 +1738,9 @@ function write_to_buffers!(
             if exporter.psse_version == :v35
                 RATA1, RATB1, RATC1 =
                     with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-                        _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
-                        _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
-                        _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+                        _value_or_default(PSY.get_rating(transformer), 0.0),
+                        _value_or_default(PSY.get_rating_b(transformer), 0.0),
+                        _value_or_default(PSY.get_rating_c(transformer), 0.0)
                     end
 
                 rates_1 = [
@@ -1750,14 +1749,14 @@ function write_to_buffers!(
                     get_ext_key_or_default(transformer, "RATE13", RATC1),
                 ]
                 for i in 4:12
-                    push!(rates_1, get_ext_key_or_default(transformer, "RATE1$i"))
+                    push!(rates_1, get_ext_key_or_default(transformer, "RATE1$i", 0.0))
                 end
             else
                 RATA1, RATB1, RATC1 =
                     with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-                        _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
-                        _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
-                        _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+                        _value_or_default(PSY.get_rating(transformer), 0.0),
+                        _value_or_default(PSY.get_rating_b(transformer), 0.0),
+                        _value_or_default(PSY.get_rating_c(transformer), 0.0)
                     end
             end
 
@@ -1903,6 +1902,10 @@ function write_to_buffers!(
                     RATA = get_ext_key_or_default(transformer, "RATA$prefix", RAT)
                     RATB = get_ext_key_or_default(transformer, "RATB$prefix", RAT)
                     RATC = get_ext_key_or_default(transformer, "RATC$prefix", RAT)
+                    # Ensure numeric values
+                    RATA = RATA == PSSE_DEFAULT ? 0.0 : RATA
+                    RATB = RATB == PSSE_DEFAULT ? 0.0 : RATB
+                    RATC = RATC == PSSE_DEFAULT ? 0.0 : RATC
                     RATES = (RATA, RATB, RATC)
                 end
 
@@ -1913,7 +1916,8 @@ function write_to_buffers!(
                 RMI = get_ext_key_or_default(transformer, "RMI$prefix")
                 VMA = get_ext_key_or_default(transformer, "VMA$prefix")
                 VMI = get_ext_key_or_default(transformer, "VMI$prefix")
-                NTP = Int(get_ext_key_or_default(transformer, "NTP$prefix"))
+                NTP =
+                    _permissive_parse_int(get_ext_key_or_default(transformer, "NTP$prefix"))
                 TAB = 0
                 for icd_tr in supp_attr
                     if PSY.get_transformer_winding(icd_tr) == category
@@ -1997,23 +2001,9 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_supported_version(exporter)
 
-    # Add header comments for v35
-    if exporter.psse_version == :v35
-        println(
-            io,
-            "@!  'NAME',   MDC,    RDC,     SETVL,    VSCHD,    VCMOD,    RCOMP,   DELTI,METER,   DCVMIN,CCCITMX,CCCACC",
-        )
-        println(
-            io,
-            "@! IPR,NBR,  ANMXR,  ANMNR,   RCR,    XCR,   EBASR,  TRR,    TAPR,   TMXR,   TMNR,   STPR,    ICR,NDR,   IFR,   ITR,'IDR', XCAPR",
-        )
-        println(
-            io,
-            "@! IPI,NBI,  ANMXI,  ANMNI,   RCI,    XCI,   EBASI,  TRI,    TAPI,   TMXI,   TMNI,   STPI,    ICI,NDI,   IFI,   ITI,'IDI', XCAPI",
-        )
-    end
+    check_supported_version(exporter)
+    write_v35_header(io, exporter, "Two-Terminal DC Transmission Line Data")
 
     dclines_with_numbers = get!(exporter.components_cache, "dclines") do
         dclines = sort!(
@@ -2152,18 +2142,13 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_supported_version(exporter)
 
-    if exporter.psse_version == :v35
-        println(
-            io,
-            "@!  'NAME',   MDC,  RDC,   O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
-        )
-        println(
-            io,
-            "@!IBUS,TYPE,MODE,  DCSET,  ACSET,  ALOSS,  BLOSS,MINLOSS,  SMAX,   IMAX,   PWF,     MAXQ,   MINQ, VSREG,NREG, RMPCT",
-        )
-    end
+    check_supported_version(exporter)
+    write_v35_header(
+        io,
+        exporter,
+        "Voltage Source Converter (VSC) DC Transmission Line Data",
+    )
 
     vsc_lines_with_numbers = get!(exporter.components_cache, "vsc_lines") do
         vsc_lines = sort!(
@@ -2350,20 +2335,9 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_supported_version(exporter)
 
-    # Add header comments for v35
-    if exporter.psse_version == :v35
-        println(
-            io,
-            "@!I,  T1,   Re(F1), Im(F1),   T2,   Re(F2), Im(F2),   T3,   Re(F3), Im(F3),   T4,   Re(F4), Im(F4),   T5,   Re(F5), Im(F5),   T6,   Re(F6), Im(F6)",
-        )
-        println(
-            io,
-            "@!    T7,   Re(F7), Im(F7),   T8,   Re(F8), Im(F8),   T9,   Re(F9), Im(F9),   T10, Re(F10),Im(F10),   T11, Re(F11),Im(F11),   T12, Re(F12),Im(F12)",
-        )
-        println(io, "@!      ...")
-    end
+    check_supported_version(exporter)
+    write_v35_header(io, exporter, "Transformer Impedance Correction Tables")
 
     icd_entries = get!(exporter.components_cache, "icd_entries") do
         sort(
@@ -2463,11 +2437,9 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_supported_version(exporter)
 
-    if exporter.psse_version == :v35
-        println(io, "@! I,   'ZONAME'")
-    end
+    check_supported_version(exporter)
+    write_v35_header(io, exporter, "Zone Data")
 
     zone_mapping = md["zone_mapping"]
     zones = get!(exporter.components_cache, "zones") do
@@ -2496,14 +2468,9 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_supported_version(exporter)
 
-    if exporter.psse_version == :v35
-        println(
-            io,
-            "@!  'NAME',         I,     J,MODE,PDES,   QDES,  VSET,   SHMX,   TRMX,   VTMN,   VTMX,   VSMX,    IMX,   LINX,   RMPCT,OWNER,  SET1,    SET2,VSREF, FCREG,NREG,   'MNAME'",
-        )
-    end
+    check_supported_version(exporter)
+    write_v35_header(io, exporter, "FACTS Device Data")
 
     facts_devices = get!(exporter.components_cache, "facts_devices") do
         sort!(
@@ -2576,14 +2543,9 @@ function write_to_buffers!(
 )
     io = exporter.raw_buffer
     md = exporter.md_dict
-    check_supported_version(exporter)
 
-    if exporter.psse_version == :v35
-        println(
-            io,
-            "@!   I,'ID',MODSW,ADJM,ST, VSWHI,  VSWLO, SWREG,NREG, RMPCT,   'RMIDNT',     BINIT,S1,N1,    B1, S2,N2,    B2, S3,N3,    B3, S4,N4,    B4, S5,N5,    B5, S6,N6,    B6, S7,N7,    B7, S8,N8,    B8",
-        )
-    end
+    check_supported_version(exporter)
+    write_v35_header(io, exporter, "Switched Shunt Data")
 
     switched_shunts = get!(exporter.components_cache, "switched_shunts") do
         sort!(
