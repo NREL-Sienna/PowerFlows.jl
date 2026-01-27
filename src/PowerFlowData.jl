@@ -366,7 +366,7 @@ function get_bus_reactive_power_total_withdrawals(
            pfd.bus_magnitude[ix, time_step]^2
 end
 
-function clear_injections_data!(pfd::PowerFlowData)
+function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_active_power_injections .= 0.0
     pfd.bus_reactive_power_injections .= 0.0
     pfd.bus_active_power_withdrawals .= 0.0
