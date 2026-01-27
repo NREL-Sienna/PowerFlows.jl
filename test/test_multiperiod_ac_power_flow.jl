@@ -17,12 +17,12 @@
             solve_power_flow!(data)
 
             # check results
-            # for t in 1:length(get_timestep_map(data))
+            # for t in 1:length(get_time_step_map(data))
             #     res_t = solve_power_flow(pf, sys, t)  # does not work - ts data not set in sys
             #     flow_ft = res_t["flow_results"].P_from_to
             #     flow_tf = res_t["flow_results"].P_to_from
-            #     ts_flow_ft = results[get_timestep_map(data)[t]]["flow_results"].P_from_to
-            #     ts_flow_tf = results[get_timestep_map(data)[t]]["flow_results"].P_to_from
+            #     ts_flow_ft = results[get_time_step_map(data)[t]]["flow_results"].P_from_to
+            #     ts_flow_tf = results[get_time_step_map(data)[t]]["flow_results"].P_to_from
             #     @test isapprox(ts_flow_ft, flow_ft, atol = 1e-9)
             #     @test isapprox(ts_flow_tf, flow_tf, atol = 1e-9)
             # end

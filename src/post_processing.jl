@@ -889,7 +889,7 @@ function write_results(
     end
 
     result_dict = Dict{String, Dict{String, DataFrames.DataFrame}}()
-    for i in 1:length(get_timestep_map(data))
+    for i in 1:length(get_time_step_map(data))
         temp_dict = _allocate_results_data(
             data,
             arc_names,
@@ -912,7 +912,7 @@ function write_results(
             zeros(size(arc_names)),
             i,
         )
-        result_dict[get_timestep_map(data)[i]] = temp_dict
+        result_dict[get_time_step_map(data)[i]] = temp_dict
     end
     return result_dict
 end

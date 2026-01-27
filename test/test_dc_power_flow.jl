@@ -24,7 +24,7 @@ end
     # get reference values: flows and angles.
     # See issue 210: would be better to compare against external program.
     data = PowerFlowData(DCPowerFlow(; correct_bustypes = true), sys)
-    power_injection =
+    power_injections =
         deepcopy(data.bus_active_power_injections - data.bus_active_power_withdrawals)
     matrix_data = deepcopy(data.power_network_matrix.K)       # LU factorization of ABA
     aux_network_matrix = deepcopy(data.aux_network_matrix)    # BA matrix

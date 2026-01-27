@@ -33,7 +33,7 @@ function penalty_factors_brute_force(
     ref, = PowerFlows.bus_type_idx(data, 1, (PSY.ACBusTypes.REF,))
 
     n_buses = first(size(data.bus_type))
-    time_steps = collect(values(PF.get_timestep_map(data)))
+    time_steps = collect(values(PF.get_time_step_map(data)))
 
     loss_factors = zeros(Float64, n_buses, length(time_steps))
 

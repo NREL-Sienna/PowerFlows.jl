@@ -115,7 +115,7 @@ The power flow solver settings are taken from the `ACPowerFlow` object stored in
     `solver_kwargs` of the `ACPowerFlow` object, the values in `kwargs` take precedence.
 
 # Keyword Arguments
-- `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `get_timestep_map(data)`.
+- `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `get_time_step_map(data)`.
 
 # Description
 This function solves the AC power flow problem for each time step specified in `data`.
@@ -142,7 +142,7 @@ function solve_power_flow!(
     # Merge solver_kwargs from pf with any explicitly passed kwargs (explicit kwargs take precedence)
     merged_kwargs = merge(get_solver_kwargs(pf), kwargs)
     sorted_time_steps =
-        get(merged_kwargs, :time_steps, sort(collect(keys(get_timestep_map(data)))))
+        get(merged_kwargs, :time_steps, sort(collect(keys(get_time_step_map(data)))))
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
 

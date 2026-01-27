@@ -45,7 +45,7 @@
             # allocate timeseries data from csv
             prepare_ts_data!(data, time_steps)
 
-            init_p_injections = copy(data.bus_active_power_injection)
+            init_p_injections = copy(data.bus_active_power_injections)
             solve_power_flow!(data)
 
             # check results
@@ -166,7 +166,7 @@ end
             data = PowerFlowData(pf, sys)
             original_bus_power, original_gen_power =
                 _system_generation_power(sys, bus_numbers)
-            data_original_bus_power = copy(data.bus_active_power_injection[:, 1])
+            data_original_bus_power = copy(data.bus_active_power_injections[:, 1])
             res1 = solve_power_flow(pf, sys)
 
             bus_slack_participation_factors = zeros(Float64, length(bus_numbers))

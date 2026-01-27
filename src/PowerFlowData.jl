@@ -299,7 +299,6 @@ function PowerFlowData(
     M <: PNM.PowerNetworkMatrix,
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
 }
-
     n_time_steps = get_time_steps(pf)
     time_step_names = get_time_step_names(pf)
     if n_time_steps != 0
