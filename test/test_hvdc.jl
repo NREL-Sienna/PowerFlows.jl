@@ -45,7 +45,7 @@
             @test isapprox(data.bus_hvdc_net_power[bus3_ix, 1], expected_to; atol = 1e-6)
 
             # Power flow should converge
-            solve_powerflow!(data)
+            solve_power_flow!(data)
             @test all(data.converged)
         end
     end
@@ -296,7 +296,7 @@ end
     @test length(lcc_components) == 2
 
     # Run AC power flow
-    pf_results = solve_powerflow(ACPowerFlow(), sys)
+    pf_results = solve_power_flow(ACPowerFlow(), sys)
     @test !ismissing(pf_results)
 
     # Verify results structure
