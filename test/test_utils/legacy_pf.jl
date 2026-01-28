@@ -227,7 +227,7 @@ function PowerFlows._newton_power_flow(
             fact = PowerFlows.KLU.klu(J_t)
             lf = fact \ dSbus_dV_ref  # only take the dPref_dP loss factors, ignore dPref_dQ
             data.loss_factors[pvpq, time_step] .= lf[1:npvpq]
-            data.loss_factors[ref, time_step] .= 1.0
+            data.loss_factors[ref, time_step] .= -1.0
         end
         if PowerFlows.get_calculate_voltage_stability_factors(data)
             σ, u, v = PowerFlows._singular_value_decomposition(J, npvpq)

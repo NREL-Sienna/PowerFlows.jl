@@ -42,8 +42,6 @@ import DataStructures: OrderedDict
 import Dates
 import LineSearches: BackTracking
 
-
-
 include("definitions.jl")
 include("psi_utils.jl")
 include("powersystems_utils.jl")

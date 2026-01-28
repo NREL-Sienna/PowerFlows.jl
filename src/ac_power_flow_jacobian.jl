@@ -702,7 +702,7 @@ function _calculate_loss_factors(
     lf = KLU.klu(J_t) \ dSbus_dV_ref
     # only take the dPref_dP loss factors, ignore dPref_dQ
     data.loss_factors[pvpq_mask, time_step] .= lf[1:2:end]
-    data.loss_factors[new_ref_mask, time_step] .= 1.0
+    data.loss_factors[new_ref_mask, time_step] .= -1.0
 end
 
 """
