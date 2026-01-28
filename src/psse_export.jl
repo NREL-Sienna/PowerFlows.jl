@@ -356,8 +356,8 @@ end
 # Parses "1" and "1.0" as 1, returns nothing on "1.5" and "a"
 function _permissive_parse_int(x)
     n = tryparse(Float64, x)
-    isnothing(n) && return nothing
-    (round(n) == n) || return nothing
+    isnothing(n) && return PSSE_DEFAULT
+    (round(n) == n) || return PSSE_DEFAULT
     return Int64(n)
 end
 
@@ -1581,9 +1581,6 @@ function write_to_buffers!(
             )
             control_objective_mapping = OrderedDict{String, Any}()
             winding_group_category_mapping = OrderedDict{String, Any}()
-            transformer_resistance_mapping = OrderedDict{String, Any}()
-            transformer_reactance_mapping = OrderedDict{String, Any}()
-            transformer_tap_mapping = OrderedDict{String, Any}()
             for (transformer, _) in transformers_with_numbers
                 name = PSY.get_name(transformer)
                 # Control objective mapping (only store if UNDEFINED)
@@ -1602,27 +1599,14 @@ function write_to_buffers!(
                         winding_group_category_mapping[name] = ang1.value
                     end
                 end
-                # Store resistance, reactance, and tap values
-                transformer_resistance_mapping[name] = PSY.get_r(transformer)
-                transformer_reactance_mapping[name] = PSY.get_x(transformer)
-                if transformer isa PSY.TapTransformer ||
-                   transformer isa PSY.PhaseShiftingTransformer
-                    transformer_tap_mapping[name] = PSY.get_tap(transformer)
-                end
             end
             md["transformer_control_objective_mapping"] = control_objective_mapping
             md["transformer_winding_group_category_mapping"] =
                 winding_group_category_mapping
-            md["transformer_resistance_mapping"] = transformer_resistance_mapping
-            md["transformer_reactance_mapping"] = transformer_reactance_mapping
-            md["transformer_tap_mapping"] = transformer_tap_mapping
         else
             md["transformer_name_mapping"] = OrderedDict{String, String}()
             md["transformer_control_objective_mapping"] = OrderedDict{String, Any}()
             md["transformer_winding_group_category_mapping"] = OrderedDict{String, Any}()
-            md["transformer_resistance_mapping"] = OrderedDict{String, Any}()
-            md["transformer_reactance_mapping"] = OrderedDict{String, Any}()
-            md["transformer_tap_mapping"] = OrderedDict{String, Any}()
         end
 
         # Handle 3W transformers separately if needed
@@ -1703,8 +1687,8 @@ function write_to_buffers!(
                 "WINDV1",
                 PSY.get_base_voltage_primary(transformer),
             )
-            # Adding the Float64, for some reason when reading the new EI for 0.0 resistance values
-            # it was getting just a get_r is a 0, leading it to break the reading of the files since 
+            # Adding the Float64, for some reason when reading the new EI for 0.0 resistance values,
+            # it was getting a zero int value, leading it to break the reading of the files since 
             # 0 at the beginning is considered as file termination.
             R1_2 = Float64(get_ext_key_or_default(
                 transformer,
@@ -1740,6 +1724,7 @@ function write_to_buffers!(
             RMA1 = get_ext_key_or_default(transformer, "RMA1")
             RMI1 = get_ext_key_or_default(transformer, "RMI1")
             NTP1 = get_ext_key_or_default(transformer, "NTP1")
+            NTP1 = NTP1 isa Float64 ? Int(NTP1) : NTP1
             NOD1 = get_ext_key_or_default(transformer, "NOD1")
 
             if (transformer isa PSY.PhaseShiftingTransformer)
@@ -1842,11 +1827,20 @@ function write_to_buffers!(
             NAME = transformer_3w_name_mapping[PSY.get_name(transformer)]
             NAME = _psse_quote_string(NAME)
 
-            if PSY.get_available_primary(transformer) == false
+            primary = PSY.get_available_primary(transformer)
+            secondary = PSY.get_available_secondary(transformer)
+            tertiary = PSY.get_available_tertiary(transformer)
+
+            if !primary && !secondary && !tertiary
+                STAT = 0
+            elseif (!primary && !secondary) || (!primary && !tertiary) ||
+                   (!secondary && !tertiary)
+                STAT = 0
+            elseif !primary
                 STAT = 4
-            elseif PSY.get_available_secondary(transformer) == false
+            elseif !secondary
                 STAT = 2
-            elseif PSY.get_available_tertiary(transformer) == false
+            elseif !tertiary
                 STAT = 3
             else
                 STAT = PSY.get_available(transformer) ? 1 : 0
@@ -1919,7 +1913,7 @@ function write_to_buffers!(
                 RMI = get_ext_key_or_default(transformer, "RMI$prefix")
                 VMA = get_ext_key_or_default(transformer, "VMA$prefix")
                 VMI = get_ext_key_or_default(transformer, "VMI$prefix")
-                NTP = get_ext_key_or_default(transformer, "NTP$prefix")
+                NTP = Int(get_ext_key_or_default(transformer, "NTP$prefix"))
                 TAB = 0
                 for icd_tr in supp_attr
                     if PSY.get_transformer_winding(icd_tr) == category
