@@ -14,19 +14,15 @@ dc_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
     @testset "$k reduction" for (k, v) in dc_reduction_types
         @testset "$pf_type power flow" for pf_type in
                                            InteractiveUtils.subtypes(PF.AbstractDCPowerFlow)
-            dc_pf = pf_type()
-            unreduced = PF.PowerFlowData(dc_pf, sys; correct_bustypes = true)
+            dc_pf = pf_type(; correct_bustypes = true)
+            unreduced = PF.PowerFlowData(dc_pf, sys)
             PF.solve_power_flow!(unreduced)
             @assert all(unreduced.converged)
-            validate_reduced_power_flow(dc_pf, sys, v, unreduced)
-            results = PF.solve_power_flow(
-                dc_pf,
-                sys;
-                network_reductions = deepcopy(v),
-                correct_bustypes = true,
-            )
+            dc_pf_reduced =
+                pf_type(; network_reductions = deepcopy(v), correct_bustypes = true)
+            validate_reduced_power_flow(dc_pf_reduced, sys, v, unreduced)
+            results = PF.solve_power_flow(dc_pf_reduced, sys)
             # no write-results-to-system solve_and_store_power_flow! for DC: should we add one?
-            # PF.solve_and_store_power_flow!(dc_pf, sys; network_reductions = deepcopy(v), correct_bustypes = true)
         end
     end
 end

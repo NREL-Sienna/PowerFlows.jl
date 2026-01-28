@@ -506,10 +506,10 @@ function write_power_flow_solution!(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
     )
 
-    gspf = if isnothing(data.generator_slack_participation_factors)
+    gspf = if isempty(get_computed_gspf(data))
         nothing
     else
-        data.generator_slack_participation_factors[time_step]
+        get_computed_gspf(data)[time_step]
     end
 
     # once redistribution is working again, could remove skip_redistribution.
@@ -889,7 +889,7 @@ function write_results(
     end
 
     result_dict = Dict{String, Dict{String, DataFrames.DataFrame}}()
-    for i in 1:length(data.time_step_map)
+    for i in 1:length(get_time_step_map(data))
         temp_dict = _allocate_results_data(
             data,
             arc_names,
@@ -912,7 +912,7 @@ function write_results(
             zeros(size(arc_names)),
             i,
         )
-        result_dict[data.time_step_map[i]] = temp_dict
+        result_dict[get_time_step_map(data)[i]] = temp_dict
     end
     return result_dict
 end

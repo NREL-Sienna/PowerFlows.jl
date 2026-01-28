@@ -195,7 +195,7 @@ function PowerFlows._newton_power_flow(
     end
 
     if !converged
-        if data.calculate_loss_factors
+        if PowerFlows.get_calculate_loss_factors(data)
             data.loss_factors[:, time_step] .= NaN
         end
         @error("The legacy power flow solver with LU did not converge after $i iterations")
@@ -216,7 +216,9 @@ function PowerFlows._newton_power_flow(
 
         if PowerFlows.get_calculate_loss_factors(data)
             if length(ref) > 1
-                error("Loss factors with multiple REF buses isn't supported.")
+                error(
+                    "Loss factors with multiple REF buses isn't supported.",
+                )
             end
             ref_first = first(ref)
             dSbus_dVa, dSbus_dVm = _legacy_dSbus_dV(V, Ybus)
