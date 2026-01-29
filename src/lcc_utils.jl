@@ -249,25 +249,26 @@ function hvdc_fixed_injections!(
     return
 end
 
-lcc_fixed_injections!(
+lcc_vsc_fixed_injections!(
     ::ACPowerFlowData,
     ::PSY.System,
     ::Dict{Int, Int},
     ::Dict{Int, Int},
 ) = nothing
 
-lcc_fixed_injections!(
+lcc_vsc_fixed_injections!(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
     sys::PSY.System,
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
-) = hvdc_fixed_injections!(
-    data,
-    PSY.TwoTerminalLCCLine,
-    sys,
-    bus_lookup,
-    reverse_bus_search_map,
-)
+) =
+    hvdc_fixed_injections!.(
+        (data,),
+        (PSY.TwoTerminalLCCLine, PSY.TwoTerminalVSCLine),
+        (sys,),
+        (bus_lookup,),
+        (reverse_bus_search_map,),
+    )
 
 function initialize_generic_hvdc_flows!(
     data::PowerFlowData,

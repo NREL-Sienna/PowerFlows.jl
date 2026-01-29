@@ -413,11 +413,11 @@ function _update_residual_values!(
 
     if num_lcc > 0
         P_lcc_from =
-            Vm[data.lcc.rectifier.bus, time_step] .* data.lcc.rectifier.tap[:, time_step] .*
+            Vm[data.lcc.rectifier.bus] .* data.lcc.rectifier.tap[:, time_step] .*
             sqrt(6) / π .* data.lcc.i_dc[:, time_step] .*
             cos.(data.lcc.rectifier.phi[:, time_step])
         P_lcc_to =
-            Vm[data.lcc.inverter.bus, time_step] .* data.lcc.inverter.tap[:, time_step] .*
+            Vm[data.lcc.inverter.bus] .* data.lcc.inverter.tap[:, time_step] .*
             sqrt(6) / π .* data.lcc.i_dc[:, time_step] .*
             cos.(data.lcc.inverter.phi[:, time_step])
         # control rectifier tap for P set point
