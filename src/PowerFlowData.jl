@@ -552,9 +552,9 @@ function PowerFlowData(
 )
     network_reduction_message(network_reductions, DCPowerFlow())
     # get the network matrices
-    power_network_matrix =
-        PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
-    aux_network_matrix = PNM.BA_Matrix(sys; network_reductions = network_reductions)
+    ybus = PNM.Ybus(sys; network_reductions = network_reductions)
+    power_network_matrix = PNM.ABA_Matrix(ybus; factorize = true)
+    aux_network_matrix = PNM.BA_Matrix(ybus)
     return make_and_initialize_power_flow_data(
         pf,
         sys,
@@ -610,9 +610,9 @@ function PowerFlowData(
 )
     network_reduction_message(network_reductions, PTDFDCPowerFlow())
     # get the network matrices
-    power_network_matrix = PNM.PTDF(sys; network_reductions = network_reductions)
-    aux_network_matrix =
-        PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
+    ybus = PNM.Ybus(sys; network_reductions = network_reductions)
+    power_network_matrix = PNM.PTDF(ybus)
+    aux_network_matrix = PNM.ABA_Matrix(ybus; factorize = true)
     return make_and_initialize_power_flow_data(
         pf,
         sys,
@@ -670,9 +670,9 @@ function PowerFlowData(
     network_reduction_message(network_reductions, vPTDFDCPowerFlow())
 
     # get the network matrices
-    power_network_matrix = PNM.VirtualPTDF(sys; network_reductions = network_reductions) # evaluates an empty virtual PTDF
-    aux_network_matrix =
-        PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
+    ybus = PNM.Ybus(sys; network_reductions = network_reductions)
+    power_network_matrix = PNM.VirtualPTDF(ybus) # evaluates an empty virtual PTDF
+    aux_network_matrix = PNM.ABA_Matrix(ybus; factorize = true)
 
     return make_and_initialize_power_flow_data(
         pf,
