@@ -490,7 +490,7 @@ function PowerFlowData(
 
     if get_robust_power_flow(pf)
         aux_network_matrix =
-            PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
+            PNM.ABA_Matrix(power_network_matrix; factorize = true)
     else
         aux_network_matrix = nothing
     end
