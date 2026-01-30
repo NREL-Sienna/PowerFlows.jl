@@ -5,7 +5,6 @@ const UNSUPPORTED =
         (PNM.WardReduction, PF.DCPowerFlow),
         (PNM.WardReduction, PF.PTDFDCPowerFlow),
         (PNM.WardReduction, PF.vPTDFDCPowerFlow),
-        (PNM.RadialReduction, PF.ACPowerFlow{PF.TrustRegionACPowerFlow}),
     ],
     )
 
