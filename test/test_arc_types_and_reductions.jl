@@ -6,23 +6,20 @@ function test_all_power_flow_types(
     network_reductions::Vector{PNM.NetworkReduction},
 )
     # AC power flow has different syntax
-    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}()
-    data = PF.PowerFlowData(
-        pf,
-        sys;
+    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}(;
         network_reductions = deepcopy(network_reductions),
         correct_bustypes = true,
     )
-    solve_power_flow!(data; pf = pf) # should run without errors.
+    data = PF.PowerFlowData(pf, sys)
+    solve_power_flow!(data) # should run without errors.
     @test !isempty(data.arc_active_power_flow_from_to)
-    solve_and_store_power_flow!(
-        pf,
-        sys;
+    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}(;
         network_reductions = deepcopy(network_reductions),
         correct_bustypes = true,
     )
-    pf = PF.DCPowerFlow()
-    data = PF.PowerFlowData(pf, sys; network_reductions = deepcopy(network_reductions))
+    solve_and_store_power_flow!(pf, sys)
+    pf = PF.DCPowerFlow(; network_reductions = deepcopy(network_reductions))
+    data = PF.PowerFlowData(pf, sys)
     solve_power_flow!(data) # should run without errors.
     @test !isempty(data.arc_active_power_flow_from_to)
 end
