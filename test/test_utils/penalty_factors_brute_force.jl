@@ -44,7 +44,7 @@ function penalty_factors_brute_force(
 
     for bx in 1:n_buses
         if bx in ref
-            loss_factors[bx, :] .= 1.0
+            loss_factors[bx, :] .= -1.0
             continue
         end
         data.bus_active_power_injections[bx, :] .+= step_size

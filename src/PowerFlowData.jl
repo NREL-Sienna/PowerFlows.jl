@@ -369,7 +369,7 @@ function get_bus_reactive_power_total_withdrawals(
            pfd.bus_magnitude[ix, time_step]^2
 end
 
-function clear_injections_data!(pfd::PowerFlowData)
+function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_active_power_injections .= 0.0
     pfd.bus_reactive_power_injections .= 0.0
     pfd.bus_active_power_withdrawals .= 0.0
@@ -403,9 +403,6 @@ function network_reduction_message(
 )
     if any(isa.(nrs, (PNM.WardReduction,)))
         throw(IS.NotImplementedError("Ward reduction is not supported yet."))
-    end
-    if m isa ACPowerFlow && any(isa.(nrs, (PNM.RadialReduction,)))
-        @error "AC Power Flow with Radial Network Reduction: feature is a work-in-progress. The power flow will likely fail to converge."
     end
     if any(isa.(nrs, (PNM.DegreeTwoReduction,)))
         @warn "Degree 2 network reductions mis-report branch power flows, but bus voltage results are correct. Use with caution."

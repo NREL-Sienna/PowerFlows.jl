@@ -5,31 +5,24 @@ function test_all_power_flow_types(
     sys::System,
     network_reductions::Vector{PNM.NetworkReduction},
 )
-    if PNM.RadialReduction() in network_reductions
-        # AC + radial reduction: may not converge, but should otherwise run ok.
-        pf = ACPowerFlow{PF.TrustRegionACPowerFlow}(;
-            network_reductions = deepcopy(network_reductions),
-            correct_bustypes = true,
-        )
-        data = @test_logs((:error, r"power flow will likely fail to converge"),
-            match_mode = :any,
-            data = PF.PowerFlowData(pf, sys)
-        )
-        @test_logs (:error, r"solver failed to converge"
-        ) match_mode = :any solve_power_flow!(data) # should run without errors.
-        @test !isempty(data.arc_active_power_flow_from_to)
-    else
-        pf = ACPowerFlow{PF.TrustRegionACPowerFlow}(;
-            network_reductions = deepcopy(network_reductions),
-            correct_bustypes = true,
-        )
-        data = PF.PowerFlowData(pf, sys)
-        solve_power_flow!(data) # should run without errors.
-        @test !isempty(data.arc_active_power_flow_from_to)
-        solve_and_store_power_flow!(pf, sys)
-    end
-    pf = PF.DCPowerFlow(; network_reductions = deepcopy(network_reductions))
-    data = PF.PowerFlowData(pf, sys)
+    # AC power flow has different syntax
+    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}()
+    data = PF.PowerFlowData(
+        pf,
+        sys;
+        network_reductions = deepcopy(network_reductions),
+        correct_bustypes = true,
+    )
+    solve_power_flow!(data; pf = pf) # should run without errors.
+    @test !isempty(data.arc_active_power_flow_from_to)
+    solve_and_store_power_flow!(
+        pf,
+        sys;
+        network_reductions = deepcopy(network_reductions),
+        correct_bustypes = true,
+    )
+    pf = PF.DCPowerFlow()
+    data = PF.PowerFlowData(pf, sys; network_reductions = deepcopy(network_reductions))
     solve_power_flow!(data) # should run without errors.
     @test !isempty(data.arc_active_power_flow_from_to)
 end
