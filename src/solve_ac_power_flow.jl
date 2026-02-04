@@ -112,7 +112,7 @@ The power flow solver settings are taken from the `ACPowerFlow` object stored in
 # Arguments
 - [`data::ACPowerFlowData`](@ref ACPowerFlowData): The power flow data containing the grid information and initial conditions.
 - `kwargs...`: Additional keyword arguments. If these overlap with those in the 
-    `solver_kwargs` of the `ACPowerFlow` object, the values in `kwargs` take precedence.
+    `solver_settings` of the `ACPowerFlow` object, the values in `kwargs` take precedence.
 
 # Keyword Arguments
 - `time_steps`: Specifies the time steps to solve. Defaults to sorting and collecting the keys of `get_time_step_map(data)`.
@@ -139,7 +139,7 @@ function solve_power_flow!(
     kwargs...,
 )
     pf = get_pf(data)
-    # Merge solver_kwargs from pf with any explicitly passed kwargs (explicit kwargs take precedence)
+    # Merge solver_settings from pf with any explicitly passed kwargs (explicit kwargs take precedence)
     merged_kwargs = merge(get_solver_kwargs(pf), kwargs)
     sorted_time_steps =
         get(merged_kwargs, :time_steps, sort(collect(keys(get_time_step_map(data)))))

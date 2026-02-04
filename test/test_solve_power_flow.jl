@@ -391,7 +391,7 @@ end
                                                                     "change `force_build` to `true` in the test."
     pf_tr = ACPowerFlow{TrustRegionACPowerFlow}(;
         correct_bustypes = true,
-        solver_kwargs = Dict{Symbol, Any}(:maxIterations => 200, :factor => 0.1),
+        solver_settings = Dict{Symbol, Any}(:maxIterations => 200, :factor => 0.1),
     )
     data_tr = PowerFlowData(pf_tr, sys)
     solve_power_flow!(data_tr)
@@ -428,7 +428,7 @@ end
     sys_sienna = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
     pf_sienna = ACPowerFlow(;
         correct_bustypes = true,
-        solver_kwargs = Dict{Symbol, Any}(:tol => 1e-11),
+        solver_settings = Dict{Symbol, Any}(:tol => 1e-11),
     )
     data_sienna = PowerFlowData(pf_sienna, sys_sienna)
     solve_power_flow!(data_sienna)

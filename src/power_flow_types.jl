@@ -90,7 +90,7 @@ with the specified solver type.
 - `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
 - `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
     Default is `false`.
-- `solver_kwargs::Dict{Symbol, Any}`: Additional keyword arguments to pass to the solver.
+- `solver_settings::Dict{Symbol, Any}`: Additional keyword arguments to pass to the solver.
     Default is an empty dictionary.
 """
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel
@@ -110,7 +110,7 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     time_steps::Int
     time_step_names::Vector{String}
     correct_bustypes::Bool
-    solver_kwargs::Dict{Symbol, Any}
+    solver_settings::Dict{Symbol, Any}
 end
 
 """
@@ -162,7 +162,7 @@ function ACPowerFlow{ACSolver}(;
     time_steps::Int = 1,
     time_step_names::Vector{String} = String[],
     correct_bustypes::Bool = false,
-    solver_kwargs::Dict{Symbol, Any} = Dict{Symbol, Any}(),
+    solver_settings::Dict{Symbol, Any} = Dict{Symbol, Any}(),
 ) where {ACSolver <: ACPowerFlowSolverType}
     if calculate_loss_factors && ACSolver == LevenbergMarquardtACPowerFlow
         error("Loss factor calculation is not supported by the Levenberg-Marquardt solver.")
@@ -180,7 +180,7 @@ function ACPowerFlow{ACSolver}(;
         time_steps,
         time_step_names,
         correct_bustypes,
-        solver_kwargs,
+        solver_settings,
     )
 end
 
@@ -197,7 +197,7 @@ get_network_reductions(pf::ACPowerFlow) = pf.network_reductions
 get_time_steps(pf::ACPowerFlow) = pf.time_steps
 get_time_step_names(pf::ACPowerFlow) = pf.time_step_names
 get_correct_bustypes(pf::ACPowerFlow) = pf.correct_bustypes
-get_solver_kwargs(pf::ACPowerFlow) = pf.solver_kwargs
+get_solver_kwargs(pf::ACPowerFlow) = pf.solver_settings
 
 """An abstract supertype for all DC power flow evaluation models.
 Subtypes: [`DCPowerFlow`](@ref), [`PTDFDCPowerFlow`](@ref), and [`vPTDFDCPowerFlow`](@ref)."""

@@ -107,7 +107,9 @@ struct PowerFlowData{
     bus_reactive_power_constant_impedance_withdrawals::Matrix{Float64}
     bus_reactive_power_bounds::Matrix{Tuple{Float64, Float64}}
     bus_slack_participation_factors::SparseMatrixCSC{Float64, Int}
-    computed_gspf::Vector{Dict{Tuple{DataType, String}, Float64}}
+    computed_generator_slack_participation_factors::Vector{
+        Dict{Tuple{DataType, String}, Float64},
+    }
     bus_type::Matrix{PSY.ACBusTypes}
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
@@ -206,7 +208,7 @@ get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factor
 
 # Field getter for expanded slack participation factors (one dict per time step)
 # Named "computed" to distinguish from the user-supplied pf.generator_slack_participation_factors
-get_computed_gspf(pfd::PowerFlowData) = pfd.computed_gspf
+get_computed_gspf(pfd::PowerFlowData) = pfd.computed_generator_slack_participation_factors
 
 # Delegating getters: delegate to the stored PowerFlowEvaluationModel
 get_calculate_loss_factors(pfd::PowerFlowData) = get_calculate_loss_factors(pfd.pf)
@@ -328,7 +330,7 @@ function PowerFlowData(
         zeros(n_buses, n_time_steps), # bus_reactive_power_constant_impedance_withdrawals
         fill((-Inf, Inf), (n_buses, n_time_steps)), # bus_reactive_power_bounds
         spzeros(n_buses, n_time_steps), # bus_slack_participation_factors
-        Vector{Dict{Tuple{DataType, String}, Float64}}(), # computed_gspf
+        Vector{Dict{Tuple{DataType, String}, Float64}}(), # computed_generator_slack_participation_factors
         fill(PSY.ACBusTypes.PQ, (n_buses, n_time_steps)), # bus_type
         ones(n_buses, n_time_steps), # bus_magnitude
         zeros(n_buses, n_time_steps), # bus_angles
