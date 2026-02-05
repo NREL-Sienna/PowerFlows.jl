@@ -1,19 +1,29 @@
 @testset "NewtonRaphsonACPowerFlow kwargs" begin
     # test NR kwargs.
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
-    nr_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
+    nr_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(
+            :maxIterations => 50,
+            :tol => 1e-10,
+            :refinement_threshold => 0.01,
+            :refinement_eps => 1e-7,
+        ))
     @test_logs (:info, r".*NewtonRaphsonACPowerFlow solver converged"
-    ) match_mode = :any PF.solve_power_flow(nr_pf, sys; maxIterations = 50,
-        tol = 1e-10, refinement_threshold = 0.01, refinement_eps = 1e-7)
+    ) match_mode = :any PF.solve_power_flow(nr_pf, sys)
 end
 
 @testset "TrustRegionACPowerFlow kwargs" begin
     # test trust region kwargs.
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
-    tr_pf = ACPowerFlow{TrustRegionACPowerFlow}()
+    tr_pf = ACPowerFlow{TrustRegionACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(
+            :eta => 1e-5,
+            :tol => 1e-10,
+            :factor => 1.1,
+            :maxIterations => 50,
+        ))
     @test_logs (:info, r".*TrustRegionACPowerFlow solver converged"
-    ) match_mode = :any PF.solve_power_flow(tr_pf, sys; eta = 1e-5,
-        tol = 1e-10, factor = 1.1, maxIterations = 50)
+    ) match_mode = :any PF.solve_power_flow(tr_pf, sys)
 end
 
 function bad_x0!(sys::PSY.System)
@@ -24,40 +34,33 @@ end
 
 @testset "TrustRegionACPowerFlow behavior" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
-    tr_pf = ACPowerFlow{TrustRegionACPowerFlow}()
 
     # Small trust region size => Cauchy or dogleg step
+    tr_pf_small = ACPowerFlow{TrustRegionACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(:factor => 0.01, :maxIterations => 1))
     @test_logs (:debug, r"(Dogleg step selected|Cauchy step selected)") match_mode = :any min_level =
-        Logging.Debug PF.solve_power_flow(
-        tr_pf,
-        sys;
-        factor = 0.01,
-        maxIterations = 1,
-    )
+        Logging.Debug PF.solve_power_flow(tr_pf_small, sys)
 
     # Large trust region size => Newton-Raphson step
+    tr_pf_large = ACPowerFlow{TrustRegionACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(:factor => 10.0, :maxIterations => 1))
     @test_logs (:debug, r"Newton-Raphson step selected.*") match_mode = :any min_level =
-        Logging.Debug PF.solve_power_flow(
-        tr_pf,
-        sys;
-        factor = 10.0,
-        maxIterations = 1,
-    )
+        Logging.Debug PF.solve_power_flow(tr_pf_large, sys)
 
     # Large eta => step rejected
+    tr_pf_large_eta = ACPowerFlow{TrustRegionACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(:eta => 2.0, :maxIterations => 1))
     @test_logs (:debug, r"Step rejected.*") match_mode = :any min_level = Logging.Debug PF.solve_power_flow(
-        tr_pf,
-        sys;
-        eta = 2.0,
-        maxIterations = 1,
+        tr_pf_large_eta,
+        sys,
     )
 
     # Small eta => step accepted
+    tr_pf_small_eta = ACPowerFlow{TrustRegionACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(:eta => 1e-6, :maxIterations => 1))
     @test_logs (:debug, r"Step accepted.*") match_mode = :any min_level = Logging.Debug PF.solve_power_flow(
-        tr_pf,
-        sys;
-        eta = 1e-6,
-        maxIterations = 1,
+        tr_pf_small_eta,
+        sys,
     )
 end
 
@@ -118,8 +121,8 @@ end
     sys = PSB.build_system(PSB.PSISystems, "RTS_GMLC_DA_sys")
     PSY.set_units_base_system!(sys, PSY.UnitSystem.SYSTEM_BASE)
     for i in [1, 35, 52, 57, 43, 66, 49, 68, 71, 25, 69, 58, 3, 73]
-        pf = ACPowerFlow(; enhanced_flat_start = false)
-        data = PowerFlowData(pf, sys; correct_bustypes = true)
+        pf = ACPowerFlow(; enhanced_flat_start = false, correct_bustypes = true)
+        data = PowerFlowData(pf, sys)
         # First, write solution to data. Then set magnitude of a random-ish bus to a huge number
         # and try to solve again: the "large residual warning" should be about that bus.
         solve_power_flow!(data)
@@ -128,6 +131,6 @@ end
         bus_ix = PowerFlows.get_bus_lookup(data)[bus_no]
         data.bus_magnitude[bus_ix] = 100.0
         @test_logs (:warn, Regex(".*Largest residual at bus $(bus_no).*")
-        ) match_mode = :any solve_power_flow!(data; pf = pf)
+        ) match_mode = :any solve_power_flow!(data)
     end
 end
