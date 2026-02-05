@@ -685,13 +685,6 @@ function _calculate_loss_factors(
         )
     end
     pvpq_mask = .!ref_mask
-    ref = bus_numbers[ref_mask]
-    pvpq = bus_numbers[pvpq_mask]
-    pvpq_coords = J_INDEX_TYPE[]
-    for i in pvpq
-        push!(pvpq_coords, 2 * i - 1)  # 2x - 1
-        push!(pvpq_coords, 2 * i)      # 2x
-    end
     ref = findfirst(ref_mask)
     new_ref_mask = falses(size(ref_mask))
     new_ref_mask[ref] = true
@@ -702,7 +695,7 @@ function _calculate_loss_factors(
     lf = KLU.klu(J_t) \ dSbus_dV_ref
     # only take the dPref_dP loss factors, ignore dPref_dQ
     data.loss_factors[pvpq_mask, time_step] .= lf[1:2:end]
-    data.loss_factors[new_ref_mask, time_step] .= 1.0
+    data.loss_factors[new_ref_mask, time_step] .= -1.0
 end
 
 """

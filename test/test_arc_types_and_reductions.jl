@@ -6,41 +6,20 @@ function test_all_power_flow_types(
     network_reductions::Vector{PNM.NetworkReduction},
 )
     # AC power flow has different syntax
-    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}()
-    if PNM.RadialReduction() in network_reductions
-        # AC + radial reduction: may not converge, but should otherwise run ok.
-
-        data = @test_logs((:error, r"power flow will likely fail to converge"),
-            match_mode = :any,
-            data = PF.PowerFlowData(
-                pf,
-                sys;
-                network_reductions = deepcopy(network_reductions),
-                correct_bustypes = true,
-            )
-        )
-        # if I @test_logs on "failed to converge," that fails on the CI (Ubuntu).
-        # if I run without test logs, it triggers the "no errors logged" check
-        # solve_power_flow!(data; pf = pf) # should run without errors.
-        # @test !isempty(data.arc_active_power_flow_from_to)
-    else
-        data = PF.PowerFlowData(
-            pf,
-            sys;
-            network_reductions = deepcopy(network_reductions),
-            correct_bustypes = true,
-        )
-        solve_power_flow!(data; pf = pf) # should run without errors.
-        @test !isempty(data.arc_active_power_flow_from_to)
-        solve_and_store_power_flow!(
-            pf,
-            sys;
-            network_reductions = deepcopy(network_reductions),
-            correct_bustypes = true,
-        )
-    end
-    pf = PF.DCPowerFlow()
-    data = PF.PowerFlowData(pf, sys; network_reductions = deepcopy(network_reductions))
+    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}(;
+        network_reductions = deepcopy(network_reductions),
+        correct_bustypes = true,
+    )
+    data = PF.PowerFlowData(pf, sys)
+    solve_power_flow!(data) # should run without errors.
+    @test !isempty(data.arc_active_power_flow_from_to)
+    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}(;
+        network_reductions = deepcopy(network_reductions),
+        correct_bustypes = true,
+    )
+    solve_and_store_power_flow!(pf, sys)
+    pf = PF.DCPowerFlow(; network_reductions = deepcopy(network_reductions))
+    data = PF.PowerFlowData(pf, sys)
     solve_power_flow!(data) # should run without errors.
     @test !isempty(data.arc_active_power_flow_from_to)
 end

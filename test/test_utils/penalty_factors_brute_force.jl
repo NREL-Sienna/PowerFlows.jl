@@ -25,7 +25,7 @@ function penalty_factors_brute_force(
     step_size::Float64 = 1e-6,
     kwargs...,
 )
-    if data.calculate_loss_factors
+    if PF.get_calculate_loss_factors(data)
         @warn "Data with `calculate_loss_factors = true` passed to `penalty_factors_brute_force`:" *
               " this will re-compute the loss factors repeatedly, for no reason."
     end
@@ -33,7 +33,7 @@ function penalty_factors_brute_force(
     ref, = PowerFlows.bus_type_idx(data, 1, (PSY.ACBusTypes.REF,))
 
     n_buses = first(size(data.bus_type))
-    time_steps = collect(values(data.time_step_map))
+    time_steps = collect(values(PF.get_time_step_map(data)))
 
     loss_factors = zeros(Float64, n_buses, length(time_steps))
 
@@ -44,7 +44,7 @@ function penalty_factors_brute_force(
 
     for bx in 1:n_buses
         if bx in ref
-            loss_factors[bx, :] .= 1.0
+            loss_factors[bx, :] .= -1.0
             continue
         end
         data.bus_active_power_injections[bx, :] .+= step_size

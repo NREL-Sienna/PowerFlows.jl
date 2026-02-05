@@ -94,13 +94,9 @@ end
 @testset "Test AC on generic HVDC" begin
     sys = build_system(MatpowerTestSystems, "matpower_case5_dc_sys")
 
-    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}()
-    data = PF.PowerFlowData(
-        pf,
-        sys;
-        correct_bustypes = true,
-    )
-    solve_power_flow!(data; pf = pf)
+    pf = ACPowerFlow{TrustRegionACPowerFlow}(; correct_bustypes = true)
+    data = PF.PowerFlowData(pf, sys)
+    solve_power_flow!(data)
     @test all(data.converged)
 end
 
@@ -109,10 +105,7 @@ end
         sys = build_system(MatpowerTestSystems, "matpower_case5_dc_sys")
 
         pf = DC_type()
-        data = PF.PowerFlowData(
-            pf,
-            sys;
-        )
+        data = PF.PowerFlowData(pf, sys)
         solve_power_flow!(data)
         @test all(data.converged)
     end
@@ -196,12 +189,8 @@ function test_generic_hvdc_on_big_system(pf_type::Type{<:PF.PowerFlowEvaluationM
         set_active_power_flow!(hvdc, 0.1)
     end
 
-    pf = pf_type()
-    data_original = PF.PowerFlowData(
-        pf,
-        sys_original;
-        correct_bustypes = true,
-    )
+    pf = pf_type(; correct_bustypes = true)
+    data_original = PF.PowerFlowData(pf, sys_original)
     solve_power_flow!(data_original)
     ref_bus_inds = findall(data_original.bus_type .== (PSY.ACBusTypes.REF,))
     @test all(data_original.bus_angles[ref_bus_inds] .== 0.0)
@@ -210,11 +199,7 @@ function test_generic_hvdc_on_big_system(pf_type::Type{<:PF.PowerFlowEvaluationM
     set_units_base_system!(sys_modified, "SYSTEM_BASE")
     replace_generic_hvdcs!(sys_modified)
 
-    data_modified = PF.PowerFlowData(
-        pf,
-        sys_modified;
-        correct_bustypes = true,
-    )
+    data_modified = PF.PowerFlowData(pf, sys_modified)
     solve_power_flow!(data_modified)
 
     # verify assumptions

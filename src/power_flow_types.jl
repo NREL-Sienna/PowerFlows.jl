@@ -56,13 +56,43 @@ See also: [`ACPowerFlow`](@ref).
 """
 struct RobustHomotopyPowerFlow <: ACPowerFlowSolverType end
 
-"""A struct for evaluating power flow solutions in AC systems.
+"""
+    ACPowerFlow{ACSolver}(; kwargs...) where {ACSolver <: ACPowerFlowSolverType}
+    ACPowerFlow(; kwargs...)
 
+An evaluation model for a standard
+[AC power flow](https://en.wikipedia.org/wiki/Power-flow_study#Power-flow_problem_formulation)
+with the specified solver type.
 
-This struct is parameterized by the type of AC power flow solver to use, which must be a
-subtype of [`ACPowerFlowSolverType`](@ref). It also contains a few 
-fields that control whether to compute certain additional data, like loss factors: 
-see the constructor for details."""
+# Arguments
+- `ACSolver`: The type of AC power flow solver to use, which must be a subtype of [`ACPowerFlowSolverType`](@ref).
+    If not specified, defaults to [`NewtonRaphsonACPowerFlow`](@ref).
+- `check_reactive_power_limits::Bool`: Whether to check reactive power limits during the power flow solution.
+    Default is `false`.
+- `exporter::Union{Nothing, PowerFlowEvaluationModel}`: An optional exporter for the power flow results.
+    If not `nothing`, it should be a [`PSSEExportPowerFlow`](@ref). Default is `nothing`.
+- `calculate_loss_factors::Bool`: Whether to calculate loss factors during the power flow solution.
+    Default is `false`.
+- `calculate_voltage_stability_factors::Bool`: Whether to calculate voltage stability factors.
+    Default is `false`.
+- `generator_slack_participation_factors`: An optional parameter that specifies the participation
+    factors for generator slack in the power flow solution. If `nothing`, all slack is picked up by
+    the reference bus. If a `Dict{Tuple{DataType, String}, Float64}`, it should map
+    `(component_type, component_name)` tuples to participation factors. If a `Vector` of such
+    dictionaries, different participation factors can be used for different time steps. Default is `nothing`.
+- `enhanced_flat_start::Bool`: Whether to use enhanced flat start initialization. Default is `true`.
+- `robust_power_flow::Bool`: Whether to use run a DC power flow as a fallback if the initial residual is large.
+    Default is `false`.
+- `skip_redistribution::Bool`: Whether to skip slack redistribution. Default is `false`.
+- `network_reductions::Vector{PNM.NetworkReduction}`: Network reductions to apply.
+    Default is an empty vector.
+- `time_steps::Int`: Number of time steps to solve. Default is `1`.
+- `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
+- `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
+    Default is `false`.
+- `solver_settings::Dict{Symbol, Any}`: Additional keyword arguments to pass to the solver.
+    Default is an empty dictionary.
+"""
 struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationModel
     check_reactive_power_limits::Bool
     exporter::Union{Nothing, PowerFlowEvaluationModel}
@@ -76,6 +106,11 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     enhanced_flat_start::Bool
     robust_power_flow::Bool
     skip_redistribution::Bool
+    network_reductions::Vector{PNM.NetworkReduction}
+    time_steps::Int
+    time_step_names::Vector{String}
+    correct_bustypes::Bool
+    solver_settings::Dict{Symbol, Any}
 end
 
 """
@@ -110,7 +145,7 @@ with the specified solver type.
     tuples to participation factors. If a `Vector`, it should contain multiple such dictionaries, 
     allowing for different participation factors for different time steps.
 """
-ACPowerFlow{ACSolver}(;
+function ACPowerFlow{ACSolver}(;
     check_reactive_power_limits::Bool = false,
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
@@ -123,37 +158,15 @@ ACPowerFlow{ACSolver}(;
     enhanced_flat_start::Bool = true,
     robust_power_flow::Bool = false,
     skip_redistribution::Bool = false,
-) where {ACSolver <: ACPowerFlowSolverType} =
-    ACPowerFlow{ACSolver}(
-        check_reactive_power_limits,
-        exporter,
-        calculate_loss_factors,
-        calculate_voltage_stability_factors,
-        generator_slack_participation_factors,
-        enhanced_flat_start,
-        robust_power_flow,
-        skip_redistribution,
-    )
-
-function ACPowerFlow(
-    ACSolver::Type{<:ACPowerFlowSolverType} = NewtonRaphsonACPowerFlow;
-    check_reactive_power_limits::Bool = false,
-    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
-    calculate_loss_factors::Bool = false,
-    calculate_voltage_stability_factors::Bool = false,
-    generator_slack_participation_factors::Union{
-        Nothing,
-        Dict{Tuple{DataType, String}, Float64},
-        Vector{Dict{Tuple{DataType, String}, Float64}},
-    } = nothing,
-    enhanced_flat_start::Bool = true,
-    robust_power_flow::Bool = false,
-    skip_redistribution::Bool = false,
-)
+    network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[],
+    time_steps::Int = 1,
+    time_step_names::Vector{String} = String[],
+    correct_bustypes::Bool = false,
+    solver_settings::Dict{Symbol, Any} = Dict{Symbol, Any}(),
+) where {ACSolver <: ACPowerFlowSolverType}
     if calculate_loss_factors && ACSolver == LevenbergMarquardtACPowerFlow
         error("Loss factor calculation is not supported by the Levenberg-Marquardt solver.")
     end
-
     return ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,
@@ -163,8 +176,16 @@ function ACPowerFlow(
         enhanced_flat_start,
         robust_power_flow,
         skip_redistribution,
+        network_reductions,
+        time_steps,
+        time_step_names,
+        correct_bustypes,
+        solver_settings,
     )
 end
+
+# Default constructor: ACPowerFlow() defaults to NewtonRaphsonACPowerFlow solver
+ACPowerFlow(; kwargs...) = ACPowerFlow{NewtonRaphsonACPowerFlow}(; kwargs...)
 
 get_enhanced_flat_start(pf::ACPowerFlow) = pf.enhanced_flat_start
 get_robust_power_flow(pf::ACPowerFlow) = pf.robust_power_flow
@@ -172,6 +193,11 @@ get_slack_participation_factors(pf::ACPowerFlow) = pf.generator_slack_participat
 get_calculate_loss_factors(pf::ACPowerFlow) = pf.calculate_loss_factors
 get_calculate_voltage_stability_factors(pf::ACPowerFlow) =
     pf.calculate_voltage_stability_factors
+get_network_reductions(pf::ACPowerFlow) = pf.network_reductions
+get_time_steps(pf::ACPowerFlow) = pf.time_steps
+get_time_step_names(pf::ACPowerFlow) = pf.time_step_names
+get_correct_bustypes(pf::ACPowerFlow) = pf.correct_bustypes
+get_solver_kwargs(pf::ACPowerFlow) = pf.solver_settings
 
 """An abstract supertype for all DC power flow evaluation models.
 Subtypes: [`DCPowerFlow`](@ref), [`PTDFDCPowerFlow`](@ref), and [`vPTDFDCPowerFlow`](@ref)."""
@@ -182,12 +208,17 @@ get_slack_participation_factors(::AbstractDCPowerFlow) = nothing
 get_calculate_loss_factors(::AbstractDCPowerFlow) = false
 get_calculate_voltage_stability_factors(::AbstractDCPowerFlow) = false
 
+# Getters for fields shared across DC power flow types
+# (slightly duplicative: could create common supertype between AC and DC)
+get_network_reductions(pf::AbstractDCPowerFlow) = pf.network_reductions
+get_time_steps(pf::AbstractDCPowerFlow) = pf.time_steps
+get_time_step_names(pf::AbstractDCPowerFlow) = pf.time_step_names
+get_correct_bustypes(pf::AbstractDCPowerFlow) = pf.correct_bustypes
+
 # the exporter field is not used in PowerFlows.jl, only in PowerSimulations.jl,
 # which calls flatten_power_flow_evaluation_model then evaluates the two sequentially.
 """
-    DCPowerFlow(
-        exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
-    )
+    DCPowerFlow(; kwargs...)
 
 An evaluation model for a standard DC power flow.
 
@@ -195,46 +226,82 @@ This provides a fast approximate solution to the AC power flow problem, by solvi
 bus voltage angles under some simplifying assumptions (lossless lines, constant voltage 
 magnitudes, etc.). Branch flows are then calculated from the voltage angles. For details, see 
 [Wikipedia](https://en.wikipedia.org/wiki/Power-flow_study#DC_power_flow)
-or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.1.pdf). If 
-not `nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
+or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.1.pdf).
+
+# Arguments
+- `exporter::Union{Nothing, PowerFlowEvaluationModel}`: An optional exporter for the power flow results.
+    If not `nothing`, it should be a [`PSSEExportPowerFlow`](@ref). Default is `nothing`.
+- `network_reductions::Vector{PNM.NetworkReduction}`: Network reductions to apply.
+    Default is an empty vector.
+- `time_steps::Int`: Number of time steps to solve. Default is `1`.
+- `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
+- `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
+    Default is `false`.
 """
 @kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+    network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[]
+    time_steps::Int = 1
+    time_step_names::Vector{String} = String[]
+    correct_bustypes::Bool = false
 end
 
 """
-    PTDFDCPowerFlow(
-        exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
-    )
+    PTDFDCPowerFlow(; kwargs...)
 
-An evaluation model that calculates line flows using the Power Transfer Distribution Factor 
+An evaluation model that calculates line flows using the Power Transfer Distribution Factor
 Matrix.
 
 This approximates the branch flows in the power grid, under some simplifying
 assumptions (lossless lines, constant voltage magnitudes, etc.). In contrast to [`DCPowerFlow`](@ref), 
 branch flows are computed directly from bus power injections, without use of the voltage 
 angles. See section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.1.pdf) 
-for details. If not `nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
+for details.
+
+# Arguments
+- `exporter::Union{Nothing, PowerFlowEvaluationModel}`: An optional exporter for the power flow results.
+    If not `nothing`, it should be a [`PSSEExportPowerFlow`](@ref). Default is `nothing`.
+- `network_reductions::Vector{PNM.NetworkReduction}`: Network reductions to apply.
+    Default is an empty vector.
+- `time_steps::Int`: Number of time steps to solve. Default is `1`.
+- `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
+- `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
+    Default is `false`.
 """
 @kwdef struct PTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+    network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[]
+    time_steps::Int = 1
+    time_step_names::Vector{String} = String[]
+    correct_bustypes::Bool = false
 end
 
 """
-    vPTDFDCPowerFlow(
-        exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
-    )
+    vPTDFDCPowerFlow(; kwargs...)
 
-An evaluation model that calculates line flows using a virtual Power Transfer Distribution 
+An evaluation model that calculates line flows using a virtual Power Transfer Distribution
 Factor Matrix.
 
-This is a replacement for the [PTDFDCPowerFlow](@ref) for large grids, 
-where creating and storing the full PTDF matrix would be infeasible or slow. See the 
-[PowerNetworkMatrices.jl docs](https://nrel-sienna.github.io/PowerNetworkMatrices.jl/stable/) for details. 
-If not `nothing`, the `exporter` should be a [`PSSEExportPowerFlow`](@ref).
+This is a replacement for the [`PTDFDCPowerFlow`](@ref) for large grids,
+where creating and storing the full PTDF matrix would be infeasible or slow. See the
+[PowerNetworkMatrices.jl docs](https://nrel-sienna.github.io/PowerNetworkMatrices.jl/stable/) for details.
+
+# Arguments
+- `exporter::Union{Nothing, PowerFlowEvaluationModel}`: An optional exporter for the power flow results.
+    If not `nothing`, it should be a [`PSSEExportPowerFlow`](@ref). Default is `nothing`.
+- `network_reductions::Vector{PNM.NetworkReduction}`: Network reductions to apply.
+    Default is an empty vector.
+- `time_steps::Int`: Number of time steps to solve. Default is `1`.
+- `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
+- `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
+    Default is `false`.
 """
 @kwdef struct vPTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+    network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[]
+    time_steps::Int = 1
+    time_step_names::Vector{String} = String[]
+    correct_bustypes::Bool = false
 end
 
 # see also: PSSEExportPowerFlow in psse_export.jl
