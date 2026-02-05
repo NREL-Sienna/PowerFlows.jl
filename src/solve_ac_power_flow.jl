@@ -184,13 +184,13 @@ function solve_power_flow!(
                 (rectifier_y, inverter_y) = self_admittances
                 S_inverter = V[inverter_ix] * conj(inverter_y * V[inverter_ix])
                 S_rectifier = V[rectifier_ix] * conj(rectifier_y * V[rectifier_ix])
-                data.lcc.arc_active_power_flow_from_to[time_step, i] =
+                data.lcc.arc_active_power_flow_from_to[i, time_step] =
                     real(S_rectifier)
-                data.lcc.arc_reactive_power_flow_from_to[time_step, i] =
+                data.lcc.arc_reactive_power_flow_from_to[i, time_step] =
                     imag(S_rectifier)
-                data.lcc.arc_active_power_flow_to_from[time_step, i] =
+                data.lcc.arc_active_power_flow_to_from[i, time_step] =
                     real(S_inverter)
-                data.lcc.arc_reactive_power_flow_to_from[time_step, i] =
+                data.lcc.arc_reactive_power_flow_to_from[i, time_step] =
                     imag(S_inverter)
             end
         end
