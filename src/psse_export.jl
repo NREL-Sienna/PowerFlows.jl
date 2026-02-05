@@ -1286,7 +1286,22 @@ function write_to_buffers!(
     write_v35_header(io, exporter, "Non-Transformer Branch Data")
 
     branches_with_numbers = get!(exporter.components_cache, "branches") do
-        get_branches_with_numbers(exporter)
+        regular_branches = get_branches_with_numbers(exporter)
+
+        transformer_as_branches = []
+        for transformer in PSY.get_components(PSY.TapTransformer, exporter.system)
+            control_obj = PSY.get_control_objective(transformer)
+            if control_obj ==
+               PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+                bus_nums = branch_to_bus_numbers(transformer)
+                push!(transformer_as_branches, (transformer, bus_nums))
+            end
+        end
+
+        all_branches = vcat(regular_branches, transformer_as_branches)
+        sort!(all_branches; by = x -> last(x))
+
+        all_branches
     end
 
     branch_name_mapping = get!(exporter.components_cache, "branch_name_mapping") do
@@ -1307,6 +1322,7 @@ function write_to_buffers!(
         J = md["bus_number_mapping"][to_n]
         BASE_CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
         BASE_CKT = _psse_quote_string(BASE_CKT)
+        is_transformer_as_branch = branch isa PSY.TapTransformer
         ST = PSY.get_available(branch) ? 1 : 0
         MET = get_ext_key_or_default(branch, "MET")
         LEN = get_ext_key_or_default(branch, "LEN")
@@ -1345,6 +1361,40 @@ function write_to_buffers!(
                 RATEA, RATEB, RATEC, GI, BI,
                 GJ, BJ, ST, MET, LEN)
             fastprintln_psse_default_ownership(io)
+        elseif is_transformer_as_branch
+            RATEA, RATEB, RATEC =
+                with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                    _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT),
+                    PSSE_DEFAULT,
+                    PSSE_DEFAULT
+                end
+            RATEA = _fix_3w_transformer_rating(RATEA)
+
+            B = if hasmethod(PSY.get_b, (typeof(branch),))
+                PSY.get_b(branch).from + PSY.get_b(branch).to
+            else
+                0.0
+            end
+
+            if exporter.psse_version == :v35
+                NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
+                rates = [RATEA, RATEB, RATEC]
+                for i in 4:12
+                    push!(rates, get_ext_key_or_default(branch, "RATE$i"))
+                end
+
+                @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B, NAME)
+                for rate in rates
+                    fastprintdelim(io, rate)
+                end
+                @fastprintdelim_unroll(io, false, GI, BI, GJ, BJ, ST, MET, LEN)
+                fastprintln_psse_default_ownership(io)
+            else
+                @fastprintdelim_unroll(io, false, I, J, BASE_CKT, R, X, B,
+                    RATEA, RATEB, RATEC,
+                    GI, BI, GJ, BJ, ST, MET, LEN)
+                fastprintln_psse_default_ownership(io)
+            end
         else
             RATEA, RATEB, RATEC =
                 with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
@@ -1540,11 +1590,23 @@ function write_to_buffers!(
     write_v35_header(io, exporter, "Transformer Data")
 
     transformers_with_numbers = get!(exporter.components_cache, "transformers") do
-        transformers = sort!(
-            collect(PSY.get_components(PSY.TwoWindingTransformer, exporter.system));
-            by = branch_to_bus_numbers,
-        )
-        [(transformer, branch_to_bus_numbers(transformer)) for transformer in transformers]
+        transformers =
+            collect(PSY.get_components(PSY.TwoWindingTransformer, exporter.system))
+
+        filtered_transformers = filter(transformers) do transformer
+            if transformer isa PSY.TapTransformer
+                control_obj = PSY.get_control_objective(transformer)
+                return control_obj !=
+                       PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+            end
+            return true
+        end
+
+        sort!(filtered_transformers; by = branch_to_bus_numbers)
+        [
+            (transformer, branch_to_bus_numbers(transformer)) for
+            transformer in filtered_transformers
+        ]
     end
     transformers_3w_with_numbers = get!(exporter.components_cache, "transformers_3w") do
         transformers = sort!(
