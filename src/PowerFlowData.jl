@@ -401,9 +401,6 @@ function network_reduction_message(
     if any(isa.(nrs, (PNM.WardReduction,)))
         throw(IS.NotImplementedError("Ward reduction is not supported yet."))
     end
-    if m isa ACPowerFlow && any(isa.(nrs, (PNM.RadialReduction,)))
-        @error "AC Power Flow with Radial Network Reduction: feature is a work-in-progress. The power flow will likely fail to converge."
-    end
     if any(isa.(nrs, (PNM.DegreeTwoReduction,)))
         @warn "Degree 2 network reductions mis-report branch power flows, but bus voltage results are correct. Use with caution."
     end

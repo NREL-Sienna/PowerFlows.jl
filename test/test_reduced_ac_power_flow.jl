@@ -5,6 +5,11 @@ const UNSUPPORTED =
         (PNM.WardReduction, PF.DCPowerFlow),
         (PNM.WardReduction, PF.PTDFDCPowerFlow),
         (PNM.WardReduction, PF.vPTDFDCPowerFlow),
+    ],
+    )
+const NOT_EQUIVALENT =
+    Set(
+        [
         (PNM.RadialReduction, PF.ACPowerFlow{PF.TrustRegionACPowerFlow}),
     ],
     )
@@ -33,7 +38,12 @@ ac_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
             continue
         end
         @testset "$k reduction" begin
-            validate_reduced_power_flow(pf, sys, v, unreduced)
+            if any([(typeof(nr), typeof(pf)) in NOT_EQUIVALENT for nr in v])
+                result = test_reduced_power_flow(pf, sys, v)
+                @test all(result.converged)
+            else
+                validate_reduced_power_flow(pf, sys, v, unreduced)
+            end
         end
     end
 end
