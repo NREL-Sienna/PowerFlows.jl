@@ -1,3 +1,56 @@
+@testset "Test DC power flow with VSC line" begin
+    for DC_type in (PF.DCPowerFlow, PF.PTDFDCPowerFlow, PF.vPTDFDCPowerFlow)
+        @testset "DC Solver: $(DC_type)" begin
+            # Create a simple system with a VSC line
+            sys = System(100.0)
+            b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.0, 0.0)
+            b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.0, 0.0)
+            b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.0, 0.0)
+
+            _add_simple_source!(sys, b1, 1.0, 0.0)
+            _add_simple_load!(sys, b2, 0.3, 0.1)
+            _add_simple_load!(sys, b3, 0.4, 0.1)
+
+            _add_simple_line!(sys, b1, b2, 0.01, 0.05, 0.02)
+            _add_simple_line!(sys, b1, b3, 0.01, 0.05, 0.02)
+
+            # Add VSC line between buses 2 and 3
+            P_flow = 0.2  # 20 MW in per-unit
+            loss_coeff = 0.02  # 2% loss
+            vsc = _add_simple_vsc!(
+                sys,
+                b2,
+                b3;
+                active_power_flow = P_flow,
+                loss_coefficient = loss_coeff,
+            )
+
+            pf = DC_type()
+            data = PF.PowerFlowData(pf, sys)
+
+            # Verify VSC is recognized
+            @test !isempty(get_components(TwoTerminalVSCLine, sys))
+
+            # Check that bus_hvdc_net_power is populated correctly
+            # From bus (b2) should have negative injection (power withdrawn)
+            # To bus (b3) should have positive injection minus losses (2x loss_coeff for both converters)
+            expected_from = -P_flow
+            expected_to = P_flow * (1 - 2 * loss_coeff)
+
+            bus_lookup = PF.get_bus_lookup(data)
+            bus2_ix = bus_lookup[2]
+            bus3_ix = bus_lookup[3]
+
+            @test isapprox(data.bus_hvdc_net_power[bus2_ix, 1], expected_from; atol = 1e-6)
+            @test isapprox(data.bus_hvdc_net_power[bus3_ix, 1], expected_to; atol = 1e-6)
+
+            # Power flow should converge
+            solve_power_flow!(data)
+            @test all(data.converged)
+        end
+    end
+end
+
 @testset "Test HVDC injections helper function" begin
     sys = build_system(MatpowerTestSystems, "matpower_case5_dc_sys")
     hvdc = only(get_components(TwoTerminalHVDC, sys))
@@ -214,4 +267,34 @@ end
 
 @testset "Test Generic HVDC on big network: DC power flow" begin
     test_generic_hvdc_on_big_system(PF.DCPowerFlow)
+end
+
+@testset "Test AC power flow with multiple LCC lines" begin
+    # This test covers the bug fix for LCC matrix indexing in solve_ac_powerflow.jl
+    # where [time_step, i] was incorrectly used instead of [i, time_step]
+    # The bug only manifested when there were multiple LCC lines.
+    raw_path = joinpath(TEST_DATA_DIR, "case5_2_lcc.raw")
+    sys = System(raw_path)
+
+    # Verify we have multiple LCC lines
+    lcc_components = collect(get_components(TwoTerminalLCCLine, sys))
+    @test length(lcc_components) == 2
+
+    # Run AC power flow
+    pf_results = solve_power_flow(ACPowerFlow(), sys)
+    @test !ismissing(pf_results)
+
+    # Verify results structure
+    @test haskey(pf_results, "bus_results")
+    @test haskey(pf_results, "flow_results")
+    @test haskey(pf_results, "lcc_results")
+
+    # Verify LCC results have correct number of rows
+    lcc_results = pf_results["lcc_results"]
+    @test nrow(lcc_results) == 2
+
+    # Verify all buses have valid voltage magnitudes
+    bus_results = pf_results["bus_results"]
+    @test all(bus_results.Vm .> 0.9)
+    @test all(bus_results.Vm .< 1.1)
 end
