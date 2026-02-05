@@ -91,7 +91,6 @@ end
                     match_mode = :any,
                     solve_power_flow(pf, sys)
                 )
-                =#
             else
                 results = solve_power_flow(pf, sys)
             end
