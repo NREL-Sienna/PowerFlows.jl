@@ -685,13 +685,6 @@ function _calculate_loss_factors(
         )
     end
     pvpq_mask = .!ref_mask
-    ref = bus_numbers[ref_mask]
-    pvpq = bus_numbers[pvpq_mask]
-    pvpq_coords = J_INDEX_TYPE[]
-    for i in pvpq
-        push!(pvpq_coords, 2 * i - 1)  # 2x - 1
-        push!(pvpq_coords, 2 * i)      # 2x
-    end
     ref = findfirst(ref_mask)
     new_ref_mask = falses(size(ref_mask))
     new_ref_mask[ref] = true

@@ -100,15 +100,16 @@ function initialize_power_flow_data!(
         get_slack_participation_factors(pf),
         bus_lookup,
         reverse_bus_search_map,
-        length(data.time_step_map),
+        length(get_time_step_map(data)),
         n_buses,
         data.bus_type,
     )
     # LCCs: initialize parameters. For DC power flow, this also writes the fixed flows to
     # data.lcc.arc_active_power_flow_from_to and data.lcc.arc_active_power_flow_to_from.
     initialize_LCCParameters!(data, sys, bus_lookup, reverse_bus_search_map)
-    # LCCs, DC only: accumulate net power into bus_hvdc_net_power.
-    lcc_fixed_injections!(data, sys, bus_lookup, reverse_bus_search_map)
+    # TODO VSC AC power flow model goes here.
+    # LCCs and VSCs, DC only: accumulate net power into bus_hvdc_net_power.
+    lcc_vsc_fixed_injections!(data, sys, bus_lookup, reverse_bus_search_map)
     # generic HVDC lines: calculate fixed flows and save to generic_hvdc_flows.
     initialize_generic_hvdc_flows!(
         data,

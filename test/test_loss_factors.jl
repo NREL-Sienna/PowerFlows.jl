@@ -8,20 +8,21 @@
         @testset "AC Solver: $(ACSolver)" begin
             sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
 
-            pf = ACPowerFlow(ACSolver)
-            pf_lf = ACPowerFlow(ACSolver; calculate_loss_factors = true)
             time_steps = 24
-            data_loss_factors =
-                PowerFlowData(pf_lf, sys; time_steps = time_steps)
-            data_brute_force =
-                PowerFlowData(pf, sys; time_steps = time_steps)
+            pf = ACPowerFlow{ACSolver}(; time_steps = time_steps)
+            pf_lf = ACPowerFlow{ACSolver}(;
+                calculate_loss_factors = true,
+                time_steps = time_steps,
+            )
+            data_loss_factors = PowerFlowData(pf_lf, sys)
+            data_brute_force = PowerFlowData(pf, sys)
 
             # allocate timeseries data from csv
             prepare_ts_data!(data_loss_factors, time_steps)
             prepare_ts_data!(data_brute_force, time_steps)
 
             # get power flows with NR KLU method and write results
-            solve_power_flow!(data_loss_factors; pf = pf_lf)
+            solve_power_flow!(data_loss_factors)
 
             # get loss factors using brute force approach (sequential power flow evaluations for each bus)
             bf_loss_factors = penalty_factors_brute_force(data_brute_force, pf)
@@ -37,7 +38,7 @@
             )
 
             # get power flow results without loss factors
-            solve_power_flow!(data_brute_force; pf = pf)
+            solve_power_flow!(data_brute_force)
             @test isnothing(data_brute_force.loss_factors)
         end
     end
@@ -83,14 +84,14 @@ end
             _add_simple_line!(sys, b5, b6, 0.015, 0.08, 0.01)
             _add_simple_line!(sys, b4, b6, 0.012, 0.06, 0.015)
 
-            pf_lf = ACPowerFlow(ACSolver; calculate_loss_factors = true)
+            pf_lf = ACPowerFlow{ACSolver}(; calculate_loss_factors = true)
             data_loss_factors = PowerFlowData(pf_lf, sys)
 
             # Verify we have multiple REF buses before solving
             ref_buses = findall(==(PSY.ACBusTypes.REF), data_loss_factors.bus_type[:, 1])
             @test length(ref_buses) == 2
 
-            # Solving should throw an error for multiple REF buses with loss factors
+            # Solving should succeed (with a warning about multiple REF buses)
             @test_throws ErrorException solve_power_flow!(data_loss_factors; pf = pf_lf)
         end
     end

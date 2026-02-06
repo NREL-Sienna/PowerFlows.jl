@@ -92,9 +92,11 @@ the respective type of power flow evaluations.
 - `neighbors::Vector{Set{Int}}`: Vector with the sets of adjacent buses.
 """
 struct PowerFlowData{
+    T <: PowerFlowEvaluationModel,
     M <: PNM.PowerNetworkMatrix,
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
 } <: PowerFlowContainer
+    pf::T
     bus_active_power_injections::Matrix{Float64}
     bus_reactive_power_injections::Matrix{Float64}
     bus_active_power_withdrawals::Matrix{Float64}
@@ -104,11 +106,10 @@ struct PowerFlowData{
     bus_active_power_constant_impedance_withdrawals::Matrix{Float64}
     bus_reactive_power_constant_impedance_withdrawals::Matrix{Float64}
     bus_reactive_power_bounds::Matrix{Tuple{Float64, Float64}}
-    generator_slack_participation_factors::Union{
-        Vector{Dict{Tuple{DataType, String}, Float64}},
-        Nothing,
-    }
     bus_slack_participation_factors::SparseMatrixCSC{Float64, Int}
+    computed_generator_slack_participation_factors::Vector{
+        Dict{Tuple{DataType, String}, Float64},
+    }
     bus_type::Matrix{PSY.ACBusTypes}
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
@@ -124,9 +125,7 @@ struct PowerFlowData{
     neighbors::Vector{Set{Int}}
     converged::BitVector
     loss_factors::Union{Matrix{Float64}, Nothing}
-    calculate_loss_factors::Bool
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
-    calculate_voltage_stability_factors::Bool
     lcc::LCCParameters
 end
 
@@ -134,6 +133,7 @@ end
 """A type alias for a `PowerFlowData` struct whose type parameters
 are configured for the `ACPowerFlow` method."""
 const ACPowerFlowData = PowerFlowData{
+    <:ACPowerFlow,
     PNM.AC_Ybus_Matrix,
     <:Union{
         PNM.DC_ABA_Matrix_Factorized,
@@ -145,6 +145,7 @@ get_metadata_matrix(pfd::ACPowerFlowData) = pfd.power_network_matrix
 """A type alias for a `PowerFlowData` struct whose type parameters
 are configured for the `PTDFDCPowerFlow` method ."""
 const PTDFPowerFlowData = PowerFlowData{
+    PTDFDCPowerFlow,
     PNM.DC_PTDF_Matrix,
     PNM.DC_ABA_Matrix_Factorized,
 }
@@ -152,6 +153,7 @@ const PTDFPowerFlowData = PowerFlowData{
 """A type alias for a `PowerFlowData` struct whose type parameters
 are configured for the `vPTDFDCPowerFlow` method."""
 const vPTDFPowerFlowData = PowerFlowData{
+    vPTDFDCPowerFlow,
     <:PNM.DC_vPTDF_Matrix,
     PNM.DC_ABA_Matrix_Factorized,
 }
@@ -161,12 +163,14 @@ get_metadata_matrix(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
 """A type alias for a `PowerFlowData` struct whose type parameters
 are configured for the `DCPowerFlow` method."""
 const ABAPowerFlowData = PowerFlowData{
+    DCPowerFlow,
     PNM.DC_ABA_Matrix_Factorized,
     PNM.DC_BA_Matrix,
 }
 get_metadata_matrix(pfd::ABAPowerFlowData) = pfd.aux_network_matrix
 
 # true getters for fields:
+get_pf(pfd::PowerFlowData) = pfd.pf
 get_bus_active_power_injections(pfd::PowerFlowData) = pfd.bus_active_power_injections
 get_bus_reactive_power_injections(pfd::PowerFlowData) = pfd.bus_reactive_power_injections
 get_bus_active_power_withdrawals(pfd::PowerFlowData) = pfd.bus_active_power_withdrawals
@@ -182,8 +186,6 @@ get_bus_reactive_power_constant_impedance_withdrawals(pfd::PowerFlowData) =
 get_bus_reactive_power_bounds(pfd::PowerFlowData) = pfd.bus_reactive_power_bounds
 get_bus_slack_participation_factors(pfd::PowerFlowData) =
     pfd.bus_slack_participation_factors
-get_generator_slack_participation_factors(pfd::PowerFlowData) =
-    pfd.generator_slack_participation_factors
 get_bus_type(pfd::PowerFlowData) = pfd.bus_type
 get_bus_magnitude(pfd::PowerFlowData) = pfd.bus_magnitude
 get_bus_angles(pfd::PowerFlowData) = pfd.bus_angles
@@ -202,10 +204,20 @@ get_neighbor(pfd::PowerFlowData) = pfd.neighbors
 supports_multi_period(::PowerFlowData) = true
 get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
-get_calculate_loss_factors(pfd::PowerFlowData) = pfd.calculate_loss_factors
 get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
+
+# Field getter for expanded slack participation factors (one dict per time step)
+# Named "computed" to distinguish from the user-supplied pf.generator_slack_participation_factors
+get_computed_gspf(pfd::PowerFlowData) = pfd.computed_generator_slack_participation_factors
+
+# Delegating getters: delegate to the stored PowerFlowEvaluationModel
+get_calculate_loss_factors(pfd::PowerFlowData) = get_calculate_loss_factors(pfd.pf)
 get_calculate_voltage_stability_factors(pfd::PowerFlowData) =
-    pfd.calculate_voltage_stability_factors
+    get_calculate_voltage_stability_factors(pfd.pf)
+get_network_reductions(pfd::PowerFlowData) = get_network_reductions(pfd.pf)
+get_time_steps(pfd::PowerFlowData) = get_time_steps(pfd.pf)
+get_time_step_names(pfd::PowerFlowData) = get_time_step_names(pfd.pf)
+get_correct_bustypes(pfd::PowerFlowData) = get_correct_bustypes(pfd.pf)
 
 # LCC getters.
 get_lcc_setpoint_at_rectifier(pfd::PowerFlowData) = pfd.lcc.setpoint_at_rectifier
@@ -282,15 +294,15 @@ function PowerFlowData(
     pf::T,
     power_network_matrix::M,
     aux_network_matrix::N,
-    n_time_steps::Int,
     n_lccs::Int;
-    time_step_names::Vector{String} = String[],
     neighbors = Vector{Set{Int}}(),
 ) where {
     T <: PowerFlowEvaluationModel,
     M <: PNM.PowerNetworkMatrix,
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
 }
+    n_time_steps = get_time_steps(pf)
+    time_step_names = get_time_step_names(pf)
     if n_time_steps != 0
         if length(time_step_names) == 0
             time_step_names = [string(i) for i in 1:n_time_steps]
@@ -304,15 +316,10 @@ function PowerFlowData(
     n_arcs = arc_count(pf, power_network_matrix, aux_network_matrix)
     calculate_loss_factors = get_calculate_loss_factors(pf)
     calculate_voltage_stability_factors = get_calculate_voltage_stability_factors(pf)
-    if !isnothing(get_slack_participation_factors(pf))
-        empty_slack_participation_factors = Dict{Tuple{DataType, String}, Float64}[]
-        sizehint!(empty_slack_participation_factors, n_time_steps)
-    else
-        empty_slack_participation_factors = nothing
-    end
 
     lcc_parameters = LCCParameters(n_time_steps, n_lccs)
     return PowerFlowData(
+        pf,
         zeros(n_buses, n_time_steps), # bus_active_power_injections
         zeros(n_buses, n_time_steps), # bus_reactive_power_injections
         zeros(n_buses, n_time_steps), # bus_active_power_withdrawals
@@ -322,8 +329,8 @@ function PowerFlowData(
         zeros(n_buses, n_time_steps), # bus_active_power_constant_impedance_withdrawals
         zeros(n_buses, n_time_steps), # bus_reactive_power_constant_impedance_withdrawals
         fill((-Inf, Inf), (n_buses, n_time_steps)), # bus_reactive_power_bounds
-        empty_slack_participation_factors, # generator_slack_participation_factors
         spzeros(n_buses, n_time_steps), # bus_slack_participation_factors
+        Vector{Dict{Tuple{DataType, String}, Float64}}(), # computed_generator_slack_participation_factors
         fill(PSY.ACBusTypes.PQ, (n_buses, n_time_steps)), # bus_type
         ones(n_buses, n_time_steps), # bus_magnitude
         zeros(n_buses, n_time_steps), # bus_angles
@@ -339,9 +346,7 @@ function PowerFlowData(
         neighbors,
         falses(n_time_steps), # converged
         calculate_loss_factors ? zeros(n_buses, n_time_steps) : nothing, # loss_factors
-        calculate_loss_factors,
         calculate_voltage_stability_factors ? zeros(n_buses, n_time_steps) : nothing, # voltage_stability_factors
-        calculate_voltage_stability_factors,
         lcc_parameters,
     )
 end
@@ -419,10 +424,7 @@ function make_and_initialize_power_flow_data(
     sys::PSY.System,
     power_network_matrix::M,
     aux_network_matrix::N;
-    time_steps::Int = 1,
-    time_step_names::Vector{String} = String[],
     neighbors = Vector{Set{Int}}(),
-    correct_bustypes::Bool = false,
 ) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
     check_unit_setting(sys)
     n_lccs = length(PSY.get_available_components(PSY.TwoTerminalLCCLine, sys))
@@ -430,59 +432,44 @@ function make_and_initialize_power_flow_data(
         pf,
         power_network_matrix,
         aux_network_matrix,
-        time_steps,
         n_lccs;
-        time_step_names = time_step_names,
         neighbors = neighbors,
     )
     @assert length(data.lcc.setpoint_at_rectifier) == n_lccs
-    initialize_power_flow_data!(data, pf, sys; correct_bustypes = correct_bustypes)
+    initialize_power_flow_data!(data, pf, sys; correct_bustypes = get_correct_bustypes(pf))
     return data
 end
 
 """
     PowerFlowData(
         pf::ACPowerFlow{<:ACPowerFlowSolverType},
-        sys::PSY.System;
-        time_steps::Int = 1,
-        time_step_names::Vector{String} = String[],
-        check_connectivity::Bool = true
-    ) -> ACPowerFlowData{<:ACPowerFlowSolverType} 
+        sys::PSY.System
+    ) -> ACPowerFlowData{<:ACPowerFlowSolverType}
 
-Creates the structure for an AC power flow calculation, given the 
-[`System`](@extref PowerSystems.System) `sys`, the number of time periods to 
-consider, and their names.
+Creates the structure for an AC power flow calculation, given the
+[`System`](@extref PowerSystems.System) `sys`. Configuration options like `time_steps`,
+`timestep_names`, `network_reductions`, and `correct_bustypes` are taken from the
+[`ACPowerFlow`](@ref) object.
 
 Calling this function will not evaluate the power flows and angles.
-Note that first input is of type [`ACPowerFlow`](@ref): this version is used to solve 
+Note that first input is of type [`ACPowerFlow`](@ref): this version is used to solve
 AC power flows, and returns an [`ACPowerFlowData`](@ref) object.
 
 # Arguments:
 - [`pf::ACPowerFlow`](@ref ACPowerFlow):
-        the settings for the AC power flow solver.
+        the settings for the AC power flow solver, including `time_steps`, `time_step_names`,
+        `network_reductions`, and `correct_bustypes`.
 - `sys::PSY.System`:
-        A [`System`](@extref PowerSystems.System) object that represents the power 
+        A [`System`](@extref PowerSystems.System) object that represents the power
         grid under consideration.
-- `time_steps::Int`:
-        number of time periods to consider in the `PowerFlowData` structure. It
-        defines the number of columns of the matrices used to store data.
-        Default value = `1`.
-- `time_step_names::Vector{String}`:
-        names of the time periods defined by the argument `time_steps`. Default
-        value = `String[]`.
-- `check_connectivity::Bool`:
-        Perform connectivity check on the network matrix. Default value = `true`.
 
 WARNING: functions for the evaluation of the multi-period AC PF still to be implemented.
 """
 function PowerFlowData(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
-    sys::PSY.System;
-    network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
-    time_steps::Int = 1,
-    time_step_names::Vector{String} = String[],
-    correct_bustypes::Bool = false,
+    sys::PSY.System,
 )
+    network_reductions = get_network_reductions(pf)
     network_reduction_message(network_reductions, pf)
     power_network_matrix = PNM.Ybus(
         sys;
@@ -504,57 +491,40 @@ function PowerFlowData(
         sys,
         power_network_matrix,
         aux_network_matrix;
-        time_steps = time_steps,
-        time_step_names = time_step_names,
         neighbors = neighbors,
-        correct_bustypes = correct_bustypes,
     )
 end
 
 # DC Power Flow Data based on ABA and BA matrices
 """
     PowerFlowData(
-        ::DCPowerFlow,
-        sys::PSY.System;
-        time_steps::Int = 1,
-        time_step_names::Vector{String} = String[],
-        check_connectivity::Bool = true
+        pf::DCPowerFlow,
+        sys::PSY.System
     ) -> ABAPowerFlowData
 
-Creates a `PowerFlowData` structure configured for a stnadard DC power flow calculation, 
-given the [`System`](@extref PowerSystems.System) `sys`, the number of time periods to 
-consider, and their names.
+Creates a `PowerFlowData` structure configured for a standard DC power flow calculation,
+given the [`System`](@extref PowerSystems.System) `sys`. Configuration options like
+`time_steps`, `time_step_names`, `network_reductions`, and `correct_bustypes` are taken
+from the [`DCPowerFlow`](@ref) object.
 
 Calling this function will not evaluate the power flows and angles.
-Note that first input is of type [`DCPowerFlow`](@ref): this version is 
+Note that first input is of type [`DCPowerFlow`](@ref): this version is
 used to solve DC power flows, and returns an [`ABAPowerFlowData`](@ref) object.
 
 # Arguments:
-- [`::DCPowerFlow`](@ref PowerFlows.DCPowerFlow):
+- [`pf::DCPowerFlow`](@ref PowerFlows.DCPowerFlow):
         Run a DC power flow: internally, store the ABA matrix as `power_network_matrix` and
-        the BA matrix as `aux_network_matrix`.
+        the BA matrix as `aux_network_matrix`. Configuration options are taken from this object.
 - `sys::PSY.System`:
-        A [`System`](@extref PowerSystems.System) object that represents the power 
+        A [`System`](@extref PowerSystems.System) object that represents the power
         grid under consideration.
-- `time_steps::Int`:
-        number of time periods to consider in the `PowerFlowData` structure. It
-        defines the number of columns of the matrices used to store data.
-        Default value = `1`.
-- `time_step_names::Vector{String}`:
-        names of the time periods defined by the argument `time_steps`. Default
-        value = `String[]`.
-- `check_connectivity::Bool`:
-        Perform connectivity check on the network matrix. Default value = `true`.
 """
 function PowerFlowData(
     pf::DCPowerFlow,
-    sys::PSY.System;
-    network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
-    time_steps::Int = 1,
-    time_step_names::Vector{String} = String[],
-    correct_bustypes = false,
+    sys::PSY.System,
 )
-    network_reduction_message(network_reductions, DCPowerFlow())
+    network_reductions = get_network_reductions(pf)
+    network_reduction_message(network_reductions, pf)
     # get the network matrices
     power_network_matrix =
         PNM.ABA_Matrix(sys; factorize = true, network_reductions = network_reductions)
@@ -563,56 +533,43 @@ function PowerFlowData(
         pf,
         sys,
         power_network_matrix,
-        aux_network_matrix;
-        time_steps = time_steps,
-        time_step_names = time_step_names,
-        correct_bustypes = correct_bustypes,
+        aux_network_matrix,
     )
 end
 
 # DC Power Flow Data with PTDF matrix
 """
-    function PowerFlowData(
-        ::PTDFDCPowerFlow,
-        sys::PSY.System;
-        time_steps::Int = 1,
-        time_step_names::Vector{String} = String[]
+    PowerFlowData(
+        pf::PTDFDCPowerFlow,
+        sys::PSY.System
     ) -> PTDFPowerFlowData
 
-Creates a `PowerFlowData` structure configured for a Partial Transfer 
-Distribution Factor Matrix DC power flow calculation, given the 
-[`System`](@extref PowerSystems.System) `sys`, the number of time periods to 
-consider, and their names.
+Creates a `PowerFlowData` structure configured for a Partial Transfer
+Distribution Factor Matrix DC power flow calculation, given the
+[`System`](@extref PowerSystems.System) `sys`. Configuration options like
+`time_steps`, `time_step_names`, `network_reductions`, and `correct_bustypes` are taken
+from the [`PTDFDCPowerFlow`](@ref) object.
 
 Calling this function will not evaluate the power flows and angles.
-Note that first input is of type [`PTDFDCPowerFlow`](@ref): this version is used to solve 
-DC power flows via the Power Transfer Distribution Factor (PTDF) matrix. This function 
-returns an [`PTDFPowerFlowData`](@ref) object.
+Note that first input is of type [`PTDFDCPowerFlow`](@ref): this version is used to solve
+DC power flows via the Power Transfer Distribution Factor (PTDF) matrix. This function
+returns a [`PTDFPowerFlowData`](@ref) object.
 
 # Arguments:
-- [`::PTDFDCPowerFlow`](@ref PowerFlows.PTDFDCPowerFlow):
+- [`pf::PTDFDCPowerFlow`](@ref PowerFlows.PTDFDCPowerFlow):
         Run a DC power flow with PTDF matrix: internally, store the PTDF matrix
         as `power_network_matrix` and the ABA matrix as `aux_network_matrix`.
+        Configuration options are taken from this object.
 - `sys::PSY.System`:
-        A [`System`](@extref PowerSystems.System) object that represents the power 
+        A [`System`](@extref PowerSystems.System) object that represents the power
         grid under consideration.
-- `time_steps::Int`:
-        number of time periods to consider in the `PowerFlowData` structure. It
-        defines the number of columns of the matrices used to store data.
-        Default value = `1`.
-- `time_step_names::Vector{String}`:
-        names of the time periods defined by the argument `time_steps`. Default
-        value = `String[]`.
 """
 function PowerFlowData(
     pf::PTDFDCPowerFlow,
-    sys::PSY.System;
-    network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
-    time_steps::Int = 1,
-    time_step_names::Vector{String} = String[],
-    correct_bustypes = false,
+    sys::PSY.System,
 )
-    network_reduction_message(network_reductions, PTDFDCPowerFlow())
+    network_reductions = get_network_reductions(pf)
+    network_reduction_message(network_reductions, pf)
     # get the network matrices
     power_network_matrix = PNM.PTDF(sys; network_reductions = network_reductions)
     aux_network_matrix =
@@ -621,57 +578,43 @@ function PowerFlowData(
         pf,
         sys,
         power_network_matrix,
-        aux_network_matrix;
-        time_steps = time_steps,
-        time_step_names = time_step_names,
-        correct_bustypes = correct_bustypes,
+        aux_network_matrix,
     )
 end
 
 # DC Power Flow Data with virtual PTDF matrix
 """
-    function PowerFlowData(
-        ::vPTDFDCPowerFlow,
-        sys::PSY.System;
-        time_steps::Int = 1,
-        time_step_names::Vector{String} = String[]
+    PowerFlowData(
+        pf::vPTDFDCPowerFlow,
+        sys::PSY.System
     ) -> vPTDFPowerFlowData
 
-Creates a `PowerFlowData` structure configured for a virtual Partial Transfer 
-Distribution Factor Matrix DC power flow calculation, given the 
-[`System`](@extref PowerSystems.System) `sys`, the number of time periods to consider, and 
-their names.
+Creates a `PowerFlowData` structure configured for a virtual Partial Transfer
+Distribution Factor Matrix DC power flow calculation, given the
+[`System`](@extref PowerSystems.System) `sys`. Configuration options like
+`time_steps`, `time_step_names`, `network_reductions`, and `correct_bustypes` are taken
+from the [`vPTDFDCPowerFlow`](@ref) object.
 
 Calling this function will not evaluate the power flows and angles.
-Note that first input is of type [`vPTDFDCPowerFlow`](@ref): this version is used to solve 
-DC power flows using a virtual Power Transfer Distribution Factor (PTDF) matrix. This 
+Note that first input is of type [`vPTDFDCPowerFlow`](@ref): this version is used to solve
+DC power flows using a virtual Power Transfer Distribution Factor (PTDF) matrix. This
 function returns a [`vPTDFPowerFlowData`](@ref) object.
 
-For internal usage: generally, do not construct this directly.
-
 # Arguments:
-- [`::PTDFDCPowerFlow`](@ref PTDFDCPowerFlow):
-        Run a virtual PTDF power flow: internally, store the virtual PTDF matrix
+- [`pf::vPTDFDCPowerFlow`](@ref vPTDFDCPowerFlow):
+        Run a virtual PTDF power flow: internally, store the virtual PTDF matrix as
         `power_network_matrix` and the ABA matrix as `aux_network_matrix`.
+        Configuration options are taken from this object.
 - `sys::PSY.System`:
-        A [`System`](@extref PowerSystems.System) object that represents the power 
+        A [`System`](@extref PowerSystems.System) object that represents the power
         grid under consideration.
-- `time_steps::Int`:
-        number of time periods to consider in the PowerFlowData structure. It
-        defines the number of columns of the matrices used to store data.
-        Default value = `1`.
-- `time_step_names::Vector{String}`:
-        names of the time periods defined by the argument "time_steps". Default
-        value = `String[]`.
 """
 function PowerFlowData(
     pf::vPTDFDCPowerFlow,
-    sys::PSY.System;
-    network_reductions::Vector{PNM.NetworkReduction} = Vector{PNM.NetworkReduction}(),
-    time_steps::Int = 1,
-    time_step_names::Vector{String} = String[],
-    correct_bustypes = false)
-    network_reduction_message(network_reductions, vPTDFDCPowerFlow())
+    sys::PSY.System,
+)
+    network_reductions = get_network_reductions(pf)
+    network_reduction_message(network_reductions, pf)
 
     # get the network matrices
     power_network_matrix = PNM.VirtualPTDF(sys; network_reductions = network_reductions) # evaluates an empty virtual PTDF
@@ -682,37 +625,33 @@ function PowerFlowData(
         pf,
         sys,
         power_network_matrix,
-        aux_network_matrix;
-        time_steps = time_steps,
-        time_step_names = time_step_names,
-        correct_bustypes = correct_bustypes,
+        aux_network_matrix,
     )
 end
 
 """
 Create an appropriate `PowerFlowContainer` for the given `PowerFlowEvaluationModel` and initialize it from the given `PSY.System`.
 
+Configuration options like `time_steps`, `time_step_names`, `network_reductions`, and
+`correct_bustypes` are taken from the `PowerFlowEvaluationModel` object.
+
 # Arguments:
 - `pfem::PowerFlowEvaluationModel`: power flow model to construct a container for (e.g., `DCPowerFlow()`)
-- `sys::PSY.System`: the [System](@extref PowerSystems.System) from which to initialize the 
+- `sys::PSY.System`: the [System](@extref PowerSystems.System) from which to initialize the
     power flow container
-- `time_steps::Int`: number of time periods to consider (default is `1`)
-- `time_step_names::Vector{String}`: names of the time periods defines by the argument "time_steps". Default value is `String[]`.
 """
 function make_power_flow_container end
 
 make_power_flow_container(
     pfem::ACPowerFlow{<:ACPowerFlowSolverType},
-    sys::PSY.System;
-    kwargs...,
-) =
-    PowerFlowData(pfem, sys; kwargs...)
+    sys::PSY.System,
+) = PowerFlowData(pfem, sys)
 
-make_power_flow_container(pfem::DCPowerFlow, sys::PSY.System; kwargs...) =
-    PowerFlowData(pfem, sys; kwargs...)
+make_power_flow_container(pfem::DCPowerFlow, sys::PSY.System) =
+    PowerFlowData(pfem, sys)
 
-make_power_flow_container(pfem::PTDFDCPowerFlow, sys::PSY.System; kwargs...) =
-    PowerFlowData(pfem, sys; kwargs...)
+make_power_flow_container(pfem::PTDFDCPowerFlow, sys::PSY.System) =
+    PowerFlowData(pfem, sys)
 
-make_power_flow_container(pfem::vPTDFDCPowerFlow, sys::PSY.System; kwargs...) =
-    PowerFlowData(pfem, sys; kwargs...)
+make_power_flow_container(pfem::vPTDFDCPowerFlow, sys::PSY.System) =
+    PowerFlowData(pfem, sys)

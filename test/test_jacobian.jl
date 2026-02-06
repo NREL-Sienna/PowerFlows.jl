@@ -1,6 +1,6 @@
 function verify_jacobian(sys::PSY.System)
-    pf = PF.ACPowerFlow{NewtonRaphsonACPowerFlow}()
-    data = PF.PowerFlowData(pf, sys; correct_bustypes = true)
+    pf = PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = true)
+    data = PF.PowerFlowData(pf, sys)
     time_step = 1
     residual = PF.ACPowerFlowResidual(data, time_step)
     J = PF.ACPowerFlowJacobian(data, time_step)

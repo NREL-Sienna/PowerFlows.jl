@@ -23,7 +23,7 @@ end
 
     # get reference values: flows and angles.
     # See issue 210: would be better to compare against external program.
-    data = PowerFlowData(DCPowerFlow(), sys; correct_bustypes = true)
+    data = PowerFlowData(DCPowerFlow(; correct_bustypes = true), sys)
     power_injections =
         deepcopy(data.bus_active_power_injections - data.bus_active_power_withdrawals)
     matrix_data = deepcopy(data.power_network_matrix.K)       # LU factorization of ABA
@@ -42,7 +42,7 @@ end
     basepower = PSY.get_base_power(sys)
     arc_lookup = PF.get_arc_lookup(data)
     # CASE 1: ABA and BA matrices
-    solved_data_ABA = solve_power_flow(DCPowerFlow(), sys; correct_bustypes = true)
+    solved_data_ABA = solve_power_flow(DCPowerFlow(; correct_bustypes = true), sys)
     ABA_branch_flows = solved_data_ABA["1"]["flow_results"]
     @test isapprox(
         1 / basepower .* flows_from_dataframe(ABA_branch_flows, arc_lookup, :P_from_to),
@@ -57,7 +57,7 @@ end
     @test isapprox(solved_data_ABA["1"]["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 
     # CASE 2: PTDF and ABA MATRICES
-    solved_data_PTDF = solve_power_flow(PTDFDCPowerFlow(), sys; correct_bustypes = true)
+    solved_data_PTDF = solve_power_flow(PTDFDCPowerFlow(; correct_bustypes = true), sys)
     PTDF_branch_flows = solved_data_PTDF["1"]["flow_results"]
     @test isapprox(
         1 / basepower .* flows_from_dataframe(PTDF_branch_flows, arc_lookup, :P_from_to),
@@ -72,7 +72,7 @@ end
     @test isapprox(solved_data_PTDF["1"]["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 
     # CASE 3: VirtualPTDF and ABA MATRICES
-    solved_data_vPTDF = solve_power_flow(vPTDFDCPowerFlow(), sys; correct_bustypes = true)
+    solved_data_vPTDF = solve_power_flow(vPTDFDCPowerFlow(; correct_bustypes = true), sys)
     vPTDF_branch_flows = solved_data_vPTDF["1"]["flow_results"]
     @test isapprox(
         1 / basepower .* flows_from_dataframe(vPTDF_branch_flows, arc_lookup, :P_from_to),
@@ -93,7 +93,7 @@ end
     @assert get_units_base(sys) == "SYSTEM_BASE" "Test system unit setting changed."
     set_active_power_flow!(lcc, 0.3)
     for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
-        results = solve_power_flow(T(), sys; correct_bustypes = true)
+        results = solve_power_flow(T(; correct_bustypes = true), sys)
         lcc_flow = results["1"]["lcc_results"][1, :P_from_to]
         # 1st arg must be lcc, not sys, else test fails. See issue #1590 in PowerSystems.jl
         with_units_base(lcc, PSY.UnitSystem.NATURAL_UNITS) do
@@ -134,7 +134,7 @@ end
 @testset "DC power flow: StandardLoad" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
     # change all loads to StandardLoad
-    dc_baseline = solve_power_flow(DCPowerFlow(), sys; correct_bustypes = true)
+    dc_baseline = solve_power_flow(DCPowerFlow(; correct_bustypes = true), sys)
     set_units_base_system!(sys, PSY.UnitSystem.NATURAL_UNITS)
     load = first(get_components(PowerLoad, sys))
     P = PSY.get_active_power(load)
