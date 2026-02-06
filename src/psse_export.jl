@@ -1370,11 +1370,7 @@ function write_to_buffers!(
                 end
             RATEA = _fix_3w_transformer_rating(RATEA)
 
-            B = if hasmethod(PSY.get_b, (typeof(branch),))
-                PSY.get_b(branch).from + PSY.get_b(branch).to
-            else
-                0.0
-            end
+            B = imag(PSY.get_primary_shunt(branch)) * 2
 
             if exporter.psse_version == :v35
                 NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
