@@ -1,27 +1,30 @@
 # Solving a Power Flow
 
-In this tutorial, you'll solve power flows on a 5-bus test system using three different solvers and compare their results.
+In this tutorial, you'll solve power flows on a 5-bus test system using three different
+solvers and compare their results.
 
-```@setup basic_tutorial
+## Building a System
+To get started, load the needed packages. We're using a standard test system and want to 
+keep output clean, so we adjust the logging settings to filter out a few precautionary warnings.
+
+```@repl basic_tutorial
 using PowerSystemCaseBuilder
 using PowerFlows
 using PowerSystems
 using Logging
+disable_logging(Logging.Warn)
 ```
-
-## Building a System
 
 Create a [`System`](@extref PowerSystems.System) from [PowerSystemCaseBuilder.jl](https://github.com/NREL-Sienna/PowerSystemCaseBuilder.jl):
 
 ```@repl basic_tutorial
-sys = with_logger(SimpleLogger(stderr, Logging.Error)) do
-    build_system(MatpowerTestSystems, "matpower_case5_sys")
-end
+sys = build_system(MatpowerTestSystems, "matpower_case5_sys")
 ```
 
 ## DC Power Flow
 
-Create a [`DCPowerFlow`](@ref) solver:
+[`DCPowerFlow`](@ref) solves for bus voltage angles using the bus admittance matrix, 
+then computes branch flows from the angle differences. Create a [`DCPowerFlow`](@ref) solver:
 
 ```@repl basic_tutorial
 pf_dc = DCPowerFlow()
@@ -30,41 +33,44 @@ pf_dc = DCPowerFlow()
 Solve the power flow with [`solve_power_flow`](@ref):
 
 ```@repl basic_tutorial
-dc_results = with_logger(SimpleLogger(stderr, Logging.Error)) do
-    solve_power_flow(pf_dc, sys)
-end
+dc_results = solve_power_flow(pf_dc, sys)
 ```
 
-Look at the bus results:
+The result is a `Dict{String, Dict{String, DataFrame}}`. The outer key is the time step
+name: `"1"`. The inner dictionary stores the power flow results at that time step:
+`"bus_results"` for bus data and `"flow_results"` key for AC line data.
+(There's also 3rd key, `"lcc_results"`, for HVDC lines, but this sytem 
+contains no such components, so the matching dataframe will be emtpy.) Inspect `"bus_results"`:
 
 ```@repl basic_tutorial
 dc_results["1"]["bus_results"]
 ```
 
-Notice that `Vm` is 1.0 for all buses, and `Q_gen` and `Q_load` are 0. This is expected for DC power flow.
-
-Look at the line flows:
+Notice that `Vm` (voltage magnitude) is 1.0 for all buses, and `Q_gen` and `Q_load` are 0.
+This is expected for DC power flow, which assumes flat voltage magnitudes and ignores reactive power.
 
 ```@repl basic_tutorial
 dc_results["1"]["flow_results"]
 ```
 
-Notice that `Q_from_to` and `Q_to_from` are zero.
+Likewise, `Q_from_to` and `Q_to_from` (reactive power flow on the line) are zero, for all lines.
 
 ## PTDF DC Power Flow
 
-Create a [`PTDFDCPowerFlow`](@ref) solver:
+[`PTDFDCPowerFlow`](@ref) computes branch flows directly from bus power injections using
+the Power Transfer Distribution Factor matrix, without solving for voltage angles as an
+intermediate step. (This means we can omit the angle computation in contexts where we only 
+care about line flows, though we don't have that option implemented here.) Create a [`PTDFDCPowerFlow`](@ref)
+solver:
 
 ```@repl basic_tutorial
-pf_ptdf = PTDFDCPowerFlow()
+pf_ptdf = PTDFPowerFlow()
 ```
 
-Solve the power flow:
+As before, solve the power flow with [`solve_power_flow`](@ref):
 
 ```@repl basic_tutorial
-ptdf_results = with_logger(SimpleLogger(stderr, Logging.Error)) do
-    solve_power_flow(pf_ptdf, sys)
-end
+dc_results = solve_power_flow(pf_ptdf, sys)
 ```
 
 Look at the bus results:
@@ -73,7 +79,10 @@ Look at the bus results:
 ptdf_results["1"]["bus_results"]
 ```
 
-The results match `DCPowerFlow`. For very large systems, consider [`vPTDFDCPowerFlow`](@ref) instead.
+The results match `DCPowerFlow`, as they should: the two are mathematically equivalent. 
+For very large systems where forming the full PTDF matrix would be too expensive, 
+consider [`vPTDFDCPowerFlow`](@ref), which computes the same results without 
+storing the dense matrix.
 
 ## AC Power Flow
 
@@ -86,12 +95,12 @@ pf_ac = ACPowerFlow()
 Solve the power flow:
 
 ```@repl basic_tutorial
-ac_results = with_logger(SimpleLogger(stderr, Logging.Error)) do
-    solve_power_flow(pf_ac, sys)
-end
+solve_power_flow(pf_ac, sys)
 ```
 
-Look at the bus results:
+AC results are returned as a flat `Dict{String, DataFrame}`, with the same keys as 
+before: `"bus_results"`, `"flow_results"` (AC lines), and `"lcc_results"` (HVDC lines). 
+(We don't support multi-period AC power flows yet.) Look at the bus results:
 
 ```@repl basic_tutorial
 ac_results["bus_results"]
@@ -105,58 +114,13 @@ Look at the line flows:
 ac_results["flow_results"]
 ```
 
-Notice that `Q_from_to` and `Q_to_from` now show reactive power flows, and `P_from_to` differs from `P_to_from` due to losses.
+`Q_from_to` and `Q_to_from` now show reactive power flows, and `P_from_to` differs from
+`P_to_from` due to losses.
 
 ## When AC Power Flow Fails
 
-Let's create a system with data issues to see what failure looks like.
-
-```@repl basic_tutorial
-bad_sys = with_logger(SimpleLogger(stderr, Logging.Error)) do
-    build_system(PSITestSystems, "c_sys5_re"; add_forecasts = false)
-end
-```
-
-Remove some lines and increase impedance on another to create an infeasible case:
-
-```@repl basic_tutorial
-remove_component!(Line, bad_sys, "1")
-```
-
-```@repl basic_tutorial
-remove_component!(Line, bad_sys, "2")
-```
-
-```@repl basic_tutorial
-br = get_component(Line, bad_sys, "6")
-```
-
-```@repl basic_tutorial
-set_x!(br, 20.0)
-```
-
-```@repl basic_tutorial
-set_r!(br, 2.0)
-```
-
-Now try to solve:
-
-```@repl basic_tutorial
-bad_results = solve_power_flow(ACPowerFlow(), bad_sys)
-```
-
-The solver returns `nothing` when it fails to converge. You can try a more robust solver, but if the system is truly infeasible, no solver will converge:
-
-```@repl basic_tutorial
-bad_results_robust = solve_power_flow(ACPowerFlow{TrustRegionACPowerFlow}(), bad_sys)
-```
-
-Let's decrease the resistance and impedance on that line and try again:
-```@repl basic_tutorial
-set_x!(br, 0.03)
-set_r!(br, 0.003)
-```
-
-```@repl basic_tutorial
-good_results_robust = solve_power_flow(ACPowerFlow{TrustRegionACPowerFlow}(), bad_sys)
-```
+Unlike DC power flow, AC power flow is iterative and not guaranteed to converge. Systems
+with high impedance lines, poor initial voltage profiles, or insufficient reactive power
+support can cause the solver to fail. When this happens, `solve_power_flow` returns
+`missing`: you'll also see a logged error. If you encounter convergence failures, consider
+ using a more robust solver such as [`TrustRegionACPowerFlow`](@ref) or [`RobustHomotopyPowerFlow`](@ref).
