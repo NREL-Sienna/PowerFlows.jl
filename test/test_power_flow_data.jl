@@ -160,7 +160,7 @@ end
     )
     @assert PSY.get_bustype(pv_bus) == PSY.ACBusTypes.PV
     # on the other hand, DC power flow is fine: PV vs PQ doesn't matter.
-    solve_power_flow(PF.DCPowerFlow(), sys)
+    solve_power_flow(PF.DCPowerFlow(), sys, PF.FlowReporting.ARC_FLOWS)
     # No available generators at REF bus does error for DC power flow.
     ref_bus = findfirst(bus -> PSY.get_bustype(bus) == PSY.ACBusTypes.REF, buses)
     ref_bus = buses[ref_bus]

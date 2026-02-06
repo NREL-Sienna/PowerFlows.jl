@@ -101,7 +101,7 @@ end
                 arc_flows = results["flow_results"]
                 trf_arc_flows = zeros(ComplexF32, 3)
                 for i in 1:3
-                    ix = arc_flows[!, "line_name"] .== "$(test_trf_name)_winding_$i"
+                    ix = arc_flows[!, "flow_name"] .== "$(test_trf_name)_winding_$i"
                     @assert sum(ix) > 0 "could not find arc in results dataframe with name" *
                                         " $(test_trf_name)_winding_$i"
                     trf_arc_flows[i] =

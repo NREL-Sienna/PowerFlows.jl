@@ -75,3 +75,18 @@ const BUS_TYPE_PRIORITIES = Dict{PSY.ACBusTypes, Int}(
 
 const PSSE_DEFAULT_EXPORT_NAME = "export"
 const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33, :v35]
+
+IS.@scoped_enum(
+    FlowReporting,
+    ARC_FLOWS = 0,
+    BRANCH_FLOWS = 1,
+)
+@doc "
+ FlowReporting
+
+ Enumeration describing the type of flows reported in power flow results.
+
+ Values
+ - ARC_FLOWS = 0: Report total flows corresponding to arcs.
+ - BRANCH_FLOWS = 1: Report flows for individual branches.
+ " FlowReporting
