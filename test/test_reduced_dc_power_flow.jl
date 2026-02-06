@@ -31,7 +31,7 @@ dc_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
     end
 end
 
-# Ward reduction tested separately from Radial/Degree Two reductions because power flow results for retained buses is not expected to match exactly.
+# Ward reduction tested separately from Radial/Degree Two reductions because power flow results for retained buses are not expected to match exactly.
 @testset "RTS: Ward Reduction and DC Power Flow" begin
     sys = build_system(PSISystems, "RTS_GMLC_DA_sys")
     bus_numbers = get_number.(get_components(ACBus, sys))
@@ -48,7 +48,7 @@ end
         results = PF.solve_power_flow(
             dc_pf,
             sys;
-            network_reductions = NetworkReduction[WardReduction(study_buses)],
+            network_reductions = PNM.NetworkReduction[PNM.WardReduction(study_buses)],
             correct_bustypes = true,
         )
         @test nrow(results["1"]["bus_results"]) == n_study_buses

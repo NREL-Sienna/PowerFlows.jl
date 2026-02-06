@@ -405,8 +405,8 @@ function network_reduction_message(
             ),
         )
     end
-    if m isa DCPowerFlow && any(isa.(nrs, (PNM.WardReduction,)))
-        @warn "Use ward reduction with DC power flow with caution. Flows for arcs in parallel with equivalent branches added during Ward will give unexpected results."
+    if m isa AbstractDCPowerFlow && any(isa.(nrs, (PNM.WardReduction,)))
+        @warn "Use Ward reduction with DC power flow with caution. Branch flows for branches in parallel with equivalent branches added by Ward reduction may be incorrect."
     end
     if any(isa.(nrs, (PNM.DegreeTwoReduction,)))
         @warn "Degree 2 network reductions mis-report branch power flows, but bus voltage results are correct. Use with caution."
