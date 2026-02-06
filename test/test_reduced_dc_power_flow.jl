@@ -38,14 +38,15 @@ end
         PF.AbstractDCPowerFlow,
     )
         dc_pf = pf_type()
-        unreduced = PF.PowerFlowData(dc_pf, sys; correct_bustypes = true)
+        unreduced = PF.PowerFlowData(dc_pf, sys)
         PF.solve_power_flow!(unreduced)
         @assert all(unreduced.converged)
-        results = PF.solve_power_flow(
-            dc_pf,
-            sys;
+        dc_pf_reduced = pf_type(;
             network_reductions = PNM.NetworkReduction[PNM.WardReduction(study_buses)],
-            correct_bustypes = true,
+        )
+        results = PF.solve_power_flow(
+            dc_pf_reduced,
+            sys,
         )
         @test nrow(results["1"]["bus_results"]) == n_study_buses
     end
