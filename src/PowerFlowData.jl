@@ -403,8 +403,15 @@ function network_reduction_message(
     nrs::Vector{PNM.NetworkReduction},
     m::PowerFlowEvaluationModel,
 )
-    if any(isa.(nrs, (PNM.WardReduction,)))
-        throw(IS.NotImplementedError("Ward reduction is not supported yet."))
+    if m isa ACPowerFlow && any(isa.(nrs, (PNM.WardReduction,)))
+        throw(
+            IS.NotImplementedError(
+                "Ward reduction with AC power flow is not supported yet.",
+            ),
+        )
+    end
+    if m isa AbstractDCPowerFlow && any(isa.(nrs, (PNM.WardReduction,)))
+        @warn "Use Ward reduction with DC power flow with caution. Branch flows for branches in parallel with equivalent branches added by Ward reduction may be incorrect."
     end
     if any(isa.(nrs, (PNM.DegreeTwoReduction,)))
         @warn "Degree 2 network reductions mis-report branch power flows, but bus voltage results are correct. Use with caution."
