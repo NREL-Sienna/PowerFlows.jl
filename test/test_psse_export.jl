@@ -278,8 +278,8 @@ function test_power_flow(
     sys2::System,
 )
     pf_with_bustypes = DCPowerFlow(; correct_bustypes = true)
-    result1 = solve_power_flow(pf_with_bustypes, sys1)
-    result2 = solve_power_flow(pf_with_bustypes, sys2)
+    result1 = solve_power_flow(pf_with_bustypes, sys1, PF.FlowReporting.ARC_FLOWS)
+    result2 = solve_power_flow(pf_with_bustypes, sys2, PF.FlowReporting.ARC_FLOWS)
     @test compare_df_within_tolerance("bus_results", result1["1"]["bus_results"],
         result2["1"]["bus_results"], POWERFLOW_COMPARISON_TOLERANCE)
     @test compare_df_within_tolerance("flow_results",
