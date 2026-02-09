@@ -37,6 +37,7 @@
     @test size(res_reduced_branch)[1] == n_branches
 
     # This is the key test; we can recover exactly the same flow results dataframe after degree two reduction is used in the power flow calculation
+    # The datasets should be sorted by from bus, so order should also be the same (which is assumed in the test)
     for (full_row, reduced_row) in
         zip(eachrow(res_full_branch), eachrow(res_reduced_branch))
         for name in names(full_row)
