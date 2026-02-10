@@ -363,8 +363,8 @@ Number the nodes in the series segment 0, 1, ..., n. Number the segments by
 their concluding node: 1, 2, ... n. The currents in the segments are given by:
 
 ```math
-\\begin{bmatrix} y^i_{ff} & y^i_{ft} \\\\ y^i_{tf} & y^i_{tt} \\end{bmatrix} 
-\\begin{bmatrix} V_{i-1} \\\\ V_i \\end{bmatrix} = 
+\\begin{bmatrix} y^i_{ff} & y^i_{ft} \\\\ y^i_{tf} & y^i_{tt} \\end{bmatrix}
+\\begin{bmatrix} V_{i-1} \\\\ V_i \\end{bmatrix} =
 \\begin{bmatrix} I_{i-1, i} \\\\ I_{i, i-1} \\end{bmatrix}
 ```
 
@@ -377,7 +377,7 @@ Substitute the above expressions for the currents and group by ``V_i``:
 y^i_{tf} V_{i-1} + (y_{tt}^i + y_{ff}^{i+1}) V_i + y_{ft}^{i+1} V_{i+1} = 0
 ```
 
-For ``i = 1`` and ``i = n-1``, move the terms involving ``V_0`` and ``V_n`` (known) to 
+For ``i = 1`` and ``i = n-1``, move the terms involving ``V_0`` and ``V_n`` (known) to
 the other side. This gives a tridiagonal system for ``x = [V_1, \\ldots, V_{n-1}]``:
 
 ```math
@@ -387,7 +387,7 @@ A x = [-y^1_{tf} V_0, 0, \\ldots, 0, -y^{n}_{ft} V_n]
 where ``A`` has diagonal entries ``y_{tt}^i + y_{ff}^{i+1}``, subdiagonal
 entries ``y_{tf}^{i+1}``, and superdiagonal entries ``y_{ft}^i``.
 
-In the implementation, ``y_{11}`` is used instead of ``y_{ff}``, ``y_{12}`` instead of 
+In the implementation, ``y_{11}`` is used instead of ``y_{ff}``, ``y_{12}`` instead of
 ``y_{ft}``, etc.
 """
 function _set_series_voltages_and_flows!(
@@ -466,7 +466,7 @@ function _set_series_voltages_and_flows!(
     return
 end
 
-"""Set the power flow in the arcs that remain after network reduction. Called on the 
+"""Set the power flow in the arcs that remain after network reduction. Called on the
 `direct_branch_map` and `transformer3W_map` dictionaries."""
 function set_branch_flows_for_dict!(
     d::Dict{Tuple{Int, Int}, PSY.ACTransmission},
@@ -932,7 +932,7 @@ function _post_process_flows(
             end
         end
     end
-    # assert that vectors are filled completely 
+    # assert that vectors are filled completely
     @assert (length(branch_P_from_to) + 1) == ix_branch
 
     return branch_names,
@@ -1033,15 +1033,15 @@ function _post_process_entry_flows(
     P_losses::Float64,
     Q_losses::Float64,
 )
-    branch_names = String[]
-    from_buses = Int[]
-    to_buses = Int[]
-    P_from_to_branches = Float64[]
-    Q_from_to_branches = Float64[]
-    P_to_from_branches = Float64[]
-    Q_to_from_branches = Float64[]
-    P_losses_branches = Float64[]
-    Q_losses_branches = Float64[]
+    branch_names = Vector{String}[]
+    from_buses = Vector{Int}[]
+    to_buses = Vector{Int}[]
+    P_from_to_branches = Vector{Float64}[]
+    Q_from_to_branches = Vector{Float64}[]
+    P_to_from_branches = Vector{Float64}[]
+    Q_to_from_branches = Vector{Float64}[]
+    P_losses_branches = Vector{Float64}[]
+    Q_losses_branches = Vector{Float64}[]
     for (segment_ix, segment) in enumerate(arc_entry)
         if arc_entry.segment_orientations[segment_ix] == :ToFrom
             multiplier = -1.0
@@ -1307,10 +1307,10 @@ end
 """
      update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
 
-Modify the values in the given [`System`](@extref PowerSystems.System) to correspond to the 
-given `PowerFlowData` such that if a new `PowerFlowData` is constructed from the resulting 
-system it is the same as `data`. See also [`write_power_flow_solution!`](@ref). NOTE this 
-assumes that `data` was initialized from `sys` and then solved with no further 
+Modify the values in the given [`System`](@extref PowerSystems.System) to correspond to the
+given `PowerFlowData` such that if a new `PowerFlowData` is constructed from the resulting
+system it is the same as `data`. See also [`write_power_flow_solution!`](@ref). NOTE this
+assumes that `data` was initialized from `sys` and then solved with no further
 modifications.
 """
 function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
