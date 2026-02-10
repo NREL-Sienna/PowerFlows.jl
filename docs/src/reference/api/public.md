@@ -24,6 +24,7 @@ Modules = [PowerFlows]
 Public = true
 Private = false
 Pages = [
+    "definitions.jl",
     "solve_dc_power_flow.jl",
     "solve_ac_power_flow.jl",
     "ac_power_flow_residual.jl",
