@@ -1033,15 +1033,15 @@ function _post_process_entry_flows(
     P_losses::Float64,
     Q_losses::Float64,
 )
-    branch_names = []
-    from_buses = []
-    to_buses = []
-    P_from_to_branches = []
-    Q_from_to_branches = []
-    P_to_from_branches = []
-    Q_to_from_branches = []
-    P_losses_branches = []
-    Q_losses_branches = []
+    branch_names = String[]
+    from_buses = Int[]
+    to_buses = Int[]
+    P_from_to_branches = Float64[]
+    Q_from_to_branches = Float64[]
+    P_to_from_branches = Float64[]
+    Q_to_from_branches = Float64[]
+    P_losses_branches = Float64[]
+    Q_losses_branches = Float64[]
     for (segment_ix, segment) in enumerate(arc_entry)
         if arc_entry.segment_orientations[segment_ix] == :ToFrom
             multiplier = -1.0
