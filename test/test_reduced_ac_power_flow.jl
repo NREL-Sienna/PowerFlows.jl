@@ -2,9 +2,6 @@ const UNSUPPORTED =
     Set(
         [
         (PNM.WardReduction, PF.ACPowerFlow{PF.TrustRegionACPowerFlow}),
-        (PNM.WardReduction, PF.DCPowerFlow),
-        (PNM.WardReduction, PF.PTDFDCPowerFlow),
-        (PNM.WardReduction, PF.vPTDFDCPowerFlow),
     ],
     )
 const NOT_EQUIVALENT =
