@@ -18,6 +18,7 @@ export PSSEExporter
 export update_exporter!
 export write_export
 export get_psse_export_paths
+export FlowReporting
 # "protected" (semi-stable because used in PSI) but not exported:
 # PowerFlowData and related type aliases, solve_power_flow!, write_results
 
