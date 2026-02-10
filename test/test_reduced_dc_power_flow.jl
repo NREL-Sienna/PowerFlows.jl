@@ -47,6 +47,7 @@ end
         results = PF.solve_power_flow(
             dc_pf_reduced,
             sys,
+            PF.FlowReporting.ARC_FLOWS,
         )
         @test nrow(results["1"]["bus_results"]) == n_study_buses
     end
