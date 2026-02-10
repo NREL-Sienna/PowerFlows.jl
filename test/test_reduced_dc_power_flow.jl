@@ -21,7 +21,7 @@ dc_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
             dc_pf_reduced =
                 pf_type(; network_reductions = deepcopy(v), correct_bustypes = true)
             validate_reduced_power_flow(dc_pf_reduced, sys, v, unreduced)
-            results = PF.solve_power_flow(dc_pf_reduced, sys)
+            results = PF.solve_power_flow(dc_pf_reduced, sys, PF.FlowReporting.ARC_FLOWS)
             # no write-results-to-system solve_and_store_power_flow! for DC: should we add one?
         end
     end
@@ -47,6 +47,7 @@ end
         results = PF.solve_power_flow(
             dc_pf_reduced,
             sys,
+            PF.FlowReporting.ARC_FLOWS,
         )
         @test nrow(results["1"]["bus_results"]) == n_study_buses
     end

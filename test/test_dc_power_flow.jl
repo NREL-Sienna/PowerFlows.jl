@@ -42,7 +42,11 @@ end
     basepower = PSY.get_base_power(sys)
     arc_lookup = PF.get_arc_lookup(data)
     # CASE 1: ABA and BA matrices
-    solved_data_ABA = solve_power_flow(DCPowerFlow(; correct_bustypes = true), sys)
+    solved_data_ABA = solve_power_flow(
+        DCPowerFlow(; correct_bustypes = true),
+        sys,
+        PF.FlowReporting.ARC_FLOWS,
+    )
     ABA_branch_flows = solved_data_ABA["1"]["flow_results"]
     @test isapprox(
         1 / basepower .* flows_from_dataframe(ABA_branch_flows, arc_lookup, :P_from_to),
@@ -57,7 +61,11 @@ end
     @test isapprox(solved_data_ABA["1"]["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 
     # CASE 2: PTDF and ABA MATRICES
-    solved_data_PTDF = solve_power_flow(PTDFDCPowerFlow(; correct_bustypes = true), sys)
+    solved_data_PTDF = solve_power_flow(
+        PTDFDCPowerFlow(; correct_bustypes = true),
+        sys,
+        PF.FlowReporting.ARC_FLOWS,
+    )
     PTDF_branch_flows = solved_data_PTDF["1"]["flow_results"]
     @test isapprox(
         1 / basepower .* flows_from_dataframe(PTDF_branch_flows, arc_lookup, :P_from_to),
@@ -72,7 +80,11 @@ end
     @test isapprox(solved_data_PTDF["1"]["bus_results"].θ, ref_bus_angles, atol = 1e-6)
 
     # CASE 3: VirtualPTDF and ABA MATRICES
-    solved_data_vPTDF = solve_power_flow(vPTDFDCPowerFlow(; correct_bustypes = true), sys)
+    solved_data_vPTDF = solve_power_flow(
+        vPTDFDCPowerFlow(; correct_bustypes = true),
+        sys,
+        PF.FlowReporting.ARC_FLOWS,
+    )
     vPTDF_branch_flows = solved_data_vPTDF["1"]["flow_results"]
     @test isapprox(
         1 / basepower .* flows_from_dataframe(vPTDF_branch_flows, arc_lookup, :P_from_to),
@@ -93,7 +105,8 @@ end
     @assert get_units_base(sys) == "SYSTEM_BASE" "Test system unit setting changed."
     set_active_power_flow!(lcc, 0.3)
     for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
-        results = solve_power_flow(T(; correct_bustypes = true), sys)
+        results =
+            solve_power_flow(T(; correct_bustypes = true), sys, PF.FlowReporting.ARC_FLOWS)
         lcc_flow = results["1"]["lcc_results"][1, :P_from_to]
         # 1st arg must be lcc, not sys, else test fails. See issue #1590 in PowerSystems.jl
         with_units_base(lcc, PSY.UnitSystem.NATURAL_UNITS) do
@@ -134,7 +147,11 @@ end
 @testset "DC power flow: StandardLoad" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
     # change all loads to StandardLoad
-    dc_baseline = solve_power_flow(DCPowerFlow(; correct_bustypes = true), sys)
+    dc_baseline = solve_power_flow(
+        DCPowerFlow(; correct_bustypes = true),
+        sys,
+        PF.FlowReporting.ARC_FLOWS,
+    )
     set_units_base_system!(sys, PSY.UnitSystem.NATURAL_UNITS)
     load = first(get_components(PowerLoad, sys))
     P = PSY.get_active_power(load)
@@ -160,9 +177,9 @@ end
     )
     add_component!(sys, new_load)
     set_zip_load_in_mva!(sys, (0.0, P, 0.0))
-    impedance_solved = solve_power_flow(DCPowerFlow(), sys)
+    impedance_solved = solve_power_flow(DCPowerFlow(), sys, PF.FlowReporting.ARC_FLOWS)
     set_zip_load_in_mva!(sys, (0.0, 0.0, P))
-    current_solved = solve_power_flow(DCPowerFlow(), sys)
+    current_solved = solve_power_flow(DCPowerFlow(), sys, PF.FlowReporting.ARC_FLOWS)
 
     @test isapprox(
         dc_baseline["1"]["bus_results"],
@@ -176,7 +193,7 @@ end
     )
 
     set_zip_load_in_mva!(sys, (P * 0.2, P * 0.3, P * 0.5))
-    combined_solved = solve_power_flow(DCPowerFlow(), sys)
+    combined_solved = solve_power_flow(DCPowerFlow(), sys, PF.FlowReporting.ARC_FLOWS)
     @test isapprox(
         dc_baseline["1"]["bus_results"],
         combined_solved["1"]["bus_results"],

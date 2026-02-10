@@ -511,7 +511,7 @@ end
 
 function power_flow_with_units(
     sys::PSY.System,
-    T::Type{<:PF.PowerFlowEvaluationModel},
+    T::Type{<:PF.ACPowerFlow},
     units::PSY.UnitSystem,
 )
     with_units_base(sys, units) do
@@ -521,6 +521,23 @@ function power_flow_with_units(
         else
             first_line_flow = results["flow_results"][1, :]
         end
-        return (first_line_flow[:line_name], first_line_flow[:P_from_to])
+        return (first_line_flow[:flow_name], first_line_flow[:P_from_to])
+    end
+end
+
+function power_flow_with_units(
+    sys::PSY.System,
+    T::Type{<:PF.AbstractDCPowerFlow},
+    units::PSY.UnitSystem,
+)
+    with_units_base(sys, units) do
+        results =
+            solve_power_flow(T(; correct_bustypes = true), sys, PF.FlowReporting.ARC_FLOWS)
+        if "1" in keys(results)
+            first_line_flow = results["1"]["flow_results"][1, :]
+        else
+            first_line_flow = results["flow_results"][1, :]
+        end
+        return (first_line_flow[:flow_name], first_line_flow[:P_from_to])
     end
 end
