@@ -1671,7 +1671,7 @@ function _write_2w_transformer!(
     exporter::PSSEExporter,
     bus_number_mapping::AbstractDict{Int64, Int64},
     transformer_name_mapping::AbstractDict{String, String},
-    transformer_ckt_mapping::AbstractDict,
+    transformer_ckt_mapping::AbstractDict{Tuple{Tuple{Int, Int}, String}, String},
     CW, CZ, CM, NMETR, supp_attr, VECGRP, ZCOD,
 )
     from_n, to_n = bus_tuple
@@ -1854,7 +1854,7 @@ function _write_3w_transformer!(
     exporter::PSSEExporter,
     bus_number_mapping::AbstractDict{Int64, Int64},
     transformer_3w_name_mapping::AbstractDict{String, String},
-    transformer_3w_ckt_mapping::AbstractDict,
+    transformer_3w_ckt_mapping::AbstractDict{Tuple{Tuple{Int, Int, Int}, String}, String},
     CW, CZ, CM, NMETR, supp_attr, VECGRP, ZCOD,
 )
     p, s, t = bus_tuple
