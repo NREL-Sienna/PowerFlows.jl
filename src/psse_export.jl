@@ -1508,27 +1508,28 @@ end
 Write header comments for transformer data (v35 only).
 """
 function _write_transformer_headers!(io::IO, psse_version::Symbol)
-    psse_version == :v35 || return
-    println(
-        io,
-        "@!   I,     J,     K,'CKT',CW,CZ,CM,     MAG1,        MAG2,NMETR,               'N A M E',               STAT,O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4,     'VECGRP', ZCOD",
-    )
-    println(
-        io,
-        "@!   R1-2,       X1-2, SBASE1-2,     R2-3,       X2-3, SBASE2-3,     R3-1,       X3-1, SBASE3-1, VMSTAR,   ANSTAR",
-    )
-    println(
-        io,
-        "@!WINDV1, NOMV1,   ANG1, RATE1-1, RATE1-2, RATE1-3, RATE1-4, RATE1-5, RATE1-6, RATE1-7, RATE1-8, RATE1-9,RATE1-10,RATE1-11,RATE1-12,COD1,CONT1,NOD1,  RMA1,   RMI1,   VMA1,   VMI1, NTP1,TAB1, CR1,    CX1,  CNXA1",
-    )
-    println(
-        io,
-        "@!WINDV2, NOMV2,   ANG2, RATE2-1, RATE2-2, RATE2-3, RATE2-4, RATE2-5, RATE2-6, RATE2-7, RATE2-8, RATE2-9,RATE2-10,RATE2-11,RATE2-12,COD2,CONT2,NOD2,  RMA2,   RMI2,   VMA2,   VMI2, NTP2,TAB2, CR2,    CX2,  CNXA2",
-    )
-    println(
-        io,
-        "@!WINDV3, NOMV3,   ANG3, RATE3-1, RATE3-2, RATE3-3, RATE3-4, RATE3-5, RATE3-6, RATE3-7, RATE3-8, RATE3-9,RATE3-10,RATE3-11,RATE3-12,COD3,CONT3,NOD3,  RMA3,   RMI3,   VMA3,   VMI3, NTP3,TAB3, CR3,    CX3,  CNXA3",
-    )
+    if psse_version == :v35
+        println(
+            io,
+            "@!   I,     J,     K,'CKT',CW,CZ,CM,     MAG1,        MAG2,NMETR,               'N A M E',               STAT,O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4,     'VECGRP', ZCOD",
+        )
+        println(
+            io,
+            "@!   R1-2,       X1-2, SBASE1-2,     R2-3,       X2-3, SBASE2-3,     R3-1,       X3-1, SBASE3-1, VMSTAR,   ANSTAR",
+        )
+        println(
+            io,
+            "@!WINDV1, NOMV1,   ANG1, RATE1-1, RATE1-2, RATE1-3, RATE1-4, RATE1-5, RATE1-6, RATE1-7, RATE1-8, RATE1-9,RATE1-10,RATE1-11,RATE1-12,COD1,CONT1,NOD1,  RMA1,   RMI1,   VMA1,   VMI1, NTP1,TAB1, CR1,    CX1,  CNXA1",
+        )
+        println(
+            io,
+            "@!WINDV2, NOMV2,   ANG2, RATE2-1, RATE2-2, RATE2-3, RATE2-4, RATE2-5, RATE2-6, RATE2-7, RATE2-8, RATE2-9,RATE2-10,RATE2-11,RATE2-12,COD2,CONT2,NOD2,  RMA2,   RMI2,   VMA2,   VMI2, NTP2,TAB2, CR2,    CX2,  CNXA2",
+        )
+        println(
+            io,
+            "@!WINDV3, NOMV3,   ANG3, RATE3-1, RATE3-2, RATE3-3, RATE3-4, RATE3-5, RATE3-6, RATE3-7, RATE3-8, RATE3-9,RATE3-10,RATE3-11,RATE3-12,COD3,CONT3,NOD3,  RMA3,   RMI3,   VMA3,   VMI3, NTP3,TAB3, CR3,    CX3,  CNXA3",
+        )
+    end
 end
 
 """
