@@ -1666,12 +1666,12 @@ Write 2-winding transformer data to buffer.
 """
 function _write_2w_transformer!(
     io::IO,
-    transformer,
-    bus_tuple,
+    transformer::PSY.TwoWindingTransformer,
+    bus_tuple::Tuple{Int, Int},
     exporter::PSSEExporter,
-    bus_number_mapping,
-    transformer_name_mapping,
-    transformer_ckt_mapping,
+    bus_number_mapping::AbstractDict{Int64, Int64},
+    transformer_name_mapping::AbstractDict{String, String},
+    transformer_ckt_mapping::AbstractDict,
     CW, CZ, CM, NMETR, supp_attr, VECGRP, ZCOD,
 )
     from_n, to_n = bus_tuple
@@ -1849,12 +1849,12 @@ Write 3-winding transformer data to buffer.
 """
 function _write_3w_transformer!(
     io::IO,
-    transformer,
-    bus_tuple,
+    transformer::PSY.ThreeWindingTransformer,
+    bus_tuple::Tuple{Int, Int, Int},
     exporter::PSSEExporter,
-    bus_number_mapping,
-    transformer_3w_name_mapping,
-    transformer_3w_ckt_mapping,
+    bus_number_mapping::AbstractDict{Int64, Int64},
+    transformer_3w_name_mapping::AbstractDict{String, String},
+    transformer_3w_ckt_mapping::AbstractDict,
     CW, CZ, CM, NMETR, supp_attr, VECGRP, ZCOD,
 )
     p, s, t = bus_tuple
