@@ -1505,40 +1505,36 @@ function _psse_transformer_names(
 end
 
 """
-WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Data
+Write header comments for transformer data (v35 only).
 """
-function write_to_buffers!(
-    exporter::PSSEExporter,
-    ::Val{Symbol("Transformer Data")},
-)
-    io = exporter.raw_buffer
-    md = exporter.md_dict
-    check_supported_version(exporter)
+function _write_transformer_headers!(io::IO, psse_version::Symbol)
+    psse_version == :v35 || return
+    println(
+        io,
+        "@!   I,     J,     K,'CKT',CW,CZ,CM,     MAG1,        MAG2,NMETR,               'N A M E',               STAT,O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4,     'VECGRP', ZCOD",
+    )
+    println(
+        io,
+        "@!   R1-2,       X1-2, SBASE1-2,     R2-3,       X2-3, SBASE2-3,     R3-1,       X3-1, SBASE3-1, VMSTAR,   ANSTAR",
+    )
+    println(
+        io,
+        "@!WINDV1, NOMV1,   ANG1, RATE1-1, RATE1-2, RATE1-3, RATE1-4, RATE1-5, RATE1-6, RATE1-7, RATE1-8, RATE1-9,RATE1-10,RATE1-11,RATE1-12,COD1,CONT1,NOD1,  RMA1,   RMI1,   VMA1,   VMI1, NTP1,TAB1, CR1,    CX1,  CNXA1",
+    )
+    println(
+        io,
+        "@!WINDV2, NOMV2,   ANG2, RATE2-1, RATE2-2, RATE2-3, RATE2-4, RATE2-5, RATE2-6, RATE2-7, RATE2-8, RATE2-9,RATE2-10,RATE2-11,RATE2-12,COD2,CONT2,NOD2,  RMA2,   RMI2,   VMA2,   VMI2, NTP2,TAB2, CR2,    CX2,  CNXA2",
+    )
+    println(
+        io,
+        "@!WINDV3, NOMV3,   ANG3, RATE3-1, RATE3-2, RATE3-3, RATE3-4, RATE3-5, RATE3-6, RATE3-7, RATE3-8, RATE3-9,RATE3-10,RATE3-11,RATE3-12,COD3,CONT3,NOD3,  RMA3,   RMI3,   VMA3,   VMI3, NTP3,TAB3, CR3,    CX3,  CNXA3",
+    )
+end
 
-    # Add header comments for v35
-    if exporter.psse_version == :v35
-        println(
-            io,
-            "@!   I,     J,     K,'CKT',CW,CZ,CM,     MAG1,        MAG2,NMETR,               'N A M E',               STAT,O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4,     'VECGRP', ZCOD",
-        )
-        println(
-            io,
-            "@!   R1-2,       X1-2, SBASE1-2,     R2-3,       X2-3, SBASE2-3,     R3-1,       X3-1, SBASE3-1, VMSTAR,   ANSTAR",
-        )
-        println(
-            io,
-            "@!WINDV1, NOMV1,   ANG1, RATE1-1, RATE1-2, RATE1-3, RATE1-4, RATE1-5, RATE1-6, RATE1-7, RATE1-8, RATE1-9,RATE1-10,RATE1-11,RATE1-12,COD1,CONT1,NOD1,  RMA1,   RMI1,   VMA1,   VMI1, NTP1,TAB1, CR1,    CX1,  CNXA1",
-        )
-        println(
-            io,
-            "@!WINDV2, NOMV2,   ANG2, RATE2-1, RATE2-2, RATE2-3, RATE2-4, RATE2-5, RATE2-6, RATE2-7, RATE2-8, RATE2-9,RATE2-10,RATE2-11,RATE2-12,COD2,CONT2,NOD2,  RMA2,   RMI2,   VMA2,   VMI2, NTP2,TAB2, CR2,    CX2,  CNXA2",
-        )
-        println(
-            io,
-            "@!WINDV3, NOMV3,   ANG3, RATE3-1, RATE3-2, RATE3-3, RATE3-4, RATE3-5, RATE3-6, RATE3-7, RATE3-8, RATE3-9,RATE3-10,RATE3-11,RATE3-12,COD3,CONT3,NOD3,  RMA3,   RMI3,   VMA3,   VMI3, NTP3,TAB3, CR3,    CX3,  CNXA3",
-        )
-    end
-
+"""
+Load transformer components (2W and 3W) and create circuit mappings.
+"""
+function _load_transformer_components(exporter::PSSEExporter)
     transformers_with_numbers = get!(exporter.components_cache, "transformers") do
         transformers = sort!(
             collect(PSY.get_components(PSY.TwoWindingTransformer, exporter.system));
@@ -1570,74 +1566,485 @@ function write_to_buffers!(
                 singles_to_1 = false,
             )
         end
-    if !exporter.md_valid
-        # Handle 2W transformers
-        if !isempty(transformers_with_numbers)
-            md["transformer_name_mapping"] = _psse_transformer_names(
-                convert_empty_stringvec(PSY.get_name.(first.(transformers_with_numbers))),
-                last.(transformers_with_numbers),
-                md["bus_number_mapping"],
-                transformer_ckt_mapping,
-            )
-            control_objective_mapping = OrderedDict{String, Any}()
-            winding_group_category_mapping = OrderedDict{String, Any}()
-            transformer_resistance_mapping = OrderedDict{String, Any}()
-            transformer_reactance_mapping = OrderedDict{String, Any}()
-            transformer_tap_mapping = OrderedDict{String, Any}()
-            for (transformer, _) in transformers_with_numbers
-                name = PSY.get_name(transformer)
-                # Control objective mapping (only store if UNDEFINED)
-                if transformer isa PSY.TapTransformer ||
-                   transformer isa PSY.PhaseShiftingTransformer
-                    cod1 = PSY.get_control_objective(transformer)
-                    if cod1 ==
-                       PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
-                        control_objective_mapping[name] = cod1.value
-                    end
-                end
-                # Winding group category mapping (only store if UNDEFINED)
-                if transformer isa PSY.TapTransformer || transformer isa PSY.Transformer2W
-                    ang1 = PSY.get_winding_group_number(transformer)
-                    if ang1 == PSY.WindingGroupNumber.UNDEFINED
-                        winding_group_category_mapping[name] = ang1.value
-                    end
-                end
-                # Store resistance, reactance, and tap values
-                transformer_resistance_mapping[name] = PSY.get_r(transformer)
-                transformer_reactance_mapping[name] = PSY.get_x(transformer)
-                if transformer isa PSY.TapTransformer ||
-                   transformer isa PSY.PhaseShiftingTransformer
-                    transformer_tap_mapping[name] = PSY.get_tap(transformer)
+    return (
+        transformers_with_numbers,
+        transformers_3w_with_numbers,
+        transformer_ckt_mapping,
+        transformer_3w_ckt_mapping,
+    )
+end
+
+"""
+Build metadata mappings for 2-winding transformers.
+"""
+function _build_transformer_2w_metadata!(
+    md::AbstractDict,
+    transformers_with_numbers,
+    transformer_ckt_mapping,
+    bus_number_mapping,
+)
+    if !isempty(transformers_with_numbers)
+        md["transformer_name_mapping"] = _psse_transformer_names(
+            convert_empty_stringvec(PSY.get_name.(first.(transformers_with_numbers))),
+            last.(transformers_with_numbers),
+            bus_number_mapping,
+            transformer_ckt_mapping,
+        )
+        control_objective_mapping = OrderedDict{String, Any}()
+        winding_group_category_mapping = OrderedDict{String, Any}()
+        transformer_resistance_mapping = OrderedDict{String, Any}()
+        transformer_reactance_mapping = OrderedDict{String, Any}()
+        transformer_tap_mapping = OrderedDict{String, Any}()
+        for (transformer, _) in transformers_with_numbers
+            name = PSY.get_name(transformer)
+            # Control objective mapping (only store if UNDEFINED)
+            if transformer isa PSY.TapTransformer ||
+               transformer isa PSY.PhaseShiftingTransformer
+                cod1 = PSY.get_control_objective(transformer)
+                if cod1 ==
+                   PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+                    control_objective_mapping[name] = cod1.value
                 end
             end
-            md["transformer_control_objective_mapping"] = control_objective_mapping
-            md["transformer_winding_group_category_mapping"] =
-                winding_group_category_mapping
-            md["transformer_resistance_mapping"] = transformer_resistance_mapping
-            md["transformer_reactance_mapping"] = transformer_reactance_mapping
-            md["transformer_tap_mapping"] = transformer_tap_mapping
+            # Winding group category mapping (only store if UNDEFINED)
+            if transformer isa PSY.TapTransformer || transformer isa PSY.Transformer2W
+                ang1 = PSY.get_winding_group_number(transformer)
+                if ang1 == PSY.WindingGroupNumber.UNDEFINED
+                    winding_group_category_mapping[name] = ang1.value
+                end
+            end
+            # Store resistance, reactance, and tap values
+            transformer_resistance_mapping[name] = PSY.get_r(transformer)
+            transformer_reactance_mapping[name] = PSY.get_x(transformer)
+            if transformer isa PSY.TapTransformer ||
+               transformer isa PSY.PhaseShiftingTransformer
+                transformer_tap_mapping[name] = PSY.get_tap(transformer)
+            end
+        end
+        md["transformer_control_objective_mapping"] = control_objective_mapping
+        md["transformer_winding_group_category_mapping"] =
+            winding_group_category_mapping
+        md["transformer_resistance_mapping"] = transformer_resistance_mapping
+        md["transformer_reactance_mapping"] = transformer_reactance_mapping
+        md["transformer_tap_mapping"] = transformer_tap_mapping
+    else
+        md["transformer_name_mapping"] = OrderedDict{String, String}()
+        md["transformer_control_objective_mapping"] = OrderedDict{String, Any}()
+        md["transformer_winding_group_category_mapping"] = OrderedDict{String, Any}()
+        md["transformer_resistance_mapping"] = OrderedDict{String, Any}()
+        md["transformer_reactance_mapping"] = OrderedDict{String, Any}()
+        md["transformer_tap_mapping"] = OrderedDict{String, Any}()
+    end
+end
+
+"""
+Build metadata mappings for 3-winding transformers.
+"""
+function _build_transformer_3w_metadata!(
+    md::AbstractDict,
+    transformers_3w_with_numbers,
+    transformer_3w_ckt_mapping,
+    bus_number_mapping,
+)
+    if !isempty(transformers_3w_with_numbers)
+        md["transformer_3w_name_mapping"] = _psse_transformer_names(
+            convert_empty_stringvec(
+                PSY.get_name.(first.(transformers_3w_with_numbers)),
+            ),
+            last.(transformers_3w_with_numbers),
+            bus_number_mapping,
+            transformer_3w_ckt_mapping,
+        )
+    else
+        md["transformer_3w_name_mapping"] = OrderedDict{String, String}()
+    end
+end
+
+"""
+Write 2-winding transformer data to buffer.
+"""
+function _write_2w_transformer!(
+    io::IO,
+    transformer,
+    bus_tuple,
+    exporter::PSSEExporter,
+    bus_number_mapping,
+    transformer_name_mapping,
+    transformer_ckt_mapping,
+    CW, CZ, CM, NMETR, supp_attr, VECGRP, ZCOD,
+)
+    from_n, to_n = bus_tuple
+    I = bus_number_mapping[from_n]
+    J = bus_number_mapping[to_n]
+    K = 0
+    CKT = transformer_ckt_mapping[((from_n, to_n), PSY.get_name(transformer))]
+    if startswith(CKT, "_")
+        CKT = CKT[2:end]
+    end
+    CKT = _psse_quote_string(CKT)
+    MAG1 = get_ext_key_or_default(
+        transformer,
+        "MAG1",
+        real(PSY.get_primary_shunt(transformer)),
+    )
+    MAG2 = get_ext_key_or_default(
+        transformer,
+        "MAG2",
+        imag(PSY.get_primary_shunt(transformer)),
+    )
+    NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
+    STAT = PSY.get_available(transformer) ? 1 : 0
+    NOMV1 = get_ext_key_or_default(
+        transformer,
+        "NOMV1",
+        PSY.get_base_voltage_primary(transformer),
+    )
+    NOMV2 = get_ext_key_or_default(
+        transformer,
+        "NOMV2",
+        PSY.get_base_voltage_secondary(transformer),
+    )
+    SBASE1_2 = get_ext_key_or_default(
+        transformer,
+        "SBASE1-2",
+        PSY.get_base_power(transformer),
+    )
+    WINDV2 = get_ext_key_or_default(
+        transformer,
+        "WINDV2",
+        PSY.get_base_voltage_secondary(transformer),
+    )
+    WINDV1 = get_ext_key_or_default(
+        transformer,
+        "WINDV1",
+        PSY.get_base_voltage_primary(transformer),
+    )
+    # Adding the Float64, for some reason when reading the new EI for 0.0 resistance values
+    # it was getting just a get_r is a 0, leading it to break the reading of the files since 
+    # 0 at the beginning is considered as file termination.
+    R1_2 = Float64(get_ext_key_or_default(
+        transformer,
+        "R1-2",
+        PSY.get_r(transformer))
+    )
+    X1_2 = get_ext_key_or_default(
+        transformer,
+        "X1-2",
+        PSY.get_x(transformer),
+    )
+    if transformer isa PSY.TapTransformer ||
+       transformer isa PSY.PhaseShiftingTransformer
+        cod1_val = get_ext_key_or_default(
+            transformer,
+            "COD1",
+            PSY.get_control_objective(transformer),
+        )
+        if cod1_val isa
+           PSY.TransformerControlObjectiveModule.TransformerControlObjective
+            cod1_val =
+                if cod1_val ==
+                   PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+                    get_ext_key_or_default(transformer, "COD1")
+                else
+                    cod1_val.value
+                end
+        end
+        COD1 = cod1_val
+    else
+        COD1 = get_ext_key_or_default(transformer, "COD1")
+    end
+    RMA1 = get_ext_key_or_default(transformer, "RMA1")
+    RMI1 = get_ext_key_or_default(transformer, "RMI1")
+    NTP1 = get_ext_key_or_default(transformer, "NTP1")
+    NOD1 = get_ext_key_or_default(transformer, "NOD1")
+
+    if (transformer isa PSY.PhaseShiftingTransformer)
+        ANG1 = rad2deg(PSY.get_α(transformer))
+    elseif (transformer isa PSY.Transformer2W || transformer isa PSY.TapTransformer)
+        ANG1 = PSY.get_winding_group_number(transformer).value
+        ANG1 = get(WINDING_GROUP_NUMBER_TO_DEGREES, ANG1, PSSE_DEFAULT)
+    else
+        ANG1 = 0.0
+    end
+
+    if exporter.psse_version == :v35
+        RATA1, RATB1, RATC1 =
+            with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+            end
+
+        rates_1 = [
+            get_ext_key_or_default(transformer, "RATE11", RATA1),
+            get_ext_key_or_default(transformer, "RATE12", RATB1),
+            get_ext_key_or_default(transformer, "RATE13", RATC1),
+        ]
+        for i in 4:12
+            push!(rates_1, get_ext_key_or_default(transformer, "RATE1$i"))
+        end
+    else
+        RATA1, RATB1, RATC1 =
+            with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+                _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
+                _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+            end
+    end
+
+    CONT1 = get_ext_key_or_default(transformer, "CONT1")
+    VMA1 = get_ext_key_or_default(transformer, "VMA1")
+    VMI1 = get_ext_key_or_default(transformer, "VMI1")
+    TAB1 = !isempty(supp_attr) ? PSY.get_table_number(supp_attr[1]) : 0
+    CR1 = get_ext_key_or_default(transformer, "CR1")
+    CX1 = get_ext_key_or_default(transformer, "CX1")
+    CNXA1 = get_ext_key_or_default(transformer, "CNXA1")
+
+    if exporter.psse_version == :v35
+        @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+            MAG1, MAG2, NMETR, NAME, STAT)
+        fastprintdelim_psse_default_ownership(io)
+        @fastprintdelim_unroll(io, true, VECGRP, ZCOD)
+    else
+        @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+            MAG1, MAG2, NMETR, NAME, STAT)
+        fastprintdelim_psse_default_ownership(io)
+        fastprintln(io, VECGRP)
+    end
+
+    @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2)
+
+    if exporter.psse_version == :v35
+        @fastprintdelim_unroll(io, false, WINDV1, NOMV1, ANG1)
+        for rate in rates_1
+            fastprintdelim(io, rate)
+        end
+        @fastprintdelim_unroll(
+            io,
+            true,
+            COD1,
+            CONT1,
+            NOD1,
+            RMA1,
+            RMI1,
+            VMA1,
+            VMI1,
+            NTP1,
+            TAB1,
+            CR1,
+            CX1,
+            CNXA1
+        )
+    else
+        @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1, RATA1,
+            RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
+            VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1)
+    end
+
+    @fastprintdelim_unroll(io, true, WINDV2, NOMV2)
+end
+
+"""
+Write 3-winding transformer data to buffer.
+"""
+function _write_3w_transformer!(
+    io::IO,
+    transformer,
+    bus_tuple,
+    exporter::PSSEExporter,
+    bus_number_mapping,
+    transformer_3w_name_mapping,
+    transformer_3w_ckt_mapping,
+    CW, CZ, CM, NMETR, supp_attr, VECGRP, ZCOD,
+)
+    p, s, t = bus_tuple
+    I = bus_number_mapping[p]
+    J = bus_number_mapping[s]
+    K = bus_number_mapping[t]
+    CKT = transformer_3w_ckt_mapping[((p, s, t), PSY.get_name(transformer))]
+    if startswith(CKT, "_")
+        CKT = CKT[2:end]
+    end
+    MAG1 = get_ext_key_or_default(transformer, "MAG1", PSY.get_g(transformer))
+    MAG2 = get_ext_key_or_default(transformer, "MAG2", PSY.get_b(transformer))
+    CKT = _psse_quote_string(CKT)
+    NAME = transformer_3w_name_mapping[PSY.get_name(transformer)]
+    NAME = _psse_quote_string(NAME)
+
+    if PSY.get_available_primary(transformer) == false
+        STAT = 4
+    elseif PSY.get_available_secondary(transformer) == false
+        STAT = 2
+    elseif PSY.get_available_tertiary(transformer) == false
+        STAT = 3
+    else
+        STAT = PSY.get_available(transformer) ? 1 : 0
+    end
+
+    # Same issue as described above
+    R1_2 = Float64(
+        get_ext_key_or_default(transformer, "R1-2", PSY.get_r_12(transformer)),
+    )
+    X1_2 = get_ext_key_or_default(transformer, "X1-2", PSY.get_x_12(transformer))
+    SBASE1_2 = PSY.get_base_power_12(transformer)
+    R2_3 = get_ext_key_or_default(transformer, "R2-3", PSY.get_r_23(transformer))
+    X2_3 = get_ext_key_or_default(transformer, "X2-3", PSY.get_x_23(transformer))
+    SBAS2_3 = PSY.get_base_power_23(transformer)
+    R3_1 = get_ext_key_or_default(transformer, "R3-1", PSY.get_r_13(transformer))
+    X3_1 = get_ext_key_or_default(transformer, "X3-1", PSY.get_x_13(transformer))
+    SBAS3_1 = PSY.get_base_power_13(transformer)
+    VMSTAR = get_ext_key_or_default(transformer, "VMSTAR")
+    ANSTAR = get_ext_key_or_default(transformer, "ANSTAR")
+
+    winding_data = []
+    for (category, prefix) in WINDING_CATEGORIES
+        acc = WINDING_ACCESSORS[category]
+        NOMV = get_ext_key_or_default(
+            transformer,
+            "NOMV$prefix",
+            acc.get_base_voltage(transformer),
+        )
+        WINDV = get_ext_key_or_default(
+            transformer,
+            "WINDV$prefix",
+            acc.get_turns_ratio(transformer),
+        )
+        ANG = if transformer isa PSY.PhaseShiftingTransformer3W
+            _psse_round_val(rad2deg(acc.get_angle(transformer)))
+        elseif transformer isa PSY.Transformer3W
+            group_number = acc.get_group_number(transformer)
+            group_value = group_number.value
+            get(WINDING_GROUP_NUMBER_TO_DEGREES, group_value, PSSE_DEFAULT)
         else
-            md["transformer_name_mapping"] = OrderedDict{String, String}()
-            md["transformer_control_objective_mapping"] = OrderedDict{String, Any}()
-            md["transformer_winding_group_category_mapping"] = OrderedDict{String, Any}()
-            md["transformer_resistance_mapping"] = OrderedDict{String, Any}()
-            md["transformer_reactance_mapping"] = OrderedDict{String, Any}()
-            md["transformer_tap_mapping"] = OrderedDict{String, Any}()
+            0.0
+        end
+        RAT = acc.get_rating(transformer)
+
+        if exporter.psse_version == :v35
+            rates = [
+                get_ext_key_or_default(transformer, "RATE$(prefix)1", RAT),
+                get_ext_key_or_default(transformer, "RATE$(prefix)2", RAT),
+                get_ext_key_or_default(transformer, "RATE$(prefix)3", RAT),
+            ]
+            for i in 4:12
+                # In case RATE is not found default to 0.0
+                push!(
+                    rates,
+                    get_ext_key_or_default(transformer, "RATE$(prefix)$i", 0.0),
+                )
+            end
+            RATES = tuple(rates...)
+        else
+            RATA = get_ext_key_or_default(transformer, "RATA$prefix", RAT)
+            RATB = get_ext_key_or_default(transformer, "RATB$prefix", RAT)
+            RATC = get_ext_key_or_default(transformer, "RATC$prefix", RAT)
+            RATES = (RATA, RATB, RATC)
         end
 
-        # Handle 3W transformers separately if needed
-        if !isempty(transformers_3w_with_numbers)
-            md["transformer_3w_name_mapping"] = _psse_transformer_names(
-                convert_empty_stringvec(
-                    PSY.get_name.(first.(transformers_3w_with_numbers)),
+        COD = get_ext_key_or_default(transformer, "COD$prefix")
+        CONT = get_ext_key_or_default(transformer, "CONT$prefix")
+        NOD = get_ext_key_or_default(transformer, "NOD$prefix")
+        RMA = get_ext_key_or_default(transformer, "RMA$prefix")
+        RMI = get_ext_key_or_default(transformer, "RMI$prefix")
+        VMA = get_ext_key_or_default(transformer, "VMA$prefix")
+        VMI = get_ext_key_or_default(transformer, "VMI$prefix")
+        NTP = get_ext_key_or_default(transformer, "NTP$prefix")
+        TAB = 0
+        for icd_tr in supp_attr
+            if PSY.get_transformer_winding(icd_tr) == category
+                TAB = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
+            end
+        end
+        CR = get_ext_key_or_default(transformer, "CR$prefix")
+        CX = get_ext_key_or_default(transformer, "CX$prefix")
+        CNXA = get_ext_key_or_default(transformer, "CNXA$prefix")
+
+        if exporter.psse_version == :v35
+            push!(
+                winding_data,
+                (
+                    WINDV, NOMV, ANG, RATES..., COD, CONT, NOD,
+                    RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
                 ),
-                last.(transformers_3w_with_numbers),
-                md["bus_number_mapping"],
-                transformer_3w_ckt_mapping,
             )
         else
-            md["transformer_3w_name_mapping"] = OrderedDict{String, String}()
+            push!(
+                winding_data,
+                (
+                    WINDV, NOMV, ANG, RATES..., COD, CONT,
+                    RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
+                ),
+            )
         end
+    end
+
+    if exporter.psse_version == :v35
+        @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+            MAG1, MAG2, NMETR, NAME, STAT)
+        fastprintdelim_psse_default_ownership(io)
+        @fastprintdelim_unroll(io, true, VECGRP, ZCOD)
+    else
+        @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
+            MAG1, MAG2, NMETR, NAME, STAT)
+        fastprintdelim_psse_default_ownership(io)
+        fastprintln(io, VECGRP)
+    end
+
+    @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2, R2_3,
+        X2_3, SBAS2_3, R3_1, X3_1, SBAS3_1, VMSTAR, ANSTAR
+    )
+
+    for wd in winding_data
+        if exporter.psse_version == :v35
+            @fastprintdelim_unroll(io, true,
+                wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
+                wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17],
+                wd[18],
+                wd[19], wd[20], wd[21], wd[22], wd[23], wd[24], wd[25], wd[26],
+                wd[27]
+            )
+        else
+            @fastprintdelim_unroll(io, true,
+                wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
+                wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17]
+            )
+        end
+    end
+end
+
+"""
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Data
+"""
+function write_to_buffers!(
+    exporter::PSSEExporter,
+    ::Val{Symbol("Transformer Data")},
+)
+    io = exporter.raw_buffer
+    md = exporter.md_dict
+    check_supported_version(exporter)
+
+    _write_transformer_headers!(io, exporter.psse_version)
+
+    (
+        transformers_with_numbers,
+        transformers_3w_with_numbers,
+        transformer_ckt_mapping,
+        transformer_3w_ckt_mapping,
+    ) = _load_transformer_components(exporter)
+
+    if !exporter.md_valid
+        _build_transformer_2w_metadata!(
+            md,
+            transformers_with_numbers,
+            transformer_ckt_mapping,
+            md["bus_number_mapping"],
+        )
+        _build_transformer_3w_metadata!(
+            md,
+            transformers_3w_with_numbers,
+            transformer_3w_ckt_mapping,
+            md["bus_number_mapping"],
+        )
     end
 
     bus_number_mapping = md["bus_number_mapping"]
@@ -1656,331 +2063,18 @@ function write_to_buffers!(
         ZCOD = get_ext_key_or_default(transformer, "ZCOD")
 
         winding_number = length(bus_tuple)
-        if winding_number == 2  # Handle 2-winding transformer fields
-            from_n, to_n = bus_tuple
-            I = bus_number_mapping[from_n]
-            J = bus_number_mapping[to_n]
-            K = 0
-            CKT = transformer_ckt_mapping[((from_n, to_n), PSY.get_name(transformer))]
-            if startswith(CKT, "_")
-                CKT = CKT[2:end]
-            end
-            CKT = _psse_quote_string(CKT)
-            MAG1 = get_ext_key_or_default(
-                transformer,
-                "MAG1",
-                real(PSY.get_primary_shunt(transformer)),
+        if winding_number == 2
+            _write_2w_transformer!(
+                io, transformer, bus_tuple, exporter,
+                bus_number_mapping, transformer_name_mapping, transformer_ckt_mapping,
+                CW, CZ, CM, NMETR, supp_attr, VECGRP, ZCOD,
             )
-            MAG2 = get_ext_key_or_default(
-                transformer,
-                "MAG2",
-                imag(PSY.get_primary_shunt(transformer)),
+        elseif winding_number == 3
+            _write_3w_transformer!(
+                io, transformer, bus_tuple, exporter,
+                bus_number_mapping, transformer_3w_name_mapping, transformer_3w_ckt_mapping,
+                CW, CZ, CM, NMETR, supp_attr, VECGRP, ZCOD,
             )
-            NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
-            STAT = PSY.get_available(transformer) ? 1 : 0
-            NOMV1 = get_ext_key_or_default(
-                transformer,
-                "NOMV1",
-                PSY.get_base_voltage_primary(transformer),
-            )
-            NOMV2 = get_ext_key_or_default(
-                transformer,
-                "NOMV2",
-                PSY.get_base_voltage_secondary(transformer),
-            )
-            SBASE1_2 = get_ext_key_or_default(
-                transformer,
-                "SBASE1-2",
-                PSY.get_base_power(transformer),
-            )
-            WINDV2 = get_ext_key_or_default(
-                transformer,
-                "WINDV2",
-                PSY.get_base_voltage_secondary(transformer),
-            )
-            WINDV1 = get_ext_key_or_default(
-                transformer,
-                "WINDV1",
-                PSY.get_base_voltage_primary(transformer),
-            )
-            # Adding the Float64, for some reason when reading the new EI for 0.0 resistance values
-            # it was getting just a get_r is a 0, leading it to break the reading of the files since 
-            # 0 at the beginning is considered as file termination.
-            R1_2 = Float64(get_ext_key_or_default(
-                transformer,
-                "R1-2",
-                PSY.get_r(transformer))
-            )
-            X1_2 = get_ext_key_or_default(
-                transformer,
-                "X1-2",
-                PSY.get_x(transformer),
-            )
-            if transformer isa PSY.TapTransformer ||
-               transformer isa PSY.PhaseShiftingTransformer
-                cod1_val = get_ext_key_or_default(
-                    transformer,
-                    "COD1",
-                    PSY.get_control_objective(transformer),
-                )
-                if cod1_val isa
-                   PSY.TransformerControlObjectiveModule.TransformerControlObjective
-                    cod1_val =
-                        if cod1_val ==
-                           PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
-                            get_ext_key_or_default(transformer, "COD1")
-                        else
-                            cod1_val.value
-                        end
-                end
-                COD1 = cod1_val
-            else
-                COD1 = get_ext_key_or_default(transformer, "COD1")
-            end
-            RMA1 = get_ext_key_or_default(transformer, "RMA1")
-            RMI1 = get_ext_key_or_default(transformer, "RMI1")
-            NTP1 = get_ext_key_or_default(transformer, "NTP1")
-            NOD1 = get_ext_key_or_default(transformer, "NOD1")
-
-            if (transformer isa PSY.PhaseShiftingTransformer)
-                ANG1 = rad2deg(PSY.get_α(transformer))
-            elseif (transformer isa PSY.Transformer2W || transformer isa PSY.TapTransformer)
-                ANG1 = PSY.get_winding_group_number(transformer).value
-                ANG1 = get(WINDING_GROUP_NUMBER_TO_DEGREES, ANG1, PSSE_DEFAULT)
-            else
-                ANG1 = 0.0
-            end
-
-            if exporter.psse_version == :v35
-                RATA1, RATB1, RATC1 =
-                    with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-                        _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
-                        _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
-                        _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
-                    end
-
-                rates_1 = [
-                    get_ext_key_or_default(transformer, "RATE11", RATA1),
-                    get_ext_key_or_default(transformer, "RATE12", RATB1),
-                    get_ext_key_or_default(transformer, "RATE13", RATC1),
-                ]
-                for i in 4:12
-                    push!(rates_1, get_ext_key_or_default(transformer, "RATE1$i"))
-                end
-            else
-                RATA1, RATB1, RATC1 =
-                    with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-                        _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
-                        _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
-                        _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
-                    end
-            end
-
-            CONT1 = get_ext_key_or_default(transformer, "CONT1")
-            VMA1 = get_ext_key_or_default(transformer, "VMA1")
-            VMI1 = get_ext_key_or_default(transformer, "VMI1")
-            TAB1 = !isempty(supp_attr) ? PSY.get_table_number(supp_attr[1]) : 0
-            CR1 = get_ext_key_or_default(transformer, "CR1")
-            CX1 = get_ext_key_or_default(transformer, "CX1")
-            CNXA1 = get_ext_key_or_default(transformer, "CNXA1")
-
-            if exporter.psse_version == :v35
-                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
-                    MAG1, MAG2, NMETR, NAME, STAT)
-                fastprintdelim_psse_default_ownership(io)
-                @fastprintdelim_unroll(io, true, VECGRP, ZCOD)
-            else
-                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
-                    MAG1, MAG2, NMETR, NAME, STAT)
-                fastprintdelim_psse_default_ownership(io)
-                fastprintln(io, VECGRP)
-            end
-
-            @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2)
-
-            if exporter.psse_version == :v35
-                @fastprintdelim_unroll(io, false, WINDV1, NOMV1, ANG1)
-                for rate in rates_1
-                    fastprintdelim(io, rate)
-                end
-                @fastprintdelim_unroll(
-                    io,
-                    true,
-                    COD1,
-                    CONT1,
-                    NOD1,
-                    RMA1,
-                    RMI1,
-                    VMA1,
-                    VMI1,
-                    NTP1,
-                    TAB1,
-                    CR1,
-                    CX1,
-                    CNXA1
-                )
-            else
-                @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1, RATA1,
-                    RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
-                    VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1)
-            end
-
-            @fastprintdelim_unroll(io, true, WINDV2, NOMV2)
-
-        elseif winding_number == 3 # Handle 3-winding transformer fields
-            p, s, t = bus_tuple
-            I = bus_number_mapping[p]
-            J = bus_number_mapping[s]
-            K = bus_number_mapping[t]
-            CKT = transformer_3w_ckt_mapping[((p, s, t), PSY.get_name(transformer))]
-            if startswith(CKT, "_")
-                CKT = CKT[2:end]
-            end
-            MAG1 = get_ext_key_or_default(transformer, "MAG1", PSY.get_g(transformer))
-            MAG2 = get_ext_key_or_default(transformer, "MAG2", PSY.get_b(transformer))
-            CKT = _psse_quote_string(CKT)
-            NAME = transformer_3w_name_mapping[PSY.get_name(transformer)]
-            NAME = _psse_quote_string(NAME)
-
-            if PSY.get_available_primary(transformer) == false
-                STAT = 4
-            elseif PSY.get_available_secondary(transformer) == false
-                STAT = 2
-            elseif PSY.get_available_tertiary(transformer) == false
-                STAT = 3
-            else
-                STAT = PSY.get_available(transformer) ? 1 : 0
-            end
-
-            # Same issue as described above
-            R1_2 = Float64(
-                get_ext_key_or_default(transformer, "R1-2", PSY.get_r_12(transformer)),
-            )
-            X1_2 = get_ext_key_or_default(transformer, "X1-2", PSY.get_x_12(transformer))
-            SBASE1_2 = PSY.get_base_power_12(transformer)
-            R2_3 = get_ext_key_or_default(transformer, "R2-3", PSY.get_r_23(transformer))
-            X2_3 = get_ext_key_or_default(transformer, "X2-3", PSY.get_x_23(transformer))
-            SBAS2_3 = PSY.get_base_power_23(transformer)
-            R3_1 = get_ext_key_or_default(transformer, "R3-1", PSY.get_r_13(transformer))
-            X3_1 = get_ext_key_or_default(transformer, "X3-1", PSY.get_x_13(transformer))
-            SBAS3_1 = PSY.get_base_power_13(transformer)
-            VMSTAR = get_ext_key_or_default(transformer, "VMSTAR")
-            ANSTAR = get_ext_key_or_default(transformer, "ANSTAR")
-
-            winding_data = []
-            for (category, prefix) in WINDING_CATEGORIES
-                acc = WINDING_ACCESSORS[category]
-                NOMV = get_ext_key_or_default(
-                    transformer,
-                    "NOMV$prefix",
-                    acc.get_base_voltage(transformer),
-                )
-                WINDV = get_ext_key_or_default(
-                    transformer,
-                    "WINDV$prefix",
-                    acc.get_turns_ratio(transformer),
-                )
-                ANG = if transformer isa PSY.PhaseShiftingTransformer3W
-                    _psse_round_val(rad2deg(acc.get_angle(transformer)))
-                elseif transformer isa PSY.Transformer3W
-                    group_number = acc.get_group_number(transformer)
-                    group_value = group_number.value
-                    get(WINDING_GROUP_NUMBER_TO_DEGREES, group_value, PSSE_DEFAULT)
-                else
-                    0.0
-                end
-                RAT = acc.get_rating(transformer)
-
-                if exporter.psse_version == :v35
-                    rates = [
-                        get_ext_key_or_default(transformer, "RATE$(prefix)1", RAT),
-                        get_ext_key_or_default(transformer, "RATE$(prefix)2", RAT),
-                        get_ext_key_or_default(transformer, "RATE$(prefix)3", RAT),
-                    ]
-                    for i in 4:12
-                        # In case RATE is not found default to 0.0
-                        push!(
-                            rates,
-                            get_ext_key_or_default(transformer, "RATE$(prefix)$i", 0.0),
-                        )
-                    end
-                    RATES = tuple(rates...)
-                else
-                    RATA = get_ext_key_or_default(transformer, "RATA$prefix", RAT)
-                    RATB = get_ext_key_or_default(transformer, "RATB$prefix", RAT)
-                    RATC = get_ext_key_or_default(transformer, "RATC$prefix", RAT)
-                    RATES = (RATA, RATB, RATC)
-                end
-
-                COD = get_ext_key_or_default(transformer, "COD$prefix")
-                CONT = get_ext_key_or_default(transformer, "CONT$prefix")
-                NOD = get_ext_key_or_default(transformer, "NOD$prefix")
-                RMA = get_ext_key_or_default(transformer, "RMA$prefix")
-                RMI = get_ext_key_or_default(transformer, "RMI$prefix")
-                VMA = get_ext_key_or_default(transformer, "VMA$prefix")
-                VMI = get_ext_key_or_default(transformer, "VMI$prefix")
-                NTP = get_ext_key_or_default(transformer, "NTP$prefix")
-                TAB = 0
-                for icd_tr in supp_attr
-                    if PSY.get_transformer_winding(icd_tr) == category
-                        TAB = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
-                    end
-                end
-                CR = get_ext_key_or_default(transformer, "CR$prefix")
-                CX = get_ext_key_or_default(transformer, "CX$prefix")
-                CNXA = get_ext_key_or_default(transformer, "CNXA$prefix")
-
-                if exporter.psse_version == :v35
-                    push!(
-                        winding_data,
-                        (
-                            WINDV, NOMV, ANG, RATES..., COD, CONT, NOD,
-                            RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
-                        ),
-                    )
-                else
-                    push!(
-                        winding_data,
-                        (
-                            WINDV, NOMV, ANG, RATES..., COD, CONT,
-                            RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
-                        ),
-                    )
-                end
-            end
-
-            if exporter.psse_version == :v35
-                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
-                    MAG1, MAG2, NMETR, NAME, STAT)
-                fastprintdelim_psse_default_ownership(io)
-                @fastprintdelim_unroll(io, true, VECGRP, ZCOD)
-            else
-                @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
-                    MAG1, MAG2, NMETR, NAME, STAT)
-                fastprintdelim_psse_default_ownership(io)
-                fastprintln(io, VECGRP)
-            end
-
-            @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2, R2_3,
-                X2_3, SBAS2_3, R3_1, X3_1, SBAS3_1, VMSTAR, ANSTAR
-            )
-
-            for wd in winding_data
-                if exporter.psse_version == :v35
-                    @fastprintdelim_unroll(io, true,
-                        wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
-                        wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17],
-                        wd[18],
-                        wd[19], wd[20], wd[21], wd[22], wd[23], wd[24], wd[25], wd[26],
-                        wd[27]
-                    )
-                else
-                    @fastprintdelim_unroll(io, true,
-                        wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
-                        wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17]
-                    )
-                end
-            end
         else
             error("Unsupported transformer bus tuple length: $(length(bus_tuple))")
         end
