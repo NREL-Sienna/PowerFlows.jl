@@ -1719,9 +1719,8 @@ function _write_2w_transformer!(
         "WINDV1",
         PSY.get_base_voltage_primary(transformer),
     )
-    # Adding the Float64, for some reason when reading the new EI for 0.0 resistance values
-    # it was getting just a get_r is a 0, leading it to break the reading of the files since 
-    # 0 at the beginning is considered as file termination.
+    # Explicitly cast to Float64 to avoid edge case where 0.0 resistance values
+    # are read as integer 0, which would be misinterpreted as file termination marker.
     R1_2 = Float64(get_ext_key_or_default(
         transformer,
         "R1-2",
@@ -1881,7 +1880,8 @@ function _write_3w_transformer!(
         STAT = PSY.get_available(transformer) ? 1 : 0
     end
 
-    # Same issue as described above
+    # Explicitly cast to Float64 to avoid edge case where 0.0 resistance values
+    # are read as integer 0, which would be misinterpreted as file termination marker.
     R1_2 = Float64(
         get_ext_key_or_default(transformer, "R1-2", PSY.get_r_12(transformer)),
     )
