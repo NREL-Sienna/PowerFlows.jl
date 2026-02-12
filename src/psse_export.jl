@@ -1624,7 +1624,7 @@ function _load_transformer_components_and_mappings(exporter::PSSEExporter)
                 singles_to_1 = false,
             )
         end
-    
+
     return (transformers_with_numbers, transformers_3w_with_numbers,
             transformer_ckt_mapping, transformer_3w_ckt_mapping)
 end
