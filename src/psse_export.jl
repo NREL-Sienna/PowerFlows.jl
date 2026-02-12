@@ -385,7 +385,13 @@ function fastprintln_psse_default_ownership(io::IO)
     @fastprintdelim_multi(io, PSSE_DEFAULT, true, 8)
 end
 
-function end_group(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name::String, written::Bool)
+function end_group(
+    io::IO,
+    md::AbstractDict,
+    exporter::PSSEExporter,
+    group_name::String,
+    written::Bool,
+)
     groups = update_version_group(exporter.psse_version)
     current_index = findfirst(==(group_name), groups)
 
@@ -581,7 +587,11 @@ function _is_valid_psse_name(name::String)
     return true  # Does the allowance for special characters cover *any* special characters?
 end
 
-function get_ext_key_or_default(component::PSY.Component, key::String, default = PSSE_DEFAULT)
+function get_ext_key_or_default(
+    component::PSY.Component,
+    key::String,
+    default = PSSE_DEFAULT,
+)
     ext = PSY.get_ext(component)
     if isnothing(ext)
         return default
@@ -2339,7 +2349,12 @@ function write_to_buffers!(
 end
 
 """Compute common DC line fields (record 1) for Two-Terminal DC export."""
-function _compute_dcline_common_fields(exporter::PSSEExporter, dcline::PSY.TwoTerminalLCCLine, I::Int, J::Int)
+function _compute_dcline_common_fields(
+    exporter::PSSEExporter,
+    dcline::PSY.TwoTerminalLCCLine,
+    I::Int,
+    J::Int,
+)
     dcline_name = PSY.get_name(dcline)
     # Using last() since some DC lines share rectifier bus numbers
     NAME = _is_valid_psse_name(dcline_name) ? dcline_name : last(dcline_name, 12)
@@ -2366,7 +2381,11 @@ function _compute_dcline_common_fields(exporter::PSSEExporter, dcline::PSY.TwoTe
 end
 
 """Compute rectifier-side fields for Two-Terminal DC export."""
-function _compute_dcline_rectifier_fields(exporter::PSSEExporter, dcline::PSY.TwoTerminalLCCLine, I::Int)
+function _compute_dcline_rectifier_fields(
+    exporter::PSSEExporter,
+    dcline::PSY.TwoTerminalLCCLine,
+    I::Int,
+)
     base_power = PSY.get_base_power(exporter.system)
     IPR = I
     NBR = PSY.get_rectifier_bridges(dcline)
@@ -2400,7 +2419,11 @@ function _compute_dcline_rectifier_fields(exporter::PSSEExporter, dcline::PSY.Tw
 end
 
 """Compute inverter-side fields for Two-Terminal DC export."""
-function _compute_dcline_inverter_fields(exporter::PSSEExporter, dcline::PSY.TwoTerminalLCCLine, J::Int)
+function _compute_dcline_inverter_fields(
+    exporter::PSSEExporter,
+    dcline::PSY.TwoTerminalLCCLine,
+    J::Int,
+)
     base_power = PSY.get_base_power(exporter.system)
     IPI = J
     NBI = PSY.get_inverter_bridges(dcline)
@@ -2897,7 +2920,12 @@ function write_to_buffers!(
 end
 
 """Build v35 switched shunt step data (S, N, B triplets padded to 8)."""
-function _build_switched_shunt_steps_v35(shunt::PSY.SwitchedAdmittance, steps::Vector{Int}, increases::Vector{Complex{Float64}}, base_power::Float64)
+function _build_switched_shunt_steps_v35(
+    shunt::PSY.SwitchedAdmittance,
+    steps::Vector{Int},
+    increases::Vector{Complex{Float64}},
+    base_power::Float64,
+)
     S_vals = []
     N_vals = []
     B_vals = []
@@ -2919,7 +2947,11 @@ function _build_switched_shunt_steps_v35(shunt::PSY.SwitchedAdmittance, steps::V
 end
 
 """Build v33 switched shunt step data (N, B pairs padded to 8)."""
-function _build_switched_shunt_steps_v33(steps::Vector{Int}, increases::Vector{Complex{Float64}}, base_power::Float64)
+function _build_switched_shunt_steps_v33(
+    steps::Vector{Int},
+    increases::Vector{Complex{Float64}},
+    base_power::Float64,
+)
     N_vals = []
     B_vals = []
     for (N, B) in zip(steps, increases)
