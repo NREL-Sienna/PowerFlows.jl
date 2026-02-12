@@ -495,13 +495,8 @@ end
 Setting a value of zero 0.0 when having a value greater than or equal to INFINITE_BOUND
 reverses the operation done in the PSY parsing side, according to PSSE Manual.
 """
-function _fix_3w_transformer_rating(rate)
-    return if isa(rate, String)
-        0.0
-    else
-        (isa(rate, Number) && rate >= INFINITE_BOUND ? 0.0 : rate)
-    end
-end
+_fix_3w_transformer_rating(::AbstractString) = 0.0
+_fix_3w_transformer_rating(rate::Number) = rate >= INFINITE_BOUND ? 0.0 : rate
 
 "WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Case Identification Data"
 function write_to_buffers!(
@@ -790,6 +785,11 @@ serialize_component_ids(id_mapping::Dict{Tuple{Tuple{Int64, Int64}, String}, Str
 # Helper functions for Transformer Data export
 # ============================================================================
 
+_get_mag_defaults(t::PSY.ThreeWindingTransformer) =
+    (PSY.get_g(t), PSY.get_b(t))
+_get_mag_defaults(t::PSY.TwoWindingTransformer) =
+    (real(PSY.get_primary_shunt(t)), imag(PSY.get_primary_shunt(t)))
+
 """Write the first record line for a 2-winding transformer."""
 function _write_2w_transformer_record1!(
     io::IO,
@@ -798,20 +798,14 @@ function _write_2w_transformer_record1!(
     J::Int,
     K::Int,
     CKT::String,
-    transformer,
+    transformer::Union{PSY.TwoWindingTransformer, PSY.ThreeWindingTransformer},
     NAME::String,
     STAT::Int,
 )
     CW = get_ext_key_or_default(transformer, "CW")
     CZ = get_ext_key_or_default(transformer, "CZ")
     CM = get_ext_key_or_default(transformer, "CM")
-    if transformer isa PSY.ThreeWindingTransformer
-        mag1_default = PSY.get_g(transformer)
-        mag2_default = PSY.get_b(transformer)
-    else
-        mag1_default = real(PSY.get_primary_shunt(transformer))
-        mag2_default = imag(PSY.get_primary_shunt(transformer))
-    end
+    mag1_default, mag2_default = _get_mag_defaults(transformer)
     MAG1 = get_ext_key_or_default(transformer, "MAG1", mag1_default)
     MAG2 = get_ext_key_or_default(transformer, "MAG2", mag2_default)
     NMETR = get_ext_key_or_default(transformer, "NMETR")
@@ -834,7 +828,7 @@ end
 """Write the second record line (impedance data) for a 2-winding transformer."""
 function _write_2w_transformer_record2!(
     io::IO,
-    transformer,
+    transformer::PSY.TwoWindingTransformer,
 )
     SBASE1_2 = get_ext_key_or_default(
         transformer,
@@ -854,11 +848,38 @@ function _write_2w_transformer_record2!(
     @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2)
 end
 
+_get_2w_ang1(t::PSY.PhaseShiftingTransformer) = rad2deg(PSY.get_α(t))
+_get_2w_ang1(t::Union{PSY.Transformer2W, PSY.TapTransformer}) =
+    get(WINDING_GROUP_NUMBER_TO_DEGREES, PSY.get_winding_group_number(t).value, PSSE_DEFAULT)
+_get_2w_ang1(::PSY.TwoWindingTransformer) = 0.0
+
+_resolve_cod1_val(
+    cod1_val::PSY.TransformerControlObjectiveModule.TransformerControlObjective,
+    transformer,
+) =
+    cod1_val ==
+    PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED ?
+    get_ext_key_or_default(transformer, "COD1") : cod1_val.value
+_resolve_cod1_val(cod1_val, _) = cod1_val
+
+function _get_2w_cod1(
+    transformer::Union{PSY.TapTransformer, PSY.PhaseShiftingTransformer},
+)
+    cod1_val = get_ext_key_or_default(
+        transformer,
+        "COD1",
+        PSY.get_control_objective(transformer),
+    )
+    return _resolve_cod1_val(cod1_val, transformer)
+end
+_get_2w_cod1(transformer::PSY.TwoWindingTransformer) =
+    get_ext_key_or_default(transformer, "COD1")
+
 """Write the third record line (winding 1 data) for a 2-winding transformer."""
 function _write_2w_transformer_record3_winding1!(
     io::IO,
     exporter::PSSEExporter,
-    transformer,
+    transformer::PSY.TwoWindingTransformer,
 )
     WINDV1 = get_ext_key_or_default(
         transformer,
@@ -871,35 +892,8 @@ function _write_2w_transformer_record3_winding1!(
         PSY.get_base_voltage_primary(transformer),
     )
 
-    if transformer isa PSY.PhaseShiftingTransformer
-        ANG1 = rad2deg(PSY.get_α(transformer))
-    elseif transformer isa PSY.Transformer2W || transformer isa PSY.TapTransformer
-        ANG1 = PSY.get_winding_group_number(transformer).value
-        ANG1 = get(WINDING_GROUP_NUMBER_TO_DEGREES, ANG1, PSSE_DEFAULT)
-    else
-        ANG1 = 0.0
-    end
-
-    if transformer isa PSY.TapTransformer || transformer isa PSY.PhaseShiftingTransformer
-        cod1_val = get_ext_key_or_default(
-            transformer,
-            "COD1",
-            PSY.get_control_objective(transformer),
-        )
-        if cod1_val isa
-           PSY.TransformerControlObjectiveModule.TransformerControlObjective
-            cod1_val =
-                if cod1_val ==
-                   PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
-                    get_ext_key_or_default(transformer, "COD1")
-                else
-                    cod1_val.value
-                end
-        end
-        COD1 = cod1_val
-    else
-        COD1 = get_ext_key_or_default(transformer, "COD1")
-    end
+    ANG1 = _get_2w_ang1(transformer)
+    COD1 = _get_2w_cod1(transformer)
 
     RMA1 = get_ext_key_or_default(transformer, "RMA1")
     RMI1 = get_ext_key_or_default(transformer, "RMI1")
@@ -968,7 +962,7 @@ end
 """Write the fourth record line (winding 2 data) for a 2-winding transformer."""
 function _write_2w_transformer_record4_winding2!(
     io::IO,
-    transformer,
+    transformer::PSY.TwoWindingTransformer,
 )
     WINDV2 = get_ext_key_or_default(
         transformer,
@@ -986,7 +980,7 @@ end
 """Write the second record line (impedance data) for a 3-winding transformer."""
 function _write_3w_transformer_record2!(
     io::IO,
-    transformer,
+    transformer::PSY.ThreeWindingTransformer,
 )
     R1_2 = Float64(
         get_ext_key_or_default(transformer, "R1-2", PSY.get_r_12(transformer)),
@@ -1007,12 +1001,18 @@ function _write_3w_transformer_record2!(
     )
 end
 
+_get_3w_ang(acc, t::PSY.PhaseShiftingTransformer3W) =
+    _psse_round_val(rad2deg(acc.get_angle(t)))
+_get_3w_ang(acc, t::PSY.Transformer3W) =
+    get(WINDING_GROUP_NUMBER_TO_DEGREES, acc.get_group_number(t).value, PSSE_DEFAULT)
+_get_3w_ang(_, ::PSY.ThreeWindingTransformer) = 0.0
+
 """Collect winding data for a 3-winding transformer."""
 function _collect_3w_winding_data(
     exporter::PSSEExporter,
-    transformer,
+    transformer::PSY.ThreeWindingTransformer,
 )
-    winding_data = []
+    winding_data = Tuple[]
     for (category, prefix) in WINDING_CATEGORIES
         acc = WINDING_ACCESSORS[category]
         NOMV = get_ext_key_or_default(
@@ -1025,15 +1025,7 @@ function _collect_3w_winding_data(
             "WINDV$prefix",
             acc.get_turns_ratio(transformer),
         )
-        ANG = if transformer isa PSY.PhaseShiftingTransformer3W
-            _psse_round_val(rad2deg(acc.get_angle(transformer)))
-        elseif transformer isa PSY.Transformer3W
-            group_number = acc.get_group_number(transformer)
-            group_value = group_number.value
-            get(WINDING_GROUP_NUMBER_TO_DEGREES, group_value, PSSE_DEFAULT)
-        else
-            0.0
-        end
+        ANG = _get_3w_ang(acc, transformer)
         RAT = acc.get_rating(transformer)
 
         if exporter.psse_version == :v35
@@ -1100,7 +1092,7 @@ end
 function _write_3w_winding_records!(
     io::IO,
     exporter::PSSEExporter,
-    winding_data::Vector,
+    winding_data::Vector{<:Tuple},
 )
     for wd in winding_data
         if exporter.psse_version == :v35
@@ -1146,6 +1138,9 @@ _psse_get_load_data(exporter::PSSEExporter, load::PSY.StaticLoad) =
         PSSE_DEFAULT
     end
 
+_psse_interruptible(::PSY.ControllableLoad) = 1
+_psse_interruptible(::PSY.StaticLoad) = 0
+
 """
 WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Load Data
 """
@@ -1189,7 +1184,7 @@ function write_to_buffers!(
         OWNER = PSSE_DEFAULT  # defaults to bus's owner
         load_conformity = PSY.get_conformity(load)
         SCALE = load_conformity == PSY.LoadConformity.CONFORMING ? 1 : 0
-        INTRPT = load isa PSY.ControllableLoad ? 1 : 0
+        INTRPT = _psse_interruptible(load)
 
         if exporter.psse_version == :v35
             DGENP = get_ext_key_or_default(load, "DGENP")
@@ -1848,6 +1843,9 @@ function _write_tap_transformer_as_branch_record!(
     end
 end
 
+_is_discrete_controlled(::PSY.DiscreteControlledACBranch) = true
+_is_discrete_controlled(::PSY.ACBranch) = false
+
 """
 WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Non-Transformer Branch Data
 """
@@ -1875,16 +1873,15 @@ function write_to_buffers!(
 
     for (branch, (from_n, to_n)) in branches_with_numbers
         # Skip discrete controlled branches for v35 (switches/breakers go to SWITCHING DEVICE DATA section)
-        if exporter.psse_version == :v35 && branch isa PSY.DiscreteControlledACBranch
+        if exporter.psse_version == :v35 && _is_discrete_controlled(branch)
             continue
         end
 
         I = md["bus_number_mapping"][from_n]
         J = md["bus_number_mapping"][to_n]
         BASE_CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
-        BASE_CKT = _psse_quote_string(BASE_CKT)
 
-        if branch isa PSY.DiscreteControlledACBranch
+        if _is_discrete_controlled(branch)
             branch_type = PSY.get_discrete_branch_type(branch)
             CKT = if haskey(DISCRETE_BRANCH_MAP, branch_type)
                 char = DISCRETE_BRANCH_MAP[branch_type]
@@ -1895,7 +1892,7 @@ function write_to_buffers!(
             end
             _write_discrete_branch_record!(io, exporter, I, J, _psse_quote_string(CKT), branch, branch_type)
         else
-            _write_regular_branch_record!(io, exporter, I, J, BASE_CKT, branch)
+            _write_regular_branch_record!(io, exporter, I, J, _psse_quote_string(BASE_CKT), branch)
         end
     end
     end_group(io, md, exporter, "Non-Transformer Branch Data", true)
@@ -1919,7 +1916,7 @@ function write_to_buffers!(
     discrete_branches = get!(exporter.components_cache, "discrete_branches") do
         branches_with_numbers = get_branches_with_numbers(exporter)
         filter(
-            ((branch, _),) -> branch isa PSY.DiscreteControlledACBranch,
+            ((branch, _),) -> _is_discrete_controlled(branch),
             branches_with_numbers,
         )
     end
@@ -2044,6 +2041,37 @@ function _psse_transformer_names(
     end
     return mapping
 end
+function _collect_control_objective!(
+    mapping::AbstractDict,
+    name::String,
+    t::Union{PSY.TapTransformer, PSY.PhaseShiftingTransformer},
+)
+    cod1 = PSY.get_control_objective(t)
+    cod1 ==
+    PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED &&
+        (mapping[name] = cod1.value)
+    return
+end
+_collect_control_objective!(::AbstractDict, ::String, ::PSY.TwoWindingTransformer) = nothing
+
+function _collect_winding_group!(
+    mapping::AbstractDict,
+    name::String,
+    t::Union{PSY.TapTransformer, PSY.Transformer2W},
+)
+    ang1 = PSY.get_winding_group_number(t)
+    ang1 == PSY.WindingGroupNumber.UNDEFINED && (mapping[name] = ang1.value)
+    return
+end
+_collect_winding_group!(::AbstractDict, ::String, ::PSY.TwoWindingTransformer) = nothing
+
+_collect_tap!(
+    mapping::AbstractDict,
+    name::String,
+    t::Union{PSY.TapTransformer, PSY.PhaseShiftingTransformer},
+) = (mapping[name] = PSY.get_tap(t))
+_collect_tap!(::AbstractDict, ::String, ::PSY.TwoWindingTransformer) = nothing
+
 """Build all transformer-related metadata mappings (names, control objectives, winding groups, impedance, taps)."""
 function _build_transformer_metadata!(
     md::AbstractDict,
@@ -2067,26 +2095,11 @@ function _build_transformer_metadata!(
         transformer_tap_mapping = OrderedDict{String, Any}()
         for (transformer, _) in transformers_with_numbers
             name = PSY.get_name(transformer)
-            if transformer isa PSY.TapTransformer ||
-               transformer isa PSY.PhaseShiftingTransformer
-                cod1 = PSY.get_control_objective(transformer)
-                if cod1 ==
-                   PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
-                    control_objective_mapping[name] = cod1.value
-                end
-            end
-            if transformer isa PSY.TapTransformer || transformer isa PSY.Transformer2W
-                ang1 = PSY.get_winding_group_number(transformer)
-                if ang1 == PSY.WindingGroupNumber.UNDEFINED
-                    winding_group_category_mapping[name] = ang1.value
-                end
-            end
+            _collect_control_objective!(control_objective_mapping, name, transformer)
+            _collect_winding_group!(winding_group_category_mapping, name, transformer)
             transformer_resistance_mapping[name] = PSY.get_r(transformer)
             transformer_reactance_mapping[name] = PSY.get_x(transformer)
-            if transformer isa PSY.TapTransformer ||
-               transformer isa PSY.PhaseShiftingTransformer
-                transformer_tap_mapping[name] = PSY.get_tap(transformer)
-            end
+            _collect_tap!(transformer_tap_mapping, name, transformer)
         end
         md["transformer_control_objective_mapping"] = control_objective_mapping
         md["transformer_winding_group_category_mapping"] = winding_group_category_mapping
@@ -2603,6 +2616,20 @@ function write_to_buffers!(
         (md["vsc_line_name_mapping"] = serialize_component_ids(vsc_line_name_mapping))
 end
 
+function _write_icd_y_v35!(io::IO, y::Complex)
+    fastprint(io, real(y))
+    fastprint(io, ", ")
+    fastprint(io, imag(y))
+end
+function _write_icd_y_v35!(io::IO, y)
+    fastprint(io, y)
+    fastprint(io, ", ")
+    fastprint(io, 0.0)
+end
+
+_write_icd_y_v33!(io::IO, y::Complex) = fastprintdelim(io, real(y))
+_write_icd_y_v33!(io::IO, y) = fastprintdelim(io, y)
+
 """Write impedance correction table points in v35 format (T, Re(F), Im(F) triplets)."""
 function _write_icd_v35_points!(io::IO, I, points)
     fastprint(io, " ")
@@ -2619,15 +2646,7 @@ function _write_icd_v35_points!(io::IO, I, points)
         end
         fastprint(io, p.x)
         fastprint(io, ", ")
-        if isa(p.y, Complex)
-            fastprint(io, real(p.y))
-            fastprint(io, ", ")
-            fastprint(io, imag(p.y))
-        else
-            fastprint(io, p.y)
-            fastprint(io, ", ")
-            fastprint(io, 0.0)
-        end
+        _write_icd_y_v35!(io, p.y)
         point_count += 1
     end
 
@@ -2654,11 +2673,7 @@ function _write_icd_v33_points!(io::IO, I, points)
     fastprint(io, ", ")
     for p in points
         fastprintdelim(io, p.x)
-        if isa(p.y, Complex)
-            fastprintdelim(io, real(p.y))
-        else
-            fastprintdelim(io, p.y)
-        end
+        _write_icd_y_v33!(io, p.y)
     end
     fastprintln(io, "")
 end
