@@ -173,7 +173,7 @@ end
 Structure to perform an export from a Sienna System, plus optional updates from
 `PowerFlowData`, to the PSS/E format.
 
-Construct this object from a [`System`](@extref PowerSystems.System) and a PSS/E version,
+Construct this object from a [`System`](@extref PowerSystems.System) and a PSS/E version, 
 update using `update_exporter` with any new data as relevant, and perform the export with
 `write_export`. Writes a `<name>.raw` file and a `<name>_export_metadata.json` file with
 transformations that had to be made to conform to PSS/E naming rules, which can be parsed by
@@ -277,7 +277,7 @@ Update the `PSSEExporter` with new `data`.
 
 # Arguments:
   - `exporter::PSSEExporter`: the exporter to update
-  - `data::PSY.PowerFlowData`: the new data. Must correspond to the
+  - `data::PSY.PowerFlowData`: the new data. Must correspond to the 
     [`System`](@extref PowerSystems.System) with which the exporter was constructed.
 """
 function update_exporter!(exporter::PSSEExporter, data::PowerFlowData)
@@ -299,8 +299,8 @@ Update the `PSSEExporter` with new `data`.
 # Arguments:
   - `exporter::PSSEExporter`: the exporter to update
   - `data::PSY.System`: system containing the new data. Must be fundamentally the same \
-  [`System`](@extref PowerSystems.System) as the one with which the exporter was
-    constructed, just with different values — this is the user's responsibility, we do not
+  [`System`](@extref PowerSystems.System) as the one with which the exporter was 
+    constructed, just with different values — this is the user's responsibility, we do not 
     exhaustively verify it.
 """
 function update_exporter!(exporter::PSSEExporter, data::PSY.System)
@@ -936,7 +936,7 @@ end
 
 """
 Create a synthetic generator (`PSY.ThermalStandard`) representing one end of a TwoTerminalGenericHVDCLine
-for export purposes. The generator is initialized with parameters reflecting the HVDC line's state.
+for export purposes. The generator is initialized with parameters reflecting the HVDC line's state. 
 # Notes
     - The generator's name is constructed as "<hvdc_line_name>_<suffix>".
     - The `ext` field includes `"HVDC_END"` to indicate the end ("FR"/"TO").
@@ -1573,7 +1573,7 @@ function _psse_transformer_names(
 end
 
 """
-Write header comments for transformer data (v35 only).
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Data
 """
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1585,10 +1585,6 @@ function write_to_buffers!(
     check_supported_version(exporter)
     write_v35_header(io, exporter, "Transformer Data")
 
-"""
-Load transformer components (2W and 3W) and create circuit mappings.
-"""
-function _load_transformer_components(exporter::PSSEExporter)
     transformers_with_numbers = get!(exporter.components_cache, "transformers") do
         transformers =
             collect(PSY.get_components(PSY.TwoWindingTransformer, exporter.system))
@@ -1671,110 +1667,19 @@ function _load_transformer_components(exporter::PSSEExporter)
             md["transformer_winding_group_category_mapping"] = OrderedDict{String, Any}()
         end
 
-        COD = get_ext_key_or_default(transformer, "COD$prefix")
-        CONT = get_ext_key_or_default(transformer, "CONT$prefix")
-        NOD = get_ext_key_or_default(transformer, "NOD$prefix")
-        RMA = get_ext_key_or_default(transformer, "RMA$prefix")
-        RMI = get_ext_key_or_default(transformer, "RMI$prefix")
-        VMA = get_ext_key_or_default(transformer, "VMA$prefix")
-        VMI = get_ext_key_or_default(transformer, "VMI$prefix")
-        NTP = get_ext_key_or_default(transformer, "NTP$prefix")
-        TAB = 0
-        for icd_tr in supp_attr
-            if PSY.get_transformer_winding(icd_tr) == category
-                TAB = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
-            end
-        end
-        CR = get_ext_key_or_default(transformer, "CR$prefix")
-        CX = get_ext_key_or_default(transformer, "CX$prefix")
-        CNXA = get_ext_key_or_default(transformer, "CNXA$prefix")
-
-        if exporter.psse_version == :v35
-            push!(
-                winding_data,
-                (
-                    WINDV, NOMV, ANG, RATES..., COD, CONT, NOD,
-                    RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
+        # Handle 3W transformers separately if needed
+        if !isempty(transformers_3w_with_numbers)
+            md["transformer_3w_name_mapping"] = _psse_transformer_names(
+                convert_empty_stringvec(
+                    PSY.get_name.(first.(transformers_3w_with_numbers)),
                 ),
+                last.(transformers_3w_with_numbers),
+                md["bus_number_mapping"],
+                transformer_3w_ckt_mapping,
             )
         else
-            push!(
-                winding_data,
-                (
-                    WINDV, NOMV, ANG, RATES..., COD, CONT,
-                    RMA, RMI, VMA, VMI, NTP, TAB, CR, CX, CNXA,
-                ),
-            )
+            md["transformer_3w_name_mapping"] = OrderedDict{String, String}()
         end
-    end
-
-    if exporter.psse_version == :v35
-        @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
-            MAG1, MAG2, NMETR, NAME, STAT)
-        fastprintdelim_psse_default_ownership(io)
-        @fastprintdelim_unroll(io, true, VECGRP, ZCOD)
-    else
-        @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
-            MAG1, MAG2, NMETR, NAME, STAT)
-        fastprintdelim_psse_default_ownership(io)
-        fastprintln(io, VECGRP)
-    end
-
-    @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2, R2_3,
-        X2_3, SBAS2_3, R3_1, X3_1, SBAS3_1, VMSTAR, ANSTAR
-    )
-
-    for wd in winding_data
-        if exporter.psse_version == :v35
-            @fastprintdelim_unroll(io, true,
-                wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
-                wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17],
-                wd[18],
-                wd[19], wd[20], wd[21], wd[22], wd[23], wd[24], wd[25], wd[26],
-                wd[27]
-            )
-        else
-            @fastprintdelim_unroll(io, true,
-                wd[1], wd[2], wd[3], wd[4], wd[5], wd[6], wd[7], wd[8], wd[9],
-                wd[10], wd[11], wd[12], wd[13], wd[14], wd[15], wd[16], wd[17]
-            )
-        end
-    end
-end
-
-"""
-WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Data
-"""
-function write_to_buffers!(
-    exporter::PSSEExporter,
-    ::Val{Symbol("Transformer Data")},
-)
-    io = exporter.raw_buffer
-    md = exporter.md_dict
-    check_supported_version(exporter)
-
-    _write_transformer_headers!(io, exporter.psse_version)
-
-    (
-        transformers_with_numbers,
-        transformers_3w_with_numbers,
-        transformer_ckt_mapping,
-        transformer_3w_ckt_mapping,
-    ) = _load_transformer_components(exporter)
-
-    if !exporter.md_valid
-        _build_transformer_2w_metadata!(
-            md,
-            transformers_with_numbers,
-            transformer_ckt_mapping,
-            md["bus_number_mapping"],
-        )
-        _build_transformer_3w_metadata!(
-            md,
-            transformers_3w_with_numbers,
-            transformer_3w_ckt_mapping,
-            md["bus_number_mapping"],
-        )
     end
 
     bus_number_mapping = md["bus_number_mapping"]
@@ -1793,17 +1698,25 @@ function write_to_buffers!(
         ZCOD = get_ext_key_or_default(transformer, "ZCOD")
 
         winding_number = length(bus_tuple)
-        if winding_number == 2
-            _write_2w_transformer!(
-                io, transformer, bus_tuple, exporter,
-                bus_number_mapping, transformer_name_mapping, transformer_ckt_mapping,
-                CW, CZ, CM, NMETR, supp_attr, VECGRP, ZCOD,
+        if winding_number == 2  # Handle 2-winding transformer fields
+            from_n, to_n = bus_tuple
+            I = bus_number_mapping[from_n]
+            J = bus_number_mapping[to_n]
+            K = 0
+            CKT = transformer_ckt_mapping[((from_n, to_n), PSY.get_name(transformer))]
+            if startswith(CKT, "_")
+                CKT = CKT[2:end]
+            end
+            CKT = _psse_quote_string(CKT)
+            MAG1 = get_ext_key_or_default(
+                transformer,
+                "MAG1",
+                real(PSY.get_primary_shunt(transformer)),
             )
-        elseif winding_number == 3
-            _write_3w_transformer!(
-                io, transformer, bus_tuple, exporter,
-                bus_number_mapping, transformer_3w_name_mapping, transformer_3w_ckt_mapping,
-                CW, CZ, CM, NMETR, supp_attr, VECGRP, ZCOD,
+            MAG2 = get_ext_key_or_default(
+                transformer,
+                "MAG2",
+                imag(PSY.get_primary_shunt(transformer)),
             )
             NAME = _psse_quote_string(transformer_name_mapping[PSY.get_name(transformer)])
             STAT = PSY.get_available(transformer) ? 1 : 0
@@ -1833,7 +1746,7 @@ function write_to_buffers!(
                 PSY.get_base_voltage_primary(transformer),
             )
             # Adding the Float64, for some reason when reading the new EI for 0.0 resistance values,
-            # it was getting a zero int value, leading it to break the reading of the files since
+            # it was getting a zero int value, leading it to break the reading of the files since 
             # 0 at the beginning is considered as file termination.
             R1_2 = Float64(get_ext_key_or_default(
                 transformer,
@@ -2962,4 +2875,4 @@ make_power_flow_container(pfem::PSSEExportPowerFlow, sys::PSY.System; kwargs...)
         step = (0, 0),
     )
 
-solve_power_flow!(exporter::PSSEExporter) = write_export(exporter)
+solve_powerflow!(exporter::PSSEExporter) = write_export(exporter)
