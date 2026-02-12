@@ -4,7 +4,7 @@
 
 ## Overview
 
-PowerFlows.jl is a Julia package that provides an interface to multiple solution methods for the Power Flow problem, along with utilities commonly found in commercial software like Siemens PSS/e and GE PSLF. This package is part of the NREL-Sienna ecosystem focused on scalable power systems modeling and simulation.
+PowerFlows.jl is a Julia package designed for high-performance power flow analysis at scale. It provides an interface to multiple solution methods for the Power Flow problem, along with utilities commonly found in commercial software like Siemens PSS/e and GE PSLF. The package is architected to handle large-scale power systems (tens of thousands of buses) through extensive use of sparse matrix operations and specialized linear solvers. This package is part of the NREL-Sienna ecosystem focused on scalable power systems modeling and simulation.
 
 ## Main Objectives
 
@@ -20,7 +20,13 @@ PowerFlows.jl is a Julia package that provides an interface to multiple solution
 
 3. **Integration with Sienna**: Seamless integration with PowerSystems.jl and PowerSimulations.jl (PSI) for comprehensive power systems analysis
 
-4. **Performance**: Optimized linear algebra operations using sparse matrices and specialized solvers (KLU)
+4. **High-Performance at Scale**: Designed for large-scale power systems with thousands to tens of thousands of buses through:
+   - Extensive use of sparse matrix operations (SparseArrays.jl)
+   - Specialized sparse direct solvers (KLU from SuiteSparse)
+   - Optimized Jacobian and Hessian construction leveraging sparsity patterns
+   - In-place operations to minimize memory allocations
+   - Efficient caching of factorizations and matrix structures
+   - Support for parallel factorizations (CHOLMOD) in homotopy methods
 
 5. **Flexibility**: Support for various power system features including:
    - Multi-period power flow analysis
@@ -114,6 +120,56 @@ Comprehensive test suite organized by functionality:
 - **`codecov.yml`**: Code coverage configuration
 - **`CONTRIBUTING.md`**: Contribution guidelines
 - **`LICENSE`**: BSD license
+
+## Performance and Scalability Architecture
+
+### Design Philosophy
+
+PowerFlows.jl is explicitly designed for large-scale power system analysis, with performance as a first-class concern:
+
+**Sparse-First Design**: All matrix operations use sparse representations. Power system networks have naturally sparse structure (each bus connects to only a few neighbors), and the package exploits this throughout:
+- Admittance matrices (Y-bus)
+- Jacobian matrices for Newton methods
+- Hessian matrices for second-order methods
+- PTDF matrices for sensitivity analysis
+
+**Specialized Linear Solvers**: Different solvers optimized for different problem structures:
+- **KLU**: Primary sparse direct solver for general AC power flow, optimized for circuit matrices
+- **CHOLMOD**: Cholesky factorization for symmetric positive-definite systems in homotopy methods
+- **Custom Hessian Solvers**: Specialized solvers for the unique structure of power flow Hessians
+
+**Solver Caching and Reuse**: Linear solver caches maintain factorizations across iterations:
+- Symbolic factorization computed once, reused across Newton iterations
+- Numeric factorization updated only when needed
+- Reduces overhead in iterative methods
+
+**Memory Efficiency**:
+- In-place operations (functions with `!`) to avoid unnecessary allocations
+- Pre-allocated working arrays in `PowerFlowData`
+- Views instead of copies where possible
+- Careful attention to type stability (see [Sienna.md](./Sienna.md))
+
+**Scalability Testing**: Package is validated on large-scale test systems:
+- WECC system (Western Electricity Coordinating Council)
+- EI system (Eastern Interconnect)
+- ACTIVSg2000 (synthetic 2000-bus system)
+
+### Performance-Critical Components
+
+1. **Jacobian Construction** ([ac_power_flow_jacobian.jl](../src/ac_power_flow_jacobian.jl)): Sparse Jacobian assembly exploiting network topology
+2. **Linear Solver Cache** ([LinearSolverCache/](../src/LinearSolverCache/)): Factorization management and reuse
+3. **Residual Evaluation** ([ac_power_flow_residual.jl](../src/ac_power_flow_residual.jl)): Efficient mismatch calculations
+4. **Homotopy Hessian** ([RobustHomotopy/homotopy_hessian.jl](../src/RobustHomotopy/homotopy_hessian.jl)): Second-order information for robust methods
+
+### Performance Considerations for Contributors
+
+When working on PowerFlows.jl, maintain performance discipline:
+- Profile before optimizing (use `@time`, `@allocated`, `@code_warntype`)
+- Preserve sparsity patterns in matrix operations
+- Add in-place variants for hot-path operations
+- Document computational complexity for new algorithms
+- Test performance impact on large-scale systems
+- See [Sienna.md](./Sienna.md) for detailed performance guidelines
 
 ## Key Concepts and Workflows
 
