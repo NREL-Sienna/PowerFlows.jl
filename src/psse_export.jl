@@ -1867,55 +1867,6 @@ function _write_tap_transformer_as_branch_record!(
     end
 end
 
-"""Write a TapTransformer with UNDEFINED control objective as a non-transformer branch record."""
-function _write_tap_transformer_as_branch_record!(
-    io::IO,
-    exporter::PSSEExporter,
-    I::Int,
-    J::Int,
-    CKT::String,
-    branch,
-)
-    ST = PSY.get_available(branch) ? 1 : 0
-    MET = get_ext_key_or_default(branch, "MET")
-    LEN = get_ext_key_or_default(branch, "LEN")
-    R = PSY.get_r(branch)
-    X = PSY.get_x(branch)
-    B = 0.0
-    GI = get_ext_key_or_default(branch, "GI")
-    BI = get_ext_key_or_default(branch, "BI")
-    GJ = get_ext_key_or_default(branch, "GJ")
-    BJ = get_ext_key_or_default(branch, "BJ")
-
-    RATEA, RATEB, RATEC =
-        with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-            _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT),
-            _value_or_default(PSY.get_rating_b(branch), PSSE_DEFAULT),
-            _value_or_default(PSY.get_rating_c(branch), PSSE_DEFAULT)
-        end
-    (RATEA, RATEB, RATEC) =
-        (_fix_3w_transformer_rating(x) for x in (RATEA, RATEB, RATEC))
-
-    if exporter.psse_version == :v35
-        NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
-        rates = [RATEA, RATEB, RATEC]
-        for i in 4:12
-            push!(rates, get_ext_key_or_default(branch, "RATE$i"))
-        end
-        @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B, NAME)
-        for rate in rates
-            fastprintdelim(io, rate)
-        end
-        @fastprintdelim_unroll(io, false, GI, BI, GJ, BJ, ST, MET, LEN)
-        fastprintln_psse_default_ownership(io)
-    else
-        @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B,
-            RATEA, RATEB, RATEC,
-            GI, BI, GJ, BJ, ST, MET, LEN)
-        fastprintln_psse_default_ownership(io)
-    end
-end
-
 _is_discrete_controlled(::PSY.DiscreteControlledACBranch) = true
 _is_discrete_controlled(::PSY.ACBranch) = false
 
