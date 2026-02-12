@@ -130,8 +130,8 @@ const PSSE_V35_HEADERS = Dict{String, String}(
 
 @kwdef struct PSSEExportPowerFlow <: PowerFlowEvaluationModel
     psse_version::Symbol
-    export_dir::AbstractString
-    name::AbstractString = PSSE_DEFAULT_EXPORT_NAME
+    export_dir::String
+    name::String = PSSE_DEFAULT_EXPORT_NAME
     write_comments::Bool = false
     overwrite::Bool = false
 end
@@ -197,16 +197,16 @@ PowerSystems.jl to perform a round trip with the names restored.
 mutable struct PSSEExporter <: SystemPowerFlowContainer
     system::PSY.System
     psse_version::Symbol
-    export_dir::AbstractString
-    name::AbstractString
+    export_dir::String
+    name::String
     write_comments::Bool
     overwrite::Bool
     step::Any
     raw_buffer::IOBuffer  # Persist an IOBuffer to reduce allocations on repeated exports
-    md_dict::OrderedDict{String}  # Persist metadata to avoid unnecessary recomputation
+    md_dict::OrderedDict{String, Any}  # Persist metadata to avoid unnecessary recomputation
     md_valid::Bool  # If this is true, the metadata need not be reserialized
     md_buffer::IOBuffer  # Cache a serialized version of the metadata
-    components_cache::Dict{String}  # Cache sorted lists of components to reduce allocations
+    components_cache::Dict{String, Any}  # Cache sorted lists of components to reduce allocations
 
     function PSSEExporter(
         base_system::PSY.System,
@@ -228,8 +228,8 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
         new(
             system,
             psse_version,
-            export_dir,
-            name,
+            String(export_dir),
+            String(name),
             write_comments,
             overwrite,
             step,
@@ -377,15 +377,15 @@ macro fastprintdelim_unroll(io, newline::Bool, vals...)
     return Expr(:block, exprs..., lastExpr)
 end
 
-function fastprintdelim_psse_default_ownership(io)
+function fastprintdelim_psse_default_ownership(io::IO)
     @fastprintdelim_multi(io, PSSE_DEFAULT, false, 8)
 end
 
-function fastprintln_psse_default_ownership(io)
+function fastprintln_psse_default_ownership(io::IO)
     @fastprintdelim_multi(io, PSSE_DEFAULT, true, 8)
 end
 
-function end_group(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name, written)
+function end_group(io::IO, md::AbstractDict, exporter::PSSEExporter, group_name::String, written::Bool)
     groups = update_version_group(exporter.psse_version)
     current_index = findfirst(==(group_name), groups)
 
@@ -438,7 +438,7 @@ _psse_quote_string(s::String) = "'$s'"
 _psse_round_val(val::String) = val
 _psse_round_val(val::Number) = round(val; digits = 4)
 
-branch_to_bus_numbers(branch) =
+branch_to_bus_numbers(branch::PSY.Branch) =
     PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch)))::Tuple{Int, Int}
 
 function branch_to_bus_numbers(
@@ -581,7 +581,7 @@ function _is_valid_psse_name(name::String)
     return true  # Does the allowance for special characters cover *any* special characters?
 end
 
-function get_ext_key_or_default(component, key, default = PSSE_DEFAULT)
+function get_ext_key_or_default(component::PSY.Component, key::String, default = PSSE_DEFAULT)
     ext = PSY.get_ext(component)
     if isnothing(ext)
         return default
@@ -1262,8 +1262,8 @@ end
 """Compute generator active and reactive power considering HVDC scaling."""
 function _compute_generator_powers(
     exporter::PSSEExporter,
-    generator,
-    hvdc_end,
+    generator::PSY.StaticInjection,
+    hvdc_end::Union{String, Nothing},
     base_power::Float64,
 )
     return with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
@@ -1280,8 +1280,8 @@ end
 """Compute reactive power limits considering HVDC scaling."""
 function _compute_reactive_power_limits(
     exporter::PSSEExporter,
-    generator,
-    hvdc_end,
+    generator::PSY.StaticInjection,
+    hvdc_end::Union{String, Nothing},
     base_power::Float64,
 )
     return with_units_base(
@@ -1304,8 +1304,8 @@ end
 """Compute active power limits considering HVDC scaling."""
 function _compute_active_power_limits(
     exporter::PSSEExporter,
-    generator,
-    hvdc_end,
+    generator::PSY.StaticInjection,
+    hvdc_end::Union{String, Nothing},
     base_power::Float64,
 )
     return with_units_base(
@@ -1391,7 +1391,7 @@ function _write_generator_v33_record!(
     @fastprintdelim_unroll(io, true, WMOD, WPF)
 end
 
-function _warn_finite_default(val; field_name, component_name)
+function _warn_finite_default(val::Number; field_name::String, component_name::String)
     isfinite(val) && return val
     if val == Inf
         newval = PSSE_INFINITY
@@ -1414,14 +1414,14 @@ for export purposes. The generator is initialized with parameters reflecting the
     - The `ext` field includes `"HVDC_END"` to indicate the end ("FR"/"TO").
 """
 function _make_gens_from_hvdc(
-    hvdc_line,
-    suffix,
-    bus,
-    active_power,
-    rating,
-    active_power_limits,
-    reactive_power_limits,
-    exporter,
+    hvdc_line::PSY.TwoTerminalGenericHVDCLine,
+    suffix::String,
+    bus::PSY.ACBus,
+    active_power::Float64,
+    rating::Float64,
+    active_power_limits::NamedTuple{(:min, :max), Tuple{Float64, Float64}},
+    reactive_power_limits::NamedTuple{(:min, :max), Tuple{Float64, Float64}},
+    exporter::PSSEExporter,
 )
     return PSY.ThermalStandard(;
         name = "$(PSY.get_name(hvdc_line))_$suffix",
@@ -1488,7 +1488,7 @@ function _update_gens_from_hvdc!(
 end
 
 """Build the full generator list including optional sources, storages, condensers, and HVDC synthetics."""
-function _build_generator_list(exporter::PSSEExporter, md::AbstractDict)
+function _build_generator_list(exporter::PSSEExporter, md::OrderedDict{String, Any})
     temp_gens::Vector{PSY.StaticInjection} = sort!(
         collect(PSY.get_components(PSY.Generator, exporter.system));
         by = PSY.get_name,
@@ -1706,7 +1706,7 @@ function get_branches_with_numbers(exporter::PSSEExporter)
 end
 
 """Calculate the STAT field for a 3-winding transformer based on per-winding availability."""
-function _calculate_3w_transformer_stat(transformer)
+function _calculate_3w_transformer_stat(transformer::PSY.ThreeWindingTransformer)
     if PSY.get_available_primary(transformer) == false
         return 4
     elseif PSY.get_available_secondary(transformer) == false
@@ -1725,7 +1725,7 @@ function _write_regular_branch_record!(
     I::Int,
     J::Int,
     CKT::String,
-    branch,
+    branch::PSY.ACBranch,
 )
     ST = PSY.get_available(branch) ? 1 : 0
     MET = get_ext_key_or_default(branch, "MET")
@@ -1778,8 +1778,8 @@ function _write_discrete_branch_record!(
     I::Int,
     J::Int,
     CKT::String,
-    branch,
-    branch_type,
+    branch::PSY.DiscreteControlledACBranch,
+    branch_type::PSY.DiscreteControlledBranchType,
 )
     ST = PSY.get_available(branch) ? 1 : 0
     MET = get_ext_key_or_default(branch, "MET")
@@ -1814,10 +1814,10 @@ function _write_tap_transformer_as_branch_record!(
     I::Int,
     J::Int,
     CKT::String,
-    branch;
-    B_override = nothing,
-    RATEB_override = nothing,
-    RATEC_override = nothing,
+    branch::PSY.ACBranch;
+    B_override::Union{Float64, Nothing} = nothing,
+    RATEB_override::Union{Float64, Nothing} = nothing,
+    RATEC_override::Union{Float64, Nothing} = nothing,
 )
     ST = PSY.get_available(branch) ? 1 : 0
     MET = get_ext_key_or_default(branch, "MET")
@@ -1886,7 +1886,7 @@ function write_to_buffers!(
     branches_with_numbers = get!(exporter.components_cache, "branches") do
         regular_branches = get_branches_with_numbers(exporter)
 
-        transformer_as_branches = []
+        transformer_as_branches = Tuple{PSY.ACBranch, Tuple{Int, Int}}[]
         for transformer in PSY.get_components(PSY.TapTransformer, exporter.system)
             control_obj = PSY.get_control_objective(transformer)
             if control_obj ==
@@ -2126,11 +2126,11 @@ _collect_winding_group!(::AbstractDict, ::String, ::PSY.TwoWindingTransformer) =
 
 """Build all transformer-related metadata mappings (names, control objectives, winding groups, impedance, taps)."""
 function _build_transformer_metadata!(
-    md::AbstractDict,
-    transformers_with_numbers,
-    transformers_3w_with_numbers,
-    transformer_ckt_mapping,
-    transformer_3w_ckt_mapping,
+    md::OrderedDict{String, Any},
+    transformers_with_numbers::Vector,
+    transformers_3w_with_numbers::Vector,
+    transformer_ckt_mapping::Dict,
+    transformer_3w_ckt_mapping::Dict,
 )
     # Handle 2W transformers
     if !isempty(transformers_with_numbers)
@@ -2339,7 +2339,7 @@ function write_to_buffers!(
 end
 
 """Compute common DC line fields (record 1) for Two-Terminal DC export."""
-function _compute_dcline_common_fields(exporter::PSSEExporter, dcline, I::Int, J::Int)
+function _compute_dcline_common_fields(exporter::PSSEExporter, dcline::PSY.TwoTerminalLCCLine, I::Int, J::Int)
     dcline_name = PSY.get_name(dcline)
     # Using last() since some DC lines share rectifier bus numbers
     NAME = _is_valid_psse_name(dcline_name) ? dcline_name : last(dcline_name, 12)
@@ -2366,7 +2366,7 @@ function _compute_dcline_common_fields(exporter::PSSEExporter, dcline, I::Int, J
 end
 
 """Compute rectifier-side fields for Two-Terminal DC export."""
-function _compute_dcline_rectifier_fields(exporter::PSSEExporter, dcline, I::Int)
+function _compute_dcline_rectifier_fields(exporter::PSSEExporter, dcline::PSY.TwoTerminalLCCLine, I::Int)
     base_power = PSY.get_base_power(exporter.system)
     IPR = I
     NBR = PSY.get_rectifier_bridges(dcline)
@@ -2400,7 +2400,7 @@ function _compute_dcline_rectifier_fields(exporter::PSSEExporter, dcline, I::Int
 end
 
 """Compute inverter-side fields for Two-Terminal DC export."""
-function _compute_dcline_inverter_fields(exporter::PSSEExporter, dcline, J::Int)
+function _compute_dcline_inverter_fields(exporter::PSSEExporter, dcline::PSY.TwoTerminalLCCLine, J::Int)
     base_power = PSY.get_base_power(exporter.system)
     IPI = J
     NBI = PSY.get_inverter_bridges(dcline)
@@ -2512,7 +2512,7 @@ end
 """Compute VSC converter fields for one side (from or to) of a VSC DC line."""
 function _compute_vsc_converter_fields(
     exporter::PSSEExporter,
-    vscline,
+    vscline::PSY.TwoTerminalVSCLine,
     bus_number::Int,
     type_org::Int,
     side::Symbol,
@@ -2897,7 +2897,7 @@ function write_to_buffers!(
 end
 
 """Build v35 switched shunt step data (S, N, B triplets padded to 8)."""
-function _build_switched_shunt_steps_v35(shunt, steps, increases, base_power)
+function _build_switched_shunt_steps_v35(shunt::PSY.SwitchedAdmittance, steps::Vector{Int}, increases::Vector{Complex{Float64}}, base_power::Float64)
     S_vals = []
     N_vals = []
     B_vals = []
@@ -2919,7 +2919,7 @@ function _build_switched_shunt_steps_v35(shunt, steps, increases, base_power)
 end
 
 """Build v33 switched shunt step data (N, B pairs padded to 8)."""
-function _build_switched_shunt_steps_v33(steps, increases, base_power)
+function _build_switched_shunt_steps_v33(steps::Vector{Int}, increases::Vector{Complex{Float64}}, base_power::Float64)
     N_vals = []
     B_vals = []
     for (N, B) in zip(steps, increases)
