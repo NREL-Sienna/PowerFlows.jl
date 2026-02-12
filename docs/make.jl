@@ -10,13 +10,16 @@ links = InterLinks(
 pages = OrderedDict(
     "Welcome Page" => "index.md",
     "How-to-Guides" => "how-tos/stub.md",
-    "Tutorials" => "tutorials/stub.md",
+    "Tutorials" => Any[
+        "Solving a Power Flow" => "tutorials/solving-a-power-flow.md",
+    ],
     "Explanation" => "explanation/stub.md",
     "Reference" => Any[
         "Code Base Developer Guide" => "reference/developers/developer.md",
         "LCC Model Implementation" => "reference/developers/lcc_model.md",
         "Public API Reference" => "reference/api/public.md",
-        "Internal API Reference" => "reference/api/internal.md"],
+        "Internal API Reference" => "reference/api/internal.md",
+    ],
 )
 
 makedocs(;

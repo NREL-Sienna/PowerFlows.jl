@@ -174,6 +174,26 @@ function hvdc_power_loss_natural_units(hvdc::PSY.TwoTerminalHVDC)
     return (P_dc, clamp(P_loss, 0.0, P_dc), flow_reversed)
 end
 
+# VSC lines have separate converter losses on each end
+function hvdc_power_loss_natural_units(hvdc::PSY.TwoTerminalVSCLine)
+    P_dc = with_units_base(hvdc, "NATURAL_UNITS") do
+        PSY.get_active_power_flow(hvdc)
+    end
+    flow_reversed = P_dc < 0
+    P_dc = abs(P_dc)
+    # Sum losses from both converters
+    loss_from = _eval_loss_function(PSY.get_converter_loss_from(hvdc), P_dc)
+    loss_to = _eval_loss_function(PSY.get_converter_loss_to(hvdc), P_dc)
+    P_loss = loss_from + loss_to
+    P_loss > P_dc && @warn "The converter losses of $(PSY.summary(hvdc)) " *
+          "indicate losses greater than the transmitted power $P_dc. " *
+          "Setting the loss equal to the transmitted power instead."
+    P_loss < 0.0 && @warn "The converter losses of $(PSY.summary(hvdc)) " *
+          "indicate negative losses for transmitted power $P_dc. " *
+          "Setting the loss equal to zero instead."
+    return (P_dc, clamp(P_loss, 0.0, P_dc), flow_reversed)
+end
+
 function get_hvdc_power_loss(
     hvdc::PSY.TwoTerminalHVDC,
     sys::PSY.System,
@@ -209,4 +229,15 @@ function get_arc_tuple(arc::PSY.Arc, reverse_bus_search_map::Dict{Int, Int})
         get(reverse_bus_search_map, from_bus, from_bus),
         get(reverse_bus_search_map, to_bus, to_bus),
     )
+end
+
+function convert_zip_to_constant_power!(p_load::AbstractArray{T, N},
+    i_load::AbstractArray{T, N},
+    z_load::AbstractArray{T, N},
+    voltage_magnitude::T,
+) where {T <: Real, N}
+    # faster with broadcast fusion via @. ?
+    p_load .+= voltage_magnitude .* i_load .+ voltage_magnitude^2 .* z_load
+    i_load .= zero(T)
+    z_load .= zero(T)
 end

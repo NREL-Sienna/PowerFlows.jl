@@ -2,9 +2,11 @@ const UNSUPPORTED =
     Set(
         [
         (PNM.WardReduction, PF.ACPowerFlow{PF.TrustRegionACPowerFlow}),
-        (PNM.WardReduction, PF.DCPowerFlow),
-        (PNM.WardReduction, PF.PTDFDCPowerFlow),
-        (PNM.WardReduction, PF.vPTDFDCPowerFlow),
+    ],
+    )
+const NOT_EQUIVALENT =
+    Set(
+        [
         (PNM.RadialReduction, PF.ACPowerFlow{PF.TrustRegionACPowerFlow}),
     ],
     )
@@ -18,14 +20,11 @@ ac_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
 )
 @testset "AC power flow on 2k bus system: validate reduce-then-solve" begin
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
-    unreduced = PF.PowerFlowData(
-        PF.ACPowerFlow(PF.TrustRegionACPowerFlow),
-        sys;
-        correct_bustypes = true,
-    )
-    PF.solve_powerflow!(unreduced)
+    pf_unreduced = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(; correct_bustypes = true)
+    unreduced = PF.PowerFlowData(pf_unreduced, sys)
+    PF.solve_power_flow!(unreduced)
     @assert all(unreduced.converged)
-    pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
+    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}(; correct_bustypes = true)
     for (k, v) in ac_reduction_types
         isempty(v) && continue # no reduction at all.
         if any([(typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v])
@@ -33,14 +32,19 @@ ac_reduction_types = Dict{String, Vector{PNM.NetworkReduction}}(
             continue
         end
         @testset "$k reduction" begin
-            validate_reduced_powerflow(pf, sys, v, unreduced)
+            if any([(typeof(nr), typeof(pf)) in NOT_EQUIVALENT for nr in v])
+                result = test_reduced_power_flow(pf, sys, v)
+                @test all(result.converged)
+            else
+                validate_reduced_power_flow(pf, sys, v, unreduced)
+            end
         end
     end
 end
 
 @testset "all reductions on psse_14_network_reduction_test_system" begin
     sys = PSB.build_system(PSSEParsingTestSystems, "psse_14_network_reduction_test_system")
-    pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
+    pf = ACPowerFlow{PF.TrustRegionACPowerFlow}(; correct_bustypes = true)
 
     for (k, v) in ac_reduction_types
         if any([(typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v])
@@ -48,7 +52,7 @@ end
             continue
         end
         @testset "$k reduction" begin
-            result = test_reduced_powerflow(pf, sys, v)
+            result = test_reduced_power_flow(pf, sys, v)
             @test all(result.converged)
         end
     end
@@ -57,7 +61,7 @@ end
     #=
     @testset "ward reduction" begin
         study_buses = [101, 114, 110, 111]
-        result = test_reduced_powerflow(
+        result = test_reduced_power_flow(
             pf,
             sys,
             PNM.NetworkReduction[PNM.WardReduction(study_buses)],
@@ -67,32 +71,25 @@ end
     =#
 end
 
-@testset "system + powerflow solver calls" begin
+@testset "system + power flow solver calls" begin
     for (k, v) in ac_reduction_types
         @testset "$k reduction" begin
             sys = build_system(
                 PSSEParsingTestSystems,
                 "psse_14_network_reduction_test_system",
             )
-            pf = ACPowerFlow(PF.TrustRegionACPowerFlow)
+            pf = ACPowerFlow{PF.TrustRegionACPowerFlow}(;
+                correct_bustypes = true,
+                network_reductions = deepcopy(v),
+            )
             supported = !any([(typeof(nr), typeof(pf)) in UNSUPPORTED for nr in v])
             if !supported
                 results = @test_logs((:error, r"failed to converge"),
                     match_mode = :any,
-                    solve_powerflow(
-                        pf,
-                        sys;
-                        correct_bustypes = true,
-                        network_reductions = deepcopy(v),
-                    )
+                    solve_power_flow(pf, sys)
                 )
             else
-                results = solve_powerflow(
-                    pf,
-                    sys;
-                    correct_bustypes = true,
-                    network_reductions = deepcopy(v),
-                )
+                results = solve_power_flow(pf, sys)
             end
             @assert !isempty(PSY.get_components(PSY.Transformer3W, sys))
             test_trf = first(collect(PSY.get_components(PSY.Transformer3W, sys)))
@@ -101,19 +98,14 @@ end
                 arc_flows = results["flow_results"]
                 trf_arc_flows = zeros(ComplexF32, 3)
                 for i in 1:3
-                    ix = arc_flows[!, "line_name"] .== "$(test_trf_name)_winding_$i"
+                    ix = arc_flows[!, "flow_name"] .== "$(test_trf_name)_winding_$i"
                     @assert sum(ix) > 0 "could not find arc in results dataframe with name" *
                                         " $(test_trf_name)_winding_$i"
                     trf_arc_flows[i] =
                         sum(arc_flows[ix, "P_from_to"]) +
                         im * sum(arc_flows[ix, "Q_from_to"])
                 end
-                @test solve_and_store_power_flow!(
-                    pf,
-                    sys;
-                    correct_bustypes = true,
-                    network_reductions = deepcopy(v),
-                )
+                @test solve_and_store_power_flow!(pf, sys)
                 base_power = PSY.get_base_power(sys)
                 # check that transformer bus-to-star entries are there.
                 @test isapprox(
@@ -178,8 +170,8 @@ function compare_power_flows(
     name = PSY.get_name(branch)
     arc_lookup = PF.get_arc_lookup(unreduced)
     arc_ix = arc_lookup[PNM.get_arc_tuple(branch)]
-    unreduced_active_flow = unreduced.arc_activepower_flow_from_to[arc_ix, 1]
-    unreduced_reactive_flow = unreduced.arc_reactivepower_flow_from_to[arc_ix, 1]
+    unreduced_active_flow = unreduced.arc_active_power_flow_from_to[arc_ix, 1]
+    unreduced_reactive_flow = unreduced.arc_reactive_power_flow_from_to[arc_ix, 1]
     reduced_active_flow =
         PSY.get_active_power_flow(PSY.get_component(PSY.Branch, sys, name))
     reduced_reactive_flow =
@@ -194,19 +186,15 @@ end
     # the net flow across the equivalent branch.
 
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
-    unreduced = PF.PowerFlowData(
-        PF.ACPowerFlow(PF.TrustRegionACPowerFlow),
-        sys;
-        correct_bustypes = true,
-    )
-    pf = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(; skip_redistribution = true)
-    PF.solve_powerflow!(unreduced; pf = pf)
-    PF.solve_and_store_power_flow!(
-        pf,
-        sys;
+    pf_unreduced = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(; correct_bustypes = true)
+    unreduced = PF.PowerFlowData(pf_unreduced, sys)
+    pf = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(;
+        skip_redistribution = true,
         correct_bustypes = true,
         network_reductions = PNM.NetworkReduction[PNM.DegreeTwoReduction()],
     )
+    PF.solve_power_flow!(unreduced)
+    PF.solve_and_store_power_flow!(pf, sys)
     temp_ybus =
         PNM.Ybus(sys; network_reductions = PNM.NetworkReduction[PNM.DegreeTwoReduction()])
     nrd = PNM.get_network_reduction_data(temp_ybus)
@@ -218,11 +206,11 @@ end
     for (equiv_arc, branches) in parallel_br_map
         equiv_arc_ix = arc_lookup[equiv_arc]
         net_flow_from_to =
-            unreduced.arc_activepower_flow_from_to[equiv_arc_ix, 1] +
-            im * unreduced.arc_reactivepower_flow_from_to[equiv_arc_ix, 1]
+            unreduced.arc_active_power_flow_from_to[equiv_arc_ix, 1] +
+            im * unreduced.arc_reactive_power_flow_from_to[equiv_arc_ix, 1]
         net_flow_to_from =
-            unreduced.arc_activepower_flow_to_from[equiv_arc_ix, 1] +
-            im * unreduced.arc_reactivepower_flow_to_from[equiv_arc_ix, 1]
+            unreduced.arc_active_power_flow_to_from[equiv_arc_ix, 1] +
+            im * unreduced.arc_reactive_power_flow_to_from[equiv_arc_ix, 1]
         total_flow = zero(ComplexF32)
         expected_from_bus = equiv_arc[1]
         (from_bus_no, to_bus_no) = PNM.get_arc_tuple(first(branches))
@@ -245,19 +233,15 @@ end
 
 @testset "degree 2 reduction: recovering flows/voltages" begin
     sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
-    unreduced = PF.PowerFlowData(
-        PF.ACPowerFlow(PF.TrustRegionACPowerFlow),
-        sys;
-        correct_bustypes = true,
-    )
-    pf = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(; skip_redistribution = true)
-    PF.solve_powerflow!(unreduced; pf = pf)
-    PF.solve_and_store_power_flow!(
-        pf,
-        sys;
+    pf_unreduced = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(; correct_bustypes = true)
+    unreduced = PF.PowerFlowData(pf_unreduced, sys)
+    pf = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(;
+        skip_redistribution = true,
         correct_bustypes = true,
         network_reductions = PNM.NetworkReduction[PNM.DegreeTwoReduction()],
     )
+    PF.solve_power_flow!(unreduced)
+    PF.solve_and_store_power_flow!(pf, sys)
     temp_ybus =
         PNM.Ybus(sys; network_reductions = PNM.NetworkReduction[PNM.DegreeTwoReduction()])
     nrd = PNM.get_network_reduction_data(temp_ybus)

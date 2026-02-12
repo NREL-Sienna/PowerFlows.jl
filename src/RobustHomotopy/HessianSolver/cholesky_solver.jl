@@ -1,24 +1,24 @@
 struct CholeskyHessianSolver <: HessianSolver
-    F::SparseArrays.CHOLMOD.Factor{Float64, Int32}
+    F::SparseArrays.CHOLMOD.Factor{Float64, J_INDEX_TYPE}
     mat::FixedStructureCHOLMOD
     buff::Vector{Float64} # buffer for solving
 end
 
-function CholeskyHessianSolver(H::SparseMatrixCSC{Float64, Int32})
+function CholeskyHessianSolver(H::SparseMatrixCSC{Float64, J_INDEX_TYPE})
     mat = FixedStructureCHOLMOD(H)
     # I need to create a CHOLMOD factorization object, so I also symbolic factor it here.
     n = size(H, 1)
     return CholeskyHessianSolver(symbolic_factor(mat), mat, zeros(n))
 end
 
-function symbolic_factor!(::CholeskyHessianSolver, ::SparseMatrixCSC{Float64, Int32})
+function symbolic_factor!(::CholeskyHessianSolver, ::SparseMatrixCSC{Float64, J_INDEX_TYPE})
     # hSolver.F = symbolic_factor(hSolver.mat) # if I make FixedStructureCHOLMOD mutable.
     return
 end
 
 function modify_and_numeric_factor!(
     hSolver::CholeskyHessianSolver,
-    H::SparseMatrixCSC{Float64, Int32},
+    H::SparseMatrixCSC{Float64, J_INDEX_TYPE},
 )
     minDiagElem = minimum(H[i, i] for i in axes(H, 1))
     τ_old = 0.0

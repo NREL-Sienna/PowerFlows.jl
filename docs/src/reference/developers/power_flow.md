@@ -42,7 +42,7 @@ Solving the power flow with mode 1:
 
 ````@example generated_power_flow
 pf = ACPowerFlow()
-results = solve_powerflow(pf, system_data)
+results = solve_power_flow(pf, system_data)
 results["bus_results"]
 ````
 

@@ -1,12 +1,12 @@
 const SYSTEM_REIMPORT_COMPARISON_TOLERANCE = 1e-10
 const POWERFLOW_COMPARISON_TOLERANCE = 3e-4  # TODO refine -- most comparisons can be made much tighter
 
-powerflow_match_fn(
+power_flow_match_fn(
     a::T,
     b::T,
 ) where {T <: Union{AbstractFloat, AbstractArray{<:AbstractFloat}}} =
     isapprox(a, b; atol = POWERFLOW_COMPARISON_TOLERANCE) || IS.isequivalent(a, b)
-powerflow_match_fn(a, b) = IS.isequivalent(a, b)
+power_flow_match_fn(a, b) = IS.isequivalent(a, b)
 
 # TODO another temporary hack
 "Create a version of the RTS_GMLC system that plays nice with the current implementation of AC power flow"
@@ -63,14 +63,14 @@ function modify_rts_system!(sys::System)
 end
 
 "Make the same changes to the PowerFlowData that modify_rts_system! makes to the System"
-function modify_rts_powerflow!(data::PowerFlowData)
+function modify_rts_power_flow!(data::PowerFlowData)
     bus_lookup = PF.get_bus_lookup(data)
     # For REF bus, voltage and angle are fixed; update active and reactive
-    data.bus_activepower_injection[bus_lookup[113]] = 2.4375
-    data.bus_reactivepower_injection[bus_lookup[113]] = 0.1875
+    data.bus_active_power_injections[bus_lookup[113]] = 2.4375
+    data.bus_reactive_power_injections[bus_lookup[113]] = 0.1875
 
     # For PV bus, active and voltage are fixed; update reactive and angle
-    data.bus_reactivepower_injection[bus_lookup[202]] = 0.37267
+    data.bus_reactive_power_injections[bus_lookup[202]] = 0.37267
     data.bus_angles[bus_lookup[202]] = -0.13778
 
     # For PQ bus, active and reactive are fixed; update voltage and angle
@@ -144,12 +144,11 @@ function _check_ds_pf(
     bus_numbers::Vector{Int},
     original_bus_power::Vector{Float64},
     original_gen_power::Vector{Float64},
-    data_original_bus_power::Vector{Float64};
-    kwargs...,
+    data_original_bus_power::Vector{Float64},
 )
-    res = solve_powerflow(pf, sys; kwargs...)
+    res = solve_power_flow(pf, sys)
 
-    data = PowerFlowData(pf, sys; kwargs...)
+    data = PowerFlowData(pf, sys)
     subnetworks = PowerFlows._find_subnetworks_for_reference_buses(
         data.power_network_matrix.data,
         data.bus_type[:, 1],
@@ -162,7 +161,7 @@ function _check_ds_pf(
         original_bus_power,
     )
 
-    solve_and_store_power_flow!(pf, sys; kwargs...)
+    solve_and_store_power_flow!(pf, sys)
     p_solve, _ = _system_generation_power(sys, bus_numbers)
 
     @test isapprox(p_solve, res["bus_results"][:, :P_gen]; atol = 1e-6, rtol = 0)
@@ -174,11 +173,11 @@ function _check_ds_pf(
     @test original_gen_power == p_gen_reset
 
     @test data.bus_slack_participation_factors[:, 1] == bus_slack_participation_factors
-    solve_powerflow!(data; pf = pf)
+    solve_power_flow!(data)
     # now check the slack power distribution logic
     _check_distributed_slack_consistency(
         subnetworks,
-        data.bus_activepower_injection[:, 1],
+        data.bus_active_power_injections[:, 1],
         bus_slack_participation_factors,
         data_original_bus_power,
     )
@@ -377,6 +376,54 @@ function _add_simple_zip_load!(
     return zip_load
 end
 
+function _add_simple_vsc!(
+    sys,
+    bus1::ACBus,
+    bus2::ACBus;
+    active_power_flow::Float64 = 0.5,
+    loss_coefficient::Float64 = 0.01,
+)
+    vsc = TwoTerminalVSCLine(;
+        name = _check_name(
+            sys,
+            "VSC_$(get_number(bus1))_$(get_number(bus2))",
+            TwoTerminalVSCLine,
+        ),
+        available = true,
+        arc = Arc(bus1, bus2),
+        active_power_flow = active_power_flow,
+        rating = 1.0,
+        active_power_limits_from = (min = -1.0, max = 1.0),
+        active_power_limits_to = (min = -1.0, max = 1.0),
+        g = 0.0,
+        dc_current = 0.0,
+        reactive_power_from = 0.0,
+        dc_voltage_control_from = false,
+        ac_voltage_control_from = false,
+        dc_setpoint_from = 0.0,
+        ac_setpoint_from = 1.0,
+        converter_loss_from = LinearCurve(loss_coefficient),
+        max_dc_current_from = 1.0,
+        rating_from = 1.0,
+        reactive_power_limits_from = (min = -1.0, max = 1.0),
+        power_factor_weighting_fraction_from = 0.0,
+        voltage_limits_from = (min = 0.9, max = 1.1),
+        reactive_power_to = 0.0,
+        dc_voltage_control_to = false,
+        ac_voltage_control_to = false,
+        dc_setpoint_to = 0.0,
+        ac_setpoint_to = 1.0,
+        converter_loss_to = LinearCurve(loss_coefficient),
+        max_dc_current_to = 1.0,
+        rating_to = 1.0,
+        reactive_power_limits_to = (min = -1.0, max = 1.0),
+        power_factor_weighting_fraction_to = 0.0,
+        voltage_limits_to = (min = 0.9, max = 1.1),
+    )
+    add_component!(sys, vsc)
+    return vsc
+end
+
 function _add_simple_lcc!(
     sys,
     bus1::ACBus,
@@ -443,8 +490,8 @@ function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
     injs = Matrix(injections)
     withs = Matrix(withdrawals)
 
-    data.bus_activepower_injection .= deepcopy(injs[:, 1:time_steps])
-    data.bus_activepower_withdrawals .= deepcopy(withs[:, 1:time_steps])
+    data.bus_active_power_injections .= deepcopy(injs[:, 1:time_steps])
+    data.bus_active_power_withdrawals .= deepcopy(withs[:, 1:time_steps])
     return nothing
 end
 
@@ -464,16 +511,33 @@ end
 
 function power_flow_with_units(
     sys::PSY.System,
-    T::Type{<:PF.PowerFlowEvaluationModel},
+    T::Type{<:PF.ACPowerFlow},
     units::PSY.UnitSystem,
 )
     with_units_base(sys, units) do
-        results = solve_powerflow(T(), sys; correct_bustypes = true)
+        results = solve_power_flow(T(; correct_bustypes = true), sys)
         if "1" in keys(results)
             first_line_flow = results["1"]["flow_results"][1, :]
         else
             first_line_flow = results["flow_results"][1, :]
         end
-        return (first_line_flow[:line_name], first_line_flow[:P_from_to])
+        return (first_line_flow[:flow_name], first_line_flow[:P_from_to])
+    end
+end
+
+function power_flow_with_units(
+    sys::PSY.System,
+    T::Type{<:PF.AbstractDCPowerFlow},
+    units::PSY.UnitSystem,
+)
+    with_units_base(sys, units) do
+        results =
+            solve_power_flow(T(; correct_bustypes = true), sys, PF.FlowReporting.ARC_FLOWS)
+        if "1" in keys(results)
+            first_line_flow = results["1"]["flow_results"][1, :]
+        else
+            first_line_flow = results["flow_results"][1, :]
+        end
+        return (first_line_flow[:flow_name], first_line_flow[:P_from_to])
     end
 end

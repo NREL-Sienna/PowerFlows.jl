@@ -1571,20 +1571,16 @@ function _psse_transformer_names(
     end
     return mapping
 end
-
 """
-WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Data
+Load transformer components and create circuit ID mappings.
+
+Returns a tuple of:
+- transformers_with_numbers: 2-winding transformers with their bus numbers
+- transformers_3w_with_numbers: 3-winding transformers with their bus numbers
+- transformer_ckt_mapping: Circuit ID mapping for 2-winding transformers
+- transformer_3w_ckt_mapping: Circuit ID mapping for 3-winding transformers
 """
-function write_to_buffers!(
-    exporter::PSSEExporter,
-    ::Val{Symbol("Transformer Data")},
-)
-    io = exporter.raw_buffer
-    md = exporter.md_dict
-
-    check_supported_version(exporter)
-    write_v35_header(io, exporter, "Transformer Data")
-
+function _load_transformer_components_and_mappings(exporter::PSSEExporter)
     transformers_with_numbers = get!(exporter.components_cache, "transformers") do
         transformers =
             collect(PSY.get_components(PSY.TwoWindingTransformer, exporter.system))
@@ -1628,6 +1624,28 @@ function write_to_buffers!(
                 singles_to_1 = false,
             )
         end
+
+    return (transformers_with_numbers, transformers_3w_with_numbers,
+            transformer_ckt_mapping, transformer_3w_ckt_mapping)
+end
+
+"""
+WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Transformer Data
+"""
+function write_to_buffers!(
+    exporter::PSSEExporter,
+    ::Val{Symbol("Transformer Data")},
+)
+    io = exporter.raw_buffer
+    md = exporter.md_dict
+
+    check_supported_version(exporter)
+    write_v35_header(io, exporter, "Transformer Data")
+
+    # Load transformer components and create circuit ID mappings
+    (transformers_with_numbers, transformers_3w_with_numbers,
+     transformer_ckt_mapping, transformer_3w_ckt_mapping) =
+        _load_transformer_components_and_mappings(exporter)
     if !exporter.md_valid
         # Handle 2W transformers
         if !isempty(transformers_with_numbers)

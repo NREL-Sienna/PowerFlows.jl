@@ -10,7 +10,7 @@ const ISAPPROX_ZERO_TOLERANCE = 1e-6
 
 const DEFAULT_NR_MAX_ITER::Int64 = 50 # default maxIterations for the NR power flow
 const OVERRIDE_x0 = true
-const DEFAULT_NR_TOL::Float64 = 1e-9 # default tolerance for the NR power flow 
+const DEFAULT_NR_TOL::Float64 = 1e-9 # default tolerance for the NR power flow
 const DEFAULT_REFINEMENT_THRESHOLD = 5e-2 # do refinement if relative error > 5%.
 const DEFAULT_REFINEMENT_MAX_ITER = 10 # how many times to try iterative refinement
 const DEFAULT_REFINEMENT_EPS::Float64 = 1e-6 # when to stop iterative refinement.
@@ -40,6 +40,7 @@ const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MIN = 0.8
 const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX = 1.2
 
 const TIs = Union{Int32, Int64}
+const J_INDEX_TYPE = Int32
 
 # voltage validation
 const DEFAULT_VALIDATE_VOLTAGES = true
@@ -74,3 +75,18 @@ const BUS_TYPE_PRIORITIES = Dict{PSY.ACBusTypes, Int}(
 
 const PSSE_DEFAULT_EXPORT_NAME = "export"
 const PSSE_EXPORT_SUPPORTED_VERSIONS = [:v33, :v35]
+
+IS.@scoped_enum(
+    FlowReporting,
+    ARC_FLOWS = 0,
+    BRANCH_FLOWS = 1,
+)
+@doc"
+ FlowReporting
+
+ Enumeration describing the type of flows reported in power flow results.
+
+ Values
+ - ARC_FLOWS = 0: Report total flows corresponding to arcs.
+ - BRANCH_FLOWS = 1: Report flows for individual branches.
+" FlowReporting

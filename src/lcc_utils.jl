@@ -150,8 +150,8 @@ function initialize_LCCParameters!(
     for (i, lcc_branch) in enumerate(lccs)
         # it's an LCC, so flow can't be reversed; rhs will error if it is.
         (P_from_to, P_to_from, _) = get_hvdc_power_loss(lcc_branch, sys)
-        data.lcc.arc_activepower_flow_from_to[i, :] .= P_from_to
-        data.lcc.arc_activepower_flow_to_from[i, :] .= P_to_from
+        data.lcc.arc_active_power_flow_from_to[i, :] .= P_from_to
+        data.lcc.arc_active_power_flow_to_from[i, :] .= P_to_from
     end
     return
 end
@@ -220,7 +220,7 @@ function initialize_LCCParameters!(
 end
 
 """
-Adjust the power injection/withdrawal vectors to account for all HVDC lines of a given type,
+Adjust the power injections/withdrawal vectors to account for all HVDC lines of a given type,
 modeling those HVDC lines as a simple fixed injection/withdrawal at each terminal.
 """
 function hvdc_fixed_injections!(
@@ -249,25 +249,26 @@ function hvdc_fixed_injections!(
     return
 end
 
-lcc_fixed_injections!(
+lcc_vsc_fixed_injections!(
     ::ACPowerFlowData,
     ::PSY.System,
     ::Dict{Int, Int},
     ::Dict{Int, Int},
 ) = nothing
 
-lcc_fixed_injections!(
+lcc_vsc_fixed_injections!(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
     sys::PSY.System,
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
-) = hvdc_fixed_injections!(
-    data,
-    PSY.TwoTerminalLCCLine,
-    sys,
-    bus_lookup,
-    reverse_bus_search_map,
-)
+) =
+    hvdc_fixed_injections!.(
+        (data,),
+        (PSY.TwoTerminalLCCLine, PSY.TwoTerminalVSCLine),
+        (sys,),
+        (bus_lookup,),
+        (reverse_bus_search_map,),
+    )
 
 function initialize_generic_hvdc_flows!(
     data::PowerFlowData,

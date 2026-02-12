@@ -35,17 +35,18 @@
                 end
 
             # create structure for multi-period case
+            time_steps = 24
             pf = ACPowerFlow(;
                 generator_slack_participation_factors = generator_slack_participation_factors,
+                time_steps = time_steps,
             )
-            time_steps = 24
-            data = PowerFlowData(pf, sys; time_steps = time_steps)
+            data = PowerFlowData(pf, sys)
 
             # allocate timeseries data from csv
             prepare_ts_data!(data, time_steps)
 
-            init_p_injections = copy(data.bus_activepower_injection)
-            solve_powerflow!(data; pf = pf)
+            init_p_injections = copy(data.bus_active_power_injections)
+            solve_power_flow!(data)
 
             # check results
             subnetworks = PowerFlows._find_subnetworks_for_reference_buses(
@@ -55,19 +56,20 @@
             for time_step in 1:time_steps
                 _check_distributed_slack_consistency(
                     subnetworks,
-                    data.bus_activepower_injection[:, time_step],
+                    data.bus_active_power_injections[:, time_step],
                     collect(data.bus_slack_participation_factors[:, time_step]),
                     init_p_injections[:, time_step],
                 )
             end
 
             if mode == :array_24
-                pf = ACPowerFlow(;
+                pf_short = ACPowerFlow(;
                     generator_slack_participation_factors = generator_slack_participation_factors[1:5],
+                    time_steps = time_steps,
                 )
                 @test_throws ArgumentError(
                     "slack_participation_factors must have at least the same length as time_steps",
-                ) PowerFlowData(pf, sys; time_steps = time_steps)
+                ) PowerFlowData(pf_short, sys)
             end
         end
     end
@@ -160,12 +162,12 @@ end
                 set_active_power!(g, 20.0)
             end
 
-            pf = ACPowerFlow()
-            data = PowerFlowData(pf, sys; correct_bustypes = true)
+            pf = ACPowerFlow(; correct_bustypes = true)
+            data = PowerFlowData(pf, sys)
             original_bus_power, original_gen_power =
                 _system_generation_power(sys, bus_numbers)
-            data_original_bus_power = copy(data.bus_activepower_injection[:, 1])
-            res1 = solve_powerflow(pf, sys; correct_bustypes = true)
+            data_original_bus_power = copy(data.bus_active_power_injections[:, 1])
+            res1 = solve_power_flow(pf, sys)
 
             bus_slack_participation_factors = zeros(Float64, length(bus_numbers))
             bus_slack_participation_factors[ref_n] .= 1.0
@@ -176,8 +178,9 @@ end
                     bus_numbers,
                     bus_slack_participation_factors,
                 ),
+                correct_bustypes = true,
             )
-            res2 = solve_powerflow(pf2, sys; correct_bustypes = true)
+            res2 = solve_power_flow(pf2, sys)
 
             # basic test: if we pass the same slack participation factors as the default ones, the results
             # should be the same
@@ -212,6 +215,7 @@ end
                     bus_numbers,
                     bus_slack_participation_factors,
                 ),
+                correct_bustypes = true,
             )
 
             _check_ds_pf(
@@ -232,6 +236,7 @@ end
                     bus_numbers,
                     bus_slack_participation_factors,
                 ),
+                correct_bustypes = true,
             )
 
             _check_ds_pf(
@@ -252,6 +257,7 @@ end
                     bus_numbers,
                     bus_slack_participation_factors,
                 ),
+                correct_bustypes = true,
             )
 
             _check_ds_pf(
@@ -275,6 +281,7 @@ end
                         bus_slack_participation_factors,
                     ),
                 ],
+                correct_bustypes = true,
             )  # [] to test this input variant
 
             _check_ds_pf(
