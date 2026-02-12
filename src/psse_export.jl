@@ -1618,8 +1618,10 @@ function write_to_buffers!(
 
         # Compute powers and limits
         PG, QG = _compute_generator_powers(exporter, generator, hvdc_end, base_power)
-        reactive_power_limits = _compute_reactive_power_limits(exporter, generator, hvdc_end, base_power)
-        active_power_limits = _compute_active_power_limits(exporter, generator, hvdc_end, base_power)
+        reactive_power_limits =
+            _compute_reactive_power_limits(exporter, generator, hvdc_end, base_power)
+        active_power_limits =
+            _compute_active_power_limits(exporter, generator, hvdc_end, base_power)
 
         QT = _warn_finite_default(
             reactive_power_limits.max;
@@ -1661,12 +1663,12 @@ function write_to_buffers!(
             BASLOD = get_ext_key_or_default(generator, "BASLOD")
             _write_generator_v35_record!(
                 io, I, ID, PG, QG, QT, QB, VS, IREG, NREG, MBASE, ZR, ZX,
-                RT, XT, GTAP, STAT, RMPCT, PT, PB, BASLOD, WMOD, WPF
+                RT, XT, GTAP, STAT, RMPCT, PT, PB, BASLOD, WMOD, WPF,
             )
         else
             _write_generator_v33_record!(
                 io, I, ID, PG, QG, QT, QB, VS, IREG, MBASE, ZR, ZX,
-                RT, XT, GTAP, STAT, RMPCT, PT, PB, WMOD, WPF
+                RT, XT, GTAP, STAT, RMPCT, PT, PB, WMOD, WPF,
             )
         end
     end
@@ -1806,6 +1808,66 @@ function _write_tap_transformer_as_branch_record!(
     I::Int,
     J::Int,
     CKT::String,
+    branch;
+    B_override = nothing,
+    RATEB_override = nothing,
+    RATEC_override = nothing,
+)
+    ST = PSY.get_available(branch) ? 1 : 0
+    MET = get_ext_key_or_default(branch, "MET")
+    LEN = get_ext_key_or_default(branch, "LEN")
+    R = PSY.get_r(branch)
+    X = PSY.get_x(branch)
+    B = isnothing(B_override) ? 0.0 : B_override
+    GI = get_ext_key_or_default(branch, "GI")
+    BI = get_ext_key_or_default(branch, "BI")
+    GJ = get_ext_key_or_default(branch, "GJ")
+    BJ = get_ext_key_or_default(branch, "BJ")
+
+    RATEA, RATEB, RATEC =
+        with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
+            _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT),
+            if isnothing(RATEB_override)
+                _value_or_default(PSY.get_rating_b(branch), PSSE_DEFAULT)
+            else
+                RATEB_override
+            end,
+            if isnothing(RATEC_override)
+                _value_or_default(PSY.get_rating_c(branch), PSSE_DEFAULT)
+            else
+                RATEC_override
+            end
+        end
+    (RATEA, RATEB, RATEC) =
+        (_fix_3w_transformer_rating(x) for x in (RATEA, RATEB, RATEC))
+
+    if exporter.psse_version == :v35
+        NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
+        rates = [RATEA, RATEB, RATEC]
+        for i in 4:12
+            push!(rates, get_ext_key_or_default(branch, "RATE$i"))
+        end
+        @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B, NAME)
+        for rate in rates
+            fastprintdelim(io, rate)
+        end
+        @fastprintdelim_unroll(io, false, GI, BI, GJ, BJ, ST, MET, LEN)
+        fastprintln_psse_default_ownership(io)
+    else
+        @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B,
+            RATEA, RATEB, RATEC,
+            GI, BI, GJ, BJ, ST, MET, LEN)
+        fastprintln_psse_default_ownership(io)
+    end
+end
+
+"""Write a TapTransformer with UNDEFINED control objective as a non-transformer branch record."""
+function _write_tap_transformer_as_branch_record!(
+    io::IO,
+    exporter::PSSEExporter,
+    I::Int,
+    J::Int,
+    CKT::String,
     branch,
 )
     ST = PSY.get_available(branch) ? 1 : 0
@@ -1862,7 +1924,22 @@ function write_to_buffers!(
     write_v35_header(io, exporter, "Non-Transformer Branch Data")
 
     branches_with_numbers = get!(exporter.components_cache, "branches") do
-        get_branches_with_numbers(exporter)
+        regular_branches = get_branches_with_numbers(exporter)
+
+        transformer_as_branches = []
+        for transformer in PSY.get_components(PSY.TapTransformer, exporter.system)
+            control_obj = PSY.get_control_objective(transformer)
+            if control_obj ==
+               PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+                bus_nums = branch_to_bus_numbers(transformer)
+                push!(transformer_as_branches, (transformer, bus_nums))
+            end
+        end
+
+        all_branches = vcat(regular_branches, transformer_as_branches)
+        sort!(all_branches; by = x -> last(x))
+
+        all_branches
     end
 
     branch_name_mapping = get!(exporter.components_cache, "branch_name_mapping") do
@@ -1884,16 +1961,42 @@ function write_to_buffers!(
         BASE_CKT = branch_name_mapping[((from_n, to_n), PSY.get_name(branch))]
         BASE_CKT = _psse_quote_string(BASE_CKT)
 
-        if branch isa PSY.DiscreteControlledACBranch
+        is_transformer_as_branch =
+            branch isa PSY.TapTransformer &&
+            PSY.get_control_objective(branch) ==
+            PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+
+        if is_transformer_as_branch
+            B = imag(PSY.get_primary_shunt(branch)) * 2
+            _write_tap_transformer_as_branch_record!(
+                io, exporter, I, J, BASE_CKT, branch;
+                B_override = B,
+                RATEB_override = PSSE_DEFAULT,
+                RATEC_override = PSSE_DEFAULT,
+            )
+        elseif branch isa PSY.DiscreteControlledACBranch
             branch_type = PSY.get_discrete_branch_type(branch)
+            unquoted_base = strip(BASE_CKT, ['\''])
             CKT = if haskey(DISCRETE_BRANCH_MAP, branch_type)
                 char = DISCRETE_BRANCH_MAP[branch_type]
-                occursin("_", BASE_CKT) ? replace(BASE_CKT, "_" => char) : char * BASE_CKT
+                if occursin("_", unquoted_base)
+                    replace(unquoted_base, "_" => char)
+                else
+                    char * unquoted_base
+                end
             else
                 @warn "Unknown discrete branch type $branch_type for branch $branch"
-                BASE_CKT
+                unquoted_base
             end
-            _write_discrete_branch_record!(io, exporter, I, J, _psse_quote_string(CKT), branch, branch_type)
+            _write_discrete_branch_record!(
+                io,
+                exporter,
+                I,
+                J,
+                _psse_quote_string(CKT),
+                branch,
+                branch_type,
+            )
         else
             _write_regular_branch_record!(io, exporter, I, J, BASE_CKT, branch)
         end
@@ -2062,9 +2165,6 @@ function _build_transformer_metadata!(
         )
         control_objective_mapping = OrderedDict{String, Any}()
         winding_group_category_mapping = OrderedDict{String, Any}()
-        transformer_resistance_mapping = OrderedDict{String, Any}()
-        transformer_reactance_mapping = OrderedDict{String, Any}()
-        transformer_tap_mapping = OrderedDict{String, Any}()
         for (transformer, _) in transformers_with_numbers
             name = PSY.get_name(transformer)
             if transformer isa PSY.TapTransformer ||
@@ -2081,25 +2181,13 @@ function _build_transformer_metadata!(
                     winding_group_category_mapping[name] = ang1.value
                 end
             end
-            transformer_resistance_mapping[name] = PSY.get_r(transformer)
-            transformer_reactance_mapping[name] = PSY.get_x(transformer)
-            if transformer isa PSY.TapTransformer ||
-               transformer isa PSY.PhaseShiftingTransformer
-                transformer_tap_mapping[name] = PSY.get_tap(transformer)
-            end
         end
         md["transformer_control_objective_mapping"] = control_objective_mapping
         md["transformer_winding_group_category_mapping"] = winding_group_category_mapping
-        md["transformer_resistance_mapping"] = transformer_resistance_mapping
-        md["transformer_reactance_mapping"] = transformer_reactance_mapping
-        md["transformer_tap_mapping"] = transformer_tap_mapping
     else
         md["transformer_name_mapping"] = OrderedDict{String, String}()
         md["transformer_control_objective_mapping"] = OrderedDict{String, Any}()
         md["transformer_winding_group_category_mapping"] = OrderedDict{String, Any}()
-        md["transformer_resistance_mapping"] = OrderedDict{String, Any}()
-        md["transformer_reactance_mapping"] = OrderedDict{String, Any}()
-        md["transformer_tap_mapping"] = OrderedDict{String, Any}()
     end
 
     # Handle 3W transformers
@@ -2132,9 +2220,18 @@ function _load_transformer_components_and_mappings(exporter::PSSEExporter)
             collect(PSY.get_components(PSY.TwoWindingTransformer, exporter.system));
             by = branch_to_bus_numbers,
         )
+        # Filter out TapTransformers with UNDEFINED control objective
+        filtered_transformers = filter(transformers) do transformer
+            if transformer isa PSY.TapTransformer
+                control_obj = PSY.get_control_objective(transformer)
+                return control_obj !=
+                       PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+            end
+            return true
+        end
         [
             (transformer, branch_to_bus_numbers(transformer)) for
-            transformer in transformers
+            transformer in filtered_transformers
         ]
     end
     transformers_3w_with_numbers = get!(exporter.components_cache, "transformers_3w") do
@@ -2163,7 +2260,7 @@ function _load_transformer_components_and_mappings(exporter::PSSEExporter)
         end
 
     return (transformers_with_numbers, transformers_3w_with_numbers,
-            transformer_ckt_mapping, transformer_3w_ckt_mapping)
+        transformer_ckt_mapping, transformer_3w_ckt_mapping)
 end
 
 """
@@ -2181,7 +2278,7 @@ function write_to_buffers!(
 
     # Load transformer components and create circuit ID mappings
     (transformers_with_numbers, transformers_3w_with_numbers,
-     transformer_ckt_mapping, transformer_3w_ckt_mapping) =
+        transformer_ckt_mapping, transformer_3w_ckt_mapping) =
         _load_transformer_components_and_mappings(exporter)
     if !exporter.md_valid
         _build_transformer_metadata!(
@@ -2214,7 +2311,17 @@ function write_to_buffers!(
             STAT = PSY.get_available(transformer) ? 1 : 0
 
             # Write record 1 (bus numbers, circuit ID, status, etc.)
-            _write_2w_transformer_record1!(io, exporter, I, J, K, CKT, transformer, NAME, STAT)
+            _write_2w_transformer_record1!(
+                io,
+                exporter,
+                I,
+                J,
+                K,
+                CKT,
+                transformer,
+                NAME,
+                STAT,
+            )
             # Write record 2 (impedance data)
             _write_2w_transformer_record2!(io, transformer)
             # Write record 3 (winding 1 data)
@@ -2237,7 +2344,17 @@ function write_to_buffers!(
             STAT = _calculate_3w_transformer_stat(transformer)
 
             # Write record 1 (bus numbers, circuit ID, status, etc.)
-            _write_2w_transformer_record1!(io, exporter, I, J, K, CKT, transformer, NAME, STAT)
+            _write_2w_transformer_record1!(
+                io,
+                exporter,
+                I,
+                J,
+                K,
+                CKT,
+                transformer,
+                NAME,
+                STAT,
+            )
             # Write record 2 (impedance data for 3W)
             _write_3w_transformer_record2!(io, transformer)
             # Collect and write winding records

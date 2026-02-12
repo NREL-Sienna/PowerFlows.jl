@@ -81,12 +81,12 @@ IS.@scoped_enum(
     ARC_FLOWS = 0,
     BRANCH_FLOWS = 1,
 )
-@doc"
- FlowReporting
+@doc "
+  FlowReporting
 
- Enumeration describing the type of flows reported in power flow results.
+  Enumeration describing the type of flows reported in power flow results.
 
- Values
- - ARC_FLOWS = 0: Report total flows corresponding to arcs.
- - BRANCH_FLOWS = 1: Report flows for individual branches.
-" FlowReporting
+  Values
+  - ARC_FLOWS = 0: Report total flows corresponding to arcs.
+  - BRANCH_FLOWS = 1: Report flows for individual branches.
+ " FlowReporting
