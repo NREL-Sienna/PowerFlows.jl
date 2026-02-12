@@ -850,16 +850,23 @@ end
 
 _get_2w_ang1(t::PSY.PhaseShiftingTransformer) = rad2deg(PSY.get_α(t))
 _get_2w_ang1(t::Union{PSY.Transformer2W, PSY.TapTransformer}) =
-    get(WINDING_GROUP_NUMBER_TO_DEGREES, PSY.get_winding_group_number(t).value, PSSE_DEFAULT)
+    get(
+        WINDING_GROUP_NUMBER_TO_DEGREES,
+        PSY.get_winding_group_number(t).value,
+        PSSE_DEFAULT,
+    )
 _get_2w_ang1(::PSY.TwoWindingTransformer) = 0.0
 
 _resolve_cod1_val(
     cod1_val::PSY.TransformerControlObjectiveModule.TransformerControlObjective,
     transformer,
 ) =
-    cod1_val ==
-    PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED ?
-    get_ext_key_or_default(transformer, "COD1") : cod1_val.value
+    if cod1_val ==
+       PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+        get_ext_key_or_default(transformer, "COD1")
+    else
+        cod1_val.value
+    end
 _resolve_cod1_val(cod1_val, _) = cod1_val
 
 function _get_2w_cod1(
@@ -1725,7 +1732,11 @@ function _write_regular_branch_record!(
     LEN = get_ext_key_or_default(branch, "LEN")
     R = PSY.get_r(branch)
     X = PSY.get_x(branch)
-    B = PSY.get_b(branch).from + PSY.get_b(branch).to
+    B = if branch isa PSY.TapTransformer
+        imag(PSY.get_primary_shunt(branch)) * 2
+    else
+        PSY.get_b(branch).from + PSY.get_b(branch).to
+    end
     GI = get_ext_key_or_default(branch, "GI")
     BI = get_ext_key_or_default(branch, "BI")
     GJ = get_ext_key_or_default(branch, "GJ")
@@ -1982,7 +1993,14 @@ function write_to_buffers!(
                 branch_type,
             )
         else
-            _write_regular_branch_record!(io, exporter, I, J, _psse_quote_string(BASE_CKT), branch)
+            _write_regular_branch_record!(
+                io,
+                exporter,
+                I,
+                J,
+                _psse_quote_string(BASE_CKT),
+                branch,
+            )
         end
     end
     end_group(io, md, exporter, "Non-Transformer Branch Data", true)
@@ -2155,13 +2173,6 @@ function _collect_winding_group!(
 end
 _collect_winding_group!(::AbstractDict, ::String, ::PSY.TwoWindingTransformer) = nothing
 
-_collect_tap!(
-    mapping::AbstractDict,
-    name::String,
-    t::Union{PSY.TapTransformer, PSY.PhaseShiftingTransformer},
-) = (mapping[name] = PSY.get_tap(t))
-_collect_tap!(::AbstractDict, ::String, ::PSY.TwoWindingTransformer) = nothing
-
 """Build all transformer-related metadata mappings (names, control objectives, winding groups, impedance, taps)."""
 function _build_transformer_metadata!(
     md::AbstractDict,
@@ -2184,9 +2195,6 @@ function _build_transformer_metadata!(
             name = PSY.get_name(transformer)
             _collect_control_objective!(control_objective_mapping, name, transformer)
             _collect_winding_group!(winding_group_category_mapping, name, transformer)
-            transformer_resistance_mapping[name] = PSY.get_r(transformer)
-            transformer_reactance_mapping[name] = PSY.get_x(transformer)
-            _collect_tap!(transformer_tap_mapping, name, transformer)
         end
         md["transformer_control_objective_mapping"] = control_objective_mapping
         md["transformer_winding_group_category_mapping"] = winding_group_category_mapping
