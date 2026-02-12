@@ -1,7 +1,7 @@
 name = "PowerFlows"
 uuid = "94fada2c-fd9a-4e89-8d82-81405f5cb4f6"
 authors = ["Jose Daniel Lara", "Gabriel Konar-Steenberg", "Luke Kiernan"]
-version = "0.14.0"
+version = "0.15.0"
 
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
@@ -29,7 +29,7 @@ LineSearches = "7.4.0"
 LinearAlgebra = "1"
 Logging = "1"
 PowerNetworkMatrices = "^0.18"
-PowerSystems = "5.3"
+PowerSystems = "5.5"
 SparseArrays = "1"
 StaticArrays = "1.9.13"
 julia = "^1.10"
