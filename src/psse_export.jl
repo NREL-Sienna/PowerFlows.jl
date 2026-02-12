@@ -1625,7 +1625,7 @@ function _load_transformer_components_and_mappings(exporter::PSSEExporter)
             )
         end
     
-    return (transformers_with_numbers, transformers_3w_with_numbers, 
+    return (transformers_with_numbers, transformers_3w_with_numbers,
             transformer_ckt_mapping, transformer_3w_ckt_mapping)
 end
 
@@ -1643,8 +1643,8 @@ function write_to_buffers!(
     write_v35_header(io, exporter, "Transformer Data")
 
     # Load transformer components and create circuit ID mappings
-    (transformers_with_numbers, transformers_3w_with_numbers, 
-     transformer_ckt_mapping, transformer_3w_ckt_mapping) = 
+    (transformers_with_numbers, transformers_3w_with_numbers,
+     transformer_ckt_mapping, transformer_3w_ckt_mapping) =
         _load_transformer_components_and_mappings(exporter)
     if !exporter.md_valid
         # Handle 2W transformers
