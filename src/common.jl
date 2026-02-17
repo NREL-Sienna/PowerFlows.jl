@@ -41,6 +41,29 @@ function _get_injections!(
     return
 end
 
+"""Compute per-bus active power range R_k = sum(P_max - P_setpoint) for generators at
+REF/PV buses. Used for headroom-proportional distributed slack."""
+function _compute_bus_active_power_range!(
+    bus_active_power_range::Matrix{Float64},
+    bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
+    sys::PSY.System,
+)
+    for source in PSY.get_available_components(PSY.StaticInjection, sys)
+        contributes_active_power(source) || continue
+        active_power_contribution_type(source) == PowerContributionType.INJECTION ||
+            continue
+        bus = PSY.get_bus(source)
+        PSY.get_bustype(bus) ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
+        limits = get_active_power_limits_for_power_flow(source)
+        range_k = limits.max - PSY.get_active_power(source)
+        range_k <= 0.0 && continue
+        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+        bus_active_power_range[bus_ix, 1] += range_k
+    end
+    return
+end
+
 function _get_withdrawals!(
     pf::PowerFlowEvaluationModel,
     bus_active_power_withdrawals::Vector{Float64},
