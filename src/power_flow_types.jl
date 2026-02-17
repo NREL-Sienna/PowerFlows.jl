@@ -261,6 +261,8 @@ for details.
 # Arguments
 - `exporter::Union{Nothing, PowerFlowEvaluationModel}`: An optional exporter for the power flow results.
     If not `nothing`, it should be a [`PSSEExportPowerFlow`](@ref). Default is `nothing`.
+- `calculate_loss_factors::Bool`: Whether to calculate DC loss factors after solving.
+    Uses the approximation `∂Loss/∂P = 2 · PTDFᵀ · diag(R) · PTDF · P`. Default is `false`.
 - `network_reductions::Vector{PNM.NetworkReduction}`: Network reductions to apply.
     Default is an empty vector.
 - `time_steps::Int`: Number of time steps to solve. Default is `1`.
@@ -270,6 +272,7 @@ for details.
 """
 @kwdef struct PTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+    calculate_loss_factors::Bool = false
     network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[]
     time_steps::Int = 1
     time_step_names::Vector{String} = String[]
@@ -289,6 +292,8 @@ where creating and storing the full PTDF matrix would be infeasible or slow. See
 # Arguments
 - `exporter::Union{Nothing, PowerFlowEvaluationModel}`: An optional exporter for the power flow results.
     If not `nothing`, it should be a [`PSSEExportPowerFlow`](@ref). Default is `nothing`.
+- `calculate_loss_factors::Bool`: Whether to calculate DC loss factors after solving.
+    Uses the approximation `∂Loss/∂P = 2 · PTDFᵀ · diag(R) · PTDF · P`. Default is `false`.
 - `network_reductions::Vector{PNM.NetworkReduction}`: Network reductions to apply.
     Default is an empty vector.
 - `time_steps::Int`: Number of time steps to solve. Default is `1`.
@@ -298,10 +303,14 @@ where creating and storing the full PTDF matrix would be infeasible or slow. See
 """
 @kwdef struct vPTDFDCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
+    calculate_loss_factors::Bool = false
     network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[]
     time_steps::Int = 1
     time_step_names::Vector{String} = String[]
     correct_bustypes::Bool = false
 end
+
+get_calculate_loss_factors(pf::PTDFDCPowerFlow) = pf.calculate_loss_factors
+get_calculate_loss_factors(pf::vPTDFDCPowerFlow) = pf.calculate_loss_factors
 
 # see also: PSSEExportPowerFlow in psse_export.jl
