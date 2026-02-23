@@ -1717,11 +1717,19 @@ end
 
 """Calculate the STAT field for a 3-winding transformer based on per-winding availability."""
 function _calculate_3w_transformer_stat(transformer::PSY.ThreeWindingTransformer)
-    if PSY.get_available_primary(transformer) == false
+    primary = PSY.get_available_primary(transformer)
+    secondary = PSY.get_available_secondary(transformer)
+    tertiary = PSY.get_available_tertiary(transformer)
+
+    if !primary && !secondary && !tertiary
+        return 0
+    elseif (!primary && !secondary) || (!primary && !tertiary) || (!secondary && !tertiary)
+        return 0
+    elseif !primary
         return 4
-    elseif PSY.get_available_secondary(transformer) == false
+    elseif !secondary
         return 2
-    elseif PSY.get_available_tertiary(transformer) == false
+    elseif !tertiary
         return 3
     else
         return PSY.get_available(transformer) ? 1 : 0
