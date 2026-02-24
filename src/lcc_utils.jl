@@ -157,6 +157,19 @@ function initialize_LCCParameters!(
 end
 
 function initialize_LCCParameters!(
+    ::TxSteppingPowerFlowData,
+    sys::PSY.System,
+    ::Dict{Int, Int},
+    ::Dict{Int, Int},
+)
+    lccs = collect(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys))
+    if !isempty(lccs)
+        @warn "TxSteppingPowerFlow does not support LCC lines; they will be ignored."
+    end
+    return
+end
+
+function initialize_LCCParameters!(
     data::ACPowerFlowData,
     sys::PSY.System,
     bus_lookup::Dict{Int, Int},
@@ -251,6 +264,13 @@ end
 
 lcc_vsc_fixed_injections!(
     ::ACPowerFlowData,
+    ::PSY.System,
+    ::Dict{Int, Int},
+    ::Dict{Int, Int},
+) = nothing
+
+lcc_vsc_fixed_injections!(
+    ::TxSteppingPowerFlowData,
     ::PSY.System,
     ::Dict{Int, Int},
     ::Dict{Int, Int},

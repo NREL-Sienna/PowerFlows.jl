@@ -34,6 +34,7 @@ import PowerFlows as PF
 # used to be public, no longer: import here so we can use in tests
 import PowerFlows: PowerFlowData
 import PowerFlows: ACPowerFlowData, PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData
+import PowerFlows: TxSteppingPowerFlowData
 import PowerFlows: solve_power_flow!, write_results
 
 const BASE_DIR = dirname(dirname(Base.find_package("PowerFlows")))

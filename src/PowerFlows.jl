@@ -13,6 +13,7 @@ export AbstractDCPowerFlow
 export PowerFlowEvaluationModel
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
+export TxSteppingPowerFlow
 export PSSEExportPowerFlow
 export PSSEExporter
 export update_exporter!
@@ -70,4 +71,8 @@ include("RobustHomotopy/HessianSolver/fixed_structure_CHOLMOD.jl")
 include("RobustHomotopy/HessianSolver/cholesky_solver.jl")
 include("RobustHomotopy/homotopy_hessian.jl")
 include("RobustHomotopy/robust_homotopy_method.jl")
+include("TxStepping/tx_stepping_state.jl")
+include("TxStepping/tx_stepping_residual.jl")
+include("TxStepping/tx_stepping_jacobian.jl")
+include("TxStepping/tx_stepping_solve_power_flow.jl")
 end

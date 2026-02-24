@@ -1304,6 +1304,108 @@ function write_results(
     )
 end
 
+function write_results(
+    ::TxSteppingPowerFlow,
+    sys::PSY.System,
+    data::TxSteppingPowerFlowData,
+    time_step::Int64,
+)
+    check_unit_setting(sys)
+    @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
+
+    bus_numbers = PNM.get_bus_axis(data.power_network_matrix)
+    sys_basepower = PSY.get_base_power(sys)
+
+    bus_df = DataFrames.DataFrame(;
+        bus_number = bus_numbers,
+        Vm = data.bus_magnitude[:, time_step],
+        θ = data.bus_angles[:, time_step],
+        P_gen = sys_basepower .* data.bus_active_power_injections[:, time_step],
+        P_load = sys_basepower .* data.bus_active_power_withdrawals[:, time_step],
+        P_net = sys_basepower .* (
+            data.bus_active_power_injections[:, time_step] .-
+            data.bus_active_power_withdrawals[:, time_step]
+        ),
+        Q_gen = sys_basepower .* data.bus_reactive_power_injections[:, time_step],
+        Q_load = sys_basepower .* data.bus_reactive_power_withdrawals[:, time_step],
+        Q_net = sys_basepower .* (
+            data.bus_reactive_power_injections[:, time_step] .-
+            data.bus_reactive_power_withdrawals[:, time_step]
+        ),
+    )
+    DataFrames.sort!(bus_df, :bus_number)
+
+    # No branch flows computed for TxStepping (yet)
+    branch_df = DataFrames.DataFrame(;
+        flow_name = String[],
+        bus_from = Int64[],
+        bus_to = Int64[],
+        P_from_to = Float64[],
+        Q_from_to = Float64[],
+        P_to_from = Float64[],
+        Q_to_from = Float64[],
+        P_losses = Float64[],
+        Q_losses = Float64[],
+    )
+
+    lcc_df = DataFrames.DataFrame(;
+        lcc_name = String[],
+        bus_from = Int64[],
+        bus_to = Int64[],
+        P_from_to = Float64[],
+        Q_from_to = Float64[],
+        P_to_from = Float64[],
+        Q_to_from = Float64[],
+    )
+
+    return Dict(
+        "bus_results" => bus_df,
+        "flow_results" => branch_df,
+        "lcc_results" => lcc_df,
+    )
+end
+
+function write_power_flow_solution!(
+    sys::PSY.System,
+    ::TxSteppingPowerFlow,
+    data::TxSteppingPowerFlowData,
+    max_iterations::Int,
+    time_step::Int = 1,
+)
+    check_unit_setting(sys)
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
+    bus_lookup = get_bus_lookup(data)
+
+    for (bus_number, reduced_buses) in PNM.get_bus_reduction_map(nrd)
+        if length(reduced_buses) == 0
+            bus = PSY.get_component(
+                PSY.ACBus,
+                sys,
+                first(
+                    PSY.get_name(b)
+                    for
+                    b in PSY.get_components(PSY.ACBus, sys) if
+                    PSY.get_number(b) == bus_number
+                ),
+            )
+            ix = bus_lookup[bus_number]
+            bustype = data.bus_type[ix, time_step]
+            if bustype == PSY.ACBusTypes.REF
+                P_gen = data.bus_active_power_injections[ix, time_step]
+                Q_gen = data.bus_reactive_power_injections[ix, time_step]
+                _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations)
+            elseif bustype == PSY.ACBusTypes.PV
+                Q_gen = data.bus_reactive_power_injections[ix, time_step]
+                PSY.set_angle!(bus, data.bus_angles[ix, time_step])
+                _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+            elseif bustype == PSY.ACBusTypes.PQ
+                PSY.set_magnitude!(bus, data.bus_magnitude[ix, time_step])
+                PSY.set_angle!(bus, data.bus_angles[ix, time_step])
+            end
+        end
+    end
+end
+
 """
      update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
 
