@@ -304,4 +304,38 @@ where creating and storing the full PTDF matrix would be infeasible or slow. See
     correct_bustypes::Bool = false
 end
 
+"""
+    TxSteppingPowerFlow <: PowerFlowEvaluationModel
+
+An evaluation model for AC power flow using a transformer-stepping homotopy continuation
+method. At lambda=1 the system is trivially solvable (all transformers become ideal, shunts
+removed, series admittances scaled up). Newton-Raphson is run at each lambda step, using
+the previous solution as the starting point, until lambda=0 recovers the original system.
+
+Uses a current-injection formulation with complex voltages `V` and reactive generation `q_g`
+as state variables. Requires `PowerNetworkMatrices.YbusSplit`.
+
+# Arguments
+- `time_steps::Int`: Number of time steps to solve. Default is `1`.
+- `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
+- `correct_bustypes::Bool`: Whether to automatically correct bus types. Default is `false`.
+- `solver_settings::Dict{Symbol, Any}`: Additional keyword arguments to pass to the solver.
+    Default is an empty dictionary.
+"""
+@kwdef struct TxSteppingPowerFlow <: PowerFlowEvaluationModel
+    time_steps::Int = 1
+    time_step_names::Vector{String} = String[]
+    correct_bustypes::Bool = false
+    solver_settings::Dict{Symbol, Any} = Dict{Symbol, Any}()
+end
+
+get_time_steps(pf::TxSteppingPowerFlow) = pf.time_steps
+get_time_step_names(pf::TxSteppingPowerFlow) = pf.time_step_names
+get_correct_bustypes(pf::TxSteppingPowerFlow) = pf.correct_bustypes
+get_solver_kwargs(pf::TxSteppingPowerFlow) = pf.solver_settings
+get_calculate_loss_factors(::TxSteppingPowerFlow) = false
+get_calculate_voltage_stability_factors(::TxSteppingPowerFlow) = false
+get_slack_participation_factors(::TxSteppingPowerFlow) = nothing
+get_network_reductions(::TxSteppingPowerFlow) = PNM.NetworkReduction[]
+
 # see also: PSSEExportPowerFlow in psse_export.jl

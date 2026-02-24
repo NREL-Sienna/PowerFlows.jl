@@ -169,6 +169,15 @@ const ABAPowerFlowData = PowerFlowData{
 }
 get_metadata_matrix(pfd::ABAPowerFlowData) = pfd.aux_network_matrix
 
+"""A type alias for a `PowerFlowData` struct whose type parameters
+are configured for the `TxSteppingPowerFlow` method."""
+const TxSteppingPowerFlowData = PowerFlowData{
+    TxSteppingPowerFlow,
+    <:PNM.YbusSplit,
+    Nothing,
+}
+get_metadata_matrix(pfd::TxSteppingPowerFlowData) = pfd.power_network_matrix
+
 # true getters for fields:
 get_pf(pfd::PowerFlowData) = pfd.pf
 get_bus_active_power_injections(pfd::PowerFlowData) = pfd.bus_active_power_injections
@@ -285,6 +294,14 @@ bus_count(::DCPowerFlow,
     power_network_matrix::PNM.PowerNetworkMatrix,
     aux_network_matrix::Union{PNM.PowerNetworkMatrix, Nothing}) =
     length(PNM.get_bus_axis(aux_network_matrix))
+
+arc_count(::TxSteppingPowerFlow,
+    ::PNM.PowerNetworkMatrix,
+    ::Union{PNM.PowerNetworkMatrix, Nothing}) = 0
+bus_count(::TxSteppingPowerFlow,
+    power_network_matrix::PNM.PowerNetworkMatrix,
+    ::Union{PNM.PowerNetworkMatrix, Nothing}) =
+    length(PNM.get_bus_axis(power_network_matrix))
 
 """
 Sets the two `PowerNetworkMatrix` fields and a few others (`time_steps`, `time_step_map`), 
@@ -630,6 +647,26 @@ function PowerFlowData(
 end
 
 """
+    PowerFlowData(pf::TxSteppingPowerFlow, sys::PSY.System) -> TxSteppingPowerFlowData
+
+Creates the structure for a TxStepping power flow calculation, given the
+[`System`](@extref PowerSystems.System) `sys`. Uses `PowerNetworkMatrices.YbusSplit`
+as the power network matrix. No arc admittance matrices are needed.
+"""
+function PowerFlowData(
+    pf::TxSteppingPowerFlow,
+    sys::PSY.System,
+)
+    power_network_matrix = PNM.YbusSplit(sys)
+    return make_and_initialize_power_flow_data(
+        pf,
+        sys,
+        power_network_matrix,
+        nothing,
+    )
+end
+
+"""
 Create an appropriate `PowerFlowContainer` for the given `PowerFlowEvaluationModel` and initialize it from the given `PSY.System`.
 
 Configuration options like `time_steps`, `time_step_names`, `network_reductions`, and
@@ -654,4 +691,7 @@ make_power_flow_container(pfem::PTDFDCPowerFlow, sys::PSY.System) =
     PowerFlowData(pfem, sys)
 
 make_power_flow_container(pfem::vPTDFDCPowerFlow, sys::PSY.System) =
+    PowerFlowData(pfem, sys)
+
+make_power_flow_container(pfem::TxSteppingPowerFlow, sys::PSY.System) =
     PowerFlowData(pfem, sys)
