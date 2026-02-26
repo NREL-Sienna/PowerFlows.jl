@@ -107,6 +107,7 @@ struct PowerFlowData{
     bus_reactive_power_constant_impedance_withdrawals::Matrix{Float64}
     bus_reactive_power_bounds::Matrix{Tuple{Float64, Float64}}
     bus_slack_participation_factors::SparseMatrixCSC{Float64, Int}
+    bus_active_power_range::Matrix{Float64}
     computed_generator_slack_participation_factors::Vector{
         Dict{Tuple{DataType, String}, Float64},
     }
@@ -330,6 +331,7 @@ function PowerFlowData(
         zeros(n_buses, n_time_steps), # bus_reactive_power_constant_impedance_withdrawals
         fill((-Inf, Inf), (n_buses, n_time_steps)), # bus_reactive_power_bounds
         spzeros(n_buses, n_time_steps), # bus_slack_participation_factors
+        zeros(n_buses, n_time_steps), # bus_active_power_range
         Vector{Dict{Tuple{DataType, String}, Float64}}(), # computed_generator_slack_participation_factors
         fill(PSY.ACBusTypes.PQ, (n_buses, n_time_steps)), # bus_type
         ones(n_buses, n_time_steps), # bus_magnitude

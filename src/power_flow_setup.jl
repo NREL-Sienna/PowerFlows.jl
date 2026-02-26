@@ -143,7 +143,12 @@ function initialize_power_flow_variables(pf::ACPowerFlow{T},
           "$(norm(residual.Rv, 2)) L2, " *
           "$(norm(residual.Rv, Inf)) L∞"
 
-    J = ACPowerFlowJacobian(data, time_step)
+    J = ACPowerFlowJacobian(
+        data,
+        residual.bus_slack_participation_factors,
+        residual.subnetworks,
+        time_step,
+    )
     J(time_step)
 
     validate_vms::Bool = get(

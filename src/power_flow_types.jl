@@ -106,6 +106,7 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     enhanced_flat_start::Bool
     robust_power_flow::Bool
     skip_redistribution::Bool
+    distribute_slack_proportional_to_headroom::Bool
     network_reductions::Vector{PNM.NetworkReduction}
     time_steps::Int
     time_step_names::Vector{String}
@@ -158,6 +159,7 @@ function ACPowerFlow{ACSolver}(;
     enhanced_flat_start::Bool = true,
     robust_power_flow::Bool = false,
     skip_redistribution::Bool = false,
+    distribute_slack_proportional_to_headroom::Bool = false,
     network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[],
     time_steps::Int = 1,
     time_step_names::Vector{String} = String[],
@@ -166,6 +168,12 @@ function ACPowerFlow{ACSolver}(;
 ) where {ACSolver <: ACPowerFlowSolverType}
     if calculate_loss_factors && ACSolver == LevenbergMarquardtACPowerFlow
         error("Loss factor calculation is not supported by the Levenberg-Marquardt solver.")
+    end
+    if distribute_slack_proportional_to_headroom &&
+       !isnothing(generator_slack_participation_factors)
+        error(
+            "Cannot use both distribute_slack_proportional_to_headroom and generator_slack_participation_factors.",
+        )
     end
     return ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
@@ -176,6 +184,7 @@ function ACPowerFlow{ACSolver}(;
         enhanced_flat_start,
         robust_power_flow,
         skip_redistribution,
+        distribute_slack_proportional_to_headroom,
         network_reductions,
         time_steps,
         time_step_names,
@@ -188,6 +197,9 @@ end
 ACPowerFlow(; kwargs...) = ACPowerFlow{NewtonRaphsonACPowerFlow}(; kwargs...)
 
 get_enhanced_flat_start(pf::ACPowerFlow) = pf.enhanced_flat_start
+get_distribute_slack_proportional_to_headroom(::PowerFlowEvaluationModel) = false
+get_distribute_slack_proportional_to_headroom(pf::ACPowerFlow) =
+    pf.distribute_slack_proportional_to_headroom
 get_robust_power_flow(pf::ACPowerFlow) = pf.robust_power_flow
 get_slack_participation_factors(pf::ACPowerFlow) = pf.generator_slack_participation_factors
 get_calculate_loss_factors(pf::ACPowerFlow) = pf.calculate_loss_factors

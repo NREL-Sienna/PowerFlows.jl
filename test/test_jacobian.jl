@@ -1,9 +1,17 @@
-function verify_jacobian(sys::PSY.System)
-    pf = PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = true)
+function verify_jacobian(
+    sys::PSY.System;
+    pf::PF.ACPowerFlow = PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        correct_bustypes = true,
+    ),
+)
     data = PF.PowerFlowData(pf, sys)
     time_step = 1
     residual = PF.ACPowerFlowResidual(data, time_step)
-    J = PF.ACPowerFlowJacobian(data, time_step)
+    J = PF.ACPowerFlowJacobian(data,
+        residual.bus_slack_participation_factors,
+        residual.subnetworks,
+        time_step,
+    )
     n_lccs =
         length(collect(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys)))
     n = 2 * length(collect(get_components(ACBus, sys))) + 4 * n_lccs
@@ -62,4 +70,21 @@ end
     s1 = _add_simple_source!(sys, b1, 0.0, 0.0)
     lcc = _add_simple_lcc!(sys, b2, b3, 0.05, 0.05, 0.08)
     # verify_jacobian(sys)
+end
+
+@testset "Jacobian verification with distributed slack" begin
+    sys = PSB.build_system(PSITestSystems, "c_sys14")
+    generators = collect(get_components(ThermalStandard, sys))
+    # Assign distinct nonzero participation factors to all generators (REF and PV buses).
+    # This exercises the cross-terms ∂F_P_k/∂x[2*ref-1] = -c_k for PV buses
+    # and the corrected REF diagonal ∂F_P_ref/∂x[2*ref-1] = -c_ref.
+    gspf = Dict(
+        (ThermalStandard, get_name(g)) => Float64(i)
+        for (i, g) in enumerate(generators)
+    )
+    pf = PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        correct_bustypes = true,
+        generator_slack_participation_factors = gspf,
+    )
+    verify_jacobian(sys; pf = pf)
 end

@@ -296,3 +296,49 @@ end
         end
     end
 end
+
+@testset "AC PF with headroom-proportional distributed slack" begin
+    for ACSolver in
+        filter(x -> !(x in (RobustHomotopyPowerFlow, LUACPowerFlow)), AC_SOLVERS_TO_TEST)
+        @testset "$(ACSolver)" begin
+            ACSolver == RobustHomotopyPowerFlow && continue
+            sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
+
+            # Introduce active power imbalance so slack distribution is nontrivial
+            g = first(
+                get_components(
+                    x -> get_bustype(get_bus(x)) == ACBusTypes.REF,
+                    ThermalStandard,
+                    sys,
+                ),
+            )
+            with_units_base(sys, UnitSystem.NATURAL_UNITS) do
+                set_active_power!(g, 20.0)
+            end
+
+            pf = ACPowerFlow{ACSolver}(;
+                correct_bustypes = true,
+                distribute_slack_proportional_to_headroom = true,
+            )
+            data = PowerFlowData(pf, sys)
+
+            # Record initial injections and headroom before solve
+            init_injections = copy(data.bus_active_power_injections[:, 1])
+            headroom = data.bus_active_power_range[:, 1]
+
+            converged = solve_power_flow!(data)
+            @test converged
+
+            # Check that slack is distributed proportional to headroom at participating buses
+            solved_injections = data.bus_active_power_injections[:, 1]
+            slack_provided = solved_injections .- init_injections
+            participating = findall(headroom .> 0.0)
+            @test length(participating) >= 2  # at least REF + one PV
+
+            # The ratio slack_provided[k] / headroom[k] should be the same for all
+            # participating buses
+            ratios = slack_provided[participating] ./ headroom[participating]
+            @test all(isapprox.(ratios, ratios[1]; atol = 1e-6, rtol = 0))
+        end
+    end
+end
