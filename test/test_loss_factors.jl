@@ -96,3 +96,101 @@ end
         end
     end
 end
+
+"""
+Compute DC loss factors via the element-wise summation formula:
+    ∂Loss/∂Pᵢ = Σₖ 2·Rₖ·PTDFₖᵢ·Σⱼ PTDFₖⱼ·Pⱼ
+Used as a reference implementation to validate the matrix-based `dc_loss_factors`.
+"""
+function _summation_dc_loss_factors(sys, data)
+    Rs = Dict{Tuple{Int, Int}, Float64}()
+    for line in get_components(PSY.Line, sys)
+        Rs[PNM.get_arc_tuple(line)] = get_r(line)
+    end
+    for comp_type in (PSY.TapTransformer, PSY.Transformer2W)
+        for line in get_components(comp_type, sys)
+            Rs[PNM.get_arc_tuple(line)] = PSY.get_r(line)
+        end
+    end
+    ptdf = data.power_network_matrix
+    n_buses = length(get_components(PSY.ACBus, sys))
+    injections = data.bus_active_power_injections .- data.bus_active_power_withdrawals
+    injections .+= data.bus_hvdc_net_power
+    loss_p = zeros(n_buses)
+    for i in 1:n_buses
+        loss_p[i] = sum(
+            2 * Rs[arc_tuple] * ptdf[arc_tuple, i] *
+            sum(ptdf[arc_tuple, j] * injections[j, 1] for j in 1:n_buses)
+            for arc_tuple in keys(Rs)
+        )
+    end
+    return loss_p, injections
+end
+
+@testset "compare summation DC loss factors to matrix" begin
+    sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
+    pf = PTDFDCPowerFlow(; time_steps = 1)
+    data = PF.PowerFlowData(pf, sys)
+    PF.solve_power_flow!(data)
+    loss_p, injections = _summation_dc_loss_factors(sys, data)
+    calculated_loss = PF.dc_loss_factors(data, injections)
+    @test isapprox(calculated_loss[:, 1], loss_p; atol = 1e-10)
+end
+
+@testset "compare summation DC loss factors to vPTDF matrix" begin
+    sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
+    pf = vPTDFDCPowerFlow(; time_steps = 1)
+    data = PF.PowerFlowData(pf, sys)
+    PF.solve_power_flow!(data)
+    loss_p, injections = _summation_dc_loss_factors(sys, data)
+    calculated_loss = PF.dc_loss_factors(data, injections)
+    @test isapprox(calculated_loss[:, 1], loss_p; atol = 1e-10)
+end
+
+@testset "DC loss factors via PTDFDCPowerFlow pipeline" begin
+    sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
+
+    # With calculate_loss_factors = true, loss_factors should be populated
+    pf_lf = PTDFDCPowerFlow(; calculate_loss_factors = true)
+    data_lf = PowerFlowData(pf_lf, sys)
+    solve_power_flow!(data_lf)
+    @test data_lf.loss_factors !== nothing
+    n_buses = length(get_components(PSY.ACBus, sys))
+    @test size(data_lf.loss_factors) == (n_buses, 1)
+
+    # Compare against manual call to dc_loss_factors
+    injections = data_lf.bus_active_power_injections .- data_lf.bus_active_power_withdrawals
+    injections .+= data_lf.bus_hvdc_net_power
+    manual_lf = PF.dc_loss_factors(data_lf, injections)
+    @test isapprox(data_lf.loss_factors, manual_lf; atol = 1e-10)
+
+    # Default (calculate_loss_factors = false) should leave loss_factors as nothing
+    pf_no_lf = PTDFDCPowerFlow()
+    data_no_lf = PowerFlowData(pf_no_lf, sys)
+    solve_power_flow!(data_no_lf)
+    @test isnothing(data_no_lf.loss_factors)
+end
+
+@testset "DC loss factors via vPTDFDCPowerFlow pipeline" begin
+    sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
+
+    # With calculate_loss_factors = true, loss_factors should be populated
+    pf_lf = vPTDFDCPowerFlow(; calculate_loss_factors = true)
+    data_lf = PowerFlowData(pf_lf, sys)
+    solve_power_flow!(data_lf)
+    @test data_lf.loss_factors !== nothing
+    n_buses = length(get_components(PSY.ACBus, sys))
+    @test size(data_lf.loss_factors) == (n_buses, 1)
+
+    # Compare against PTDFDCPowerFlow result (should match)
+    pf_ptdf = PTDFDCPowerFlow(; calculate_loss_factors = true)
+    data_ptdf = PowerFlowData(pf_ptdf, sys)
+    solve_power_flow!(data_ptdf)
+    @test isapprox(data_lf.loss_factors, data_ptdf.loss_factors; atol = 1e-10)
+
+    # Default (calculate_loss_factors = false) should leave loss_factors as nothing
+    pf_no_lf = vPTDFDCPowerFlow()
+    data_no_lf = PowerFlowData(pf_no_lf, sys)
+    solve_power_flow!(data_no_lf)
+    @test isnothing(data_no_lf.loss_factors)
+end
