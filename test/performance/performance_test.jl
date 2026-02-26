@@ -1,6 +1,17 @@
 precompile = @timed using PowerFlows
 
+function is_running_on_ci()
+    return get(ENV, "CI", "false") == "true" || haskey(ENV, "GITHUB_ACTIONS")
+end
+
+using Dates
+
+pushed_to_args = false
 open("precompile_time.txt", "a") do io
+    if length(ARGS) == 0 && !is_running_on_ci()
+        pushed_to_args = true
+        push!(ARGS, "Local Test at $(Dates.now())")
+    end
     write(io, "| $(ARGS[1]) | $(precompile.time) |\n")
 end
 
@@ -44,4 +55,15 @@ for (group, name) in systems
             end
         end
     end
+end
+
+if !is_running_on_ci()
+    for file in ["precompile_time.txt", "solve_time.txt"]
+        name = replace(file, "_" => " ")[begin:(end - 4)]
+        println("$name:")
+        for line in eachline(open(file))
+            println("\t", line)
+        end
+    end
+    pushed_to_args && pop!(ARGS)
 end
