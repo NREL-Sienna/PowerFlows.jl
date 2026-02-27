@@ -73,6 +73,8 @@ the respective type of power flow evaluations.
         matrix containing the active power flows measured at the `to` bus.
 - `arc_reactive_power_flow_to_from::Matrix{Float64}`:
         matrix containing the reactive power flows measured at the `to` bus.
+- `branch_angle_differences::Matrix{Float64}`:
+        matrix containing the voltage angle difference (θ_from − θ_to) across each arc.
 - `generic_hvdc_flows::Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}`:
         dictionary mapping each generic HVDC line (represented as a tuple of the from and to bus
         numbers) to a tuple of `(P_from_to, P_to_from)` active power flows.
@@ -118,6 +120,7 @@ struct PowerFlowData{
     arc_reactive_power_flow_from_to::Matrix{Float64}
     arc_active_power_flow_to_from::Matrix{Float64}
     arc_reactive_power_flow_to_from::Matrix{Float64}
+    branch_angle_differences::Matrix{Float64}
     generic_hvdc_flows::Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}
     bus_hvdc_net_power::Matrix{Float64}
     time_step_map::Dict{Int, String}
@@ -198,6 +201,7 @@ get_arc_active_power_flow_to_from(pfd::PowerFlowData) =
     pfd.arc_active_power_flow_to_from
 get_arc_reactive_power_flow_to_from(pfd::PowerFlowData) =
     pfd.arc_reactive_power_flow_to_from
+get_branch_angle_differences(pfd::PowerFlowData) = pfd.branch_angle_differences
 get_time_step_map(pfd::PowerFlowData) = pfd.time_step_map
 get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
 get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
@@ -340,6 +344,7 @@ function PowerFlowData(
         zeros(n_arcs, n_time_steps), # arc_reactive_power_flow_from_to
         zeros(n_arcs, n_time_steps), # arc_active_power_flow_to_from
         zeros(n_arcs, n_time_steps), # arc_reactive_power_flow_to_from
+        zeros(n_arcs, n_time_steps), # branch_angle_differences
         Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}(), # generic_hvdc_flows
         zeros(n_buses, n_time_steps), # bus_hvdc_net_power
         time_step_map,
@@ -629,6 +634,43 @@ function PowerFlowData(
         power_network_matrix,
         aux_network_matrix,
     )
+end
+
+"""Compute branch angle differences for all arcs and all time steps, looking up
+bus indices from the arc axis and bus lookup stored in `data`. Used by DC solvers."""
+function _compute_branch_angle_differences_from_data!(
+    data::PowerFlowData{T, M, N},
+) where {T <: PowerFlowEvaluationModel, M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+    arc_axis = get_arc_axis(data)
+    bus_lookup = get_bus_lookup(data)
+    n_time_steps = size(data.branch_angle_differences, 2)
+    for (arc_ix, arc) in enumerate(arc_axis)
+        from_ix = bus_lookup[first(arc)]
+        to_ix = bus_lookup[last(arc)]
+        for t in 1:n_time_steps
+            data.branch_angle_differences[arc_ix, t] =
+                data.bus_angles[from_ix, t] - data.bus_angles[to_ix, t]
+        end
+    end
+    return
+end
+
+"""Compute branch angle differences using precomputed from/to bus index vectors
+over specified time steps. Used by the AC solver where `fb_ix`/`tb_ix` are
+already available from the branch flow calculation."""
+function _compute_branch_angle_differences_from_indices!(
+    data::PowerFlowData{T, M, N},
+    fb_ix::Vector{Int},
+    tb_ix::Vector{Int},
+    time_steps::Vector{Int},
+) where {T <: PowerFlowEvaluationModel, M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+    for (arc_ix, (f, t_bus)) in enumerate(zip(fb_ix, tb_ix))
+        for t in time_steps
+            data.branch_angle_differences[arc_ix, t] =
+                data.bus_angles[f, t] - data.bus_angles[t_bus, t]
+        end
+    end
+    return
 end
 
 """
