@@ -43,6 +43,10 @@
         for name in names(full_row)
             if name == "flow_name"
                 @test full_row[name] == reduced_row[name]
+            elseif name == "angle_difference"
+                # Angle differences across series-reduced branches are inherently
+                # different because the reduction changes the network topology.
+                continue
             else
                 @test isapprox(full_row[name], reduced_row[name])
             end
