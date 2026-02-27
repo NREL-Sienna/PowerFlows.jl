@@ -56,7 +56,7 @@ the respective type of power flow evaluations.
 - `bus_reactive_power_constant_impedance_withdrawals::Matrix{Float64}`:  
         matrix containing the bus reactive power constant impedance
         withdrawals.
-- `bus_reactive_power_bounds::Matrix{Float64}`:
+- `bus_reactive_power_bounds::Matrix{Tuple{Float64, Float64}}`:
         matrix containing upper and lower bounds for the reactive supply at each
         bus at each time period.
 - `bus_type::Matrix{PSY.ACBusTypes}`:
