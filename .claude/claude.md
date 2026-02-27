@@ -1,6 +1,6 @@
 # PowerFlows.jl Repository Guide
 
-> **Development Guidelines:** For code development preferences, style conventions, and best practices for projects using Sienna, refer to [Sienna.md](./Sienna.md).
+> **Development Guidelines:** Always load [Sienna.md](./Sienna.md) development preferences, style conventions, and best practices for projects using Sienna. Before running tests confirm that the [Sienna.md](./Sienna.md) file has been read.
 
 ## Overview
 
