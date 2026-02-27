@@ -89,3 +89,18 @@
         @test isapprox(1 / basepower .* net_flow_tf, -flows[:, i], atol = 1e-5)
     end
 end
+
+@testset "MULTI-PERIOD branch_angle_differences validation" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    time_steps = 24
+    data = PowerFlowData(
+        DCPowerFlow(; time_steps = time_steps, correct_bustypes = true),
+        sys,
+    )
+    prepare_ts_data!(data, time_steps)
+    solve_power_flow!(data)
+
+    n_arcs = length(PF.get_arc_axis(data))
+    @test size(data.branch_angle_differences) == (n_arcs, time_steps)
+    validate_branch_angle_differences(data, [1, 12, 24])
+end

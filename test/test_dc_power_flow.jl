@@ -200,3 +200,20 @@ end
         atol = 1e-6,
     )
 end
+
+@testset "DC branch_angle_differences validation" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
+        data = PowerFlowData(T(; correct_bustypes = true), sys)
+        solve_power_flow!(data)
+        validate_branch_angle_differences(data, [1])
+    end
+
+    # DataFrame column check
+    results = solve_power_flow(
+        DCPowerFlow(; correct_bustypes = true),
+        sys,
+        PF.FlowReporting.ARC_FLOWS,
+    )
+    @test :angle_difference in propertynames(results["1"]["flow_results"])
+end

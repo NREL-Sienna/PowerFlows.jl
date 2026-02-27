@@ -211,6 +211,8 @@ function solve_power_flow!(
     data.arc_active_power_flow_to_from .= real.(Stf)
     data.arc_reactive_power_flow_to_from .= imag.(Stf)
 
+    _compute_branch_angle_differences_from_indices!(data, fb_ix, tb_ix, sorted_time_steps)
+
     data.converged .= ts_converged
 
     return all(data.converged)

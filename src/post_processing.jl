@@ -747,6 +747,7 @@ function _allocate_results_data(
     arc_reactive_power_flow_to_from::Vector{Float64},
     arc_active_power_losses::Vector{Float64},
     arc_reactive_power_losses::Vector{Float64},
+    angle_difference::Vector{Float64},
     time_step::Int,
 )
     bus_df = DataFrames.DataFrame(;
@@ -772,6 +773,7 @@ function _allocate_results_data(
         Q_to_from = sys_basepower .* arc_reactive_power_flow_to_from,
         P_losses = sys_basepower .* arc_active_power_losses,
         Q_losses = sys_basepower .* arc_reactive_power_losses,
+        angle_difference = angle_difference,
     )
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
@@ -806,6 +808,7 @@ function _allocate_branch_vectors(nrd::PNM.NetworkReductionData)
     branch_Q_to_from = zeros(Float64, n_branches)
     branch_P_losses = zeros(Float64, n_branches)
     branch_Q_losses = zeros(Float64, n_branches)
+    branch_angle_diff = zeros(Float64, n_branches)
     return branch_names,
     from_bus,
     to_bus,
@@ -814,7 +817,8 @@ function _allocate_branch_vectors(nrd::PNM.NetworkReductionData)
     branch_P_to_from,
     branch_Q_to_from,
     branch_P_losses,
-    branch_Q_losses
+    branch_Q_losses,
+    branch_angle_diff
 end
 
 function _post_process_flows(
@@ -826,6 +830,7 @@ function _post_process_flows(
     arc_Q_to_from::Vector{Float64},
     arc_P_losses::Vector{Float64},
     arc_Q_losses::Vector{Float64},
+    arc_angle_diff::Vector{Float64},
 )
     arc_lookup = get_arc_lookup(data)
     n_arcs = length(arc_lookup)
@@ -845,7 +850,8 @@ function _post_process_flows(
     arc_P_to_from,
     arc_Q_to_from,
     arc_P_losses,
-    arc_Q_losses
+    arc_Q_losses,
+    arc_angle_diff
 end
 
 function _post_process_flows(
@@ -857,6 +863,7 @@ function _post_process_flows(
     arc_Q_to_from::Vector{Float64},
     arc_P_losses::Vector{Float64},
     arc_Q_losses::Vector{Float64},
+    arc_angle_diff::Vector{Float64},
 )
     nrd = data.power_network_matrix.network_reduction_data
     branch_names,
@@ -867,7 +874,8 @@ function _post_process_flows(
     branch_P_to_from,
     branch_Q_to_from,
     branch_P_losses,
-    branch_Q_losses = _allocate_branch_vectors(nrd)
+    branch_Q_losses,
+    branch_angle_diff = _allocate_branch_vectors(nrd)
     arc_lookup = get_arc_lookup(data)
     ix_branch = 1
     for map in [
@@ -928,6 +936,7 @@ function _post_process_flows(
                 branch_Q_to_from[ix_branch] = Q_to_from
                 branch_P_losses[ix_branch] = P_loss
                 branch_Q_losses[ix_branch] = Q_loss
+                branch_angle_diff[ix_branch] = arc_angle_diff[ix_arc]
                 ix_branch += 1
             end
         end
@@ -943,7 +952,8 @@ function _post_process_flows(
     branch_P_to_from,
     branch_Q_to_from,
     branch_P_losses,
-    branch_Q_losses
+    branch_Q_losses,
+    branch_angle_diff
 end
 
 function _post_process_entry_flows(
@@ -1187,7 +1197,8 @@ function write_results(
         P_to_from,
         Q_to_from,
         P_losses,
-        Q_losses = _post_process_flows(
+        Q_losses,
+        angle_diff = _post_process_flows(
             data,
             Val(flow_reporting),
             data.arc_active_power_flow_from_to[:, i],
@@ -1196,6 +1207,7 @@ function write_results(
             data.arc_reactive_power_flow_to_from[:, i],
             zeros(size(data.arc_active_power_flow_from_to[:, i])),
             zeros(size(data.arc_reactive_power_flow_from_to[:, i])),
+            data.branch_angle_differences[:, i],
         )
 
         temp_dict = _allocate_results_data(
@@ -1218,6 +1230,7 @@ function write_results(
             Q_to_from,
             P_losses,
             Q_losses,
+            angle_diff,
             i,
         )
         result_dict[get_time_step_map(data)[i]] = temp_dict
@@ -1300,6 +1313,7 @@ function write_results(
         data.arc_reactive_power_flow_to_from[:, time_step],
         arc_active_power_losses,
         arc_reactive_power_losses,
+        data.branch_angle_differences[:, time_step],
         time_step,
     )
 end
