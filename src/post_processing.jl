@@ -347,15 +347,61 @@ function _reactive_power_redistribution_pv(
 end
 
 """
-    _set_series_voltages_and_flows!(
-        sys::PSY.System,
-        segment_sequence::PNM.BranchesSeries,
-        equivalent_arc::Tuple{Int, Int},
-        V_endpoints::Tuple{ComplexF64, ComplexF64},
-        temp_bus_map::Dict{Int, String},
-    )
+    _solve_series_interior_voltages(segment_sequence, equivalent_arc, V_endpoints)
 
-Calculate series voltages at buses removed in degree 2 reduction.
+Solve for the complex voltages at the interior nodes of a series chain by constructing and
+solving the tridiagonal system. Returns a `Vector{ComplexF64}` of length `n-1` where `n`
+is the number of segments (i.e. one voltage per interior node). See the docstring of
+[`_set_series_interior_voltages!`](@ref) for the mathematical derivation.
+"""
+function _solve_series_interior_voltages(
+    segment_sequence::PNM.BranchesSeries,
+    equivalent_arc::Tuple{Int, Int},
+    V_endpoints::Tuple{ComplexF64, ComplexF64},
+)
+    chain_len = PNM.length(segment_sequence)
+    nbuses = chain_len + 1
+    d = zeros(ComplexF64, nbuses - 2)
+    dl, du = zeros(ComplexF64, nbuses - 3), zeros(ComplexF64, nbuses - 3)
+    b = zeros(ComplexF64, nbuses - 2)
+    expected_from = equivalent_arc[1]
+    y21_first, y12_last = zero(ComplexF64), zero(ComplexF64)
+    for (i, segment) in enumerate(segment_sequence)
+        (segment_from, segment_to) = PNM.get_arc_tuple(segment)
+        reversed = (segment_from != expected_from)
+        @assert (!reversed) || (segment_to == expected_from)
+        if !reversed
+            (y11, y12, y21, y22) = PNM.ybus_branch_entries(segment)
+        else
+            (y11, y12, y21, y22) = reverse(PNM.ybus_branch_entries(segment))
+            (segment_from, segment_to) = (segment_to, segment_from)
+        end
+        if i != 1 && i != chain_len
+            du[i - 1] += y12
+            dl[i - 1] += y21
+        end
+        if i != 1
+            d[i - 1] += y11
+        else
+            y21_first = y21
+        end
+        if i != chain_len
+            d[i] += y22
+        else
+            y12_last = y12
+        end
+        expected_from = segment_to
+    end
+    A = LinearAlgebra.Tridiagonal(dl, d, du)
+    b[1] -= y21_first * V_endpoints[1]
+    b[end] -= y12_last * V_endpoints[2]
+    return A \ b
+end
+
+"""
+    _set_series_interior_voltages!(sys, segment_sequence, equivalent_arc, V_endpoints, temp_bus_map)
+
+Set the voltages at interior buses of a series chain from the solved interior voltages.
 
 # Method
 
@@ -390,102 +436,144 @@ entries ``y_{tf}^{i+1}``, and superdiagonal entries ``y_{ft}^i``.
 In the implementation, ``y_{11}`` is used instead of ``y_{ff}``, ``y_{12}`` instead of
 ``y_{ft}``, etc.
 """
-function _set_series_voltages_and_flows!(
+function _set_series_interior_voltages!(
     sys::PSY.System,
     segment_sequence::PNM.BranchesSeries,
     equivalent_arc::Tuple{Int, Int},
     V_endpoints::Tuple{ComplexF64, ComplexF64},
     temp_bus_map::Dict{Int, String},
 )
-    check_unit_setting(sys)
-    chain_len = PNM.length(segment_sequence)
-    nbuses = chain_len + 1
-    # we find the voltages at interior nodes by solving Av = b, where A is tri-diagonal.
-    # diagonal elements of A are: y_11 of "out" branch + y_22 of "in" branch.
-    # above/below diagonal elements are y_12/y_21 of the interior segments
-    d = zeros(ComplexF64, nbuses - 2)
-    dl, du = zeros(ComplexF64, nbuses - 3), zeros(ComplexF64, nbuses - 3)
-    b = zeros(ComplexF64, nbuses - 2)
-    expected_from = equivalent_arc[1]
-    y21_first, y12_last = zero(ComplexF64), zero(ComplexF64)
-    for (i, segment) in enumerate(segment_sequence)
-        # make sure segments are all oriented in the same direction.
-        (segment_from, segment_to) = PNM.get_arc_tuple(segment)
-        reversed = (segment_from != expected_from)
-        @assert (!reversed) || (segment_to == expected_from)
-        if !reversed
-            (y11, y12, y21, y22) = PNM.ybus_branch_entries(segment)
-        else
-            (y11, y12, y21, y22) = reverse(PNM.ybus_branch_entries(segment))
-            (segment_from, segment_to) = (segment_to, segment_from)
-        end
-        if i != 1 && i != chain_len
-            du[i - 1] += y12
-            dl[i - 1] += y21
-        end
-        if i != 1
-            d[i - 1] += y11
-        else
-            y21_first = y21
-        end
-        if i != chain_len
-            d[i] += y22
-        else
-            y12_last = y12
-        end
-        expected_from = segment_to
-    end
-    A = LinearAlgebra.Tridiagonal(dl, d, du)
-    # if only 2 segments, these two contributions hit the same entry. thus -= c, not = -c.
-    b[1] -= y21_first * V_endpoints[1]
-    b[end] -= y12_last * V_endpoints[2]
-    x = A \ b
-    prev_bus_no, current_bus_no = equivalent_arc[1], -1
-    prev_V, current_V = V_endpoints[1], zero(ComplexF64)
-    # set the voltages at the interior nodes.
-    # number the buses in series in order: 0, 1, 2, ... nbuses-1
-    # current here is i, prev is i-1.
+    x = _solve_series_interior_voltages(segment_sequence, equivalent_arc, V_endpoints)
+    prev_bus_no = equivalent_arc[1]
     for (i, segment) in enumerate(segment_sequence)
         (segment_from, segment_to) = PNM.get_arc_tuple(segment)
         reversed = segment_from != prev_bus_no
-        current_bus_no = reversed ? segment_from : segment_to
-
-        current_bus = PSY.get_component(PSY.ACBus, sys, temp_bus_map[current_bus_no])
-        current_V = (i == length(segment_sequence)) ? V_endpoints[2] : x[i]
-        set_voltage!(current_bus, current_V) # set voltage at bus i
-
-        (V_from, V_to) = reversed ? (current_V, prev_V) : (prev_V, current_V)
-        S = get_segment_flow(segment, V_from, V_to) # set flow at segment between i-1 and i.
-        set_power_flow!(segment, S)
-
-        prev_bus_no = current_bus_no
-        if i < length(segment_sequence)
-            prev_V = x[i]
+        current_bus_no = if reversed
+            segment_from
+        else
+            segment_to
         end
+        if i < length(segment_sequence)
+            # Interior bus — set its voltage.
+            current_bus = PSY.get_component(PSY.ACBus, sys, temp_bus_map[current_bus_no])
+            set_voltage!(current_bus, x[i])
+        end
+        prev_bus_no = current_bus_no
     end
     return
 end
 
-"""Set the power flow in the arcs that remain after network reduction. Called on the
-`direct_branch_map` and `transformer3W_map` dictionaries."""
-function set_branch_flows_for_dict!(
-    d::Dict{Tuple{Int, Int}, PSY.ACTransmission},
+"""
+    _segment_flow_entry(segment, V_from, V_to)
+
+Compute a `BranchFlowEntry` for a single segment given its endpoint voltages. Returns the
+from-to and to-from complex power flows, plus losses.
+"""
+function _segment_flow_entry(
+    segment::Union{PSY.ACTransmission, PNM.ThreeWindingTransformerWinding},
+    V_from::ComplexF64,
+    V_to::ComplexF64,
+)
+    (y11, y12, y21, y22) = PNM.ybus_branch_entries(segment)
+    S_ft = V_from * conj(y11 * V_from + y12 * V_to)
+    S_tf = V_to * conj(y21 * V_from + y22 * V_to)
+    arc_tuple = PNM.get_arc_tuple(segment)
+    return BranchFlowEntry((
+        PNM.get_name(segment),
+        arc_tuple[1], arc_tuple[2],
+        real(S_ft), real(S_tf), real(S_ft) + real(S_tf),
+        imag(S_ft), imag(S_tf), imag(S_ft) + imag(S_tf),
+    ))
+end
+
+"""
+    _get_arc_endpoint_voltages(data, arc, time_step)
+
+Look up the complex voltages at the two endpoints of an arc from the solved power flow data.
+"""
+function _get_arc_endpoint_voltages(
     data::ACPowerFlowData,
+    arc::Tuple{Int, Int},
     time_step::Int,
 )
-    arc_lookup = get_arc_lookup(data)
-    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
-    for (arc, br) in d
-        @assert PNM.get_arc_tuple(br, nrd) == arc "disagreement between keys of " *
-                                                  "map and physical arcs at arc $arc"
-        @assert arc in keys(arc_lookup) "disagreement between keys of " *
-                                        "map and arc axis at arc $arc"
-        arc_ix = arc_lookup[arc]
-        p_branch = data.arc_active_power_flow_from_to[arc_ix, time_step]
-        q_branch = data.arc_reactive_power_flow_from_to[arc_ix, time_step]
-        # TODO: now br could be a BranchesParallel or a ThreeWindingTransformerWinding object.
-        set_power_flow!(br, p_branch + im * q_branch)
+    # NRD arc tuples use reduced-network bus numbers, which are direct keys in bus_lookup.
+    bus_lookup = get_bus_lookup(data)
+    ix_from = bus_lookup[arc[1]]
+    ix_to = bus_lookup[arc[2]]
+    V_from =
+        data.bus_magnitude[ix_from, time_step] *
+        exp(im * data.bus_angles[ix_from, time_step])
+    V_to =
+        data.bus_magnitude[ix_to, time_step] *
+        exp(im * data.bus_angles[ix_to, time_step])
+    return (V_from, V_to)
+end
+
+"""
+    _compute_segment_flows(arc_entry, data, arc, time_step) -> Vector{BranchFlowEntry}
+
+Compute per-segment branch flow entries from arc-level data and endpoint voltages.
+Dispatches on the arc entry type (direct, 3WT, parallel, series).
+"""
+function _compute_segment_flows(
+    arc_entry::Union{PSY.ACTransmission, PNM.ThreeWindingTransformerWinding},
+    data::ACPowerFlowData,
+    arc::Tuple{Int, Int},
+    time_step::Int,
+)
+    (V_from, V_to) = _get_arc_endpoint_voltages(data, arc, time_step)
+    return [_segment_flow_entry(arc_entry, V_from, V_to)]
+end
+
+function _compute_segment_flows(
+    arc_entry::PNM.BranchesParallel,
+    data::ACPowerFlowData,
+    arc::Tuple{Int, Int},
+    time_step::Int,
+)
+    (V_from, V_to) = _get_arc_endpoint_voltages(data, arc, time_step)
+    entries = BranchFlowEntry[]
+    for segment in arc_entry
+        entry = _segment_flow_entry(segment, V_from, V_to)
+        push!(entries, entry)
     end
+    return entries
+end
+
+function _compute_segment_flows(
+    arc_entry::PNM.BranchesSeries,
+    data::ACPowerFlowData,
+    arc::Tuple{Int, Int},
+    time_step::Int,
+)
+    V_endpoints = _get_arc_endpoint_voltages(data, arc, time_step)
+    x = _solve_series_interior_voltages(arc_entry, arc, V_endpoints)
+    entries = BranchFlowEntry[]
+    prev_bus_no = arc[1]
+    prev_V = V_endpoints[1]
+    for (i, segment) in enumerate(arc_entry)
+        (segment_from, segment_to) = PNM.get_arc_tuple(segment)
+        reversed = segment_from != prev_bus_no
+        current_bus_no = reversed ? segment_from : segment_to
+        current_V = (i == length(arc_entry)) ? V_endpoints[2] : x[i]
+
+        (V_from, V_to) = reversed ? (current_V, prev_V) : (prev_V, current_V)
+        if segment isa PNM.BranchesParallel
+            # All branches in a BranchesParallel share the same arc orientation,
+            # so _segment_flow_entry works directly on each individual branch.
+            for branch in segment
+                push!(entries, _segment_flow_entry(branch, V_from, V_to))
+            end
+        else
+            push!(entries, _segment_flow_entry(segment, V_from, V_to))
+        end
+
+        prev_bus_no = current_bus_no
+        if i < length(arc_entry)
+            prev_V = x[i]
+        end
+    end
+    return entries
 end
 
 """
@@ -565,15 +653,24 @@ function write_power_flow_solution!(
     end
 
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
-    both_branch_types = merge(
-        PNM.get_direct_branch_map(nrd),
-        PNM.get_transformer3W_map(nrd),
-    )
-    set_branch_flows_for_dict!(
-        both_branch_types,
-        data,
-        time_step,
-    )
+    arc_lookup = get_arc_lookup(data)
+
+    # Set flows for direct branches and 3WT windings.
+    # Assert that voltage-recomputed flows match pre-computed arc-level flows.
+    for (arc, branch) in
+        merge(PNM.get_direct_branch_map(nrd), PNM.get_transformer3W_map(nrd))
+        flow_entries = _compute_segment_flows(branch, data, arc, time_step)
+        @assert length(flow_entries) == 1
+        flow_entry = flow_entries[1]
+        arc_ix = arc_lookup[arc]
+        p_arc = data.arc_active_power_flow_from_to[arc_ix, time_step]
+        q_arc = data.arc_reactive_power_flow_from_to[arc_ix, time_step]
+        @assert isapprox(flow_entry.P_from_to, p_arc; atol = 1e-3) "Flow mismatch at " *
+                                                                   "arc $arc: recomputed P=$(flow_entry.P_from_to), stored P=$p_arc"
+        @assert isapprox(flow_entry.Q_from_to, q_arc; atol = 1e-3) "Flow mismatch at " *
+                                                                   "arc $arc: recomputed Q=$(flow_entry.Q_from_to), stored Q=$q_arc"
+        set_power_flow!(branch, flow_entry.P_from_to + im * flow_entry.Q_from_to)
+    end
 
     if get_lcc_count(data) > 0
         # TODO LCCs and network reductions.
@@ -601,33 +698,61 @@ function write_power_flow_solution!(
         end
     end
 
-    # calculate the bus voltages at buses removed in degree 2 reduction.
+    # Series branches: set interior bus voltages, then compute and set flows.
     bus_lookup = get_bus_lookup(data)
     for (equivalent_arc, segments) in PNM.get_series_branch_map(nrd)
-        (bus_from, bus_to) = equivalent_arc
-        (ix_from, ix_to) = (bus_lookup[bus_from], bus_lookup[bus_to])
-        Vm_endpoints = (data.bus_magnitude[ix_from], data.bus_magnitude[ix_to])
-        Va_endpoints = (data.bus_angles[ix_from], data.bus_angles[ix_to])
-        V_endpoints = Vm_endpoints .* exp.(im .* Va_endpoints)
-        _set_series_voltages_and_flows!(
-            sys,
-            segments,
-            equivalent_arc,
-            V_endpoints,
-            temp_bus_map,
+        V_endpoints = _get_arc_endpoint_voltages(data, equivalent_arc, time_step)
+        _set_series_interior_voltages!(
+            sys, segments, equivalent_arc, V_endpoints, temp_bus_map,
         )
+        flow_entries = _compute_segment_flows(segments, data, equivalent_arc, time_step)
+        _apply_flow_entries!(flow_entries, segments)
     end
 
-    # note: this assumes all bus voltages have been written to the system objects already.
+    # Parallel branches: compute individual flows and set on each branch.
     for (equiv_arc, parallel_branches) in PNM.get_parallel_branch_map(nrd)
-        (bus_from_no, bus_to_no) = equiv_arc
-        (bus_from, bus_to) = (PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_from_no]),
-            PSY.get_component(PSY.ACBus, sys, temp_bus_map[bus_to_no]))
-        (V_from, V_to) = (bus_from, bus_to) .|> get_complex_voltage
-        S = get_segment_flow(parallel_branches, V_from, V_to)
-        set_power_flow!(parallel_branches, S)
+        flow_entries = _compute_segment_flows(parallel_branches, data, equiv_arc, time_step)
+        _apply_flow_entries!(flow_entries, parallel_branches)
     end
     return
+end
+
+"""Apply `BranchFlowEntry` results to branch objects. Entries and branches are matched
+by iterating in the same order they were generated. Returns the number of entries consumed."""
+function _apply_flow_entries!(
+    entries::Vector{BranchFlowEntry},
+    segment::PSY.ACTransmission,
+    entry_ix::Int,
+)
+    entry = entries[entry_ix]
+    @assert entry.name == PNM.get_name(segment)
+    set_power_flow!(segment, entry.P_from_to + im * entry.Q_from_to)
+    return entry_ix + 1
+end
+
+function _apply_flow_entries!(
+    entries::Vector{BranchFlowEntry},
+    segment::PNM.BranchesParallel,
+    entry_ix::Int = 1,
+)
+    for branch in segment
+        entry = entries[entry_ix]
+        @assert entry.name == PNM.get_name(branch)
+        set_power_flow!(branch, entry.P_from_to + im * entry.Q_from_to)
+        entry_ix += 1
+    end
+    return entry_ix
+end
+
+function _apply_flow_entries!(
+    entries::Vector{BranchFlowEntry},
+    segments::PNM.BranchesSeries,
+    entry_ix::Int = 1,
+)
+    for segment in segments
+        entry_ix = _apply_flow_entries!(entries, segment, entry_ix)
+    end
+    return entry_ix
 end
 # returns list of bus numbers: ABA case (use aux matrix to include reference bus)
 function _get_buses(data::ABAPowerFlowData)
@@ -729,24 +854,16 @@ end
 
 function _allocate_results_data(
     data::PowerFlowData,
-    flow_names::Vector{String},
+    result::BranchFlowResults,
     lcc_names::Vector{String},
     buses::Vector{Int64},
     sys_basepower::Float64,
-    from_bus::Vector{Int64},
-    to_bus::Vector{Int64},
     bus_magnitude::Vector{Float64},
     bus_angles::Vector{Float64},
     P_gen_vect::Vector{Float64},
     Q_gen_vect::Vector{Float64},
     P_load_vect::Vector{Float64},
     Q_load_vect::Vector{Float64},
-    arc_active_power_flow_from_to::Vector{Float64},
-    arc_reactive_power_flow_from_to::Vector{Float64},
-    arc_active_power_flow_to_from::Vector{Float64},
-    arc_reactive_power_flow_to_from::Vector{Float64},
-    arc_active_power_losses::Vector{Float64},
-    arc_reactive_power_losses::Vector{Float64},
     time_step::Int,
 )
     bus_df = DataFrames.DataFrame(;
@@ -762,16 +879,18 @@ function _allocate_results_data(
     )
     DataFrames.sort!(bus_df, :bus_number)
 
+    # Scale flows to system base in-place, then extract columns directly.
+    result.flows .*= sys_basepower
     branch_df = DataFrames.DataFrame(;
-        flow_name = flow_names,
-        bus_from = from_bus,
-        bus_to = to_bus,
-        P_from_to = sys_basepower .* arc_active_power_flow_from_to,
-        Q_from_to = sys_basepower .* arc_reactive_power_flow_from_to,
-        P_to_from = sys_basepower .* arc_active_power_flow_to_from,
-        Q_to_from = sys_basepower .* arc_reactive_power_flow_to_from,
-        P_losses = sys_basepower .* arc_active_power_losses,
-        Q_losses = sys_basepower .* arc_reactive_power_losses,
+        flow_name = result.names,
+        bus_from = result.bus_from,
+        bus_to = result.bus_to,
+        P_from_to = result.flows[:, _COL_P_FROM_TO],
+        Q_from_to = result.flows[:, _COL_Q_FROM_TO],
+        P_to_from = result.flows[:, _COL_P_TO_FROM],
+        Q_to_from = result.flows[:, _COL_Q_TO_FROM],
+        P_losses = result.flows[:, _COL_P_LOSSES],
+        Q_losses = result.flows[:, _COL_Q_LOSSES],
     )
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
@@ -791,32 +910,6 @@ function _allocate_results_data(
     )
 end
 
-function _allocate_branch_vectors(nrd::PNM.NetworkReductionData)
-    n_branches =
-        length(keys(nrd.reverse_direct_branch_map)) +
-        length(keys(nrd.reverse_parallel_branch_map)) +
-        length(keys(nrd.reverse_series_branch_map)) +
-        length(keys(nrd.reverse_transformer3W_map))
-    branch_names = Vector{String}(undef, n_branches)
-    from_bus = zeros(Int64, n_branches)
-    to_bus = zeros(Int64, n_branches)
-    branch_P_from_to = zeros(Float64, n_branches)
-    branch_Q_from_to = zeros(Float64, n_branches)
-    branch_P_to_from = zeros(Float64, n_branches)
-    branch_Q_to_from = zeros(Float64, n_branches)
-    branch_P_losses = zeros(Float64, n_branches)
-    branch_Q_losses = zeros(Float64, n_branches)
-    return branch_names,
-    from_bus,
-    to_bus,
-    branch_P_from_to,
-    branch_Q_from_to,
-    branch_P_to_from,
-    branch_Q_to_from,
-    branch_P_losses,
-    branch_Q_losses
-end
-
 function _post_process_flows(
     data::PowerFlowData,
     ::Val{FlowReporting.ARC_FLOWS},
@@ -825,27 +918,23 @@ function _post_process_flows(
     arc_P_to_from::Vector{Float64},
     arc_Q_to_from::Vector{Float64},
     arc_P_losses::Vector{Float64},
-    arc_Q_losses::Vector{Float64},
+    arc_Q_losses::Vector{Float64};
+    kwargs...,
 )
     arc_lookup = get_arc_lookup(data)
-    n_arcs = length(arc_lookup)
-    from_bus = zeros(Int, n_arcs)
-    to_bus = zeros(Int, n_arcs)
-    arc_names = Vector{String}(undef, n_arcs)
-    for (arc_tuple, ix_arc) in arc_lookup
-        from_bus[ix_arc] = arc_tuple[1]
-        to_bus[ix_arc] = arc_tuple[2]
-        arc_names[ix_arc] = "$(arc_tuple[1])-$(arc_tuple[2])"
+    result = BranchFlowResults(length(arc_lookup))
+    for (arc_tuple, ix) in arc_lookup
+        push!(
+            result,
+            BranchFlowEntry((
+                "$(arc_tuple[1])-$(arc_tuple[2])",
+                arc_tuple[1], arc_tuple[2],
+                arc_P_from_to[ix], arc_P_to_from[ix], arc_P_losses[ix],
+                arc_Q_from_to[ix], arc_Q_to_from[ix], arc_Q_losses[ix],
+            )),
+        )
     end
-    return arc_names,
-    from_bus,
-    to_bus,
-    arc_P_from_to,
-    arc_Q_from_to,
-    arc_P_to_from,
-    arc_Q_to_from,
-    arc_P_losses,
-    arc_Q_losses
+    return result
 end
 
 function _post_process_flows(
@@ -856,98 +945,73 @@ function _post_process_flows(
     arc_P_to_from::Vector{Float64},
     arc_Q_to_from::Vector{Float64},
     arc_P_losses::Vector{Float64},
-    arc_Q_losses::Vector{Float64},
+    arc_Q_losses::Vector{Float64};
+    kwargs...,
 )
     nrd = data.power_network_matrix.network_reduction_data
-    branch_names,
-    from_bus,
-    to_bus,
-    branch_P_from_to,
-    branch_Q_from_to,
-    branch_P_to_from,
-    branch_Q_to_from,
-    branch_P_losses,
-    branch_Q_losses = _allocate_branch_vectors(nrd)
     arc_lookup = get_arc_lookup(data)
-    ix_branch = 1
+    n_branches =
+        length(keys(nrd.reverse_direct_branch_map)) +
+        length(keys(nrd.reverse_parallel_branch_map)) +
+        length(keys(nrd.reverse_series_branch_map)) +
+        length(keys(nrd.reverse_transformer3W_map))
+    result = BranchFlowResults(n_branches)
+    # PERF: type instability.
+    # if unrolled, inner call could be resolved at compile time in many cases.
     for map in [
         nrd.direct_branch_map,
         nrd.parallel_branch_map,
         nrd.series_branch_map,
         nrd.transformer3W_map,
     ]
-        for (k, v) in map
-            ix_arc = arc_lookup[k]
-            names,
-            from_buses,
-            to_buses,
-            P_from_tos,
-            Q_from_tos,
-            P_to_froms,
-            Q_to_froms,
-            P_losses,
-            Q_losses =
-                _post_process_entry_flows(
-                    v,
-                    arc_P_from_to[ix_arc],
-                    arc_Q_from_to[ix_arc],
-                    arc_P_to_from[ix_arc],
-                    arc_Q_to_from[ix_arc],
-                    arc_P_losses[ix_arc],
-                    arc_Q_losses[ix_arc],
-                )
-
-            # Loop through the branches associated with a single reduction entry, and fill in the branch vectors
-            for (
-                name,
-                _from_bus,
-                _to_bus,
-                P_from_to,
-                Q_from_to,
-                P_to_from,
-                Q_to_from,
-                P_loss,
-                Q_loss,
-            ) in zip(
-                names,
-                from_buses,
-                to_buses,
-                P_from_tos,
-                Q_from_tos,
-                P_to_froms,
-                Q_to_froms,
-                P_losses,
-                Q_losses,
+        for (arc, entry) in map
+            for flow_entry in _branch_flow_entries(
+                entry, data, arc, arc_lookup,
+                arc_P_from_to, arc_Q_from_to,
+                arc_P_to_from, arc_Q_to_from,
+                arc_P_losses, arc_Q_losses;
+                kwargs...,
             )
-                branch_names[ix_branch] = name
-                from_bus[ix_branch] = _from_bus
-                to_bus[ix_branch] = _to_bus
-                branch_P_from_to[ix_branch] = P_from_to
-                branch_Q_from_to[ix_branch] = Q_from_to
-                branch_P_to_from[ix_branch] = P_to_from
-                branch_Q_to_from[ix_branch] = Q_to_from
-                branch_P_losses[ix_branch] = P_loss
-                branch_Q_losses[ix_branch] = Q_loss
-                ix_branch += 1
+                push!(result, flow_entry)
             end
         end
     end
-    # assert that vectors are filled completely
-    @assert (length(branch_P_from_to) + 1) == ix_branch
-
-    return branch_names,
-    from_bus,
-    to_bus,
-    branch_P_from_to,
-    branch_Q_from_to,
-    branch_P_to_from,
-    branch_Q_to_from,
-    branch_P_losses,
-    branch_Q_losses
+    @assert result.count == n_branches
+    return result
 end
 
-function _post_process_entry_flows(
-    arc_entry::PSY.ACTransmission,
+"""Non-AC: distribute pre-computed arc-level flows to individual branches."""
+function _branch_flow_entries(
+    entry, data::PowerFlowData, arc, arc_lookup,
+    arc_P_from_to, arc_Q_from_to,
+    arc_P_to_from, arc_Q_to_from,
+    arc_P_losses, arc_Q_losses;
+    kwargs...,
+)
+    ix_arc = arc_lookup[arc]
+    return _distribute_arc_flows(
+        entry,
+        arc_P_from_to[ix_arc], arc_Q_from_to[ix_arc],
+        arc_P_to_from[ix_arc], arc_Q_to_from[ix_arc],
+        arc_P_losses[ix_arc], arc_Q_losses[ix_arc],
+    )
+end
+
+"""AC: recompute per-segment flows from solved voltages using `_compute_segment_flows`."""
+function _branch_flow_entries(
+    entry, data::ACPowerFlowData, arc, arc_lookup,
+    arc_P_from_to, arc_Q_from_to,
+    arc_P_to_from, arc_Q_to_from,
+    arc_P_losses, arc_Q_losses;
+    time_step::Int = 1,
+)
+    return _compute_segment_flows(entry, data, arc, time_step)
+end
+
+"""Distribute pre-computed arc-level flows to individual branches for non-AC power flow.
+Returns a `Vector{BranchFlowEntry}`, analogous to `_compute_segment_flows` for AC."""
+function _distribute_arc_flows(
+    arc_entry::Union{PSY.ACTransmission, PNM.ThreeWindingTransformerWinding},
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
@@ -955,38 +1019,18 @@ function _post_process_entry_flows(
     P_losses::Float64,
     Q_losses::Float64,
 )
-    return [PNM.get_name(arc_entry)],
-    [PSY.get_arc(arc_entry).from.number],
-    [PSY.get_arc(arc_entry).to.number],
-    [P_from_to],
-    [Q_from_to],
-    [P_to_from],
-    [Q_to_from],
-    [P_losses],
-    [Q_losses]
+    arc_tuple = PNM.get_arc_tuple(arc_entry)
+    return [
+        BranchFlowEntry((
+            PNM.get_name(arc_entry),
+            arc_tuple[1], arc_tuple[2],
+            P_from_to, P_to_from, P_losses,
+            Q_from_to, Q_to_from, Q_losses,
+        )),
+    ]
 end
 
-function _post_process_entry_flows(
-    arc_entry::PNM.ThreeWindingTransformerWinding,
-    P_from_to::Float64,
-    Q_from_to::Float64,
-    P_to_from::Float64,
-    Q_to_from::Float64,
-    P_losses::Float64,
-    Q_losses::Float64,
-)
-    return [PNM.get_name(arc_entry)],
-    [PNM.get_arc_tuple(arc_entry)[1]],
-    [PNM.get_arc_tuple(arc_entry)[2]],
-    [P_from_to],
-    [Q_from_to],
-    [P_to_from],
-    [Q_to_from],
-    [P_losses],
-    [Q_losses]
-end
-
-function _post_process_entry_flows(
+function _distribute_arc_flows(
     arc_entry::PNM.BranchesParallel,
     P_from_to::Float64,
     Q_from_to::Float64,
@@ -995,36 +1039,24 @@ function _post_process_entry_flows(
     P_losses::Float64,
     Q_losses::Float64,
 )
-    n_parallel = length(arc_entry.branches)
-    branch_names = [PNM.get_name(br) for br in arc_entry]
-    P_from_to_branches = zeros(Float64, n_parallel)
-    Q_from_to_branches = zeros(Float64, n_parallel)
-    P_to_from_branches = zeros(Float64, n_parallel)
-    Q_to_from_branches = zeros(Float64, n_parallel)
-    P_losses_branches = zeros(Float64, n_parallel)
-    Q_losses_branches = zeros(Float64, n_parallel)
-    for (ix, branch_name) in enumerate(branch_names)
-        multiplier = PNM.compute_parallel_multiplier(arc_entry, branch_name)
-        P_from_to_branches[ix] = P_from_to * multiplier
-        Q_from_to_branches[ix] = Q_from_to * multiplier
-        P_to_from_branches[ix] = P_to_from * multiplier
-        Q_to_from_branches[ix] = Q_to_from * multiplier
-        P_losses_branches[ix] = P_losses * multiplier
-        Q_losses_branches[ix] = Q_losses * multiplier
+    entries = BranchFlowEntry[]
+    for br in arc_entry
+        arc_tuple = PNM.get_arc_tuple(br)
+        m = PNM.compute_parallel_multiplier(arc_entry, PNM.get_name(br))
+        push!(
+            entries,
+            BranchFlowEntry((
+                PNM.get_name(br),
+                arc_tuple[1], arc_tuple[2],
+                P_from_to * m, P_to_from * m, P_losses * m,
+                Q_from_to * m, Q_to_from * m, Q_losses * m,
+            )),
+        )
     end
-
-    return branch_names,
-    [PNM.get_arc_tuple(br)[1] for br in arc_entry],
-    [PNM.get_arc_tuple(br)[2] for br in arc_entry],
-    P_from_to_branches,
-    Q_from_to_branches,
-    P_to_from_branches,
-    Q_to_from_branches,
-    P_losses_branches,
-    Q_losses_branches
+    return entries
 end
 
-function _post_process_entry_flows(
+function _distribute_arc_flows(
     arc_entry::PNM.BranchesSeries,
     P_from_to::Float64,
     Q_from_to::Float64,
@@ -1033,57 +1065,19 @@ function _post_process_entry_flows(
     P_losses::Float64,
     Q_losses::Float64,
 )
-    branch_names = Vector{String}[]
-    from_buses = Vector{Int}[]
-    to_buses = Vector{Int}[]
-    P_from_to_branches = Vector{Float64}[]
-    Q_from_to_branches = Vector{Float64}[]
-    P_to_from_branches = Vector{Float64}[]
-    Q_to_from_branches = Vector{Float64}[]
-    P_losses_branches = Vector{Float64}[]
-    Q_losses_branches = Vector{Float64}[]
+    entries = BranchFlowEntry[]
     for (segment_ix, segment) in enumerate(arc_entry)
-        if arc_entry.segment_orientations[segment_ix] == :ToFrom
-            multiplier = -1.0
-        else
-            multiplier = 1.0
-        end
-        branch_names_segment,
-        from_buses_segment,
-        to_buses_segment,
-        P_from_to_segment_branches,
-        Q_from_to_segment_branches,
-        P_to_from_segment_branches,
-        Q_to_from_segment_branches,
-        P_losses_segment_branches,
-        Q_losses_segment_branches = _post_process_entry_flows(
+        m = arc_entry.segment_orientations[segment_ix] == :ToFrom ? -1.0 : 1.0
+        for entry in _distribute_arc_flows(
             segment,
-            P_from_to,
-            Q_from_to,
-            P_to_from,
-            Q_to_from,
-            P_losses,
-            Q_losses,
+            P_from_to * m, Q_from_to * m,
+            P_to_from * m, Q_to_from * m,
+            P_losses * m, Q_losses * m,
         )
-        push!(branch_names, branch_names_segment)
-        push!(from_buses, from_buses_segment)
-        push!(to_buses, to_buses_segment)
-        push!(P_from_to_branches, P_from_to_segment_branches .* multiplier)
-        push!(Q_from_to_branches, Q_from_to_segment_branches .* multiplier)
-        push!(P_to_from_branches, P_to_from_segment_branches .* multiplier)
-        push!(Q_to_from_branches, Q_to_from_segment_branches .* multiplier)
-        push!(P_losses_branches, P_losses_segment_branches .* multiplier)
-        push!(Q_losses_branches, Q_losses_segment_branches .* multiplier)
+            push!(entries, entry)
+        end
     end
-    return reduce(vcat, branch_names),
-    reduce(vcat, from_buses),
-    reduce(vcat, to_buses),
-    reduce(vcat, P_from_to_branches),
-    reduce(vcat, Q_from_to_branches),
-    reduce(vcat, P_to_from_branches),
-    reduce(vcat, Q_to_from_branches),
-    reduce(vcat, P_losses_branches),
-    reduce(vcat, Q_losses_branches)
+    return entries
 end
 
 function add_arc_name!(arc_names::Vector{String},
@@ -1100,29 +1094,15 @@ function add_arc_name!(arc_names::Vector{String},
     arc_names[arc_lookup[arc]] = arc_name
 end
 
-"""Return the names of the arcs in the power flow data: those that correspond to branches in the system
-will get the branch names, others will get a placeholder name of the form from-to."""
+"""Return the names of the arcs in the power flow data. Each arc is named by its
+from-to bus number pair, e.g. `"123-456"`."""
 function get_arc_names(data::PowerFlowData)
     arc_lookup = get_arc_lookup(data)
     arc_names = fill("", length(arc_lookup))
     arc_names_set = Set(arc_names)
-    # fill in names for those that directly correspond to branches in the system
-    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
-    for (arc, branch) in PNM.get_direct_branch_map(nrd)
-        arc_name = PSY.get_name(branch)
-        add_arc_name!(arc_names, arc_names_set, arc_lookup, arc, arc_name)
-    end
-
-    # fill in transformer winding names.
-    for (arc, trf_winding) in PNM.get_transformer3W_map(nrd)
-        add_arc_name!(arc_names, arc_names_set, arc_lookup, arc, PNM.get_name(trf_winding))
-    end
-    # fill in missing names with placeholders
     for (arc, ix) in arc_lookup
-        if arc_names[ix] == ""
-            arc_name = "$(arc[1])-$(arc[2])"
-            add_arc_name!(arc_names, arc_names_set, arc_lookup, arc, arc_name)
-        end
+        arc_name = "$(arc[1])-$(arc[2])"
+        add_arc_name!(arc_names, arc_names_set, arc_lookup, arc, arc_name)
     end
     return arc_names
 end
@@ -1179,15 +1159,7 @@ function write_results(
 
     result_dict = Dict{String, Dict{String, DataFrames.DataFrame}}()
     for i in 1:length(get_time_step_map(data))
-        names,
-        from_bus,
-        to_bus,
-        P_from_to,
-        Q_from_to,
-        P_to_from,
-        Q_to_from,
-        P_losses,
-        Q_losses = _post_process_flows(
+        flow_results = _post_process_flows(
             data,
             Val(flow_reporting),
             data.arc_active_power_flow_from_to[:, i],
@@ -1200,24 +1172,16 @@ function write_results(
 
         temp_dict = _allocate_results_data(
             data,
-            names,
+            flow_results,
             get_lcc_names(data, sys),
             buses,
             PSY.get_base_power(sys),
-            from_bus,
-            to_bus,
             data.bus_magnitude[:, i],
             data.bus_angles[:, i],
             data.bus_active_power_injections[:, i],
             data.bus_reactive_power_injections[:, i],
             data.bus_active_power_withdrawals[:, i],
             data.bus_reactive_power_withdrawals[:, i],
-            P_from_to,
-            Q_from_to,
-            P_to_from,
-            Q_to_from,
-            P_losses,
-            Q_losses,
             i,
         )
         result_dict[get_time_step_map(data)[i]] = temp_dict
@@ -1251,6 +1215,7 @@ function write_results(
     sys::PSY.System,
     data::ACPowerFlowData,
     time_step::Int64,
+    flow_reporting::FlowReporting,
 )
     check_unit_setting(sys)
     @info("Voltages are exported in pu. Powers are exported in MW/MVAr.")
@@ -1263,10 +1228,6 @@ function write_results(
     # NOTE: this may be different than get_bus_numbers(sys) if there's a network reduction!
     bus_numbers = PNM.get_bus_axis(data.power_network_matrix)
 
-    arcs = PNM.get_arc_axis(data.power_network_matrix.arc_admittance_from_to)
-    from_bus = first.(arcs)
-    to_bus = last.(arcs)
-    arc_names = get_arc_names(data)
     if length(PSY.get_components(PSY.Transformer3W, sys)) > 0
         @info "3-winding transformers included in the results export: bus-to-star flows " *
               "reported with names like 'TransformerName-primary', " *
@@ -1280,26 +1241,30 @@ function write_results(
         data.arc_reactive_power_flow_from_to[:, time_step] .+
         data.arc_reactive_power_flow_to_from[:, time_step]
 
+    flow_results = _post_process_flows(
+        data,
+        Val(flow_reporting),
+        data.arc_active_power_flow_from_to[:, time_step],
+        data.arc_reactive_power_flow_from_to[:, time_step],
+        data.arc_active_power_flow_to_from[:, time_step],
+        data.arc_reactive_power_flow_to_from[:, time_step],
+        arc_active_power_losses,
+        arc_reactive_power_losses;
+        time_step = time_step,
+    )
+
     return _allocate_results_data(
         data,
-        arc_names,
+        flow_results,
         get_lcc_names(data, sys),
         bus_numbers,
         PSY.get_base_power(sys),
-        from_bus,
-        to_bus,
         data.bus_magnitude[:, time_step],
         data.bus_angles[:, time_step],
         data.bus_active_power_injections[:, time_step],
         data.bus_reactive_power_injections[:, time_step],
         data.bus_active_power_withdrawals[:, time_step],
         data.bus_reactive_power_withdrawals[:, time_step],
-        data.arc_active_power_flow_from_to[:, time_step],
-        data.arc_reactive_power_flow_from_to[:, time_step],
-        data.arc_active_power_flow_to_from[:, time_step],
-        data.arc_reactive_power_flow_to_from[:, time_step],
-        arc_active_power_losses,
-        arc_reactive_power_losses,
         time_step,
     )
 end
