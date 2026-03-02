@@ -60,6 +60,58 @@ end
     _compare_flow_dataframes(res_full_branch, res_reduced_branch)
 end
 
+@testset "AC power flow arc reporting with/without degree-2 reduction" begin
+    sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
+    pf_unreduced = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(; correct_bustypes = true)
+    pf = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(;
+        skip_redistribution = true,
+        correct_bustypes = true,
+        network_reductions = PNM.NetworkReduction[PNM.DegreeTwoReduction()],
+    )
+    results_unreduced = solve_power_flow(pf_unreduced, sys, PF.FlowReporting.ARC_FLOWS)
+    results_reduced = solve_power_flow(pf, sys, PF.FlowReporting.ARC_FLOWS)
+    data = PF.PowerFlowData(pf, sys)
+    nrd = PNM.get_network_reduction_data(PF.get_power_network_matrix(data))
+    for arc in keys(PNM.get_direct_branch_map(nrd))
+        arc_name = "$(arc[1])-$(arc[2])"
+        df_unreduced =
+            filter(row -> row.flow_name == arc_name, results_unreduced["flow_results"])
+        df_reduced =
+            filter(row -> row.flow_name == arc_name, results_reduced["flow_results"])
+        @test size(df_unreduced, 1) == 1
+        @test size(df_reduced, 1) == 1
+        @test isapprox(
+            df_unreduced[1, :P_from_to],
+            df_reduced[1, :P_from_to];
+            atol = 1e-2,
+            rtol = 1e-5,
+        )
+        @test isapprox(
+            df_unreduced[1, :Q_from_to],
+            df_reduced[1, :Q_from_to];
+            atol = 1e-2,
+            rtol = 1e-5,
+        )
+    end
+end
+
+@testset "AC power flow branch reporting with/without degree-2 reduction" begin
+    sys = build_system(MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
+    pf_unreduced = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(; correct_bustypes = true)
+    pf = PF.ACPowerFlow{PF.TrustRegionACPowerFlow}(;
+        skip_redistribution = true,
+        correct_bustypes = true,
+        network_reductions = PNM.NetworkReduction[PNM.DegreeTwoReduction()],
+    )
+    results_unreduced = solve_power_flow(pf_unreduced, sys, PF.FlowReporting.BRANCH_FLOWS)
+    results_reduced = solve_power_flow(pf, sys, PF.FlowReporting.BRANCH_FLOWS)
+    _compare_flow_dataframes(
+        results_unreduced["flow_results"],
+        results_reduced["flow_results"];
+        atol = 1e-2,
+    )
+end
+
 @testset "AC power flow arc/branch flow reporting with degree-2 reduction" begin
     # Both use DegreeTwoReduction so they have the same branch set.
     # The "full" version solves with reduction (same as reduced) but we compare

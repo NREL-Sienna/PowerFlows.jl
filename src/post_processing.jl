@@ -43,7 +43,8 @@ function _power_redistribution_ref(
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
-    } = nothing)
+    } = nothing,
+)
     check_unit_setting(sys)
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
@@ -480,9 +481,14 @@ function _segment_flow_entry(
     arc_tuple = PNM.get_arc_tuple(segment)
     return BranchFlowEntry((
         PNM.get_name(segment),
-        arc_tuple[1], arc_tuple[2],
-        real(S_ft), real(S_tf), real(S_ft) + real(S_tf),
-        imag(S_ft), imag(S_tf), imag(S_ft) + imag(S_tf),
+        arc_tuple[1],
+        arc_tuple[2],
+        real(S_ft),
+        real(S_tf),
+        real(S_ft) + real(S_tf),
+        imag(S_ft),
+        imag(S_tf),
+        imag(S_ft) + imag(S_tf),
     ))
 end
 
@@ -617,7 +623,14 @@ function write_power_flow_solution!(
             if bustype == PSY.ACBusTypes.REF && !pf.skip_redistribution
                 P_gen = data.bus_active_power_injections[ix, time_step]
                 Q_gen = data.bus_reactive_power_injections[ix, time_step]
-                _power_redistribution_ref(sys, P_gen, Q_gen, bus, max_iterations, gspf)
+                _power_redistribution_ref(
+                    sys,
+                    P_gen,
+                    Q_gen,
+                    bus,
+                    max_iterations,
+                    gspf,
+                )
             elseif bustype == PSY.ACBusTypes.PV
                 Q_gen = data.bus_reactive_power_injections[ix, time_step]
                 bus.angle = data.bus_angles[ix, time_step]
@@ -703,7 +716,11 @@ function write_power_flow_solution!(
     for (equivalent_arc, segments) in PNM.get_series_branch_map(nrd)
         V_endpoints = _get_arc_endpoint_voltages(data, equivalent_arc, time_step)
         _set_series_interior_voltages!(
-            sys, segments, equivalent_arc, V_endpoints, temp_bus_map,
+            sys,
+            segments,
+            equivalent_arc,
+            V_endpoints,
+            temp_bus_map,
         )
         flow_entries = _compute_segment_flows(segments, data, equivalent_arc, time_step)
         _apply_flow_entries!(flow_entries, segments)
@@ -928,9 +945,14 @@ function _post_process_flows(
             result,
             BranchFlowEntry((
                 "$(arc_tuple[1])-$(arc_tuple[2])",
-                arc_tuple[1], arc_tuple[2],
-                arc_P_from_to[ix], arc_P_to_from[ix], arc_P_losses[ix],
-                arc_Q_from_to[ix], arc_Q_to_from[ix], arc_Q_losses[ix],
+                arc_tuple[1],
+                arc_tuple[2],
+                arc_P_from_to[ix],
+                arc_P_to_from[ix],
+                arc_P_losses[ix],
+                arc_Q_from_to[ix],
+                arc_Q_to_from[ix],
+                arc_Q_losses[ix],
             )),
         )
     end
@@ -966,10 +988,16 @@ function _post_process_flows(
     ]
         for (arc, entry) in map
             for flow_entry in _branch_flow_entries(
-                entry, data, arc, arc_lookup,
-                arc_P_from_to, arc_Q_from_to,
-                arc_P_to_from, arc_Q_to_from,
-                arc_P_losses, arc_Q_losses;
+                entry,
+                data,
+                arc,
+                arc_lookup,
+                arc_P_from_to,
+                arc_Q_from_to,
+                arc_P_to_from,
+                arc_Q_to_from,
+                arc_P_losses,
+                arc_Q_losses;
                 kwargs...,
             )
                 push!(result, flow_entry)
@@ -982,27 +1010,42 @@ end
 
 """Non-AC: distribute pre-computed arc-level flows to individual branches."""
 function _branch_flow_entries(
-    entry, data::PowerFlowData, arc, arc_lookup,
-    arc_P_from_to, arc_Q_from_to,
-    arc_P_to_from, arc_Q_to_from,
-    arc_P_losses, arc_Q_losses;
+    entry,
+    data::PowerFlowData,
+    arc,
+    arc_lookup,
+    arc_P_from_to,
+    arc_Q_from_to,
+    arc_P_to_from,
+    arc_Q_to_from,
+    arc_P_losses,
+    arc_Q_losses;
     kwargs...,
 )
     ix_arc = arc_lookup[arc]
     return _distribute_arc_flows(
         entry,
-        arc_P_from_to[ix_arc], arc_Q_from_to[ix_arc],
-        arc_P_to_from[ix_arc], arc_Q_to_from[ix_arc],
-        arc_P_losses[ix_arc], arc_Q_losses[ix_arc],
+        arc_P_from_to[ix_arc],
+        arc_Q_from_to[ix_arc],
+        arc_P_to_from[ix_arc],
+        arc_Q_to_from[ix_arc],
+        arc_P_losses[ix_arc],
+        arc_Q_losses[ix_arc],
     )
 end
 
 """AC: recompute per-segment flows from solved voltages using `_compute_segment_flows`."""
 function _branch_flow_entries(
-    entry, data::ACPowerFlowData, arc, arc_lookup,
-    arc_P_from_to, arc_Q_from_to,
-    arc_P_to_from, arc_Q_to_from,
-    arc_P_losses, arc_Q_losses;
+    entry,
+    data::ACPowerFlowData,
+    arc,
+    arc_lookup,
+    arc_P_from_to,
+    arc_Q_from_to,
+    arc_P_to_from,
+    arc_Q_to_from,
+    arc_P_losses,
+    arc_Q_losses;
     time_step::Int = 1,
 )
     return _compute_segment_flows(entry, data, arc, time_step)
@@ -1023,9 +1066,14 @@ function _distribute_arc_flows(
     return [
         BranchFlowEntry((
             PNM.get_name(arc_entry),
-            arc_tuple[1], arc_tuple[2],
-            P_from_to, P_to_from, P_losses,
-            Q_from_to, Q_to_from, Q_losses,
+            arc_tuple[1],
+            arc_tuple[2],
+            P_from_to,
+            P_to_from,
+            P_losses,
+            Q_from_to,
+            Q_to_from,
+            Q_losses,
         )),
     ]
 end
@@ -1047,9 +1095,14 @@ function _distribute_arc_flows(
             entries,
             BranchFlowEntry((
                 PNM.get_name(br),
-                arc_tuple[1], arc_tuple[2],
-                P_from_to * m, P_to_from * m, P_losses * m,
-                Q_from_to * m, Q_to_from * m, Q_losses * m,
+                arc_tuple[1],
+                arc_tuple[2],
+                P_from_to * m,
+                P_to_from * m,
+                P_losses * m,
+                Q_from_to * m,
+                Q_to_from * m,
+                Q_losses * m,
             )),
         )
     end
@@ -1070,9 +1123,12 @@ function _distribute_arc_flows(
         m = arc_entry.segment_orientations[segment_ix] == :ToFrom ? -1.0 : 1.0
         for entry in _distribute_arc_flows(
             segment,
-            P_from_to * m, Q_from_to * m,
-            P_to_from * m, Q_to_from * m,
-            P_losses * m, Q_losses * m,
+            P_from_to * m,
+            Q_from_to * m,
+            P_to_from * m,
+            Q_to_from * m,
+            P_losses * m,
+            Q_losses * m,
         )
             push!(entries, entry)
         end
@@ -1080,7 +1136,8 @@ function _distribute_arc_flows(
     return entries
 end
 
-function add_arc_name!(arc_names::Vector{String},
+function add_arc_name!(
+    arc_names::Vector{String},
     arc_names_set::Set{String},
     arc_lookup::Dict{Tuple{Int, Int}, Int},
     arc::Tuple{Int, Int},
@@ -1291,13 +1348,22 @@ function update_system!(sys::PSY.System, data::PowerFlowData; time_step = 1)
             # For REF bus, voltage and angle are fixed; update active and reactive
             P_gen = data.bus_active_power_injections[bus_index, time_step]
             Q_gen = data.bus_reactive_power_injections[bus_index, time_step]
-            _power_redistribution_ref(sys, P_gen, Q_gen, bus,
-                DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
+            _power_redistribution_ref(
+                sys,
+                P_gen,
+                Q_gen,
+                bus,
+                DEFAULT_MAX_REDISTRIBUTION_ITERATIONS,
+            )
         elseif bus_type == PSY.ACBusTypes.PV
             # For PV bus, active and voltage are fixed; update reactive and angle
             Q_gen = data.bus_reactive_power_injections[bus_index, time_step]
-            _reactive_power_redistribution_pv(sys, Q_gen, bus,
-                DEFAULT_MAX_REDISTRIBUTION_ITERATIONS)
+            _reactive_power_redistribution_pv(
+                sys,
+                Q_gen,
+                bus,
+                DEFAULT_MAX_REDISTRIBUTION_ITERATIONS,
+            )
             PSY.set_angle!(bus, data.bus_angles[bus_index, time_step])
         elseif bus_type == PSY.ACBusTypes.PQ
             # For PQ bus, active and reactive are fixed; update voltage and angle
