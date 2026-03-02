@@ -470,7 +470,7 @@ Compute a `BranchFlowEntry` for a single segment given its endpoint voltages. Re
 from-to and to-from complex power flows, plus losses.
 """
 function _segment_flow_entry(
-    segment::Union{PSY.ACTransmission, PNM.ThreeWindingTransformerWinding},
+    segment::PSY.ACTransmission,
     V_from::ComplexF64,
     V_to::ComplexF64,
 )
