@@ -19,9 +19,8 @@ const _COL_Q_TO_FROM = 5
 const _COL_Q_LOSSES = 6
 const _N_FLOW_COLS = 6
 
-"""Column-major storage for branch flow results. Entries are added via `push!` using
-`BranchFlowEntry` named tuples for readability; flow values are stored in a pre-allocated
-matrix whose columns can be extracted directly for DataFrame construction."""
+# Column-major storage for branch flow results, so we can get good performance
+# without passing separate vectors for each column.
 mutable struct BranchFlowResults
     names::Vector{String}
     bus_from::Vector{Int}
