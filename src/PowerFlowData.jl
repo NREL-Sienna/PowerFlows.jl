@@ -127,6 +127,8 @@ struct PowerFlowData{
     converged::BitVector
     loss_factors::Union{Matrix{Float64}, Nothing}
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
+    arc_resistances::Union{Matrix{Float64}, Nothing}
+    arc_active_power_losses::Union{Matrix{Float64}, Nothing}
     lcc::LCCParameters
 end
 
@@ -206,6 +208,8 @@ supports_multi_period(::PowerFlowData) = true
 get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
 get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
+get_arc_resistances(pfd::PowerFlowData) = pfd.arc_resistances
+get_arc_active_power_losses(pfd::PowerFlowData) = pfd.arc_active_power_losses
 
 # Field getter for expanded slack participation factors (one dict per time step)
 # Named "computed" to distinguish from the user-supplied pf.generator_slack_participation_factors
@@ -349,6 +353,8 @@ function PowerFlowData(
         falses(n_time_steps), # converged
         calculate_loss_factors ? zeros(n_buses, n_time_steps) : nothing, # loss_factors
         calculate_voltage_stability_factors ? zeros(n_buses, n_time_steps) : nothing, # voltage_stability_factors
+        pf isa AbstractDCPowerFlow ? zeros(n_arcs, n_time_steps) : nothing, # arc_resistances
+        pf isa AbstractDCPowerFlow ? zeros(n_arcs, n_time_steps) : nothing, # arc_active_power_losses
         lcc_parameters,
     )
 end

@@ -200,3 +200,25 @@ end
         atol = 1e-6,
     )
 end
+
+@testset "DC arc active power losses: loss = r * flow^2" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
+        data = PowerFlowData(T(; correct_bustypes = true), sys)
+        solve_power_flow!(data)
+        @test data.arc_resistances !== nothing
+        @test data.arc_active_power_losses !== nothing
+        @test all(data.arc_resistances .>= 0.0)
+        @test all(data.arc_active_power_losses .>= 0.0)
+        expected_losses = data.arc_resistances .* data.arc_active_power_flow_from_to .^ 2
+        @test isapprox(data.arc_active_power_losses, expected_losses, atol = 1e-10)
+        # Verify arc_resistances against system branch data for direct (1:1) arcs.
+        nrd = PNM.get_network_reduction_data(PF.get_metadata_matrix(data))
+        direct_map = PNM.get_direct_branch_map(nrd)
+        arc_lookup = PF.get_arc_lookup(data)
+        for (arc, branch) in direct_map
+            ix = arc_lookup[arc]
+            @test data.arc_resistances[ix, 1] ≈ PSY.get_r(branch)
+        end
+    end
+end

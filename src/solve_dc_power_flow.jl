@@ -44,6 +44,9 @@ function solve_power_flow!(
         data.power_network_matrix.data' * power_injections
     data.arc_active_power_flow_to_from .= -data.arc_active_power_flow_from_to
     # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
+    # DC losses: loss_arc = r_arc * flow_arc^2
+    data.arc_active_power_losses .=
+        data.arc_resistances .* data.arc_active_power_flow_from_to .^ 2
     valid_ix = get_valid_ix(data)
     p_inj = power_injections[valid_ix, :]
     solve!(solver_cache, p_inj)
@@ -80,6 +83,9 @@ function solve_power_flow!(
         my_mul_mt(data.power_network_matrix, power_injections)
     data.arc_active_power_flow_to_from .= -data.arc_active_power_flow_from_to
     # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
+    # DC losses: loss_arc = r_arc * flow_arc^2
+    data.arc_active_power_losses .=
+        data.arc_resistances .* data.arc_active_power_flow_from_to .^ 2
     valid_ix = get_valid_ix(data)
     p_inj = power_injections[valid_ix, :]
     solve!(solver_cache, p_inj)
@@ -124,6 +130,9 @@ function solve_power_flow!(
     data.arc_active_power_flow_from_to .= data.aux_network_matrix.data' * data.bus_angles
     data.arc_active_power_flow_to_from .= -data.arc_active_power_flow_from_to
     # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
+    # DC losses: loss_arc = r_arc * flow_arc^2
+    data.arc_active_power_losses .=
+        data.arc_resistances .* data.arc_active_power_flow_from_to .^ 2
     data.converged .= true
     return
 end
@@ -212,39 +221,6 @@ function solve_power_flow(
 end
 
 """
-    _get_arc_resistances(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) -> Vector{Float64}
-
-Look up the resistance of each arc from the network reduction data.
-"""
-function _get_arc_resistances(
-    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData},
-)
-    nrd = get_network_reduction_data(data)
-    arc_ax = get_arc_axis(data)
-    Rs = zeros(length(arc_ax))
-    # TODO simpler way? Should be a uniform interface for this type of thing...
-    for (ix_arc, arc) in enumerate(arc_ax)
-        if arc in keys(PNM.get_direct_branch_map(nrd))
-            line = PNM.get_direct_branch_map(nrd)[arc]
-            r = PSY.get_r(line)
-        elseif arc in keys(PNM.get_parallel_branch_map(nrd))
-            parallel_lines = PNM.parallel_branch_map(nrd)[arc]
-            r = 1 / (sum(1 / PSY.get_r.(parallel_lines.branches)))
-        elseif arc in keys(PNM.get_series_branch_map(nrd))
-            series_lines = PNM.series_branch_map(nrd)[arc]
-            r = sum(PSY.get_r.(series_chain) for series_chain in series_lines)
-        elseif arc in keys(PNM.get_transformer3W_map(nrd))
-            transformer3w = PNM.transformer3W_map(nrd)[arc]
-            r = PSY.get_equivalent_r(transformer3w)
-        else
-            error("Arc $arc not found in any of the branch maps.")
-        end
-        Rs[ix_arc] = r
-    end
-    return Rs
-end
-
-"""
     dc_loss_factors(
         data::Union{PTDFPowerFlowData, vPTDFPowerFlowData},
         P::Matrix{Float64},
@@ -273,7 +249,7 @@ function dc_loss_factors(
     data::PTDFPowerFlowData,
     P::Matrix{Float64},
 )
-    Rs = _get_arc_resistances(data)
+    Rs = @view data.arc_resistances[:, 1]
     ptdf_t = data.power_network_matrix.data
     # PERF could be optimized: remove the Diagonal call.
     return 2 * ptdf_t * LinearAlgebra.Diagonal(Rs) * ptdf_t' * P
@@ -283,7 +259,7 @@ function dc_loss_factors(
     data::vPTDFPowerFlowData,
     P::Matrix{Float64},
 )
-    Rs = _get_arc_resistances(data)
+    Rs = @view data.arc_resistances[:, 1]
     ptdf = data.power_network_matrix
     # PTDF * P via row-by-row access (VirtualPTDF has no .data field)
     flows = my_mul_mt(ptdf, P)  # (n_arcs × n_ts)

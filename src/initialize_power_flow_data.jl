@@ -149,5 +149,43 @@ function initialize_power_flow_data!(
     # ZIP Loads, DC only: convert constant current and impedance components to constant
     # powers via assuming V = 1.0 p.u.
     handle_zip_loads!(data, pf)
+    # DC only: populate arc resistances for loss calculations.
+    _populate_arc_resistances!(data, pf)
     return data
+end
+
+# No-op for AC power flow.
+_populate_arc_resistances!(::PowerFlowData, ::PowerFlowEvaluationModel) = nothing
+
+function _populate_arc_resistances!(
+    data::PowerFlowData,
+    ::AbstractDCPowerFlow,
+)
+    arc_resistances = data.arc_resistances
+    nrd = get_network_reduction_data(data)
+    arc_ax = get_arc_axis(data)
+    for (ix_arc, arc) in enumerate(arc_ax)
+        if arc in keys(PNM.get_direct_branch_map(nrd))
+            line = PNM.get_direct_branch_map(nrd)[arc]
+            r = PSY.get_r(line)
+        elseif arc in keys(PNM.get_parallel_branch_map(nrd))
+            parallel_lines = PNM.get_parallel_branch_map(nrd)[arc]
+            eq = PNM.get_equivalent_physical_branch_parameters(parallel_lines)
+            r = PNM.get_equivalent_r(eq)
+        elseif arc in keys(PNM.get_series_branch_map(nrd))
+            series_lines = PNM.get_series_branch_map(nrd)[arc]
+            eq = PNM.get_equivalent_physical_branch_parameters(series_lines)
+            r = PNM.get_equivalent_r(eq)
+        elseif arc in keys(PNM.get_transformer3W_map(nrd))
+            transformer3w = PNM.get_transformer3W_map(nrd)[arc]
+            r = PNM.get_equivalent_r(transformer3w)
+        elseif arc in keys(PNM.get_added_branch_map(nrd))
+            y = PNM.get_added_branch_map(nrd)[arc]
+            r = real(1 / y)
+        else
+            error("Arc $arc not found in any of the branch maps.")
+        end
+        arc_resistances[ix_arc, :] .= r
+    end
+    return
 end
