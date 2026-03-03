@@ -201,6 +201,28 @@ end
     )
 end
 
+@testset "DC branch-level losses with BRANCH_FLOWS reporting" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    basepower = PSY.get_base_power(sys)
+    for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
+        results = solve_power_flow(
+            T(; correct_bustypes = true),
+            sys,
+            PF.FlowReporting.BRANCH_FLOWS,
+        )
+        flow_df = results["1"]["flow_results"]
+        for row in eachrow(flow_df)
+            branch = PSY.get_component(PSY.ACBranch, sys, row.flow_name)
+            if !isnothing(branch)
+                r = PSY.get_r(branch)
+                flow_pu = row.P_from_to / basepower
+                expected_loss_mw = r * flow_pu^2 * basepower
+                @test isapprox(row.P_losses, expected_loss_mw, atol = 1e-8)
+            end
+        end
+    end
+end
+
 @testset "DC arc active power losses: loss = r * flow^2" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)

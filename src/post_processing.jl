@@ -1008,7 +1008,8 @@ function _post_process_flows(
     return result
 end
 
-"""Non-AC: distribute pre-computed arc-level flows to individual branches."""
+"""Non-AC (must be DC): distribute pre-computed arc-level flows to individual branches.
+Losses are computed per-segment inside `_distribute_arc_flows` as `r * flow^2`."""
 function _branch_flow_entries(
     entry,
     data::PowerFlowData,
@@ -1029,8 +1030,6 @@ function _branch_flow_entries(
         arc_Q_from_to[ix_arc],
         arc_P_to_from[ix_arc],
         arc_Q_to_from[ix_arc],
-        arc_P_losses[ix_arc],
-        arc_Q_losses[ix_arc],
     )
 end
 
@@ -1051,18 +1050,24 @@ function _branch_flow_entries(
     return _compute_segment_flows(entry, data, arc, time_step)
 end
 
-"""Distribute pre-computed arc-level flows to individual branches for non-AC power flow.
-Returns a `Vector{BranchFlowEntry}`, analogous to `_compute_segment_flows` for AC."""
+"""Distribute pre-computed arc-level flows to individual branches.
+
+Only used for DC power flow (AC dispatches to `_compute_segment_flows` instead).
+DC losses are computed per-segment as `r_segment * flow_segment^2` from each segment's own
+resistance and flow, rather than distributing the arc-level loss. This is necessary because
+DC losses are quadratic in flow: for parallel branches, each carries a different flow
+`f_i = m_i * F_arc`, so `loss_i = r_i * f_i^2`; for series branches, each carries the same
+flow but has a different resistance, so `loss_i = r_i * F_arc^2`."""
 function _distribute_arc_flows(
-    arc_entry::Union{PSY.ACTransmission, PNM.ThreeWindingTransformerWinding},
+    arc_entry::PSY.ACTransmission,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
     Q_to_from::Float64,
-    P_losses::Float64,
-    Q_losses::Float64,
 )
+    @assert !(arc_entry isa PNM.ThreeWindingTransformerWinding)
     arc_tuple = PNM.get_arc_tuple(arc_entry)
+    r = PSY.get_r(arc_entry)
     return [
         BranchFlowEntry((
             PNM.get_name(arc_entry),
@@ -1070,53 +1075,79 @@ function _distribute_arc_flows(
             arc_tuple[2],
             P_from_to,
             P_to_from,
-            P_losses,
+            r * P_from_to^2,
             Q_from_to,
             Q_to_from,
-            Q_losses,
+            0.0,
         )),
     ]
 end
 
+function _distribute_arc_flows(
+    arc_entry::PNM.ThreeWindingTransformerWinding,
+    P_from_to::Float64,
+    Q_from_to::Float64,
+    P_to_from::Float64,
+    Q_to_from::Float64,
+)
+    arc_tuple = PNM.get_arc_tuple(arc_entry)
+    r = PNM.get_equivalent_r(arc_entry)
+    return [
+        BranchFlowEntry((
+            PNM.get_name(arc_entry),
+            arc_tuple[1],
+            arc_tuple[2],
+            P_from_to,
+            P_to_from,
+            r * P_from_to^2,
+            Q_from_to,
+            Q_to_from,
+            0.0,
+        )),
+    ]
+end
+
+# Parallel branches have equal voltage drop but different flows: f_i = m_i * F_arc,
+# so loss_i = r_i * (m_i * F_arc)^2.
 function _distribute_arc_flows(
     arc_entry::PNM.BranchesParallel,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
     Q_to_from::Float64,
-    P_losses::Float64,
-    Q_losses::Float64,
 )
     entries = BranchFlowEntry[]
     for br in arc_entry
         arc_tuple = PNM.get_arc_tuple(br)
         m = PNM.compute_parallel_multiplier(arc_entry, PNM.get_name(br))
+        P_ft = P_from_to * m
+        r = PSY.get_r(br)
         push!(
             entries,
             BranchFlowEntry((
                 PNM.get_name(br),
                 arc_tuple[1],
                 arc_tuple[2],
-                P_from_to * m,
+                P_ft,
                 P_to_from * m,
-                P_losses * m,
+                r * P_ft^2,
                 Q_from_to * m,
                 Q_to_from * m,
-                Q_losses * m,
+                0.0,
             )),
         )
     end
     return entries
 end
 
+# Series branches all carry the same flow F_arc (with orientation sign flip),
+# so loss_i = r_i * F_arc^2. Recursion into leaf segments handles the computation.
 function _distribute_arc_flows(
     arc_entry::PNM.BranchesSeries,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
     Q_to_from::Float64,
-    P_losses::Float64,
-    Q_losses::Float64,
 )
     entries = BranchFlowEntry[]
     for (segment_ix, segment) in enumerate(arc_entry)
@@ -1127,8 +1158,6 @@ function _distribute_arc_flows(
             Q_from_to * m,
             P_to_from * m,
             Q_to_from * m,
-            P_losses * m,
-            Q_losses * m,
         )
             push!(entries, entry)
         end
@@ -1223,7 +1252,7 @@ function write_results(
             data.arc_reactive_power_flow_from_to[:, i],
             data.arc_active_power_flow_to_from[:, i],
             data.arc_reactive_power_flow_to_from[:, i],
-            zeros(size(data.arc_active_power_flow_from_to[:, i])),
+            data.arc_active_power_losses[:, i],
             zeros(size(data.arc_reactive_power_flow_from_to[:, i])),
         )
 
