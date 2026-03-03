@@ -235,6 +235,13 @@ function _get_element_resistance(
     end
 end
 
+"""Return the resistance from an admittance value stored by Ward reduction."""
+function _get_element_resistance(y::Complex)
+    g = real(y)
+    b = imag(y)
+    return g / (g^2 + b^2)
+end
+
 """
     _get_arc_resistances(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}) -> Vector{Float64}
 
@@ -258,6 +265,9 @@ function _get_arc_resistances(
         elseif arc in keys(PNM.get_transformer3W_map(nrd))
             Rs[ix_arc] =
                 _get_element_resistance(PNM.get_transformer3W_map(nrd)[arc])
+        elseif arc in keys(PNM.get_added_branch_map(nrd))
+            Rs[ix_arc] =
+                _get_element_resistance(PNM.get_added_branch_map(nrd)[arc])
         else
             error("Arc $arc not found in any of the branch maps.")
         end
