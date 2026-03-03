@@ -640,7 +640,11 @@ end
 bus indices from the arc axis and bus lookup stored in `data`. Used by DC solvers."""
 function _compute_branch_angle_differences_from_data!(
     data::PowerFlowData{T, M, N},
-) where {T <: PowerFlowEvaluationModel, M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+) where {
+    T <: PowerFlowEvaluationModel,
+    M <: PNM.PowerNetworkMatrix,
+    N <: Union{PNM.PowerNetworkMatrix, Nothing},
+}
     arc_axis = get_arc_axis(data)
     bus_lookup = get_bus_lookup(data)
     n_time_steps = size(data.branch_angle_differences, 2)
@@ -663,7 +667,11 @@ function _compute_branch_angle_differences_from_indices!(
     fb_ix::Vector{Int},
     tb_ix::Vector{Int},
     time_steps::Vector{Int},
-) where {T <: PowerFlowEvaluationModel, M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+) where {
+    T <: PowerFlowEvaluationModel,
+    M <: PNM.PowerNetworkMatrix,
+    N <: Union{PNM.PowerNetworkMatrix, Nothing},
+}
     for (arc_ix, (f, t_bus)) in enumerate(zip(fb_ix, tb_ix))
         for t in time_steps
             data.branch_angle_differences[arc_ix, t] =

@@ -1187,6 +1187,9 @@ function write_results(
               "'TransformerName-secondary', and 'TransformerName-tertiary'."
     end
 
+    # Compute branch resistances once for DC loss estimation (P_loss = R * flow^2).
+    Rs = _get_arc_resistances(data)
+
     result_dict = Dict{String, Dict{String, DataFrames.DataFrame}}()
     for i in 1:length(get_time_step_map(data))
         names,
@@ -1205,7 +1208,7 @@ function write_results(
             data.arc_reactive_power_flow_from_to[:, i],
             data.arc_active_power_flow_to_from[:, i],
             data.arc_reactive_power_flow_to_from[:, i],
-            zeros(size(data.arc_active_power_flow_from_to[:, i])),
+            Rs .* data.arc_active_power_flow_from_to[:, i] .^ 2,
             zeros(size(data.arc_reactive_power_flow_from_to[:, i])),
             data.branch_angle_differences[:, i],
         )
