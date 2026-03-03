@@ -90,7 +90,7 @@
     end
 end
 
-@testset "MULTI-PERIOD branch_angle_differences validation" begin
+@testset "MULTI-PERIOD arc_angle_differences validation" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     time_steps = 24
     data = PowerFlowData(
@@ -101,6 +101,6 @@ end
     solve_power_flow!(data)
 
     n_arcs = length(PF.get_arc_axis(data))
-    @test size(data.branch_angle_differences) == (n_arcs, time_steps)
-    validate_branch_angle_differences(data, [1, 12, 24])
+    @test size(data.arc_angle_differences) == (n_arcs, time_steps)
+    validate_arc_angle_differences(data, [1, 12, 24])
 end

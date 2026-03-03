@@ -509,9 +509,9 @@ function simple_lcc_system()
     return sys, lcc
 end
 
-"""Validate that `data.branch_angle_differences` matches θ_from − θ_to for every arc
+"""Validate that `data.arc_angle_differences` matches θ_from − θ_to for every arc
 at each time step in `time_steps`."""
-function validate_branch_angle_differences(data::PowerFlowData, time_steps::Vector{Int})
+function validate_arc_angle_differences(data::PowerFlowData, time_steps::Vector{Int})
     arc_axis = PF.get_arc_axis(data)
     bus_lookup = PF.get_bus_lookup(data)
     for t in time_steps
@@ -519,7 +519,7 @@ function validate_branch_angle_differences(data::PowerFlowData, time_steps::Vect
             from_ix = bus_lookup[first(arc)]
             to_ix = bus_lookup[last(arc)]
             expected = data.bus_angles[from_ix, t] - data.bus_angles[to_ix, t]
-            @test isapprox(data.branch_angle_differences[arc_ix, t], expected; atol = 1e-12)
+            @test isapprox(data.arc_angle_differences[arc_ix, t], expected; atol = 1e-12)
         end
     end
 end

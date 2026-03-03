@@ -201,12 +201,12 @@ end
     )
 end
 
-@testset "DC branch_angle_differences validation" begin
+@testset "DC arc_angle_differences validation" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
         data = PowerFlowData(T(; correct_bustypes = true), sys)
         solve_power_flow!(data)
-        validate_branch_angle_differences(data, [1])
+        validate_arc_angle_differences(data, [1])
     end
 
     # DataFrame column check

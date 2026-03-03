@@ -855,14 +855,14 @@ end
     @test flow_natural_ac == flow_system_ac
 end
 
-function test_ac_branch_angle_differences(ACSolver)
+function test_ac_arc_angle_differences(ACSolver)
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     pf = ACPowerFlow{ACSolver}(; correct_bustypes = true)
     data = PowerFlowData(pf, sys)
     solve_power_flow!(data)
-    validate_branch_angle_differences(data, [1])
+    validate_arc_angle_differences(data, [1])
 end
 
-@testset "AC branch_angle_differences validation" begin
-    foreach(test_ac_branch_angle_differences, AC_SOLVERS_TO_TEST)
+@testset "AC arc_angle_differences validation" begin
+    foreach(test_ac_arc_angle_differences, AC_SOLVERS_TO_TEST)
 end

@@ -1231,7 +1231,7 @@ function write_results(
             data.arc_reactive_power_flow_to_from[:, i],
             zeros(size(data.arc_active_power_flow_from_to[:, i])),
             zeros(size(data.arc_reactive_power_flow_from_to[:, i])),
-            data.branch_angle_differences[:, i],
+            data.arc_angle_differences[:, i],
         )
 
         temp_dict = _allocate_results_data(
@@ -1314,7 +1314,7 @@ function write_results(
         data.arc_reactive_power_flow_to_from[:, time_step],
         arc_active_power_losses,
         arc_reactive_power_losses,
-        data.branch_angle_differences[:, time_step];
+        data.arc_angle_differences[:, time_step];
         time_step = time_step,
     )
 
