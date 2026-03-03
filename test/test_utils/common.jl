@@ -524,6 +524,34 @@ function validate_branch_angle_differences(data::PowerFlowData, time_steps::Vect
     end
 end
 
+"""Validate that DC branch losses equal R * flow^2 for every row in the results DataFrame.
+Computes expected losses directly from the DataFrame's P_from_to column, avoiding
+arc ordering issues between internal data arrays and the sorted DataFrame."""
+function validate_dc_branch_losses(
+    data::PowerFlowData,
+    results::Dict,
+    base_power::Float64,
+    time_steps::Vector{Int},
+)
+    # Build a lookup from (bus_from, bus_to) -> resistance.
+    Rs = PF._get_arc_resistances(data)
+    arc_axis = PF.get_arc_axis(data)
+    r_lookup = Dict{Tuple{Int, Int}, Float64}()
+    for (ix, arc) in enumerate(arc_axis)
+        r_lookup[(first(arc), last(arc))] = Rs[ix]
+    end
+
+    for t in time_steps
+        flow_df = results[string(t)]["flow_results"]
+        for row in eachrow(flow_df)
+            r = r_lookup[(row[:bus_from], row[:bus_to])]
+            flow_pu = row[:P_from_to] / base_power
+            expected_loss_mw = r * flow_pu^2 * base_power
+            @test isapprox(row[:P_losses], expected_loss_mw; atol = 1e-6)
+        end
+    end
+end
+
 function power_flow_with_units(
     sys::PSY.System,
     T::Type{<:PF.ACPowerFlow},

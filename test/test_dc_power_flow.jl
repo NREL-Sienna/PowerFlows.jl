@@ -217,3 +217,24 @@ end
     )
     @test :angle_difference in propertynames(results["1"]["flow_results"])
 end
+
+@testset "DC branch losses estimation" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    base_power = PSY.get_base_power(sys)
+
+    for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
+        data = PowerFlowData(T(; correct_bustypes = true), sys)
+        results = solve_power_flow(data, sys, PF.FlowReporting.ARC_FLOWS)
+
+        # P_losses should be non-negative and non-trivially zero.
+        flow_df = results["1"]["flow_results"]
+        @test all(flow_df[!, :P_losses] .>= 0.0)
+        @test any(flow_df[!, :P_losses] .> 0.0)
+
+        # Q_losses must remain zero for DC.
+        @test all(flow_df[!, :Q_losses] .== 0.0)
+
+        # Validate P_losses = R * flow^2 (scaled by base_power).
+        validate_dc_branch_losses(data, results, base_power, [1])
+    end
+end
