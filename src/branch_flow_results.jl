@@ -26,6 +26,7 @@ mutable struct BranchFlowResults
     bus_from::Vector{Int}
     bus_to::Vector{Int}
     flows::Matrix{Float64}   # n × _N_FLOW_COLS
+    angle_diff::Vector{Float64}
     count::Int
 end
 
@@ -35,6 +36,7 @@ function BranchFlowResults(n::Int)
         Vector{Int}(undef, n),
         Vector{Int}(undef, n),
         Matrix{Float64}(undef, n, _N_FLOW_COLS),
+        Vector{Float64}(undef, n),
         0,
     )
 end

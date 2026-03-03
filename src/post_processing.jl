@@ -908,6 +908,7 @@ function _allocate_results_data(
         Q_to_from = result.flows[:, _COL_Q_TO_FROM],
         P_losses = result.flows[:, _COL_P_LOSSES],
         Q_losses = result.flows[:, _COL_Q_LOSSES],
+        angle_difference = result.angle_diff,
     )
     DataFrames.sort!(branch_df, [:bus_from, :bus_to])
 
@@ -935,7 +936,8 @@ function _post_process_flows(
     arc_P_to_from::Vector{Float64},
     arc_Q_to_from::Vector{Float64},
     arc_P_losses::Vector{Float64},
-    arc_Q_losses::Vector{Float64};
+    arc_Q_losses::Vector{Float64},
+    arc_angle_diff::Vector{Float64};
     kwargs...,
 )
     arc_lookup = get_arc_lookup(data)
@@ -955,6 +957,7 @@ function _post_process_flows(
                 arc_Q_losses[ix],
             )),
         )
+        result.angle_diff[result.count] = arc_angle_diff[ix]
     end
     return result
 end
@@ -967,7 +970,8 @@ function _post_process_flows(
     arc_P_to_from::Vector{Float64},
     arc_Q_to_from::Vector{Float64},
     arc_P_losses::Vector{Float64},
-    arc_Q_losses::Vector{Float64};
+    arc_Q_losses::Vector{Float64},
+    arc_angle_diff::Vector{Float64};
     kwargs...,
 )
     nrd = data.power_network_matrix.network_reduction_data
@@ -987,6 +991,7 @@ function _post_process_flows(
         nrd.transformer3W_map,
     ]
         for (arc, entry) in map
+            ix_arc = arc_lookup[arc]
             for flow_entry in _branch_flow_entries(
                 entry,
                 data,
@@ -1001,6 +1006,7 @@ function _post_process_flows(
                 kwargs...,
             )
                 push!(result, flow_entry)
+                result.angle_diff[result.count] = arc_angle_diff[ix_arc]
             end
         end
     end
@@ -1225,6 +1231,7 @@ function write_results(
             data.arc_reactive_power_flow_to_from[:, i],
             zeros(size(data.arc_active_power_flow_from_to[:, i])),
             zeros(size(data.arc_reactive_power_flow_from_to[:, i])),
+            data.arc_angle_differences[:, i],
         )
 
         temp_dict = _allocate_results_data(
@@ -1306,7 +1313,8 @@ function write_results(
         data.arc_active_power_flow_to_from[:, time_step],
         data.arc_reactive_power_flow_to_from[:, time_step],
         arc_active_power_losses,
-        arc_reactive_power_losses;
+        arc_reactive_power_losses,
+        data.arc_angle_differences[:, time_step];
         time_step = time_step,
     )
 
