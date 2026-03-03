@@ -636,8 +636,9 @@ function PowerFlowData(
     )
 end
 
-"""Compute branch angle differences for all arcs and all time steps, looking up
-bus indices from the arc axis and bus lookup stored in `data`. Used by DC solvers."""
+"""Compute branch angle differences for all arcs and all time steps. Builds the incidence
+matrix `I` from the arc axis and bus lookup, then computes `branch_angle_differences = I *
+bus_angles`. Used by DC solvers."""
 function _compute_branch_angle_differences_from_data!(
     data::PowerFlowData{T, M, N},
 ) where {
@@ -647,15 +648,30 @@ function _compute_branch_angle_differences_from_data!(
 }
     arc_axis = get_arc_axis(data)
     bus_lookup = get_bus_lookup(data)
-    n_time_steps = size(data.branch_angle_differences, 2)
-    for (arc_ix, arc) in enumerate(arc_axis)
-        from_ix = bus_lookup[first(arc)]
-        to_ix = bus_lookup[last(arc)]
-        for t in 1:n_time_steps
-            data.branch_angle_differences[arc_ix, t] =
-                data.bus_angles[from_ix, t] - data.bus_angles[to_ix, t]
-        end
-    end
+    n_arcs = length(arc_axis)
+    n_buses = size(data.bus_angles, 1)
+    fb_ix = [bus_lookup[first(arc)] for arc in arc_axis]
+    tb_ix = [bus_lookup[last(arc)] for arc in arc_axis]
+    incidence = sparse(
+        [1:n_arcs; 1:n_arcs],
+        [fb_ix; tb_ix],
+        [ones(n_arcs); fill(-1.0, n_arcs)],
+        n_arcs,
+        n_buses,
+    )
+    data.branch_angle_differences .= incidence * data.bus_angles
+    return
+end
+
+"""Compute branch angle differences for `ABAPowerFlowData` using the stored BA matrix.
+The incidence matrix `I` is derived as `sign(BA.data)'` (since BA.data is stored transposed
+as `n_buses × n_branches` with ±susceptance values), then `branch_angle_differences = I *
+bus_angles`."""
+function _compute_branch_angle_differences_from_data!(data::ABAPowerFlowData)
+    # BA.data is stored transposed (n_buses × n_branches) with values ±b (susceptance).
+    # sign.(BA.data)' is the incidence matrix I (n_branches × n_buses),
+    # where I[branch, from_bus] = 1 and I[branch, to_bus] = -1.
+    data.branch_angle_differences .= sign.(data.aux_network_matrix.data)' * data.bus_angles
     return
 end
 
