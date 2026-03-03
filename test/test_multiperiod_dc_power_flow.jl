@@ -104,3 +104,26 @@ end
     @test size(data.arc_angle_differences) == (n_arcs, time_steps)
     validate_arc_angle_differences(data, [1, 12, 24])
 end
+
+@testset "MULTI-PERIOD DC branch losses estimation" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    base_power = PSY.get_base_power(sys)
+    time_steps = 24
+
+    data = PowerFlowData(
+        DCPowerFlow(; time_steps = time_steps, correct_bustypes = true),
+        sys,
+    )
+    prepare_ts_data!(data, time_steps)
+    results = solve_power_flow(data, sys, PF.FlowReporting.ARC_FLOWS)
+
+    # Losses should be non-negative at every time step.
+    for t in 1:time_steps
+        flow_df = results[data.time_step_map[t]]["flow_results"]
+        @test all(flow_df[!, :P_losses] .>= 0.0)
+        @test all(flow_df[!, :Q_losses] .== 0.0)
+    end
+
+    # Validate P_losses = R * flow^2 at sampled time steps.
+    validate_dc_branch_losses(data, results, base_power, [1, 12, 24])
+end

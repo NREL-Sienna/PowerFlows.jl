@@ -22,9 +22,9 @@ function _compare_flow_dataframes(full_branch_df, reduced_branch_df; atol = 1e-6
     @test size(joined, 1) == size(full_branch_df, 1)
     for col in names(full_branch_df)
         col == "flow_name" && continue
-        # Angle differences across series-reduced branches are inherently
-        # different because the reduction changes the network topology.
-        col == "angle_difference" && continue
+        # Angle differences and losses across series-reduced branches are
+        # inherently different because the reduction changes the network topology.
+        col in ("angle_difference", "P_losses", "Q_losses") && continue
         col_full = col
         col_reduced = "$(col)_1"
         for row in eachrow(joined)
