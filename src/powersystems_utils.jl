@@ -127,18 +127,6 @@ function can_be_PV(sys::System)
     return source_buses
 end
 
-get_complex_voltage(bus::PSY.ACBus) = PSY.get_magnitude(bus) * exp(1im * PSY.get_angle(bus))
-
-function get_segment_flow(
-    segment::PSY.ACTransmission,
-    V_from::ComplexF64,
-    V_to::ComplexF64,
-)
-    (y11, y12, _, _) = PNM.ybus_branch_entries(segment)
-    I_from = y11 * V_from + y12 * V_to
-    return V_from * conj(I_from)
-end
-
 error_if_reversed(::PSY.TwoTerminalHVDC, ::Float64) = nothing
 
 function error_if_reversed(hvdc::PSY.TwoTerminalLCCLine, P_dc::Float64)

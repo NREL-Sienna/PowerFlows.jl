@@ -73,11 +73,21 @@ Returns the results in a dictionary of dataframes.
 
 ```julia
 res = solve_power_flow(pf, sys)
+res = solve_power_flow(pf, sys, FlowReporting.BRANCH_FLOWS)
 ```
 """
 function solve_power_flow(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
     system::PSY.System;
+    kwargs...,
+)
+    return solve_power_flow(pf, system, FlowReporting.ARC_FLOWS; kwargs...)
+end
+
+function solve_power_flow(
+    pf::ACPowerFlow{<:ACPowerFlowSolverType},
+    system::PSY.System,
+    flow_reporting::FlowReporting;
     kwargs...,
 )
     # df_results must be defined in the outer scope first to be visible for return
@@ -91,7 +101,7 @@ function solve_power_flow(
 
         if converged
             @info("PowerFlow solve converged, the results are exported in DataFrames")
-            df_results = write_results(pf, system, data, time_step)
+            df_results = write_results(pf, system, data, time_step, flow_reporting)
         else
             df_results = missing
             @error("The power flow solver returned convergence = $(converged)")

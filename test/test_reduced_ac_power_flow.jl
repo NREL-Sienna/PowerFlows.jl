@@ -92,16 +92,21 @@ end
                 results = solve_power_flow(pf, sys)
             end
             @assert !isempty(PSY.get_components(PSY.Transformer3W, sys))
-            test_trf = first(collect(PSY.get_components(PSY.Transformer3W, sys)))
-            test_trf_name = PSY.get_name(test_trf)
             if supported
                 arc_flows = results["flow_results"]
+                # Look up 3WT winding flows by bus_from/bus_to (arc endpoints).
+                temp_nrd = PNM.get_network_reduction_data(
+                    PNM.Ybus(sys; network_reductions = deepcopy(v)))
+                test_trf = first(collect(PSY.get_components(PSY.Transformer3W, sys)))
                 trf_arc_flows = zeros(ComplexF32, 3)
-                for i in 1:3
-                    ix = arc_flows[!, "flow_name"] .== "$(test_trf_name)_winding_$i"
-                    @assert sum(ix) > 0 "could not find arc in results dataframe with name" *
-                                        " $(test_trf_name)_winding_$i"
-                    trf_arc_flows[i] =
+                for (arc, winding) in PNM.get_transformer3W_map(temp_nrd)
+                    PNM.get_transformer(winding) !== test_trf && continue
+                    wnum = PNM.get_winding_number(winding)
+                    ix =
+                        (arc_flows[!, "bus_from"] .== arc[1]) .&
+                        (arc_flows[!, "bus_to"] .== arc[2])
+                    @assert sum(ix) > 0 "could not find arc ($arc) in results dataframe"
+                    trf_arc_flows[wnum] =
                         sum(arc_flows[ix, "P_from_to"]) +
                         im * sum(arc_flows[ix, "Q_from_to"])
                 end
