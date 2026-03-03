@@ -49,6 +49,8 @@ function solve_power_flow!(
     solve!(solver_cache, p_inj)
     data.bus_angles[valid_ix, :] .= p_inj
     _compute_arc_angle_differences_from_data!(data)
+    Rs = _get_arc_resistances(data)
+    data.arc_active_power_losses .= Rs .* data.arc_active_power_flow_from_to .^ 2
     data.converged .= true
     if get_calculate_loss_factors(data)
         data.loss_factors .= dc_loss_factors(data, power_injections)
@@ -86,6 +88,8 @@ function solve_power_flow!(
     solve!(solver_cache, p_inj)
     data.bus_angles[valid_ix, :] .= p_inj
     _compute_arc_angle_differences_from_data!(data)
+    Rs = _get_arc_resistances(data)
+    data.arc_active_power_losses .= Rs .* data.arc_active_power_flow_from_to .^ 2
     data.converged .= true
     if get_calculate_loss_factors(data)
         data.loss_factors .= dc_loss_factors(data, power_injections)
@@ -127,6 +131,8 @@ function solve_power_flow!(
     data.arc_active_power_flow_to_from .= -data.arc_active_power_flow_from_to
     # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
     _compute_arc_angle_differences_from_data!(data)
+    Rs = _get_arc_resistances(data)
+    data.arc_active_power_losses .= Rs .* data.arc_active_power_flow_from_to .^ 2
     data.converged .= true
     return
 end
@@ -215,34 +221,37 @@ function solve_power_flow(
 end
 
 """
-    _get_arc_resistances(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) -> Vector{Float64}
+    _get_arc_resistances(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}) -> Vector{Float64}
 
-Look up the resistance of each arc from the network reduction data.
+Look up the equivalent resistance of each arc from the network reduction data,
+using PNM API where available.
 """
 function _get_arc_resistances(
-    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData},
+    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
 )
     nrd = get_network_reduction_data(data)
     arc_ax = get_arc_axis(data)
     Rs = zeros(length(arc_ax))
-    # TODO simpler way? Should be a uniform interface for this type of thing...
     for (ix_arc, arc) in enumerate(arc_ax)
         if arc in keys(PNM.get_direct_branch_map(nrd))
-            line = PNM.get_direct_branch_map(nrd)[arc]
-            r = PSY.get_r(line)
+            Rs[ix_arc] = PSY.get_r(PNM.get_direct_branch_map(nrd)[arc])
         elseif arc in keys(PNM.get_parallel_branch_map(nrd))
-            parallel_lines = PNM.parallel_branch_map(nrd)[arc]
-            r = 1 / (sum(1 / PSY.get_r.(parallel_lines.branches)))
+            parallel = PNM.get_parallel_branch_map(nrd)[arc]
+            eq = PNM.get_equivalent_physical_branch_parameters(parallel)
+            Rs[ix_arc] = PNM.get_equivalent_r(eq)
         elseif arc in keys(PNM.get_series_branch_map(nrd))
-            series_lines = PNM.series_branch_map(nrd)[arc]
-            r = sum(PSY.get_r.(series_chain) for series_chain in series_lines)
+            series = PNM.get_series_branch_map(nrd)[arc]
+            eq = PNM.get_equivalent_physical_branch_parameters(series)
+            Rs[ix_arc] = PNM.get_equivalent_r(eq)
         elseif arc in keys(PNM.get_transformer3W_map(nrd))
-            transformer3w = PNM.transformer3W_map(nrd)[arc]
-            r = PSY.get_equivalent_r(transformer3w)
+            winding = PNM.get_transformer3W_map(nrd)[arc]
+            Rs[ix_arc] = PNM.get_equivalent_r(winding)
+        elseif arc in keys(PNM.get_added_branch_map(nrd))
+            y = PNM.get_added_branch_map(nrd)[arc]
+            Rs[ix_arc] = real(1 / y)
         else
             error("Arc $arc not found in any of the branch maps.")
         end
-        Rs[ix_arc] = r
     end
     return Rs
 end
