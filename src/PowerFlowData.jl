@@ -667,7 +667,11 @@ function _compute_branch_angle_differences_from_indices!(
     fb_ix::Vector{Int},
     tb_ix::Vector{Int},
     time_steps::Vector{Int},
-) where {T <: PowerFlowEvaluationModel, M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+) where {
+    T <: PowerFlowEvaluationModel,
+    M <: PNM.PowerNetworkMatrix,
+    N <: Union{PNM.PowerNetworkMatrix, Nothing},
+}
     for (arc_ix, (f, t_bus)) in enumerate(zip(fb_ix, tb_ix))
         for t in time_steps
             data.branch_angle_differences[arc_ix, t] =
