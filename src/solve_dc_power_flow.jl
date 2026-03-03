@@ -214,38 +214,11 @@ function solve_power_flow(
     return write_results(data, sys, flow_reporting)
 end
 
-"""Return the resistance of a single element in a network reduction."""
-_get_element_resistance(branch::PSY.ACBranch) = PSY.get_r(branch)
-
-function _get_element_resistance(parallel::PNM.BranchesParallel)
-    return 1.0 / sum(1.0 / PSY.get_r(b) for b in parallel.branches)
-end
-
-function _get_element_resistance(
-    winding::PNM.ThreeWindingTransformerWinding,
-)
-    t = winding.transformer
-    w = winding.winding_number
-    if w == 1
-        return PSY.get_r_primary(t)
-    elseif w == 2
-        return PSY.get_r_secondary(t)
-    else
-        return PSY.get_r_tertiary(t)
-    end
-end
-
-"""Return the resistance from an admittance value stored by Ward reduction."""
-function _get_element_resistance(y::Complex)
-    g = real(y)
-    b = imag(y)
-    return g / (g^2 + b^2)
-end
-
 """
     _get_arc_resistances(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}) -> Vector{Float64}
 
-Look up the resistance of each arc from the network reduction data.
+Look up the equivalent resistance of each arc from the network reduction data,
+using PNM API where available.
 """
 function _get_arc_resistances(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
@@ -255,19 +228,21 @@ function _get_arc_resistances(
     Rs = zeros(length(arc_ax))
     for (ix_arc, arc) in enumerate(arc_ax)
         if arc in keys(PNM.get_direct_branch_map(nrd))
-            Rs[ix_arc] = _get_element_resistance(PNM.get_direct_branch_map(nrd)[arc])
+            Rs[ix_arc] = PSY.get_r(PNM.get_direct_branch_map(nrd)[arc])
         elseif arc in keys(PNM.get_parallel_branch_map(nrd))
-            Rs[ix_arc] =
-                _get_element_resistance(PNM.get_parallel_branch_map(nrd)[arc])
+            parallel = PNM.get_parallel_branch_map(nrd)[arc]
+            eq = PNM.get_equivalent_physical_branch_parameters(parallel)
+            Rs[ix_arc] = PNM.get_equivalent_r(eq)
         elseif arc in keys(PNM.get_series_branch_map(nrd))
             series = PNM.get_series_branch_map(nrd)[arc]
-            Rs[ix_arc] = sum(_get_element_resistance(elem) for elem in series)
+            eq = PNM.get_equivalent_physical_branch_parameters(series)
+            Rs[ix_arc] = PNM.get_equivalent_r(eq)
         elseif arc in keys(PNM.get_transformer3W_map(nrd))
-            Rs[ix_arc] =
-                _get_element_resistance(PNM.get_transformer3W_map(nrd)[arc])
+            winding = PNM.get_transformer3W_map(nrd)[arc]
+            Rs[ix_arc] = PNM.get_equivalent_r(winding)
         elseif arc in keys(PNM.get_added_branch_map(nrd))
-            Rs[ix_arc] =
-                _get_element_resistance(PNM.get_added_branch_map(nrd)[arc])
+            y = PNM.get_added_branch_map(nrd)[arc]
+            Rs[ix_arc] = real(1 / y)
         else
             error("Arc $arc not found in any of the branch maps.")
         end

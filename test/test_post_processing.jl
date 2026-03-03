@@ -14,7 +14,12 @@ function _count_branches(sys)
 end
 
 """Compare two flow DataFrames by joining on flow_name, so row ordering doesn't matter."""
-function _compare_flow_dataframes(full_branch_df, reduced_branch_df; atol = 1e-6)
+function _compare_flow_dataframes(
+    full_branch_df,
+    reduced_branch_df;
+    atol = 1e-6,
+    skip_cols = String["angle_difference", "P_losses", "Q_losses"],
+)
     @test size(full_branch_df, 1) == size(reduced_branch_df, 1)
     # Join on flow_name so we compare the same branch regardless of sort order.
     joined = DataFrames.innerjoin(full_branch_df, reduced_branch_df;
@@ -24,7 +29,7 @@ function _compare_flow_dataframes(full_branch_df, reduced_branch_df; atol = 1e-6
         col == "flow_name" && continue
         # Angle differences and losses across series-reduced branches are
         # inherently different because the reduction changes the network topology.
-        col in ("angle_difference", "P_losses", "Q_losses") && continue
+        col in skip_cols && continue
         col_full = col
         col_reduced = "$(col)_1"
         for row in eachrow(joined)
