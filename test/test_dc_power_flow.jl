@@ -238,3 +238,46 @@ end
         validate_dc_branch_losses(data, results, base_power, [1])
     end
 end
+
+@testset "DC arc active power losses: loss = r * flow^2" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+
+    for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
+        data = PowerFlowData(T(; correct_bustypes = true), sys)
+        solve_power_flow!(data)
+
+        # The field should be populated after solve.
+        @test data.arc_active_power_losses !== nothing
+        losses = data.arc_active_power_losses
+
+        # Recompute expected losses from resistances and flows.
+        Rs = PF._get_arc_resistances(data)
+        expected = Rs .* data.arc_active_power_flow_from_to .^ 2
+        @test isapprox(losses, expected; atol = 1e-12)
+
+        # Losses must be non-negative.
+        @test all(losses .>= 0.0)
+    end
+end
+
+@testset "DC branch-level losses with BRANCH_FLOWS reporting" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    base_power = PSY.get_base_power(sys)
+
+    for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
+        results = solve_power_flow(
+            T(; correct_bustypes = true),
+            sys,
+            PF.FlowReporting.BRANCH_FLOWS,
+        )
+        flow_df = results["1"]["flow_results"]
+
+        # P_losses column must exist and be non-negative.
+        @test :P_losses in propertynames(flow_df)
+        @test all(flow_df[!, :P_losses] .>= 0.0)
+        @test any(flow_df[!, :P_losses] .> 0.0)
+
+        # Q_losses must be zero for DC.
+        @test all(flow_df[!, :Q_losses] .== 0.0)
+    end
+end

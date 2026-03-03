@@ -49,6 +49,8 @@ function solve_power_flow!(
     solve!(solver_cache, p_inj)
     data.bus_angles[valid_ix, :] .= p_inj
     _compute_arc_angle_differences_from_data!(data)
+    Rs = _get_arc_resistances(data)
+    data.arc_active_power_losses .= Rs .* data.arc_active_power_flow_from_to .^ 2
     data.converged .= true
     if get_calculate_loss_factors(data)
         data.loss_factors .= dc_loss_factors(data, power_injections)
@@ -86,6 +88,8 @@ function solve_power_flow!(
     solve!(solver_cache, p_inj)
     data.bus_angles[valid_ix, :] .= p_inj
     _compute_arc_angle_differences_from_data!(data)
+    Rs = _get_arc_resistances(data)
+    data.arc_active_power_losses .= Rs .* data.arc_active_power_flow_from_to .^ 2
     data.converged .= true
     if get_calculate_loss_factors(data)
         data.loss_factors .= dc_loss_factors(data, power_injections)
@@ -127,6 +131,8 @@ function solve_power_flow!(
     data.arc_active_power_flow_to_from .= -data.arc_active_power_flow_from_to
     # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
     _compute_arc_angle_differences_from_data!(data)
+    Rs = _get_arc_resistances(data)
+    data.arc_active_power_losses .= Rs .* data.arc_active_power_flow_from_to .^ 2
     data.converged .= true
     return
 end
