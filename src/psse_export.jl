@@ -1771,14 +1771,15 @@ function _write_regular_branch_record!(
 
     if exporter.psse_version == :v35
         NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
-        rates = [RATEA, RATEB, RATEC]
-        for i in 4:12
-            push!(rates, get_ext_key_or_default(branch, "RATE$i"))
-        end
         @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B, NAME)
-        for rate in rates
-            fastprintdelim(io, rate)
+
+        fastprintdelim(io, RATEA)
+        fastprintdelim(io, RATEB)
+        fastprintdelim(io, RATEC)
+        for i in 4:12
+            fastprintdelim(io, get_ext_key_or_default(branch, "RATE$i"))
         end
+
         @fastprintdelim_unroll(io, false, GI, BI, GJ, BJ, ST, MET, LEN)
         fastprintln_psse_default_ownership(io)
     else
