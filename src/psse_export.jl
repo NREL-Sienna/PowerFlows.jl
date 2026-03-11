@@ -929,9 +929,9 @@ function _write_2w_transformer_record3_winding1!(
     if exporter.psse_version == :v35
         RATA1, RATB1, RATC1 =
             with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-                _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
-                _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
-                _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+                _value_or_default(PSY.get_rating(transformer), 0.0),
+                _value_or_default(PSY.get_rating_b(transformer), 0.0),
+                _value_or_default(PSY.get_rating_c(transformer), 0.0)
             end
 
         rates_1 = [
@@ -940,7 +940,7 @@ function _write_2w_transformer_record3_winding1!(
             get_ext_key_or_default(transformer, "RATE13", RATC1),
         ]
         for i in 4:12
-            push!(rates_1, get_ext_key_or_default(transformer, "RATE1$i"))
+            push!(rates_1, get_ext_key_or_default(transformer, "RATE1$i", 0.0))
         end
 
         @fastprintdelim_unroll(io, false, WINDV1, NOMV1, ANG1)
@@ -1777,7 +1777,7 @@ function _write_regular_branch_record!(
         fastprintdelim(io, RATEB)
         fastprintdelim(io, RATEC)
         for i in 4:12
-            fastprintdelim(io, get_ext_key_or_default(branch, "RATE$i"))
+            fastprintdelim(io, get_ext_key_or_default(branch, "RATE$i", 0.0))
         end
 
         @fastprintdelim_unroll(io, false, GI, BI, GJ, BJ, ST, MET, LEN)
@@ -1870,7 +1870,7 @@ function _write_tap_transformer_as_branch_record!(
         NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
         rates = [RATEA, RATEB, RATEC]
         for i in 4:12
-            push!(rates, get_ext_key_or_default(branch, "RATE$i"))
+            push!(rates, get_ext_key_or_default(branch, "RATE$i", 0.0))
         end
         @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B, NAME)
         for rate in rates
@@ -2035,7 +2035,7 @@ function write_to_buffers!(
 
         rates = [RATE1]
         for i in 2:12
-            push!(rates, get_ext_key_or_default(branch, "RATE$i"))
+            push!(rates, get_ext_key_or_default(branch, "RATE$i", 0.0))
         end
 
         STAT = PSY.get_available(branch) ? 1 : 0
