@@ -1,7 +1,7 @@
 name = "PowerFlows"
 uuid = "94fada2c-fd9a-4e89-8d82-81405f5cb4f6"
-authors = ["Jose Daniel Lara", "Gabriel Konar-Steenberg", "Luke Kiernan"]
 version = "0.16.0"
+authors = ["Jose Daniel Lara", "Gabriel Konar-Steenberg", "Luke Kiernan"]
 
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
@@ -14,6 +14,7 @@ LineSearches = "d3d80556-e9d4-5f37-9878-2ab0fcc64255"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
 PowerNetworkMatrices = "bed98974-b02a-5e2f-9fe0-a103f5c450dd"
+PowerSimulations = "e690365d-45e2-57bb-ac84-44ba829e73c4"
 PowerSystems = "bcd98974-b02a-5e2f-9ee0-a103f5c450dd"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
@@ -29,6 +30,7 @@ LineSearches = "7.4.0"
 LinearAlgebra = "1"
 Logging = "1"
 PowerNetworkMatrices = "^0.18"
+PowerSimulations = "0.33.1"
 PowerSystems = "5.5"
 SparseArrays = "1"
 StaticArrays = "1.9.13"

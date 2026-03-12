@@ -1,4 +1,5 @@
 using Documenter, PowerSystems, DocStringExtensions, PowerFlows, DataStructures
+using PowerSimulations, HiGHS
 using DocumenterInterLinks
 
 links = InterLinks(
@@ -12,6 +13,8 @@ pages = OrderedDict(
     "How-to-Guides" => "how-tos/stub.md",
     "Tutorials" => Any[
         "Solving a Power Flow" => "tutorials/solving-a-power-flow.md",
+        "Validating a UC Dispatch" => "tutorials/power-flow-after-unit-commitment.md",
+        "Power Flow In The Loop with UC" => "tutorials/uc-power-flow-in-the-loop.md",
     ],
     "Explanation" => "explanation/stub.md",
     "Reference" => Any[

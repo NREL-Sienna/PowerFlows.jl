@@ -21,6 +21,16 @@ Create a [`System`](@extref PowerSystems.System) from [PowerSystemCaseBuilder.jl
 sys = build_system(MatpowerTestSystems, "matpower_case5_sys")
 ```
 
+!!! warning "Run the setup blocks first"
+    Every code block in this tutorial shares the same REPL session (`basic_tutorial`). If
+    you skip or re-order blocks, variables like `sys` and `pf_dc` will be undefined and
+    you will see `UndefVarError`. Always run the setup blocks above before proceeding to
+    each subsequent section.
+
+    If any `using` statement in the setup block failed because a package was not yet
+    installed, install it with `Pkg.add("PackageName")` and then **re-run the entire
+    setup block** — simply installing a package does not load it into the current session.
+
 ## DC Power Flow
 
 [`DCPowerFlow`](@ref) solves for bus voltage angles using the bus admittance matrix, 
@@ -35,6 +45,8 @@ Solve the power flow with [`solve_power_flow`](@ref):
 ```@repl basic_tutorial
 dc_results = solve_power_flow(pf_dc, sys)
 ```
+
+<!-- dc_results = solve_power_flow(pf_dc, sys, FlowReporting.ARC_FLOWS)  -->
 
 The result is a `Dict{String, Dict{String, DataFrame}}`. The outer key is the time step
 name: `"1"`. The inner dictionary stores the power flow results at that time step:
@@ -66,6 +78,7 @@ solver:
 ```@repl basic_tutorial
 pf_ptdf = PTDFPowerFlow()
 ```
+<!-- pf_ptdf = PTDFDCPowerFlow()  -->
 
 As before, solve the power flow with [`solve_power_flow`](@ref):
 
@@ -73,11 +86,15 @@ As before, solve the power flow with [`solve_power_flow`](@ref):
 dc_results = solve_power_flow(pf_ptdf, sys)
 ```
 
+<!-- dc_results = solve_power_flow(pf_ptdf, sys, FlowReporting.ARC_FLOWS)  -->
+
 Look at the bus results:
 
 ```@repl basic_tutorial
 ptdf_results["1"]["bus_results"]
 ```
+
+<!-- dc_results["1"]["bus_results"]  -->
 
 The results match `DCPowerFlow`, as they should: the two are mathematically equivalent. 
 For very large systems where forming the full PTDF matrix would be too expensive, 
@@ -98,9 +115,11 @@ Solve the power flow:
 solve_power_flow(pf_ac, sys)
 ```
 
+<!-- ac_results = solve_power_flow(pf_ac, sys)  -->
+
 AC results are returned as a flat `Dict{String, DataFrame}`, with the same keys as 
 before: `"bus_results"`, `"flow_results"` (AC lines), and `"lcc_results"` (HVDC lines). 
-(We don't support multi-period AC power flows yet.) Look at the bus results:
+(Sienna does not support multi-period AC power flows yet.) Look at the bus results:
 
 ```@repl basic_tutorial
 ac_results["bus_results"]
