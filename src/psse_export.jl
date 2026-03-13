@@ -97,7 +97,8 @@ const PSSE_V35_HEADERS = Dict{String, String}(
     "Load Data" => "@!   I,'ID',STAT,AREA,ZONE,      PL,        QL,        IP,        IQ,        YP,        YQ, OWNER,SCALE,INTRPT,  DGENP,     DGENQ,DGENF,'  LOAD TYPE '",
     "Fixed Shunt Data" => "@!   I,'ID',STATUS,  GL,        BL",
     "Generator Data" => "@!   I,'ID',      PG,        QG,        QT,        QB,     VS,    IREG,NREG,     MBASE,     ZR,         ZX,         RT,         XT,     GTAP,STAT, RMPCT,      PT,        PB,BASLOD,O1,    F1,  O2,    F2,  O3,    F3,  O4,    F4,WMOD, WPF",
-    "Non-Transformer Branch Data" => "@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
+    "Non-Transformer Branch Data" => "@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,
+      RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
     "Switching Device Data" => "@!   I,     J,'CKT',          X,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12, STAT,NSTAT,  MET,STYPE,'NAME'",
     "Transformer Data" => """
 @!   I,     J,     K,'CKT',CW,CZ,CM,     MAG1,        MAG2,NMETR,               'N A M E',               STAT,O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4,     'VECGRP', ZCOD
@@ -916,7 +917,7 @@ function _write_2w_transformer_record3_winding1!(
     RMI1 = get_ext_key_or_default(transformer, "RMI1")
     VMA1 = get_ext_key_or_default(transformer, "VMA1")
     VMI1 = get_ext_key_or_default(transformer, "VMI1")
-    NTP1 = get_ext_key_or_default(transformer, "NTP1")
+    NTP1 = _permissive_parse_int(get_ext_key_or_default(transformer, "NTP1"))
     NOD1 = get_ext_key_or_default(transformer, "NOD1")
     CONT1 = get_ext_key_or_default(transformer, "CONT1")
 
@@ -1072,7 +1073,7 @@ function _collect_3w_winding_data(
         RMI = get_ext_key_or_default(transformer, "RMI$prefix")
         VMA = get_ext_key_or_default(transformer, "VMA$prefix")
         VMI = get_ext_key_or_default(transformer, "VMI$prefix")
-        NTP = get_ext_key_or_default(transformer, "NTP$prefix")
+        NTP = _permissive_parse_int(get_ext_key_or_default(transformer, "NTP$prefix"))
         TAB = 0
         supp_attr = PSY.get_supplemental_attributes(transformer)
         for icd_tr in supp_attr
