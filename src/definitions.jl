@@ -67,6 +67,9 @@ const ITypes = SparseArrays.CHOLMOD.ITypes
 # force arc names to be unique when reporting power flow results.
 const FORCE_UNIQUE_NAMES = true
 
+const DEFAULT_RCOND_TOLERANCE = 1e-12  # threshold for ill-conditioning in Jacobian diagnostics
+const DEFAULT_RGROWTH_WARN = 1e10      # threshold for pivot growth warning
+
 const BUS_TYPE_PRIORITIES = Dict{PSY.ACBusTypes, Int}(
     PSY.ACBusTypes.REF => 3,
     PSY.ACBusTypes.PV => 2,
