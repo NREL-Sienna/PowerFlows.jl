@@ -19,6 +19,10 @@ export update_exporter!
 export write_export
 export get_psse_export_paths
 export FlowReporting
+export JacobianDiagnostics
+export compute_jacobian_diagnostics
+export quick_jacobian_check
+export get_diagnostics_report
 # "protected" (semi-stable because used in PSI) but not exported:
 # PowerFlowData and related type aliases, solve_power_flow!, write_results
 
@@ -30,7 +34,6 @@ import PowerSystems as PSY
 import PowerSystems: System, with_units_base
 import LinearAlgebra
 import LinearAlgebra: norm, dot, ldiv!
-import LinearAlgebra: norm, dot
 import JSON3
 import KLU
 import SparseArrays
@@ -60,6 +63,7 @@ include("solve_dc_power_flow.jl")
 include("state_indexing_helpers.jl")
 include("ac_power_flow_residual.jl")
 include("ac_power_flow_jacobian.jl")
+include("jacobian_diagnostics.jl")
 include("solve_ac_power_flow.jl")
 include("power_flow_setup.jl")
 include("power_flow_method.jl")
