@@ -77,7 +77,8 @@
     @testset "Allocation-free Adam step" begin
         n = 100
         state = PF.AdamState(n)
-        state.g .= randn(n)
+        rand_g = randn(n)
+        state.g .= rand_g
         cfg = PF.AdamConfig()
         x = randn(n)
 
