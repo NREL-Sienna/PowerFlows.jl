@@ -19,21 +19,8 @@ function _newton_power_flow(
             kwargs...,
         )
     end
-    @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
-
-    if converged
-        @info("The LevenbergMarquardtACPowerFlow solver converged after $i iterations.")
-        if get_calculate_loss_factors(data)
-            _calculate_loss_factors(data, J.Jv, time_step)
-        end
-        if get_calculate_voltage_stability_factors(data)
-            _calculate_voltage_stability_factors(data, J.Jv, time_step)
-        end
-        return true
-    end
-
-    @error("The LevenbergMarquardtACPowerFlow solver failed to converge.")
-    return false
+    return _finalize_power_flow(
+        converged, i, "LevenbergMarquardtACPowerFlow", residual, data, J.Jv, time_step)
 end
 
 function _run_power_flow_method(

@@ -48,19 +48,17 @@ before the iteration loop to ensure a zero-allocation inner loop.
 - `g::Vector{Float64}`: gradient vector (length `n`)
 - `m::Vector{Float64}`: 1st moment estimate (length `n`)
 - `v::Vector{Float64}`: 2nd moment estimate (length `n`)
-- `x_save::Vector{Float64}`: saved state vector for line search rollback (length `n`)
 - `t::Int`: step counter for bias correction
 """
 mutable struct AdamState
     g::Vector{Float64}
     m::Vector{Float64}
     v::Vector{Float64}
-    x_save::Vector{Float64}
     t::Int
 end
 
 function AdamState(n::Int)
-    return AdamState(zeros(n), zeros(n), zeros(n), zeros(n), 0)
+    return AdamState(zeros(n), zeros(n), zeros(n), 0)
 end
 
 """
@@ -141,14 +139,11 @@ function _newton_power_flow(
     if !converged
         cfg = AdamConfig(get_solver_kwargs(pf))
         state = AdamState(length(x0))
+        x_save = zeros(length(x0))
 
         for iter in 1:maxIterations
-            # 1. Evaluate residual (already evaluated on first entry)
-            if iter > 1
-                residual(x0, time_step)
-            end
-            residual_norm = norm(residual.Rv, Inf)
-            if residual_norm < tol
+            # 1. Check convergence (residual already evaluated from init or previous step)
+            if norm(residual.Rv, Inf) < tol
                 converged = true
                 i = iter
                 break
@@ -161,7 +156,7 @@ function _newton_power_flow(
             compute_gradient!(state, J, residual)
 
             # 4. Save current x for line search
-            copyto!(state.x_save, x0)
+            copyto!(x_save, x0)
             old_loss = dot(residual.Rv, residual.Rv)
 
             # 5. Adam parameter update: x ← x − η · Adam(g)
@@ -178,7 +173,7 @@ function _newton_power_flow(
             for _ in 1:ADAM_MAX_BACKTRACKS
                 new_loss <= old_loss && break
                 α *= ADAM_BACKTRACK_FACTOR
-                _interpolate_x!(x0, state.x_save, α)
+                _interpolate_x!(x0, x_save, α)
                 update_data!(data, x0, time_step)
                 residual(x0, time_step)
                 new_loss = dot(residual.Rv, residual.Rv)
@@ -187,27 +182,12 @@ function _newton_power_flow(
             i = iter
         end
 
+        # Check convergence after final iteration
         if !converged
-            # Check one last time after the final update
-            residual(x0, time_step)
             converged = norm(residual.Rv, Inf) < tol
         end
     end
 
-    @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
-
-    if converged
-        @info("The GradientDescentACPowerFlow solver converged after $i iterations.")
-        if get_calculate_loss_factors(data)
-            _calculate_loss_factors(data, J.Jv, time_step)
-        end
-        if get_calculate_voltage_stability_factors(data)
-            _calculate_voltage_stability_factors(data, J.Jv, time_step)
-        end
-        return true
-    end
-
-    @error("The GradientDescentACPowerFlow solver failed to converge after $i iterations. " *
-           "Residual L∞: $(norm(residual.Rv, Inf))")
-    return false
+    return _finalize_power_flow(
+        converged, i, "GradientDescentACPowerFlow", residual, data, J.Jv, time_step)
 end
