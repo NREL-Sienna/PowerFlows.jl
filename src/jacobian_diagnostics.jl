@@ -49,20 +49,30 @@ function _call_klu_diagnostics(
     rf_common::Union{Base.RefValue{KLU.klu_common}, Base.RefValue{KLU.klu_l_common}},
     A_nzval::Vector{Float64},
 ) where {T <: TIs}
-    sym_ptr = T === Int32 ? Ptr{KLU.klu_symbolic}(K._symbolic) :
-              Ptr{KLU.klu_l_symbolic}(K._symbolic)
-    num_ptr = T === Int32 ? Ptr{KLU.klu_numeric}(K._numeric) :
-              Ptr{KLU.klu_l_numeric}(K._numeric)
+    sym_ptr = if T === Int32
+        Ptr{KLU.klu_symbolic}(K._symbolic)
+    else
+        Ptr{KLU.klu_l_symbolic}(K._symbolic)
+    end
+    num_ptr =
+        T === Int32 ? Ptr{KLU.klu_numeric}(K._numeric) :
+        Ptr{KLU.klu_l_numeric}(K._numeric)
 
     rcond_fn = T === Int32 ? KLU.klu_rcond : KLU.klu_l_rcond
     condest_fn = T === Int32 ? KLU.klu_condest : KLU.klu_l_condest
     rgrowth_fn = T === Int32 ? KLU.klu_rgrowth : KLU.klu_l_rgrowth
 
     rc = rcond_fn(sym_ptr, num_ptr, rf_common) == 1 ? K.common.rcond : NaN
-    ce = condest_fn(K.colptr, A_nzval, sym_ptr, num_ptr, rf_common) == 1 ?
-         K.common.condest : NaN
-    rg = rgrowth_fn(K.colptr, K.rowval, A_nzval, sym_ptr, num_ptr, rf_common) == 1 ?
-         K.common.rgrowth : NaN
+    ce = if condest_fn(K.colptr, A_nzval, sym_ptr, num_ptr, rf_common) == 1
+        K.common.condest
+    else
+        NaN
+    end
+    rg = if rgrowth_fn(K.colptr, K.rowval, A_nzval, sym_ptr, num_ptr, rf_common) == 1
+        K.common.rgrowth
+    else
+        NaN
+    end
 
     return (rc, ce, rg)
 end
@@ -151,10 +161,14 @@ function quick_jacobian_check(
     tolerance::Float64 = DEFAULT_RCOND_TOLERANCE,
 ) where {T <: TIs}
     K = cache.K
-    sym_ptr = T === Int32 ? Ptr{KLU.klu_symbolic}(K._symbolic) :
-              Ptr{KLU.klu_l_symbolic}(K._symbolic)
-    num_ptr = T === Int32 ? Ptr{KLU.klu_numeric}(K._numeric) :
-              Ptr{KLU.klu_l_numeric}(K._numeric)
+    sym_ptr = if T === Int32
+        Ptr{KLU.klu_symbolic}(K._symbolic)
+    else
+        Ptr{KLU.klu_l_symbolic}(K._symbolic)
+    end
+    num_ptr =
+        T === Int32 ? Ptr{KLU.klu_numeric}(K._numeric) :
+        Ptr{KLU.klu_l_numeric}(K._numeric)
 
     rcond_fn = T === Int32 ? KLU.klu_rcond : KLU.klu_l_rcond
     ok = rcond_fn(sym_ptr, num_ptr, cache.rf_common)
@@ -185,8 +199,9 @@ end
 Generate a formatted text report of Jacobian diagnostics for debugging.
 """
 function get_diagnostics_report(diag::JacobianDiagnostics)
-    status = diag.is_singular ? "SINGULAR" :
-             (diag.is_ill_conditioned ? "ILL-CONDITIONED" : "OK")
+    status =
+        diag.is_singular ? "SINGULAR" :
+        (diag.is_ill_conditioned ? "ILL-CONDITIONED" : "OK")
     return """
     Jacobian Diagnostics Report ($(diag.n)x$(diag.n))
     ────────────────────────────────────────────

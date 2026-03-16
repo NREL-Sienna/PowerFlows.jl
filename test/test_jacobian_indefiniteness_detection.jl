@@ -94,7 +94,8 @@ the eigenvalue spectrum of Jacobian matrices using sparse factorization.
         @test sym_inertia.n_positive >= 0
         @test sym_inertia.n_negative >= 0
         @test sym_inertia.n_zero >= 0
-        @test sym_inertia.n_positive + sym_inertia.n_negative + sym_inertia.n_zero == size(J, 1)
+        @test sym_inertia.n_positive + sym_inertia.n_negative + sym_inertia.n_zero ==
+              size(J, 1)
     end
 
     @testset "quick_indefiniteness_check Function" begin
@@ -118,10 +119,11 @@ the eigenvalue spectrum of Jacobian matrices using sparse factorization.
 
     @testset "monitor_jacobian_definiteness Function" begin
         # Test monitoring function
-        inertia = PF.monitor_jacobian_definiteness(jacobian; verbose=false)
+        inertia = PF.monitor_jacobian_definiteness(jacobian; verbose = false)
 
         @test inertia isa PF.InertiaResult
-        @test inertia.n_positive + inertia.n_negative + inertia.n_zero == size(jacobian.Jv, 1)
+        @test inertia.n_positive + inertia.n_negative + inertia.n_zero ==
+              size(jacobian.Jv, 1)
     end
 
     @testset "Consistency Checks" begin
@@ -155,8 +157,8 @@ the eigenvalue spectrum of Jacobian matrices using sparse factorization.
         # Test that tolerance parameter affects zero eigenvalue detection
         J = jacobian.Jv
 
-        inertia_tight = PF.compute_inertia_via_sparse_lu(J; tolerance=1e-15)
-        inertia_loose = PF.compute_inertia_via_sparse_lu(J; tolerance=1e-8)
+        inertia_tight = PF.compute_inertia_via_sparse_lu(J; tolerance = 1e-15)
+        inertia_loose = PF.compute_inertia_via_sparse_lu(J; tolerance = 1e-8)
 
         # Looser tolerance should classify more values as zero
         @test inertia_loose.n_zero >= inertia_tight.n_zero

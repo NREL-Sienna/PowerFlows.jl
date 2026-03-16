@@ -80,8 +80,8 @@ if inertia.is_indefinite
 end
 ```
 """
-function compute_inertia_via_sparse_lu(J::SparseMatrixCSC{Float64,Int32};
-                                       tolerance::Float64=1e-14)
+function compute_inertia_via_sparse_lu(J::SparseMatrixCSC{Float64, Int32};
+    tolerance::Float64 = 1e-14)
     n = size(J, 1)
 
     try
@@ -104,7 +104,7 @@ function compute_inertia_via_sparse_lu(J::SparseMatrixCSC{Float64,Int32};
         return InertiaResult(
             n_positive, n_negative, n_zero,
             is_indefinite, is_positive_definite, is_negative_definite,
-            tolerance
+            tolerance,
         )
     catch e
         # If LU factorization fails, the matrix is likely singular or severely ill-conditioned
@@ -130,9 +130,9 @@ indefiniteness. This is a fast check that exploits sparsity via LU factorization
 # Returns
 - `Bool`: `true` if indefinite, `false` otherwise
 """
-function is_jacobian_indefinite(J::SparseMatrixCSC{Float64,Int32};
-                               tolerance::Float64=1e-14)
-    inertia = compute_inertia_via_sparse_lu(J; tolerance=tolerance)
+function is_jacobian_indefinite(J::SparseMatrixCSC{Float64, Int32};
+    tolerance::Float64 = 1e-14)
+    inertia = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
     return inertia.is_indefinite
 end
 
@@ -151,9 +151,9 @@ A matrix is positive definite if all its eigenvalues are positive.
 # Returns
 - `Bool`: `true` if positive definite, `false` otherwise
 """
-function is_positive_definite(J::SparseMatrixCSC{Float64,Int32};
-                             tolerance::Float64=1e-14)
-    inertia = compute_inertia_via_sparse_lu(J; tolerance=tolerance)
+function is_positive_definite(J::SparseMatrixCSC{Float64, Int32};
+    tolerance::Float64 = 1e-14)
+    inertia = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
     return inertia.is_positive_definite
 end
 
@@ -172,9 +172,9 @@ A matrix is negative definite if all its eigenvalues are negative.
 # Returns
 - `Bool`: `true` if negative definite, `false` otherwise
 """
-function is_negative_definite(J::SparseMatrixCSC{Float64,Int32};
-                             tolerance::Float64=1e-14)
-    inertia = compute_inertia_via_sparse_lu(J; tolerance=tolerance)
+function is_negative_definite(J::SparseMatrixCSC{Float64, Int32};
+    tolerance::Float64 = 1e-14)
+    inertia = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
     return inertia.is_negative_definite
 end
 
@@ -195,13 +195,13 @@ which can be useful for understanding the local behavior near the solution.
 # Returns
 - `InertiaResult`: Inertia of the symmetric part
 """
-function check_jacobian_symmetric_part(J::SparseMatrixCSC{Float64,Int32};
-                                       tolerance::Float64=1e-14)
+function check_jacobian_symmetric_part(J::SparseMatrixCSC{Float64, Int32};
+    tolerance::Float64 = 1e-14)
     # Compute symmetric part: (J + J^T) / 2
     # Use sparse operations to maintain efficiency
     J_symmetric = (J + J') ./ 2
 
-    return compute_inertia_via_sparse_lu(J_symmetric; tolerance=tolerance)
+    return compute_inertia_via_sparse_lu(J_symmetric; tolerance = tolerance)
 end
 
 """
@@ -230,8 +230,8 @@ end
 ```
 """
 function quick_indefiniteness_check(jacobian::ACPowerFlowJacobian;
-                                    tolerance::Float64=1e-14)
-    return is_jacobian_indefinite(jacobian.Jv; tolerance=tolerance)
+    tolerance::Float64 = 1e-14)
+    return is_jacobian_indefinite(jacobian.Jv; tolerance = tolerance)
 end
 
 """
@@ -249,10 +249,10 @@ Useful for debugging and understanding Jacobian behavior during solver iteration
 # Returns
 - `String`: Formatted report of inertia properties
 """
-function get_inertia_report(J::SparseMatrixCSC{Float64,Int32};
-                           tolerance::Float64=1e-14)
-    inertia = compute_inertia_via_sparse_lu(J; tolerance=tolerance)
-    sym_inertia = check_jacobian_symmetric_part(J; tolerance=tolerance)
+function get_inertia_report(J::SparseMatrixCSC{Float64, Int32};
+    tolerance::Float64 = 1e-14)
+    inertia = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
+    sym_inertia = check_jacobian_symmetric_part(J; tolerance = tolerance)
 
     n = size(J, 1)
     nnz = nnz(J)
@@ -305,7 +305,7 @@ for diagnosing convergence issues related to Jacobian conditioning.
 - `InertiaResult`: Full inertia information
 """
 function monitor_jacobian_definiteness(jacobian::ACPowerFlowJacobian;
-                                       verbose::Bool=true)
+    verbose::Bool = true)
     inertia = compute_inertia_via_sparse_lu(jacobian.Jv)
 
     if verbose

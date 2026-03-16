@@ -37,10 +37,16 @@
         J_idx = Int32[]
         V = Float64[]
         for i in 1:n
-            push!(I_idx, Int32(i)); push!(J_idx, Int32(i)); push!(V, 10.0^(-i + 1))
+            push!(I_idx, Int32(i))
+            push!(J_idx, Int32(i))
+            push!(V, 10.0^(-i + 1))
             if i < n
-                push!(I_idx, Int32(i)); push!(J_idx, Int32(i + 1)); push!(V, 1e-10)
-                push!(I_idx, Int32(i + 1)); push!(J_idx, Int32(i)); push!(V, 1e-10)
+                push!(I_idx, Int32(i))
+                push!(J_idx, Int32(i + 1))
+                push!(V, 1e-10)
+                push!(I_idx, Int32(i + 1))
+                push!(J_idx, Int32(i))
+                push!(V, 1e-10)
             end
         end
         A = SparseMatrixCSC{Float64, Int32}(sparse(I_idx, J_idx, V, n, n))
