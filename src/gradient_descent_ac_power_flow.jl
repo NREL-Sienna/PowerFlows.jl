@@ -31,10 +31,10 @@ end
 
 function AdamConfig(settings::Dict{Symbol, Any})
     return AdamConfig(;
-        learning_rate = get(settings, :learning_rate, 0.01),
-        beta1 = get(settings, :beta1, 0.9),
-        beta2 = get(settings, :beta2, 0.999),
-        epsilon = get(settings, :epsilon, 1e-8),
+        learning_rate = Float64(get(settings, :learning_rate, 0.01)),
+        beta1 = Float64(get(settings, :beta1, 0.9)),
+        beta2 = Float64(get(settings, :beta2, 0.999)),
+        epsilon = Float64(get(settings, :epsilon, 1e-8)),
     )
 end
 
@@ -137,54 +137,40 @@ function _newton_power_flow(
 
     i = 0
     if !converged
-        cfg = AdamConfig(get_solver_kwargs(pf))
+        cfg = AdamConfig(Dict{Symbol, Any}(kwargs))
         state = AdamState(length(x0))
         x_save = zeros(length(x0))
 
-        for iter in 1:maxIterations
-            # 1. Check convergence (residual already evaluated from init or previous step)
-            if norm(residual.Rv, Inf) < tol
-                converged = true
-                i = iter
-                break
-            end
-
-            # 2. Evaluate Jacobian at current x
+        while i < maxIterations && !converged
+            # 1. Evaluate Jacobian at current x
             J(time_step)
 
-            # 3. Compute gradient in-place: g ← Jᵀ F
+            # 2. Compute gradient in-place: g ← Jᵀ F
             compute_gradient!(state, J, residual)
 
-            # 4. Save current x for line search
+            # 3. Save current x for line search
             copyto!(x_save, x0)
             old_loss = dot(residual.Rv, residual.Rv)
 
-            # 5. Adam parameter update: x ← x − η · Adam(g)
+            # 4. Adam parameter update: x ← x − η · Adam(g)
             adam_step!(x0, state, cfg)
 
-            # 6. Write updated x back to ACPowerFlowData fields
-            update_data!(data, x0, time_step)
-
-            # 7. Backtracking line search on ½‖F‖²
+            # 5. Backtracking line search on ½‖F‖²
             residual(x0, time_step)
             new_loss = dot(residual.Rv, residual.Rv)
 
-            α = 1.0
             for _ in 1:ADAM_MAX_BACKTRACKS
                 new_loss <= old_loss && break
-                α *= ADAM_BACKTRACK_FACTOR
-                _interpolate_x!(x0, x_save, α)
-                update_data!(data, x0, time_step)
+                _interpolate_x!(x0, x_save, ADAM_BACKTRACK_FACTOR)
                 residual(x0, time_step)
                 new_loss = dot(residual.Rv, residual.Rv)
             end
 
-            i = iter
-        end
-
-        # Check convergence after final iteration
-        if !converged
+            # 6. Check convergence
             converged = norm(residual.Rv, Inf) < tol
+            if !converged
+                i += 1
+            end
         end
     end
 
