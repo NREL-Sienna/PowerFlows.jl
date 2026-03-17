@@ -117,14 +117,31 @@ function initialize_power_flow_data!(
     # Headroom-proportional distributed slack: overwrite bus_slack_participation_factors
     # with R_k = P_max - P_setpoint values. This makes the standard distributed slack
     # machinery distribute slack proportional to headroom automatically.
+    # Also populate computed_generator_slack_participation_factors so that
+    # write_power_flow_solution! can redistribute among multiple generators at the same bus.
     if get_distribute_slack_proportional_to_headroom(pf)
+        n_time_steps = length(get_time_step_map(data))
         for ix in 1:n_buses
             R_k = data.bus_active_power_range[ix, 1]
             R_k == 0.0 && continue
-            for t in 1:length(get_time_step_map(data))
+            for t in 1:n_time_steps
                 data.bus_slack_participation_factors[ix, t] = R_k
             end
         end
+        # Build per-generator headroom factors for post-processing redistribution.
+        generator_headroom = Dict{Tuple{DataType, String}, Float64}()
+        for source in PSY.get_available_components(PSY.StaticInjection, sys)
+            contributes_active_power(source) || continue
+            active_power_contribution_type(source) == PowerContributionType.INJECTION ||
+                continue
+            bus = PSY.get_bus(source)
+            PSY.get_bustype(bus) ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
+            limits = get_active_power_limits_for_power_flow(source)
+            range_k = limits.max - PSY.get_active_power(source)
+            range_k <= 0.0 && continue
+            generator_headroom[(typeof(source), PSY.get_name(source))] = range_k
+        end
+        append!(get_computed_gspf(data), repeat([generator_headroom], n_time_steps))
     end
     # LCCs: initialize parameters. For DC power flow, this also writes the fixed flows to
     # data.lcc.arc_active_power_flow_from_to and data.lcc.arc_active_power_flow_to_from.

@@ -175,6 +175,15 @@ function ACPowerFlow{ACSolver}(;
             "Cannot use both distribute_slack_proportional_to_headroom and generator_slack_participation_factors.",
         )
     end
+    # This scenario can be handled fine from PSI, we just don't handle it in PF alone.
+    if distribute_slack_proportional_to_headroom && time_steps > 1
+        @warn(
+            "distribute_slack_proportional_to_headroom with multiple time steps: " *
+            "headroom (Pmax - Pset) is computed once from system data and applied " *
+            "to all time steps. Time-varying active power limits and generator " *
+            "setpoints are not supported.",
+        )
+    end
     return ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,

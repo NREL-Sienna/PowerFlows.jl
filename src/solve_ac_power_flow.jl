@@ -153,6 +153,16 @@ function solve_power_flow!(
     merged_kwargs = merge(get_solver_kwargs(pf), kwargs)
     sorted_time_steps =
         get(merged_kwargs, :time_steps, sort(collect(keys(get_time_step_map(data)))))
+    # This can be done from PSI by directly writing to `data`'s fields; we just don't
+    # do it here in PF alone.
+    if length(sorted_time_steps) > 1
+        @warn(
+            "Multi-period AC power flow: each time step is solved independently " *
+            "using the same network data. Time-varying generator setpoints or " *
+            "limits are not updated between time steps.",
+            maxlog = 1,
+        )
+    end
     # preallocate results
     ts_converged = fill(false, length(sorted_time_steps))
 
