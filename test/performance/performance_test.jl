@@ -57,6 +57,44 @@ for (group, name) in systems
     end
 end
 
+# Iwamoto step control (NR variant with damping)
+for (group, name) in systems
+    sys = build_system(group, name)
+    solver_label = "NewtonRaphsonACPowerFlow(iwamoto)"
+    try
+        pf = ACPowerFlow{PF.NewtonRaphsonACPowerFlow}(;
+            correct_bustypes = true,
+            solver_settings = Dict{Symbol, Any}(:iwamoto => true))
+        pf_data = PF.PowerFlowData(pf, sys)
+        _, time_solve_1, _, _ = @timed PF.solve_power_flow!(pf_data; pf = pf)
+        open("solve_time.txt", "a") do io
+            write(
+                io,
+                "| $(ARGS[1])-$(name)-$(solver_label)- first solve | $(time_solve_1) |\n",
+            )
+        end
+        pf = ACPowerFlow{PF.NewtonRaphsonACPowerFlow}(;
+            correct_bustypes = true,
+            solver_settings = Dict{Symbol, Any}(:iwamoto => true))
+        pf_data = PF.PowerFlowData(pf, sys)
+        _, time_solve_2, _, _ = @timed PF.solve_power_flow!(pf_data; pf = pf)
+        open("solve_time.txt", "a") do io
+            write(
+                io,
+                "| $(ARGS[1])-$(name)-$(solver_label)- second solve | $(time_solve_2) |\n",
+            )
+        end
+    catch e
+        @error exception = (e, catch_backtrace())
+        open("solve_time.txt", "a") do io
+            write(
+                io,
+                "| $(ARGS[1])-$(name)-$(solver_label) | FAILED TO TEST |\n",
+            )
+        end
+    end
+end
+
 if !is_running_on_ci()
     for file in ["precompile_time.txt", "solve_time.txt"]
         name = replace(file, "_" => " ")[begin:(end - 4)]
