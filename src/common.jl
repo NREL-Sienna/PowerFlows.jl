@@ -44,9 +44,9 @@ end
 """Compute per-bus active power range R_k = sum(P_max - P_setpoint) for generators at
 REF/PV buses. Used for headroom-proportional distributed slack.
 
-Only writes to column 1: PF uses single-value `get_active_power_limits` and
-`get_active_power`, so headroom is not time-varying. The caller copies column 1
-to all time steps. For time-varying headroom, compute slack weights in PSI."""
+Only writes to column 1: PF uses single-value active power limits and setpoints
+(not time-varying). The caller copies column 1 to all time steps. For time-varying
+headroom, compute slack weights in PSI."""
 function _compute_bus_active_power_range!(
     bus_active_power_range::Matrix{Float64},
     bus_lookup::Dict{Int, Int},

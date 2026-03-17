@@ -141,6 +141,7 @@ function initialize_power_flow_data!(
             range_k <= 0.0 && continue
             generator_headroom[(typeof(source), PSY.get_name(source))] = range_k
         end
+        # Same Dict reference shared across time steps, but never mutated so this is fine.
         append!(get_computed_gspf(data), repeat([generator_headroom], n_time_steps))
     end
     # LCCs: initialize parameters. For DC power flow, this also writes the fixed flows to
