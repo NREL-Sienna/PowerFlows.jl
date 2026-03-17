@@ -71,7 +71,7 @@
 
         # Test allocation
         allocs = @allocated PF.compute_gradient!(state, J, residual)
-        @test allocs == 0
+        @test iszero(allocs)
     end
 
     @testset "Allocation-free Adam step" begin
@@ -87,6 +87,6 @@
 
         # Test allocation
         allocs = @allocated PF.adam_step!(x, state, cfg)
-        @test allocs == 0
+        @test iszero(allocs)
     end
 end
