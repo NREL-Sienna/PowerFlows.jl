@@ -64,6 +64,77 @@ end
     )
 end
 
+@testset "Iwamoto step control convergence" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(:iwamoto => true))
+    @test_logs (:info, r".*NewtonRaphsonACPowerFlow solver converged"
+    ) match_mode = :any PF.solve_power_flow(iwamoto_pf, sys)
+end
+
+@testset "Iwamoto step control kwargs" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(
+            :iwamoto => true,
+            :maxIterations => 50,
+            :tol => 1e-10,
+        ))
+    @test_logs (:info, r".*NewtonRaphsonACPowerFlow solver converged"
+    ) match_mode = :any PF.solve_power_flow(iwamoto_pf, sys)
+end
+
+@testset "Iwamoto result equivalence with plain NR" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    nr_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(:iwamoto => true))
+    nr_result = PF.solve_power_flow(nr_pf, sys)
+    sys2 = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    iwamoto_result = PF.solve_power_flow(iwamoto_pf, sys2)
+    # Both should converge to the same solution
+    for (key, nr_df) in nr_result
+        iw_df = iwamoto_result[key]
+        for col in names(nr_df)
+            if eltype(nr_df[!, col]) <: Number
+                @test isapprox(nr_df[!, col], iw_df[!, col]; atol = 1e-6)
+            end
+        end
+    end
+end
+
+@testset "Iwamoto convergence with bad initial guess" begin
+    # Bad initial guess — Iwamoto should still converge
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    bad_x0!(sys)
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        enhanced_flat_start = false,
+        solver_settings = Dict{Symbol, Any}(:iwamoto => true))
+    @test_logs (:info, r".*NewtonRaphsonACPowerFlow solver converged"
+    ) match_mode = :any PF.solve_power_flow(iwamoto_pf, sys)
+end
+
+@testset "Iwamoto on larger system (RTS_GMLC)" begin
+    sys = PSB.build_system(PSB.PSISystems, "RTS_GMLC_DA_sys")
+    PSY.set_units_base_system!(sys, PSY.UnitSystem.SYSTEM_BASE)
+    nr_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = true)
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        correct_bustypes = true,
+        solver_settings = Dict{Symbol, Any}(:iwamoto => true))
+    nr_result = PF.solve_power_flow(nr_pf, sys)
+    sys2 = PSB.build_system(PSB.PSISystems, "RTS_GMLC_DA_sys")
+    PSY.set_units_base_system!(sys2, PSY.UnitSystem.SYSTEM_BASE)
+    iwamoto_result = PF.solve_power_flow(iwamoto_pf, sys2)
+    for (key, nr_df) in nr_result
+        iw_df = iwamoto_result[key]
+        for col in names(nr_df)
+            if eltype(nr_df[!, col]) <: Number
+                @test isapprox(nr_df[!, col], iw_df[!, col]; atol = 1e-6)
+            end
+        end
+    end
+end
+
 @testset "dc fallback" begin
     dc_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
         robust_power_flow = true,
