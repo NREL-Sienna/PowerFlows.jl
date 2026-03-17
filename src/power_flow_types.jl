@@ -15,8 +15,17 @@ abstract type ACPowerFlowSolverType end
 """
     NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType
 
-An [`ACPowerFlowSolverType`](@ref) corresponding to a basic Newton-Raphson iterative method. 
+An [`ACPowerFlowSolverType`](@ref) corresponding to a basic Newton-Raphson iterative method.
 The Newton step is taken verbatim at each iteration: no line search is performed.
+
+Iwamoto step control can be enabled via `solver_settings = Dict(:iwamoto => true)` in
+[`ACPowerFlow`](@ref). When enabled, an optimal step multiplier `μ` is computed at each
+iteration so that `x += μ·Δx` minimizes the residual norm. For well-conditioned systems
+the full step is accepted with negligible overhead (3 dot products). For ill-conditioned
+or poorly-initialized systems, damped steps prevent divergence.
+
+Based on: Iwamoto & Tamura, "A Load Flow Calculation Method for Ill-Conditioned Power
+Systems," IEEE Trans. PAS, 1981.
 
 See also: [`ACPowerFlow`](@ref).
 """

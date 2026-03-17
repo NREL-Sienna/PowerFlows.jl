@@ -15,6 +15,12 @@ const DEFAULT_REFINEMENT_THRESHOLD = 5e-2 # do refinement if relative error > 5%
 const DEFAULT_REFINEMENT_MAX_ITER = 10 # how many times to try iterative refinement
 const DEFAULT_REFINEMENT_EPS::Float64 = 1e-6 # when to stop iterative refinement.
 const NR_SINGULAR_SCALING = 1e-6 # scaling factor in fallback method for singular Jacobian
+
+# Iwamoto step control constants
+const IWAMOTO_MU_MIN = 0.1 # minimum step multiplier
+const IWAMOTO_MU_MAX = 1.0 # maximum step multiplier
+const IWAMOTO_CUBIC_TOL = 1e-12 # cubic solver tolerance
+const IWAMOTO_CUBIC_MAX_ITER = 10 # cubic solver max iterations
 # only used for trust region.
 const DEFAULT_TRUST_REGION_ETA::Float64 = 1e-4 # if actual improvement/predicted improvement
 # is < eta, then reject the step Δx, shrink the trust region, and try again.
