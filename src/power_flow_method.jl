@@ -252,6 +252,25 @@ function _trust_region_step(time_step::Int,
     return delta
 end
 
+"""Compute the optimal Iwamoto step multiplier `μ` by solving the cubic
+`2g₂μ³ - 3g₁μ² + (g₀ + 2g₁)μ - g₀ = 0` via scalar Newton iterations.
+Returns a value clamped to `[IWAMOTO_MU_MIN, IWAMOTO_MU_MAX]`.
+Pure Float64, zero-allocation."""
+function _iwamoto_multiplier(g0::Float64, g1::Float64, g2::Float64)::Float64
+    # Cubic: h(μ) = 2g₂μ³ - 3g₁μ² + (g₀ + 2g₁)μ - g₀
+    # h'(μ) = 6g₂μ² - 6g₁μ + (g₀ + 2g₁)
+    μ = 1.0 # start from full step
+    for _ in 1:IWAMOTO_CUBIC_MAX_ITER
+        h = 2.0 * g2 * μ^3 - 3.0 * g1 * μ^2 + (g0 + 2.0 * g1) * μ - g0
+        dh = 6.0 * g2 * μ^2 - 6.0 * g1 * μ + (g0 + 2.0 * g1)
+        abs(dh) < IWAMOTO_CUBIC_TOL && break
+        μ_new = μ - h / dh
+        abs(μ_new - μ) < IWAMOTO_CUBIC_TOL && (μ = μ_new; break)
+        μ = μ_new
+    end
+    return clamp(μ, IWAMOTO_MU_MIN, IWAMOTO_MU_MAX)
+end
+
 """Does a single iteration of `NewtonRaphsonACPowerFlow`. Updates the `r` and `x`
  fields of the `stateVector`, and computes the Jacobian at the new `x`."""
 function _simple_step(time_step::Int,
@@ -277,6 +296,57 @@ function _simple_step(time_step::Int,
     # do this BEFORE updating the Jacobian. The Jacobian computation uses data's fields, not x.
     residual(stateVector.x, time_step)
     # update jacobian.
+    J(time_step)
+    return
+end
+
+"""Does a single iteration of Newton-Raphson with Iwamoto step control.
+Computes the Newton step, takes a full trial step, and checks whether the
+residual norm decreased. If not, computes an optimal damping multiplier `μ`
+and applies a damped step instead. Updates `r`, `x`, and the Jacobian."""
+function _iwamoto_step(time_step::Int,
+    stateVector::StateVectorCache,
+    linSolveCache::KLULinSolveCache{J_INDEX_TYPE},
+    residual::ACPowerFlowResidual,
+    J::ACPowerFlowJacobian,
+    refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD,
+    refinement_eps::Float64 = DEFAULT_REFINEMENT_EPS,
+)
+    # Save pre-step residual f into stateVector.r
+    copyto!(stateVector.r, residual.Rv)
+    # Compute Newton step Δx_nr = -J⁻¹f
+    _set_Δx_nr!(
+        stateVector,
+        J,
+        linSolveCache,
+        NewtonRaphsonACPowerFlow(),
+        refinement_threshold,
+        refinement_eps,
+    )
+    # Take full trial step: x += Δx_nr
+    stateVector.x .+= stateVector.Δx_nr
+    # Evaluate trial residual b = F(x + Δx)
+    residual(stateVector.x, time_step)
+
+    # Compute gram scalars for Iwamoto criterion
+    g0 = dot(stateVector.r, stateVector.r)
+    g1 = dot(stateVector.r, residual.Rv)
+    g2 = dot(residual.Rv, residual.Rv)
+
+    if g2 < g0
+        # Full step reduced residual — accept it (μ = 1)
+        @debug "Iwamoto: full step accepted (g₂/g₀ = $(g2/g0))"
+    else
+        # Full step did not reduce residual — compute optimal μ
+        μ = _iwamoto_multiplier(g0, g1, g2)
+        @debug "Iwamoto: damped step μ = $μ (g₂/g₀ = $(g2/g0))"
+        # Undo full step and apply damped step
+        stateVector.x .-= stateVector.Δx_nr
+        stateVector.x .+= μ .* stateVector.Δx_nr
+        # Re-evaluate residual at damped point
+        residual(stateVector.x, time_step)
+    end
+    # Update Jacobian at new x
     J(time_step)
     return
 end
@@ -315,18 +385,31 @@ function _run_power_flow_method(time_step::Int,
         :vm_validation_range,
         DEFAULT_VALIDATION_RANGE,
     )
+    iwamoto::Bool = get(kwargs, :iwamoto, false)
     i, converged = 1, false
     bus_types = @view get_bus_type(J.data)[:, time_step]
     while i < maxIterations && !converged
-        _simple_step(
-            time_step,
-            stateVector,
-            linSolveCache,
-            residual,
-            J,
-            refinement_threshold,
-            refinement_eps,
-        )
+        if iwamoto
+            _iwamoto_step(
+                time_step,
+                stateVector,
+                linSolveCache,
+                residual,
+                J,
+                refinement_threshold,
+                refinement_eps,
+            )
+        else
+            _simple_step(
+                time_step,
+                stateVector,
+                linSolveCache,
+                residual,
+                J,
+                refinement_threshold,
+                refinement_eps,
+            )
+        end
         validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
         converged = norm(residual.Rv, Inf) < tol
         if !converged
