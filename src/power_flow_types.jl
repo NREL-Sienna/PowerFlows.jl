@@ -19,10 +19,11 @@ An [`ACPowerFlowSolverType`](@ref) corresponding to a basic Newton-Raphson itera
 The Newton step is taken verbatim at each iteration: no line search is performed.
 
 Iwamoto step control can be enabled via `solver_settings = Dict(:iwamoto => true)` in
-[`ACPowerFlow`](@ref). When enabled, an optimal step multiplier `μ` is computed at each
-iteration so that `x += μ·Δx` minimizes the residual norm. For well-conditioned systems
-the full step is accepted with negligible overhead (3 dot products). For ill-conditioned
-or poorly-initialized systems, damped steps prevent divergence.
+[`ACPowerFlow`](@ref). When enabled, each iteration checks whether the full Newton step
+reduces the residual norm. If it does, the full step is accepted (overhead: 3 dot products).
+If not, an optimal damping multiplier `μ` is computed by solving a cubic and the step
+`x += μ·Δx` is applied instead, preventing divergence on ill-conditioned or
+poorly-initialized systems.
 
 Based on: Iwamoto & Tamura, "A Load Flow Calculation Method for Ill-Conditioned Power
 Systems," IEEE Trans. PAS, 1981.

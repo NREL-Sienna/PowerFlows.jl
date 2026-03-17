@@ -253,20 +253,40 @@ function _trust_region_step(time_step::Int,
 end
 
 """Compute the optimal Iwamoto step multiplier `μ` by solving the cubic
-`2g₂μ³ - 3g₁μ² + (g₀ + 2g₁)μ - g₀ = 0` via scalar Newton iterations.
+`h(μ) = 2g₂μ³ - 3g₁μ² + (g₀ + 2g₁)μ - g₀ = 0` via safeguarded Newton-bisection.
+We know h(0) = -g₀ < 0. If h(1) > 0 a root exists in (0, 1]; otherwise falls back to
+`IWAMOTO_MU_MIN`. Newton steps that leave the current bracket are replaced by bisection.
 Returns a value clamped to `[IWAMOTO_MU_MIN, IWAMOTO_MU_MAX]`.
 Pure Float64, zero-allocation."""
 function _iwamoto_multiplier(g0::Float64, g1::Float64, g2::Float64)::Float64
-    # Cubic: h(μ) = 2g₂μ³ - 3g₁μ² + (g₀ + 2g₁)μ - g₀
+    # h(μ) = 2g₂μ³ - 3g₁μ² + (g₀ + 2g₁)μ - g₀
     # h'(μ) = 6g₂μ² - 6g₁μ + (g₀ + 2g₁)
-    μ = 1.0 # start from full step
+    # h(0) = -g₀ < 0 always (g₀ = fᵀf > 0).
+    a = 0.0 # bracket lower bound, h(a) < 0
+    b = IWAMOTO_MU_MAX # bracket upper bound
+    h_b = 2.0 * g2 * b^3 - 3.0 * g1 * b^2 + (g0 + 2.0 * g1) * b - g0
+    if h_b <= 0.0
+        # No sign change in [0, 1] — fall back to safe minimum step.
+        return IWAMOTO_MU_MIN
+    end
+    μ = 0.5 # start at midpoint, away from known-bad μ=1
     for _ in 1:IWAMOTO_CUBIC_MAX_ITER
         h = 2.0 * g2 * μ^3 - 3.0 * g1 * μ^2 + (g0 + 2.0 * g1) * μ - g0
         dh = 6.0 * g2 * μ^2 - 6.0 * g1 * μ + (g0 + 2.0 * g1)
-        abs(dh) < IWAMOTO_CUBIC_TOL && break
-        μ_new = μ - h / dh
-        abs(μ_new - μ) < IWAMOTO_CUBIC_TOL && (μ = μ_new; break)
-        μ = μ_new
+        # Tighten bracket
+        if h < 0.0
+            a = μ
+        else
+            b = μ
+        end
+        (b - a) < IWAMOTO_CUBIC_TOL && break
+        # Newton step with bisection fallback
+        if abs(dh) > IWAMOTO_CUBIC_TOL
+            μ_new = μ - h / dh
+            μ = (a < μ_new < b) ? μ_new : (a + b) / 2.0
+        else
+            μ = (a + b) / 2.0
+        end
     end
     return clamp(μ, IWAMOTO_MU_MIN, IWAMOTO_MU_MAX)
 end
