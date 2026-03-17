@@ -1,5 +1,7 @@
 # Validating a UC Dispatch with Multi-Period Power Flow
 
+To get started, ensure you have followed the [installation instructions](@ref "Installation"). Start Julia from the command line if you haven't already.
+
 In this tutorial, you'll run a 24-interval DC power flow over a set of dispatch results
 from a unit commitment (UC) problem, then scan every interval for overloaded branches.
 

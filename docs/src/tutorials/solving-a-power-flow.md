@@ -1,5 +1,7 @@
 # Solving a Power Flow
 
+To get started, ensure you have followed the [installation instructions](@ref "Installation"). Start Julia from the command line if you haven't already.
+
 In this tutorial, you'll solve power flows on a 5-bus test system using three different
 solvers and compare their results.
 
