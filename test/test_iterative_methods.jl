@@ -135,6 +135,28 @@ end
     end
 end
 
+@testset "Iwamoto early termination on stagnation" begin
+    # Sabotage voltage magnitudes so that every Newton step worsens the residual,
+    # triggering consecutive reverts and the early-termination break.
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        enhanced_flat_start = false,
+        solver_settings = Dict{Symbol, Any}(
+            :iwamoto => true,
+            :maxIterations => 20,
+        ))
+    data = PowerFlowData(iwamoto_pf, sys)
+    # Set all voltage magnitudes to zero so the Jacobian is singular
+    # and every proposed step increases the residual.
+    data.bus_magnitude .= 0.0
+    # Solver should fail to converge, and terminate early (not exhaust maxIterations).
+    @test_logs(
+        (:error, r".*solver failed to converge"),
+        match_mode = :any,
+        @test !solve_power_flow!(data)
+    )
+end
+
 @testset "Iwamoto multiplier root-finding" begin
     # Verify that _iwamoto_multiplier recovers the global minimizer of
     # g(μ) = (1-μ)²g₀ + 2μ²(1-μ)g₁ + μ⁴g₂ on [0, 1] by comparing against
