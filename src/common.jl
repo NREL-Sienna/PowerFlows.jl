@@ -525,7 +525,7 @@ function make_bus_slack_participation_factors!(
     return
 end
 
-function validate_voltages(x::Vector{Float64},
+function validate_voltage_magnitudes(x::Vector{Float64},
     bus_types::AbstractArray{PSY.ACBusTypes},
     range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = VM_VALIDATION_RANGE,
     i::Int64 = 1,

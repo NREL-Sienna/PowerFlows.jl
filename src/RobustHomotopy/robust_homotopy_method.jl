@@ -1,8 +1,9 @@
 function _newton_power_flow(pf::ACPowerFlow{<:RobustHomotopyPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
-    kwargs...)
-    Δt_k = get(kwargs, :Δt_k, DEFAULT_Δt_k)
+    Δt_k::Float64 = DEFAULT_Δt_k,
+    _ignored...,
+)
     homHess = HomotopyHessian(data, time_step)
     x = homotopy_x0(data, time_step)
     t_k = 0.0
@@ -50,9 +51,9 @@ function _second_order_newton(homHess::HomotopyHessian,
     time_step::Int,
     x::Vector{Float64},
     hSolver::HessianSolver;
-    kwargs...)
-    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
-    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
+    maxIterations::Int = DEFAULT_NR_MAX_ITER,
+    tol::Float64 = DEFAULT_NR_TOL,
+)
 
     i, converged, stop = 0, false, false
     F_val = F_value(homHess, t_k, x, time_step)

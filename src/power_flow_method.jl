@@ -472,24 +472,16 @@ function _run_power_flow_method(time_step::Int,
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::Type{NewtonRaphsonACPowerFlow};
-    kwargs...)
-    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
-    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
-    refinement_threshold::Float64 = get(kwargs,
-        :refinement_eps,
-        DEFAULT_REFINEMENT_THRESHOLD)
-    refinement_eps::Float64 = get(kwargs, :refinement_eps, DEFAULT_REFINEMENT_EPS)
-    validate_vms::Bool = get(
-        kwargs,
-        :validate_voltages,
-        DEFAULT_VALIDATE_VOLTAGES,
-    )
-    validation_range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = get(
-        kwargs,
-        :vm_validation_range,
-        DEFAULT_VALIDATION_RANGE,
-    )
-    iwamoto::Bool = get(kwargs, :iwamoto, false)
+    maxIterations::Int = DEFAULT_NR_MAX_ITER,
+    tol::Float64 = DEFAULT_NR_TOL,
+    refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD,
+    refinement_eps::Float64 = DEFAULT_REFINEMENT_EPS,
+    validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
+    vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
+    iwamoto::Bool = false,
+    _ignored...,  # absorb unknown keys from caller without error
+)
+    validate_vms = validate_voltage_magnitudes
     i, converged = 1, false
     consecutive_reverts = 0
     bus_types = @view get_bus_type(J.data)[:, time_step]
@@ -524,7 +516,7 @@ function _run_power_flow_method(time_step::Int,
                 refinement_eps,
             )
         end
-        validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
+        validate_vms && PowerFlows.validate_voltage_magnitudes(stateVector.x, bus_types, vm_validation_range, i)
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -549,27 +541,20 @@ function _run_power_flow_method(time_step::Int,
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::Type{TrustRegionACPowerFlow};
-    kwargs...)
-    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
-    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
-    factor::Float64 = get(kwargs, :factor, DEFAULT_TRUST_REGION_FACTOR)
-    eta::Float64 = get(kwargs, :eta, DEFAULT_TRUST_REGION_ETA)
-    autoscale::Bool = get(kwargs, :autoscale, DEFAULT_AUTOSCALE)
+    maxIterations::Int = DEFAULT_NR_MAX_ITER,
+    tol::Float64 = DEFAULT_NR_TOL,
+    factor::Float64 = DEFAULT_TRUST_REGION_FACTOR,
+    eta::Float64 = DEFAULT_TRUST_REGION_ETA,
+    autoscale::Bool = DEFAULT_AUTOSCALE,
+    validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
+    vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
+    _ignored...,  # absorb unknown keys from caller without error
+)
+    validate_vms = validate_voltage_magnitudes
 
     if eta > 1.0 || eta < 0.0
         @warn("η = $eta is outside [0, 1]") # eta is set to 2.0 in one test.
     end
-
-    validate_vms::Bool = get(
-        kwargs,
-        :validate_voltages,
-        DEFAULT_VALIDATE_VOLTAGES,
-    )
-    validation_range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = get(
-        kwargs,
-        :vm_validation_range,
-        DEFAULT_VALIDATION_RANGE,
-    )
 
     if autoscale
         for i in 1:length(stateVector.x)
@@ -598,7 +583,7 @@ function _run_power_flow_method(time_step::Int,
             eta,
             autoscale,
         )
-        validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
+        validate_vms && PowerFlows.validate_voltage_magnitudes(stateVector.x, bus_types, vm_validation_range, i)
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -611,17 +596,37 @@ function _newton_power_flow(
     pf::ACPowerFlow{T},
     data::ACPowerFlowData,
     time_step::Int64;
-    kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
+    # shared kwargs
+    tol::Float64 = DEFAULT_NR_TOL,
+    maxIterations::Int = DEFAULT_NR_MAX_ITER,
+    validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
+    vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
+    # NR-specific
+    refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD,
+    refinement_eps::Float64 = DEFAULT_REFINEMENT_EPS,
+    iwamoto::Bool = false,
+    # TR-specific
+    factor::Float64 = DEFAULT_TRUST_REGION_FACTOR,
+    eta::Float64 = DEFAULT_TRUST_REGION_ETA,
+    autoscale::Bool = DEFAULT_AUTOSCALE,
+    # initialize_power_flow_variables
+    x0::Union{Vector{Float64}, Nothing} = nothing,
+    _ignored...,
+) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
 
     # setup: common code
-    residual, J, x0 = initialize_power_flow_variables(pf, data, time_step; kwargs...)
-    converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
+    init_kwargs = isnothing(x0) ?
+                  (; validate_voltage_magnitudes, vm_validation_range) :
+                  (; validate_voltage_magnitudes, vm_validation_range, x0)
+    residual, J, x0_init = initialize_power_flow_variables(
+        pf, data, time_step; init_kwargs...)
+    converged = norm(residual.Rv, Inf) < tol
 
     i = 0
     if !converged
         linSolveCache = KLULinSolveCache(J.Jv)
         symbolic_factor!(linSolveCache, J.Jv)
-        stateVector = StateVectorCache(x0, residual.Rv)
+        stateVector = StateVectorCache(x0_init, residual.Rv)
         converged, i = _run_power_flow_method(
             time_step,
             stateVector,
@@ -629,7 +634,16 @@ function _newton_power_flow(
             residual,
             J,
             T;
-            kwargs...,
+            tol,
+            maxIterations,
+            validate_voltage_magnitudes,
+            vm_validation_range,
+            refinement_threshold,
+            refinement_eps,
+            iwamoto,
+            factor,
+            eta,
+            autoscale,
         )
     end
     @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")

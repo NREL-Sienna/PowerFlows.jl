@@ -5,10 +5,18 @@ function _newton_power_flow(
     pf::ACPowerFlow{LevenbergMarquardtACPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
-    kwargs...,
+    tol::Float64 = DEFAULT_NR_TOL,
+    maxIterations::Int = DEFAULT_NR_MAX_ITER,
+    validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
+    vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
+    λ_0::Float64 = DEFAULT_λ_0,
+    maxTestλs::Int = DEFAULT_MAX_TEST_λs,
+    _ignored...,
 )
-    residual, J, x0 = initialize_power_flow_variables(pf, data, time_step; kwargs...)
-    converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
+    residual, J, x0 = initialize_power_flow_variables(
+        pf, data, time_step;
+        validate_voltage_magnitudes, vm_validation_range)
+    converged = norm(residual.Rv, Inf) < tol
     i = 0
     if !converged
         converged, i = _run_power_flow_method(
@@ -16,7 +24,7 @@ function _newton_power_flow(
             x0,
             residual,
             J;
-            kwargs...,
+            tol, maxIterations, λ_0, maxTestλs,
         )
     end
     @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
@@ -41,12 +49,13 @@ function _run_power_flow_method(
     x::Vector{Float64},
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian;
-    kwargs...,
+    maxIterations::Int = DEFAULT_NR_MAX_ITER,
+    tol::Float64 = DEFAULT_NR_TOL,
+    λ_0::Float64 = DEFAULT_λ_0,
+    maxTestλs::Int = DEFAULT_MAX_TEST_λs,
+    _ignored...,
 )
-    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
-    λ::Float64 = get(kwargs, :λ_0, DEFAULT_λ_0)
-    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
-    maxTestλs::Int = get(kwargs, :maxTestλs, DEFAULT_MAX_TEST_λs)
+    λ::Float64 = λ_0
     i, converged = 0, false
     residual(x, time_step)
     resSize = dot(residual.Rv, residual.Rv)
