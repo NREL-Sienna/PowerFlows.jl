@@ -447,7 +447,7 @@ function _iwamoto_step(time_step::Int,
         @debug "Iwamoto: damped step did not reduce residual " *
                "(g_damped/g₀ = $(g_damped/g0), μ = $μ); reverting"
         stateVector.x .-= μ .* stateVector.Δx_nr
-        copyto!(residual.Rv, stateVector.r)
+        residual(stateVector.x, time_step)
         return false
     end
     # Damped step improved — accept it.
