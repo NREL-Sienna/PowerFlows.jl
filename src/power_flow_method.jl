@@ -252,43 +252,110 @@ function _trust_region_step(time_step::Int,
     return delta
 end
 
-"""Compute the optimal Iwamoto step multiplier `μ` by solving the cubic
-`h(μ) = 2g₂μ³ - 3g₁μ² + (g₀ + 2g₁)μ - g₀ = 0` via safeguarded Newton-bisection.
-We know h(0) = -g₀ < 0. If h(1) > 0 a root exists in (0, 1]; otherwise falls back to
-`IWAMOTO_MU_MIN`. Newton steps that leave the current bracket are replaced by bisection.
-Returns a value clamped to `[IWAMOTO_MU_MIN, IWAMOTO_MU_MAX]`.
-Pure Float64, zero-allocation."""
+"""Evaluate the Iwamoto objective g(μ) = ‖(1-μ)f₀ + μ²f₁‖² expanded as
+g(μ) = (1-μ)²g₀ + 2μ²(1-μ)g₁ + μ⁴g₂ where g₀=‖f₀‖², g₁=f₀ᵀf₁, g₂=‖f₁‖²."""
+@inline function _iwamoto_objective(
+    μ::Float64, g0::Float64, g1::Float64, g2::Float64,
+)::Float64
+    om = 1.0 - μ
+    μ2 = μ * μ
+    return om * om * g0 + 2.0 * μ2 * om * g1 + μ2 * μ2 * g2
+end
+
+"""If μ ∈ [IWAMOTO_MU_MIN, IWAMOTO_MU_MAX] and g(μ) < best_g, return the
+improved (μ, g(μ)); otherwise return (best_μ, best_g) unchanged."""
+@inline function _try_iwamoto_candidate(
+    μ::Float64,
+    best_μ::Float64,
+    best_g::Float64,
+    g0::Float64,
+    g1::Float64,
+    g2::Float64,
+)::Tuple{Float64, Float64}
+    if IWAMOTO_MU_MIN <= μ <= IWAMOTO_MU_MAX
+        gval = _iwamoto_objective(μ, g0, g1, g2)
+        if gval < best_g
+            return μ, gval
+        end
+    end
+    return best_μ, best_g
+end
+
+"""Compute the optimal Iwamoto step multiplier μ ∈ [IWAMOTO_MU_MIN, IWAMOTO_MU_MAX]
+by minimizing g(μ) = (1-μ)²g₀ + 2μ²(1-μ)g₁ + μ⁴g₂.
+
+The stationary points satisfy the cubic g'(μ)/2 = 2g₂μ³ - 3g₁μ² + (g₀+2g₁)μ - g₀ = 0.
+All real roots are found analytically via the depressed-cubic trigonometric/Cardano form,
+and the global minimizer of g over the domain is returned. O(1), zero-allocation."""
 function _iwamoto_multiplier(g0::Float64, g1::Float64, g2::Float64)::Float64
-    # h(μ) = 2g₂μ³ - 3g₁μ² + (g₀ + 2g₁)μ - g₀
-    # h'(μ) = 6g₂μ² - 6g₁μ + (g₀ + 2g₁)
-    # h(0) = -g₀ < 0 always (g₀ = fᵀf > 0).
-    a = 0.0 # bracket lower bound, h(a) < 0
-    b = IWAMOTO_MU_MAX # bracket upper bound
-    h_b = 2.0 * g2 * b^3 - 3.0 * g1 * b^2 + (g0 + 2.0 * g1) * b - g0
-    if h_b <= 0.0
-        # No sign change in [0, 1] — fall back to safe minimum step.
-        return IWAMOTO_MU_MIN
-    end
-    μ = 0.5 # start at midpoint, away from known-bad μ=1
-    for _ in 1:IWAMOTO_CUBIC_MAX_ITER
-        h = 2.0 * g2 * μ^3 - 3.0 * g1 * μ^2 + (g0 + 2.0 * g1) * μ - g0
-        dh = 6.0 * g2 * μ^2 - 6.0 * g1 * μ + (g0 + 2.0 * g1)
-        # Tighten bracket
-        if h < 0.0
-            a = μ
-        else
-            b = μ
+    # Initialize best candidate from domain boundaries.
+    best_μ = IWAMOTO_MU_MIN
+    best_g = _iwamoto_objective(IWAMOTO_MU_MIN, g0, g1, g2)
+    best_μ, best_g = _try_iwamoto_candidate(IWAMOTO_MU_MAX, best_μ, best_g, g0, g1, g2)
+
+    # Cubic coefficients: c₃μ³ + c₂μ² + c₁μ + c₀ = 0
+    c3 = 2.0 * g2
+    c2 = -3.0 * g1
+    c1 = g0 + 2.0 * g1
+    c0 = -g0
+
+    if abs(c3) < IWAMOTO_DEGENERACY_TOL
+        # Degenerate: solve quadratic c₂μ² + c₁μ + c₀ = 0
+        if abs(c2) > IWAMOTO_DEGENERACY_TOL
+            disc = c1 * c1 - 4.0 * c2 * c0
+            if disc >= 0.0
+                sq = sqrt(disc)
+                for μ in ((-c1 + sq) / (2.0 * c2), (-c1 - sq) / (2.0 * c2))
+                    best_μ, best_g = _try_iwamoto_candidate(μ, best_μ, best_g, g0, g1, g2)
+                end
+            end
+        elseif abs(c1) > IWAMOTO_DEGENERACY_TOL
+            best_μ, best_g = _try_iwamoto_candidate(-c0 / c1, best_μ, best_g, g0, g1, g2)
         end
-        (b - a) < IWAMOTO_CUBIC_TOL && break
-        # Newton step with bisection fallback
-        if abs(dh) > IWAMOTO_CUBIC_TOL
-            μ_new = μ - h / dh
-            μ = (a < μ_new < b) ? μ_new : (a + b) / 2.0
+        return best_μ
+    end
+
+    # Full cubic — depress to t³ + At + B = 0 via μ = t - p/3
+    p = c2 / c3
+    q = c1 / c3
+    c0_n = c0 / c3
+    p3 = p / 3.0
+    A = q - p * p3
+    B = c0_n - q * p3 + 2.0 * p3^3
+    Δ = -4.0 * A^3 - 27.0 * B^2
+
+    if Δ > 0.0
+        # Three distinct real roots — trigonometric form (A < 0 guaranteed when Δ > 0).
+        s = sqrt(-A / 3.0)
+        m = 2.0 * s
+        arg = clamp(-B / (2.0 * s * s * s), -1.0, 1.0)
+        φ3 = acos(arg) / 3.0
+        for k in 0:2
+            best_μ, best_g = _try_iwamoto_candidate(
+                m * cos(φ3 - 2.0 * π * k / 3.0) - p3,
+                best_μ, best_g, g0, g1, g2)
+        end
+    elseif Δ < 0.0
+        # One real root — Cardano's formula.
+        sqD = sqrt(max(-Δ / 108.0, 0.0))
+        best_μ, best_g = _try_iwamoto_candidate(
+            cbrt(-B / 2.0 + sqD) + cbrt(-B / 2.0 - sqD) - p3,
+            best_μ, best_g, g0, g1, g2)
+    else
+        # Δ ≈ 0 — repeated roots.
+        if abs(A) < IWAMOTO_DEGENERACY_TOL
+            # Triple root at t = 0.
+            best_μ, best_g = _try_iwamoto_candidate(-p3, best_μ, best_g, g0, g1, g2)
         else
-            μ = (a + b) / 2.0
+            # Simple root t₁ = 3B/A and double root t₂ = -3B/(2A).
+            for t in (3.0 * B / A, -3.0 * B / (2.0 * A))
+                best_μ, best_g = _try_iwamoto_candidate(
+                    t - p3, best_μ, best_g, g0, g1, g2)
+            end
         end
     end
-    return clamp(μ, IWAMOTO_MU_MIN, IWAMOTO_MU_MAX)
+
+    return best_μ
 end
 
 """Does a single iteration of `NewtonRaphsonACPowerFlow`. Updates the `r` and `x`
