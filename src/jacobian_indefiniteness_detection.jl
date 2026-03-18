@@ -43,9 +43,12 @@ end
 # Keep InertiaResult as an alias for backward compatibility
 const InertiaResult = PivotSignResult
 
-has_mixed_sign_pivots(r::PivotSignResult) = r.success && (r.n_positive > 0) && (r.n_negative > 0)
-all_pivots_positive(r::PivotSignResult) = r.success && (r.n_negative == 0) && (r.n_zero == 0)
-all_pivots_negative(r::PivotSignResult) = r.success && (r.n_positive == 0) && (r.n_zero == 0)
+has_mixed_sign_pivots(r::PivotSignResult) =
+    r.success && (r.n_positive > 0) && (r.n_negative > 0)
+all_pivots_positive(r::PivotSignResult) =
+    r.success && (r.n_negative == 0) && (r.n_zero == 0)
+all_pivots_negative(r::PivotSignResult) =
+    r.success && (r.n_positive == 0) && (r.n_zero == 0)
 
 function Base.show(io::IO, r::PivotSignResult)
     println(io, "PivotSignResult (LU pivot-sign heuristic):")
