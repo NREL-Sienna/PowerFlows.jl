@@ -33,7 +33,7 @@ import DataFrames: Not
 import PowerSystems as PSY
 import PowerSystems: System, with_units_base
 import LinearAlgebra
-import LinearAlgebra: norm, dot, ldiv!
+import LinearAlgebra: norm, dot, ldiv!, diag
 import JSON3
 import KLU
 import SparseArrays
@@ -64,6 +64,7 @@ include("state_indexing_helpers.jl")
 include("ac_power_flow_residual.jl")
 include("ac_power_flow_jacobian.jl")
 include("jacobian_diagnostics.jl")
+include("jacobian_indefiniteness_detection.jl")
 include("solve_ac_power_flow.jl")
 include("power_flow_setup.jl")
 include("power_flow_method.jl")
