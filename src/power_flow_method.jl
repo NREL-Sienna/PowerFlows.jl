@@ -252,6 +252,112 @@ function _trust_region_step(time_step::Int,
     return delta
 end
 
+"""Evaluate the Iwamoto objective g(μ) = ‖(1-μ)f₀ + μ²f₁‖² expanded as
+g(μ) = (1-μ)²g₀ + 2μ²(1-μ)g₁ + μ⁴g₂ where g₀=‖f₀‖², g₁=f₀ᵀf₁, g₂=‖f₁‖²."""
+@inline function _iwamoto_objective(
+    μ::Float64, g0::Float64, g1::Float64, g2::Float64,
+)::Float64
+    om = 1.0 - μ
+    μ2 = μ * μ
+    return om * om * g0 + 2.0 * μ2 * om * g1 + μ2 * μ2 * g2
+end
+
+"""If μ ∈ [IWAMOTO_MU_MIN, IWAMOTO_MU_MAX] and g(μ) < best_g, return the
+improved (μ, g(μ)); otherwise return (best_μ, best_g) unchanged."""
+@inline function _try_iwamoto_candidate(
+    μ::Float64,
+    best_μ::Float64,
+    best_g::Float64,
+    g0::Float64,
+    g1::Float64,
+    g2::Float64,
+)::Tuple{Float64, Float64}
+    if IWAMOTO_MU_MIN <= μ <= IWAMOTO_MU_MAX
+        gval = _iwamoto_objective(μ, g0, g1, g2)
+        if gval < best_g
+            return μ, gval
+        end
+    end
+    return best_μ, best_g
+end
+
+"""Compute the optimal Iwamoto step multiplier μ ∈ [IWAMOTO_MU_MIN, IWAMOTO_MU_MAX]
+by minimizing g(μ) = (1-μ)²g₀ + 2μ²(1-μ)g₁ + μ⁴g₂.
+
+The stationary points satisfy the cubic g'(μ)/2 = 2g₂μ³ - 3g₁μ² + (g₀+2g₁)μ - g₀ = 0.
+All real roots are found analytically via the depressed-cubic trigonometric/Cardano form,
+and the global minimizer of g over the domain is returned. O(1), zero-allocation."""
+function _iwamoto_multiplier(g0::Float64, g1::Float64, g2::Float64)::Float64
+    # Initialize best candidate from domain boundaries.
+    best_μ = IWAMOTO_MU_MIN
+    best_g = _iwamoto_objective(IWAMOTO_MU_MIN, g0, g1, g2)
+    best_μ, best_g = _try_iwamoto_candidate(IWAMOTO_MU_MAX, best_μ, best_g, g0, g1, g2)
+
+    # Cubic coefficients: c₃μ³ + c₂μ² + c₁μ + c₀ = 0
+    c3 = 2.0 * g2
+    c2 = -3.0 * g1
+    c1 = g0 + 2.0 * g1
+    c0 = -g0
+
+    if abs(c3) < IWAMOTO_DEGENERACY_TOL
+        # Degenerate: solve quadratic c₂μ² + c₁μ + c₀ = 0
+        if abs(c2) > IWAMOTO_DEGENERACY_TOL
+            disc = c1 * c1 - 4.0 * c2 * c0
+            if disc >= 0.0
+                sq = sqrt(disc)
+                for μ in ((-c1 + sq) / (2.0 * c2), (-c1 - sq) / (2.0 * c2))
+                    best_μ, best_g = _try_iwamoto_candidate(μ, best_μ, best_g, g0, g1, g2)
+                end
+            end
+        elseif abs(c1) > IWAMOTO_DEGENERACY_TOL
+            best_μ, best_g = _try_iwamoto_candidate(-c0 / c1, best_μ, best_g, g0, g1, g2)
+        end
+        return best_μ
+    end
+
+    # Full cubic — depress to t³ + At + B = 0 via μ = t - p/3
+    p = c2 / c3
+    q = c1 / c3
+    c0_n = c0 / c3
+    p3 = p / 3.0
+    A = q - p * p3
+    B = c0_n - q * p3 + 2.0 * p3^3
+    Δ = -4.0 * A^3 - 27.0 * B^2
+
+    if Δ > 0.0
+        # Three distinct real roots — trigonometric form (A < 0 guaranteed when Δ > 0).
+        s = sqrt(-A / 3.0)
+        m = 2.0 * s
+        arg = clamp(-B / (2.0 * s * s * s), -1.0, 1.0)
+        φ3 = acos(arg) / 3.0
+        for k in 0:2
+            best_μ, best_g = _try_iwamoto_candidate(
+                m * cos(φ3 - 2.0 * π * k / 3.0) - p3,
+                best_μ, best_g, g0, g1, g2)
+        end
+    elseif Δ < 0.0
+        # One real root — Cardano's formula.
+        sqD = sqrt(max(-Δ / 108.0, 0.0))
+        best_μ, best_g = _try_iwamoto_candidate(
+            cbrt(-B / 2.0 + sqD) + cbrt(-B / 2.0 - sqD) - p3,
+            best_μ, best_g, g0, g1, g2)
+    else
+        # Δ ≈ 0 — repeated roots.
+        if abs(A) < IWAMOTO_DEGENERACY_TOL
+            # Triple root at t = 0.
+            best_μ, best_g = _try_iwamoto_candidate(-p3, best_μ, best_g, g0, g1, g2)
+        else
+            # Simple root t₁ = 3B/A and double root t₂ = -3B/(2A).
+            for t in (3.0 * B / A, -3.0 * B / (2.0 * A))
+                best_μ, best_g = _try_iwamoto_candidate(
+                    t - p3, best_μ, best_g, g0, g1, g2)
+            end
+        end
+    end
+
+    return best_μ
+end
+
 """Does a single iteration of `NewtonRaphsonACPowerFlow`. Updates the `r` and `x`
  fields of the `stateVector`, and computes the Jacobian at the new `x`."""
 function _simple_step(time_step::Int,
@@ -281,6 +387,74 @@ function _simple_step(time_step::Int,
     return
 end
 
+"""Does a single iteration of Newton-Raphson with Iwamoto step control.
+Computes the Newton step, takes a full trial step, and checks whether the
+residual norm decreased. If not, computes an optimal damping multiplier `μ`
+and applies a damped step instead. When the damped step also fails to reduce
+the residual, the step is reverted to avoid divergence.
+
+Returns `true` if the step made progress (residual decreased), `false` if
+the step was reverted. Consecutive reverts signal stagnation and the caller
+should terminate early."""
+function _iwamoto_step(time_step::Int,
+    stateVector::StateVectorCache,
+    linSolveCache::KLULinSolveCache{J_INDEX_TYPE},
+    residual::ACPowerFlowResidual,
+    J::ACPowerFlowJacobian,
+    refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD,
+    refinement_eps::Float64 = DEFAULT_REFINEMENT_EPS,
+)::Bool
+    # Save pre-step residual f into stateVector.r
+    copyto!(stateVector.r, residual.Rv)
+    # Compute Newton step Δx_nr = -J⁻¹f
+    _set_Δx_nr!(
+        stateVector,
+        J,
+        linSolveCache,
+        NewtonRaphsonACPowerFlow(),
+        refinement_threshold,
+        refinement_eps,
+    )
+    # Take full trial step: x += Δx_nr
+    stateVector.x .+= stateVector.Δx_nr
+    # Evaluate trial residual b = F(x + Δx)
+    residual(stateVector.x, time_step)
+
+    # Compute gram scalars for Iwamoto criterion
+    g0 = dot(stateVector.r, stateVector.r)
+    g1 = dot(stateVector.r, residual.Rv)
+    g2 = dot(residual.Rv, residual.Rv)
+
+    if g2 < g0
+        # Full step reduced residual — accept it (μ = 1).
+        @debug "Iwamoto: full step accepted (g₂/g₀ = $(g2/g0))"
+        J(time_step)
+        return true
+    end
+
+    # Full step did not reduce residual — compute optimal μ.
+    μ = _iwamoto_multiplier(g0, g1, g2)
+    @debug "Iwamoto: damped step μ = $μ (g₂/g₀ = $(g2/g0))"
+    # Undo full step and apply damped step.
+    stateVector.x .-= stateVector.Δx_nr
+    stateVector.x .+= μ .* stateVector.Δx_nr
+    # Re-evaluate residual at damped point.
+    residual(stateVector.x, time_step)
+    # Check whether the damped step actually improved the residual.
+    g_damped = dot(residual.Rv, residual.Rv)
+    if g_damped >= g0
+        # Damped step did not improve — revert to pre-step state.
+        @debug "Iwamoto: damped step did not reduce residual " *
+               "(g_damped/g₀ = $(g_damped/g0), μ = $μ); reverting"
+        stateVector.x .-= μ .* stateVector.Δx_nr
+        residual(stateVector.x, time_step)
+        return false
+    end
+    # Damped step improved — accept it.
+    J(time_step)
+    return true
+end
+
 """Runs the full `NewtonRaphsonACPowerFlow`.
 # Keyword arguments:
 - `maxIterations::Int`: maximum iterations. Default: $DEFAULT_NR_MAX_ITER.
@@ -298,36 +472,56 @@ function _run_power_flow_method(time_step::Int,
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::Type{NewtonRaphsonACPowerFlow};
-    kwargs...)
-    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
-    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
-    refinement_threshold::Float64 = get(kwargs,
-        :refinement_eps,
-        DEFAULT_REFINEMENT_THRESHOLD)
-    refinement_eps::Float64 = get(kwargs, :refinement_eps, DEFAULT_REFINEMENT_EPS)
-    validate_vms::Bool = get(
-        kwargs,
-        :validate_voltages,
-        DEFAULT_VALIDATE_VOLTAGES,
-    )
-    validation_range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = get(
-        kwargs,
-        :vm_validation_range,
-        DEFAULT_VALIDATION_RANGE,
-    )
+    maxIterations::Int = DEFAULT_NR_MAX_ITER,
+    tol::Float64 = DEFAULT_NR_TOL,
+    refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD,
+    refinement_eps::Float64 = DEFAULT_REFINEMENT_EPS,
+    validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
+    vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
+    iwamoto::Bool = false,
+    _ignored...,  # absorb unknown keys from caller without error
+)
+    validate_vms = validate_voltage_magnitudes
     i, converged = 1, false
+    consecutive_reverts = 0
     bus_types = @view get_bus_type(J.data)[:, time_step]
     while i < maxIterations && !converged
-        _simple_step(
-            time_step,
-            stateVector,
-            linSolveCache,
-            residual,
-            J,
-            refinement_threshold,
-            refinement_eps,
+        if iwamoto
+            made_progress = _iwamoto_step(
+                time_step,
+                stateVector,
+                linSolveCache,
+                residual,
+                J,
+                refinement_threshold,
+                refinement_eps,
+            )
+            if made_progress
+                consecutive_reverts = 0
+            else
+                consecutive_reverts += 1
+                if consecutive_reverts >= IWAMOTO_MAX_REVERTS
+                    @debug "Iwamoto: $consecutive_reverts consecutive reverted steps; terminating early"
+                    break
+                end
+            end
+        else
+            _simple_step(
+                time_step,
+                stateVector,
+                linSolveCache,
+                residual,
+                J,
+                refinement_threshold,
+                refinement_eps,
+            )
+        end
+        validate_vms && PowerFlows.validate_voltage_magnitudes(
+            stateVector.x,
+            bus_types,
+            vm_validation_range,
+            i,
         )
-        validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -352,27 +546,20 @@ function _run_power_flow_method(time_step::Int,
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     ::Type{TrustRegionACPowerFlow};
-    kwargs...)
-    maxIterations::Int = get(kwargs, :maxIterations, DEFAULT_NR_MAX_ITER)
-    tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
-    factor::Float64 = get(kwargs, :factor, DEFAULT_TRUST_REGION_FACTOR)
-    eta::Float64 = get(kwargs, :eta, DEFAULT_TRUST_REGION_ETA)
-    autoscale::Bool = get(kwargs, :autoscale, DEFAULT_AUTOSCALE)
+    maxIterations::Int = DEFAULT_NR_MAX_ITER,
+    tol::Float64 = DEFAULT_NR_TOL,
+    factor::Float64 = DEFAULT_TRUST_REGION_FACTOR,
+    eta::Float64 = DEFAULT_TRUST_REGION_ETA,
+    autoscale::Bool = DEFAULT_AUTOSCALE,
+    validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
+    vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
+    _ignored...,  # absorb unknown keys from caller without error
+)
+    validate_vms = validate_voltage_magnitudes
 
     if eta > 1.0 || eta < 0.0
         @warn("η = $eta is outside [0, 1]") # eta is set to 2.0 in one test.
     end
-
-    validate_vms::Bool = get(
-        kwargs,
-        :validate_voltages,
-        DEFAULT_VALIDATE_VOLTAGES,
-    )
-    validation_range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = get(
-        kwargs,
-        :vm_validation_range,
-        DEFAULT_VALIDATION_RANGE,
-    )
 
     if autoscale
         for i in 1:length(stateVector.x)
@@ -401,7 +588,12 @@ function _run_power_flow_method(time_step::Int,
             eta,
             autoscale,
         )
-        validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
+        validate_vms && PowerFlows.validate_voltage_magnitudes(
+            stateVector.x,
+            bus_types,
+            vm_validation_range,
+            i,
+        )
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -414,17 +606,39 @@ function _newton_power_flow(
     pf::ACPowerFlow{T},
     data::ACPowerFlowData,
     time_step::Int64;
-    kwargs...) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
+    # shared kwargs
+    tol::Float64 = DEFAULT_NR_TOL,
+    maxIterations::Int = DEFAULT_NR_MAX_ITER,
+    validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
+    vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
+    # NR-specific
+    refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD,
+    refinement_eps::Float64 = DEFAULT_REFINEMENT_EPS,
+    iwamoto::Bool = false,
+    # TR-specific
+    factor::Float64 = DEFAULT_TRUST_REGION_FACTOR,
+    eta::Float64 = DEFAULT_TRUST_REGION_ETA,
+    autoscale::Bool = DEFAULT_AUTOSCALE,
+    # initialize_power_flow_variables
+    x0::Union{Vector{Float64}, Nothing} = nothing,
+    _ignored...,
+) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
 
     # setup: common code
-    residual, J, x0 = initialize_power_flow_variables(pf, data, time_step; kwargs...)
-    converged = norm(residual.Rv, Inf) < get(kwargs, :tol, DEFAULT_NR_TOL)
+    init_kwargs = if isnothing(x0)
+        (; validate_voltage_magnitudes, vm_validation_range)
+    else
+        (; validate_voltage_magnitudes, vm_validation_range, x0)
+    end
+    residual, J, x0_init = initialize_power_flow_variables(
+        pf, data, time_step; init_kwargs...)
+    converged = norm(residual.Rv, Inf) < tol
 
     i = 0
     if !converged
         linSolveCache = KLULinSolveCache(J.Jv)
         symbolic_factor!(linSolveCache, J.Jv)
-        stateVector = StateVectorCache(x0, residual.Rv)
+        stateVector = StateVectorCache(x0_init, residual.Rv)
         converged, i = _run_power_flow_method(
             time_step,
             stateVector,
@@ -432,7 +646,16 @@ function _newton_power_flow(
             residual,
             J,
             T;
-            kwargs...,
+            tol,
+            maxIterations,
+            validate_voltage_magnitudes,
+            vm_validation_range,
+            refinement_threshold,
+            refinement_eps,
+            iwamoto,
+            factor,
+            eta,
+            autoscale,
         )
     end
     @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")

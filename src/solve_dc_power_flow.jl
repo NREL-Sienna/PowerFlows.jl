@@ -309,7 +309,7 @@ function dc_loss_factors(
         row_k = ptdf[arc, :]  # length n_buses
         for t in 1:n_ts
             w = weighted_flows[k, t]
-            for j in 1:n_buses
+            @inbounds @simd for j in 1:n_buses
                 result[j, t] += row_k[j] * w
             end
         end
