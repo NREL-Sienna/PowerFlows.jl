@@ -7,7 +7,7 @@
 The remainder of the fields are only used in the `TrustRegionACPowerFlow`:
 - `r_predict::Vector{Float64}`: the predicted residual at `x+Δx_proposed`,
     under a linear approximation: i.e `J_x⋅(x+Δx_proposed)`.
-- `Δx_proposed::Vector{Float64}`: the suggested step `Δx`, selected among `Δx_nr`, 
+- `Δx_proposed::Vector{Float64}`: the suggested step `Δx`, selected among `Δx_nr`,
     `Δx_cauchy`, and the dogleg interpolation between the two. The first is chosen when
     `x+Δx_nr` is inside the trust region, the second when both `x+Δx_cauchy`
     and `x+Δx_nr` are outside the trust region, and the third when `x+Δx_cauchy`
@@ -35,7 +35,7 @@ function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     return StateVectorCache(x, r, r_predict, Δx_proposed, Δx_cauchy, Δx_nr, ones(size(x0)))
 end
 
-"""Solve for the Newton-Raphson step, given the factorization object for `J.Jv` 
+"""Solve for the Newton-Raphson step, given the factorization object for `J.Jv`
 (if non-singular) or its stand-in (if singular)."""
 function _solve_Δx_nr!(stateVector::StateVectorCache, cache::KLULinSolveCache{J_INDEX_TYPE})
     copyto!(stateVector.Δx_nr, stateVector.r)
@@ -144,7 +144,7 @@ function _dogleg!(Δx_proposed::Vector{Float64},
             # not needed because g is already an alias for Δx_proposed.
             # copyto!(Δx_proposed, g) # update Δx_proposed: cauchy point case
         else
-            # Δx_cauchy inside region => next point is the spot where the line from 
+            # Δx_cauchy inside region => next point is the spot where the line from
             # Δx_cauchy to Δx_nr crosses the boundary of the trust region.
             # this is the "dogleg" part.
 
@@ -165,7 +165,7 @@ end
 
 """Does a single iteration of the `TrustRegionNRMethod`:
 updates the `x` and `r` fields of the `stateVector` and computes
-the value of the Jacobian at the new `x`, if needed. Unlike 
+the value of the Jacobian at the new `x`, if needed. Unlike
 `_simple_step`, this has a return value, the updated value of `delta``."""
 function _trust_region_step(time_step::Int,
     stateVector::StateVectorCache,
@@ -290,7 +290,7 @@ end
     `norm(J_x Δx - r, 1)/norm(r, 1) > refinement_threshold`, do iterative refinement to
     improve the accuracy. Default: $DEFAULT_REFINEMENT_THRESHOLD.
 - `refinement_eps::Float64`: run iterative refinement on `J_x Δx = r` until
-    `norm(Δx_{i}-Δx_{i+1}, 1)/norm(r,1) < refinement_eps`. Default: 
+    `norm(Δx_{i}-Δx_{i+1}, 1)/norm(r,1) < refinement_eps`. Default:
     $DEFAULT_REFINEMENT_EPS """
 function _run_power_flow_method(time_step::Int,
     stateVector::StateVectorCache,
@@ -315,6 +315,7 @@ function _run_power_flow_method(time_step::Int,
         :vm_validation_range,
         DEFAULT_VALIDATION_RANGE,
     )
+    monitor_jac = get(kwargs, :monitor_jacobian, false)
     i, converged = 1, false
     bus_types = @view get_bus_type(J.data)[:, time_step]
     while i < maxIterations && !converged
@@ -327,6 +328,7 @@ function _run_power_flow_method(time_step::Int,
             refinement_threshold,
             refinement_eps,
         )
+        monitor_jac && monitor_jacobian_definiteness(J)
         validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
         converged = norm(residual.Rv, Inf) < tol
         if !converged
@@ -389,6 +391,7 @@ function _run_power_flow_method(time_step::Int,
     linf = norm(residual.Rv, Inf)
     @debug "initially: sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ $(siground(delta))"
 
+    monitor_jac = get(kwargs, :monitor_jacobian, false)
     bus_types = @view get_bus_type(J.data)[:, time_step]
     while i < maxIterations && !converged
         delta = _trust_region_step(
@@ -401,6 +404,7 @@ function _run_power_flow_method(time_step::Int,
             eta,
             autoscale,
         )
+        monitor_jac && monitor_jacobian_definiteness(J)
         validate_vms && validate_voltages(stateVector.x, bus_types, validation_range, i)
         converged = norm(residual.Rv, Inf) < tol
         if !converged

@@ -1,5 +1,5 @@
-"""Driver for the LevenbergMarquardtACPowerFlow method: sets up the data 
-structures (e.g. residual), runs the power flow method via calling `_run_power_flow_method` 
+"""Driver for the LevenbergMarquardtACPowerFlow method: sets up the data
+structures (e.g. residual), runs the power flow method via calling `_run_power_flow_method`
 on them, then handles post-processing (e.g. loss factors)."""
 function _newton_power_flow(
     pf::ACPowerFlow{LevenbergMarquardtACPowerFlow},
@@ -47,6 +47,7 @@ function _run_power_flow_method(
     λ::Float64 = get(kwargs, :λ_0, DEFAULT_λ_0)
     tol::Float64 = get(kwargs, :tol, DEFAULT_NR_TOL)
     maxTestλs::Int = get(kwargs, :maxTestλs, DEFAULT_MAX_TEST_λs)
+    monitor_jac = get(kwargs, :monitor_jacobian, false)
     i, converged = 0, false
     residual(x, time_step)
     resSize = dot(residual.Rv, residual.Rv)
@@ -54,6 +55,7 @@ function _run_power_flow_method(
     @debug "initially: sum of squares $(siground(resSize)), L ∞ norm $(siground(linf)), λ = $λ"
     while i < maxIterations && !converged && !isnan(λ)
         λ = update_damping_factor!(x, residual, J, time_step, maxTestλs)
+        monitor_jac && monitor_jacobian_definiteness(J)
         converged = !isnan(λ) && norm(residual.Rv, Inf) < tol
         i += 1
     end

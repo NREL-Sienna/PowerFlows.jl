@@ -174,7 +174,7 @@ a heuristic and do not correspond to eigenvalue signs.
     end
 
     @testset "monitor_jacobian_definiteness Function" begin
-        result = PF.monitor_jacobian_definiteness(jacobian; verbose = false)
+        result = PF.monitor_jacobian_definiteness(jacobian)
 
         @test result isa PF.PivotSignResult
         @test result.success
@@ -239,5 +239,42 @@ a heuristic and do not correspond to eigenvalue signs.
         @test result2.n_positive + result2.n_negative + result2.n_zero == size(J2, 1)
         @test result2.n_positive >= 0
         @test result2.n_negative >= 0
+    end
+end
+
+@testset "monitor_jacobian solver integration" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+
+    @testset "NewtonRaphsonACPowerFlow with monitor_jacobian" begin
+        pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+            correct_bustypes = true,
+            solver_settings = Dict{Symbol, Any}(:monitor_jacobian => true),
+        )
+        result = solve_power_flow(pf, sys)
+        @test result !== nothing
+    end
+
+    @testset "TrustRegionACPowerFlow with monitor_jacobian" begin
+        pf = ACPowerFlow{TrustRegionACPowerFlow}(;
+            correct_bustypes = true,
+            solver_settings = Dict{Symbol, Any}(:monitor_jacobian => true),
+        )
+        result = solve_power_flow(pf, sys)
+        @test result !== nothing
+    end
+
+    @testset "LevenbergMarquardtACPowerFlow with monitor_jacobian" begin
+        pf = ACPowerFlow{LevenbergMarquardtACPowerFlow}(;
+            correct_bustypes = true,
+            solver_settings = Dict{Symbol, Any}(:monitor_jacobian => true),
+        )
+        result = solve_power_flow(pf, sys)
+        @test result !== nothing
+    end
+
+    @testset "monitor_jacobian defaults to false" begin
+        pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = true)
+        result = solve_power_flow(pf, sys)
+        @test result !== nothing
     end
 end

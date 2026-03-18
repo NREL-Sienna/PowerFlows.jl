@@ -260,20 +260,14 @@ function _format_inertia_report(J::SparseMatrixCSC{Float64, Int32},
 end
 
 """
-    monitor_jacobian_definiteness(jacobian::ACPowerFlowJacobian;
-                                 verbose::Bool=true) -> PivotSignResult
+    monitor_jacobian_definiteness(jacobian::ACPowerFlowJacobian) -> PivotSignResult
 
-Run and optionally print pivot-sign diagnostics for a power flow Jacobian.
+Run pivot-sign diagnostics for a power flow Jacobian and log the results.
 """
-function monitor_jacobian_definiteness(jacobian::ACPowerFlowJacobian;
-    verbose::Bool = true)
+function monitor_jacobian_definiteness(jacobian::ACPowerFlowJacobian)
     J = jacobian.Jv
     result = compute_inertia_via_sparse_lu(J)
-
-    if verbose
-        sym_result = check_jacobian_symmetric_part(J)
-        println(_format_inertia_report(J, result, sym_result, result.tolerance))
-    end
-
+    sym_result = check_jacobian_symmetric_part(J)
+    @info _format_inertia_report(J, result, sym_result, result.tolerance)
     return result
 end
