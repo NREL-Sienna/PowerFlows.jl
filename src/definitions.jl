@@ -17,9 +17,10 @@ const DEFAULT_REFINEMENT_EPS::Float64 = 1e-6 # when to stop iterative refinement
 const NR_SINGULAR_SCALING = 1e-6 # scaling factor in fallback method for singular Jacobian
 
 # Iwamoto step control constants
-const IWAMOTO_MU_MIN = 0.1 # minimum step multiplier
+const IWAMOTO_MU_MIN = 0.0 # minimum step multiplier (zero permits "no step" when all damped steps worsen the residual)
 const IWAMOTO_MU_MAX = 1.0 # maximum step multiplier
 const IWAMOTO_DEGENERACY_TOL = 1e-30 # near-zero tolerance for degenerate cubic/quadratic
+const IWAMOTO_MAX_REVERTS = 3 # consecutive reverted steps before early termination
 # only used for trust region.
 const DEFAULT_TRUST_REGION_ETA::Float64 = 1e-4 # if actual improvement/predicted improvement
 # is < eta, then reject the step Δx, shrink the trust region, and try again.
