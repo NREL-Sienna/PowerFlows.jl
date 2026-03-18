@@ -113,7 +113,7 @@ end
 Computes `x .= x_save .+ α .* (x .- x_save)` in-place without allocation."""
 function _interpolate_x!(x::Vector{Float64}, x_save::Vector{Float64}, α::Float64)
     x .*= α
-    x .+= (1-α) .* x_save
+    x .+= (1 - α) .* x_save
     return nothing
 end
 
