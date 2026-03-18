@@ -93,6 +93,18 @@ Pages = [
 ]
 ```
 
+## Jacobian Diagnostics
+
+```@autodocs
+Modules = [PowerFlows]
+Public = false
+Private = true
+Pages = [
+    "jacobian_diagnostics.jl",
+    "jacobian_indefiniteness_detection.jl",
+]
+```
+
 ## Iterative Methods
 
 ```@autodocs

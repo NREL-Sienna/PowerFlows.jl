@@ -41,8 +41,6 @@ The power flow Jacobian is **not symmetric**, so:
 - The labels `has_mixed_sign_pivots`, `all_pivots_positive`, and `all_pivots_negative`
   describe **pivot signs only**, not definiteness.
 - For a more rigorous (but still heuristic) analysis of the symmetric part, use
-  [`check_jacobian_symmetric_part`](@ref), which examines ``(J + J^T)/2``.
-
 Despite these limitations, pivot-sign analysis is valuable in practice because:
 
 - Near-zero pivots reliably indicate singularity regardless of symmetry.
@@ -73,22 +71,6 @@ println(PowerFlows.get_inertia_report(jacobian.Jv))
 # Quick check via the convenience wrapper:
 if PowerFlows.quick_indefiniteness_check(jacobian)
     @warn "Mixed-sign pivots detected"
-end
-```
-
-### Monitoring During Iteration
-
-The [`monitor_jacobian_definiteness`](@ref) function can be called at each Newton
-iteration to track how the pivot spectrum evolves:
-
-```julia
-for iter in 1:max_iter
-    # ... Newton step ...
-    result = PowerFlows.monitor_jacobian_definiteness(jacobian; verbose = true)
-    if !result.success || result.n_zero > 0
-        @warn "Jacobian becoming singular at iteration $iter"
-        break
-    end
 end
 ```
 
