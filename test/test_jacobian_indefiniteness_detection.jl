@@ -25,16 +25,16 @@ a heuristic and do not correspond to eigenvalue signs.
     jacobian(time_step)
 
     @testset "PivotSignResult Structure" begin
-        r = PF.PivotSignResult(5, 3, 2, true, false, false, 1e-14, true)
+        r = PF.PivotSignResult(5, 3, 2, 1e-14, true)
 
         @test r.n_positive == 5
         @test r.n_negative == 3
         @test r.n_zero == 2
-        @test r.has_mixed_sign_pivots == true
-        @test r.all_pivots_positive == false
-        @test r.all_pivots_negative == false
         @test r.tolerance == 1e-14
         @test r.success == true
+        @test PF.has_mixed_sign_pivots(r)
+        @test !PF.all_pivots_positive(r)
+        @test !PF.all_pivots_negative(r)
 
         # InertiaResult alias still works
         @test PF.InertiaResult === PF.PivotSignResult
@@ -56,11 +56,11 @@ a heuristic and do not correspond to eigenvalue signs.
         # A well-conditioned power flow Jacobian should have no near-zero pivots
         # and should have both positive and negative pivots (mixed-sign)
         @test result.n_zero == 0
-        @test result.has_mixed_sign_pivots
+        @test PF.has_mixed_sign_pivots(result)
         @test result.n_positive > 0
         @test result.n_negative > 0
-        @test !result.all_pivots_positive
-        @test !result.all_pivots_negative
+        @test !PF.all_pivots_positive(result)
+        @test !PF.all_pivots_negative(result)
     end
 
     @testset "Known Constructed Matrices" begin
@@ -73,9 +73,9 @@ a heuristic and do not correspond to eigenvalue signs.
         @test r_pd.n_positive == 3
         @test r_pd.n_negative == 0
         @test r_pd.n_zero == 0
-        @test r_pd.all_pivots_positive
-        @test !r_pd.all_pivots_negative
-        @test !r_pd.has_mixed_sign_pivots
+        @test PF.all_pivots_positive(r_pd)
+        @test !PF.all_pivots_negative(r_pd)
+        @test !PF.has_mixed_sign_pivots(r_pd)
 
         # All-negative diagonal
         M_nd = sparse(Int32[1, 2, 3], Int32[1, 2, 3], [-2.0, -3.0, -4.0], 3, 3)
@@ -84,9 +84,9 @@ a heuristic and do not correspond to eigenvalue signs.
         @test r_nd.n_positive == 0
         @test r_nd.n_negative == 3
         @test r_nd.n_zero == 0
-        @test !r_nd.all_pivots_positive
-        @test r_nd.all_pivots_negative
-        @test !r_nd.has_mixed_sign_pivots
+        @test !PF.all_pivots_positive(r_nd)
+        @test PF.all_pivots_negative(r_nd)
+        @test !PF.has_mixed_sign_pivots(r_nd)
 
         # Mixed-sign diagonal
         M_id = sparse(Int32[1, 2, 3], Int32[1, 2, 3], [2.0, -3.0, 4.0], 3, 3)
@@ -95,16 +95,16 @@ a heuristic and do not correspond to eigenvalue signs.
         @test r_id.n_positive == 2
         @test r_id.n_negative == 1
         @test r_id.n_zero == 0
-        @test !r_id.all_pivots_positive
-        @test !r_id.all_pivots_negative
-        @test r_id.has_mixed_sign_pivots
+        @test !PF.all_pivots_positive(r_id)
+        @test !PF.all_pivots_negative(r_id)
+        @test PF.has_mixed_sign_pivots(r_id)
 
         # Singular diagonal (has a zero row/column)
         M_sg = sparse(Int32[1, 2], Int32[1, 2], [2.0, 4.0], 3, 3)
         r_sg = PF.compute_inertia_via_sparse_lu(M_sg)
         @test r_sg.n_positive + r_sg.n_negative + r_sg.n_zero == 3
-        @test !r_sg.all_pivots_positive
-        @test !r_sg.all_pivots_negative
+        @test !PF.all_pivots_positive(r_sg)
+        @test !PF.all_pivots_negative(r_sg)
         if r_sg.success
             @test r_sg.n_zero >= 1
         end
@@ -112,38 +112,37 @@ a heuristic and do not correspond to eigenvalue signs.
 
     @testset "Factorization Failure Invariant" begin
         # When factorization fails, success == false and counts sum to n
-        failed = PF.PivotSignResult(0, 0, 5, false, false, false, 1e-14, false)
+        failed = PF.PivotSignResult(0, 0, 5, 1e-14, false)
         @test !failed.success
         @test failed.n_positive + failed.n_negative + failed.n_zero == 5
-        @test !failed.has_mixed_sign_pivots
+        # Computed functions must return false when success == false
+        @test !PF.has_mixed_sign_pivots(failed)
+        @test !PF.all_pivots_positive(failed)
+        @test !PF.all_pivots_negative(failed)
     end
 
     @testset "is_jacobian_indefinite Function" begin
         J = jacobian.Jv
         is_mixed = PF.is_jacobian_indefinite(J)
         @test is_mixed isa Bool
+        # c_sys14 Jacobian has mixed-sign pivots
+        @test is_mixed == true
     end
 
     @testset "is_positive_definite Function" begin
         J = jacobian.Jv
         is_pos = PF.is_positive_definite(J)
         @test is_pos isa Bool
-
-        result = PF.compute_inertia_via_sparse_lu(J)
-        if result.has_mixed_sign_pivots
-            @test is_pos == false
-        end
+        # c_sys14 Jacobian has mixed-sign pivots, so cannot be all-positive
+        @test is_pos == false
     end
 
     @testset "is_negative_definite Function" begin
         J = jacobian.Jv
         is_neg = PF.is_negative_definite(J)
         @test is_neg isa Bool
-
-        result = PF.compute_inertia_via_sparse_lu(J)
-        if result.has_mixed_sign_pivots
-            @test is_neg == false
-        end
+        # c_sys14 Jacobian has mixed-sign pivots, so cannot be all-negative
+        @test is_neg == false
     end
 
     @testset "check_jacobian_symmetric_part Function" begin
@@ -188,24 +187,24 @@ a heuristic and do not correspond to eigenvalue signs.
         result = PF.compute_inertia_via_sparse_lu(J)
 
         # Cannot have all-positive and all-negative simultaneously
-        @test !(result.all_pivots_positive && result.all_pivots_negative)
+        @test !(PF.all_pivots_positive(result) && PF.all_pivots_negative(result))
 
         # Mixed-sign implies not all-positive and not all-negative
-        if result.has_mixed_sign_pivots
-            @test !result.all_pivots_positive
-            @test !result.all_pivots_negative
+        if PF.has_mixed_sign_pivots(result)
+            @test !PF.all_pivots_positive(result)
+            @test !PF.all_pivots_negative(result)
         end
 
         # All-positive implies no mixed-sign and no all-negative
-        if result.all_pivots_positive
-            @test !result.has_mixed_sign_pivots
-            @test !result.all_pivots_negative
+        if PF.all_pivots_positive(result)
+            @test !PF.has_mixed_sign_pivots(result)
+            @test !PF.all_pivots_negative(result)
         end
 
         # All-negative implies no mixed-sign and no all-positive
-        if result.all_pivots_negative
-            @test !result.has_mixed_sign_pivots
-            @test !result.all_pivots_positive
+        if PF.all_pivots_negative(result)
+            @test !PF.has_mixed_sign_pivots(result)
+            @test !PF.all_pivots_positive(result)
         end
     end
 

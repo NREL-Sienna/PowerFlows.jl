@@ -33,7 +33,7 @@ import DataFrames: Not
 import PowerSystems as PSY
 import PowerSystems: System, with_units_base
 import LinearAlgebra
-import LinearAlgebra: norm, dot, ldiv!, diag
+import LinearAlgebra: norm, dot, ldiv!
 import JSON3
 import KLU
 import SparseArrays
