@@ -390,7 +390,12 @@ end
 """Does a single iteration of Newton-Raphson with Iwamoto step control.
 Computes the Newton step, takes a full trial step, and checks whether the
 residual norm decreased. If not, computes an optimal damping multiplier `μ`
-and applies a damped step instead. Updates `r`, `x`, and the Jacobian."""
+and applies a damped step instead. When the damped step also fails to reduce
+the residual, the step is reverted to avoid divergence.
+
+Returns `true` if the step made progress (residual decreased), `false` if
+the step was reverted. Consecutive reverts signal stagnation and the caller
+should terminate early."""
 function _iwamoto_step(time_step::Int,
     stateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{J_INDEX_TYPE},
@@ -398,7 +403,7 @@ function _iwamoto_step(time_step::Int,
     J::ACPowerFlowJacobian,
     refinement_threshold::Float64 = DEFAULT_REFINEMENT_THRESHOLD,
     refinement_eps::Float64 = DEFAULT_REFINEMENT_EPS,
-)
+)::Bool
     # Save pre-step residual f into stateVector.r
     copyto!(stateVector.r, residual.Rv)
     # Compute Newton step Δx_nr = -J⁻¹f
@@ -421,21 +426,33 @@ function _iwamoto_step(time_step::Int,
     g2 = dot(residual.Rv, residual.Rv)
 
     if g2 < g0
-        # Full step reduced residual — accept it (μ = 1)
+        # Full step reduced residual — accept it (μ = 1).
         @debug "Iwamoto: full step accepted (g₂/g₀ = $(g2/g0))"
-    else
-        # Full step did not reduce residual — compute optimal μ
-        μ = _iwamoto_multiplier(g0, g1, g2)
-        @debug "Iwamoto: damped step μ = $μ (g₂/g₀ = $(g2/g0))"
-        # Undo full step and apply damped step
-        stateVector.x .-= stateVector.Δx_nr
-        stateVector.x .+= μ .* stateVector.Δx_nr
-        # Re-evaluate residual at damped point
-        residual(stateVector.x, time_step)
+        J(time_step)
+        return true
     end
-    # Update Jacobian at new x
+
+    # Full step did not reduce residual — compute optimal μ.
+    μ = _iwamoto_multiplier(g0, g1, g2)
+    @debug "Iwamoto: damped step μ = $μ (g₂/g₀ = $(g2/g0))"
+    # Undo full step and apply damped step.
+    stateVector.x .-= stateVector.Δx_nr
+    stateVector.x .+= μ .* stateVector.Δx_nr
+    # Re-evaluate residual at damped point.
+    residual(stateVector.x, time_step)
+    # Check whether the damped step actually improved the residual.
+    g_damped = dot(residual.Rv, residual.Rv)
+    if g_damped >= g0
+        # Damped step did not improve — revert to pre-step state.
+        @debug "Iwamoto: damped step did not reduce residual " *
+               "(g_damped/g₀ = $(g_damped/g0), μ = $μ); reverting"
+        stateVector.x .-= μ .* stateVector.Δx_nr
+        copyto!(residual.Rv, stateVector.r)
+        return false
+    end
+    # Damped step improved — accept it.
     J(time_step)
-    return
+    return true
 end
 
 """Runs the full `NewtonRaphsonACPowerFlow`.
@@ -474,10 +491,11 @@ function _run_power_flow_method(time_step::Int,
     )
     iwamoto::Bool = get(kwargs, :iwamoto, false)
     i, converged = 1, false
+    consecutive_reverts = 0
     bus_types = @view get_bus_type(J.data)[:, time_step]
     while i < maxIterations && !converged
         if iwamoto
-            _iwamoto_step(
+            made_progress = _iwamoto_step(
                 time_step,
                 stateVector,
                 linSolveCache,
@@ -486,6 +504,15 @@ function _run_power_flow_method(time_step::Int,
                 refinement_threshold,
                 refinement_eps,
             )
+            if made_progress
+                consecutive_reverts = 0
+            else
+                consecutive_reverts += 1
+                if consecutive_reverts >= IWAMOTO_MAX_REVERTS
+                    @debug "Iwamoto: $consecutive_reverts consecutive reverted steps; terminating early"
+                    break
+                end
+            end
         else
             _simple_step(
                 time_step,
