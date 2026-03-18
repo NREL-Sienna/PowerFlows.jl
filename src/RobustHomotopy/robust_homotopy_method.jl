@@ -54,7 +54,6 @@ function _second_order_newton(homHess::HomotopyHessian,
     maxIterations::Int = DEFAULT_NR_MAX_ITER,
     tol::Float64 = DEFAULT_NR_TOL,
 )
-
     i, converged, stop = 0, false, false
     F_val = F_value(homHess, t_k, x, time_step)
     last_tk = t_k == 1.0

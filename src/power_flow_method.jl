@@ -516,7 +516,12 @@ function _run_power_flow_method(time_step::Int,
                 refinement_eps,
             )
         end
-        validate_vms && PowerFlows.validate_voltage_magnitudes(stateVector.x, bus_types, vm_validation_range, i)
+        validate_vms && PowerFlows.validate_voltage_magnitudes(
+            stateVector.x,
+            bus_types,
+            vm_validation_range,
+            i,
+        )
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -583,7 +588,12 @@ function _run_power_flow_method(time_step::Int,
             eta,
             autoscale,
         )
-        validate_vms && PowerFlows.validate_voltage_magnitudes(stateVector.x, bus_types, vm_validation_range, i)
+        validate_vms && PowerFlows.validate_voltage_magnitudes(
+            stateVector.x,
+            bus_types,
+            vm_validation_range,
+            i,
+        )
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -615,9 +625,11 @@ function _newton_power_flow(
 ) where {T <: Union{TrustRegionACPowerFlow, NewtonRaphsonACPowerFlow}}
 
     # setup: common code
-    init_kwargs = isnothing(x0) ?
-                  (; validate_voltage_magnitudes, vm_validation_range) :
-                  (; validate_voltage_magnitudes, vm_validation_range, x0)
+    init_kwargs = if isnothing(x0)
+        (; validate_voltage_magnitudes, vm_validation_range)
+    else
+        (; validate_voltage_magnitudes, vm_validation_range, x0)
+    end
     residual, J, x0_init = initialize_power_flow_variables(
         pf, data, time_step; init_kwargs...)
     converged = norm(residual.Rv, Inf) < tol

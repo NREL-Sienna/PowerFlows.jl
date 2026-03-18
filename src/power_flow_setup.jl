@@ -155,6 +155,11 @@ function initialize_power_flow_variables(pf::ACPowerFlow{T},
     J(time_step)
 
     bus_types = @view get_bus_type(J.data)[:, time_step]
-    validate_voltage_magnitudes && PowerFlows.validate_voltage_magnitudes(x0_computed, bus_types, vm_validation_range, 0)
+    validate_voltage_magnitudes && PowerFlows.validate_voltage_magnitudes(
+        x0_computed,
+        bus_types,
+        vm_validation_range,
+        0,
+    )
     return residual, J, x0_computed
 end
