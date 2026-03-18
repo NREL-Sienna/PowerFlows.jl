@@ -112,9 +112,8 @@ end
 """Interpolate `x` between `x_save` (α=0) and current `x` (α=1) at fraction `α`.
 Computes `x .= x_save .+ α .* (x .- x_save)` in-place without allocation."""
 function _interpolate_x!(x::Vector{Float64}, x_save::Vector{Float64}, α::Float64)
-    @inbounds for i in eachindex(x)
-        x[i] = x_save[i] + α * (x[i] - x_save[i])
-    end
+    x .*= α
+    x .+= (1-α) .* x_save
     return nothing
 end
 
