@@ -94,21 +94,20 @@ end
         rating = 0.0,
         angle_limits = (min = -pi, max = pi),
     )
-    add_component!(sys, arc_2_6)
-    add_component!(sys, arc_4_6)
     add_component!(sys, line_2_6)
     add_component!(sys, line_4_6)
-    unreduced = PF.PowerFlowData(DCPowerFlow(), sys)
+    unreduced = PF.PowerFlowData(PF.DCPowerFlow(), sys)
     PF.solve_power_flow!(unreduced)
     @assert all(unreduced.converged)
+    ward_reduction = PNM.NetworkReduction[PNM.WardReduction([1, 2, 3, 4, 5])]
     dc_pf_reduced =
-        DCPowerFlow(;
-            network_reductions = PNM.NetworkReduction[WardReduction([1, 2, 3, 4, 5])],
+        PF.DCPowerFlow(;
+            network_reductions = ward_reduction,
         )
     validate_reduced_power_flow(
         dc_pf_reduced,
         sys,
-        PNM.NetworkReduction[WardReduction([1, 2, 3, 4, 5])],
+        ward_reduction,
         unreduced,
     )
 end
