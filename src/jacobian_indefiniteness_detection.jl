@@ -29,9 +29,6 @@ Fields:
 - `n_positive::Int`: Number of positive pivots in U
 - `n_negative::Int`: Number of negative pivots in U
 - `n_zero::Int`: Number of near-zero pivots in U (within tolerance)
-- `has_mixed_sign_pivots::Bool`: True if both positive and negative pivots exist
-- `all_pivots_positive::Bool`: True if all pivots are positive (no negative or zero)
-- `all_pivots_negative::Bool`: True if all pivots are negative (no positive or zero)
 - `tolerance::Float64`: Tolerance used for near-zero pivot detection
 - `success::Bool`: True if factorization succeeded; false if it failed
 """
@@ -39,9 +36,6 @@ struct PivotSignResult
     n_positive::Int
     n_negative::Int
     n_zero::Int
-    has_mixed_sign_pivots::Bool
-    all_pivots_positive::Bool
-    all_pivots_negative::Bool
     tolerance::Float64
     success::Bool
 end
@@ -49,15 +43,19 @@ end
 # Keep InertiaResult as an alias for backward compatibility
 const InertiaResult = PivotSignResult
 
+has_mixed_sign_pivots(r::PivotSignResult) = r.success && (r.n_positive > 0) && (r.n_negative > 0)
+all_pivots_positive(r::PivotSignResult) = r.success && (r.n_negative == 0) && (r.n_zero == 0)
+all_pivots_negative(r::PivotSignResult) = r.success && (r.n_positive == 0) && (r.n_zero == 0)
+
 function Base.show(io::IO, r::PivotSignResult)
     println(io, "PivotSignResult (LU pivot-sign heuristic):")
     if r.success
         println(io, "  Positive pivots: $(r.n_positive)")
         println(io, "  Negative pivots: $(r.n_negative)")
         println(io, "  Near-zero pivots (tol=$(r.tolerance)): $(r.n_zero)")
-        println(io, "  Mixed-sign pivots: $(r.has_mixed_sign_pivots)")
-        println(io, "  All pivots positive: $(r.all_pivots_positive)")
-        println(io, "  All pivots negative: $(r.all_pivots_negative)")
+        println(io, "  Mixed-sign pivots: $(has_mixed_sign_pivots(r))")
+        println(io, "  All pivots positive: $(all_pivots_positive(r))")
+        println(io, "  All pivots negative: $(all_pivots_negative(r))")
     else
         println(io, "  Factorization FAILED — results are unknown")
         println(io, "  Matrix is likely singular or severely ill-conditioned")
@@ -90,7 +88,7 @@ potential singularity or convergence issues.
 result = compute_inertia_via_sparse_lu(J)
 if !result.success
     @warn "Factorization failed — matrix may be singular"
-elseif result.has_mixed_sign_pivots
+elseif has_mixed_sign_pivots(result)
     @warn "Mixed-sign pivots detected — potential convergence issues"
 end
 ```
@@ -101,26 +99,33 @@ function compute_inertia_via_sparse_lu(J::SparseMatrixCSC{Float64, Int32};
 
     try
         F = KLU.klu(J)
+        U = F.U
 
-        # Extract diagonal of U factor. For PAQ = LU the diagonal of U contains the pivots.
-        diag_U = diag(F.U)
+        # Single pass over U diagonal to count pivot signs
+        n_positive = 0
+        n_negative = 0
+        n_zero = 0
+        for col in 1:n
+            # Last nonzero in each column of upper triangular U is the diagonal
+            col_end = U.colptr[col + 1] - 1
+            if col_end >= U.colptr[col] && U.rowval[col_end] == col
+                val = U.nzval[col_end]
+                if val > tolerance
+                    n_positive += 1
+                elseif val < -tolerance
+                    n_negative += 1
+                else
+                    n_zero += 1
+                end
+            else
+                n_zero += 1
+            end
+        end
 
-        n_positive = count(x -> x > tolerance, diag_U)
-        n_negative = count(x -> x < -tolerance, diag_U)
-        n_zero = count(x -> abs(x) <= tolerance, diag_U)
-
-        has_mixed = (n_positive > 0) && (n_negative > 0)
-        all_pos = (n_negative == 0) && (n_zero == 0)
-        all_neg = (n_positive == 0) && (n_zero == 0)
-
-        return PivotSignResult(
-            n_positive, n_negative, n_zero,
-            has_mixed, all_pos, all_neg,
-            tolerance, true,
-        )
+        return PivotSignResult(n_positive, n_negative, n_zero, tolerance, true)
     catch e
         @warn "LU factorization failed: $(e). Matrix may be singular or ill-conditioned."
-        return PivotSignResult(0, 0, n, false, false, false, tolerance, false)
+        return PivotSignResult(0, 0, n, tolerance, false)
     end
 end
 
@@ -136,7 +141,7 @@ It is a fast diagnostic for detecting potential convergence issues.
 function is_jacobian_indefinite(J::SparseMatrixCSC{Float64, Int32};
     tolerance::Float64 = 1e-14)
     result = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
-    return result.has_mixed_sign_pivots
+    return has_mixed_sign_pivots(result)
 end
 
 """
@@ -152,7 +157,7 @@ no pivoting.
 function is_positive_definite(J::SparseMatrixCSC{Float64, Int32};
     tolerance::Float64 = 1e-14)
     result = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
-    return result.all_pivots_positive
+    return all_pivots_positive(result)
 end
 
 """
@@ -166,7 +171,7 @@ For non-symmetric matrices, all-negative pivots do NOT guarantee negative defini
 function is_negative_definite(J::SparseMatrixCSC{Float64, Int32};
     tolerance::Float64 = 1e-14)
     result = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
-    return result.all_pivots_negative
+    return all_pivots_negative(result)
 end
 
 """
@@ -197,6 +202,27 @@ function quick_indefiniteness_check(jacobian::ACPowerFlowJacobian;
 end
 
 """
+    _format_pivot_sign_section(label::String, r::PivotSignResult,
+                               tolerance::Float64) -> String
+
+Format a section of the pivot-sign report for a single matrix analysis.
+"""
+function _format_pivot_sign_section(label::String, r::PivotSignResult,
+    tolerance::Float64)
+    return """
+      $(label):
+      ────────────────────────────────────────────────────────────
+        Positive pivots: $(r.n_positive)
+        Negative pivots: $(r.n_negative)
+        Near-zero pivots (tol=$(tolerance)): $(r.n_zero)
+        Factorization: $(r.success ? "OK" : "FAILED")
+        Status: $(has_mixed_sign_pivots(r) ? "MIXED-SIGN PIVOTS" :
+                (all_pivots_positive(r) ? "All pivots positive" :
+                (all_pivots_negative(r) ? "All pivots negative" : "Has near-zero pivots")))
+    """
+end
+
+"""
     get_inertia_report(J::SparseMatrixCSC{Float64,Int32};
                       tolerance::Float64=1e-14) -> String
 
@@ -207,41 +233,27 @@ function get_inertia_report(J::SparseMatrixCSC{Float64, Int32};
     tolerance::Float64 = 1e-14)
     result = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
     sym_result = check_jacobian_symmetric_part(J; tolerance = tolerance)
+    return _format_inertia_report(J, result, sym_result, tolerance)
+end
 
+function _format_inertia_report(J::SparseMatrixCSC{Float64, Int32},
+    result::PivotSignResult, sym_result::PivotSignResult,
+    tolerance::Float64)
     n = size(J, 1)
     nz = SparseArrays.nnz(J)
     sparsity = 1.0 - nz / (n * n)
 
-    report = """
+    return """
     ═══════════════════════════════════════════════════════════
     Jacobian Matrix Pivot-Sign Diagnostic Report
     ═══════════════════════════════════════════════════════════
     Matrix Dimensions: $(n) × $(n)
     Non-zeros: $(nz) (sparsity: $(round(sparsity*100; digits=2))%)
 
-    Full Jacobian J (LU pivot signs — heuristic only):
-    ────────────────────────────────────────────────────────────
-      Positive pivots: $(result.n_positive)
-      Negative pivots: $(result.n_negative)
-      Near-zero pivots (tol=$(tolerance)): $(result.n_zero)
-      Factorization: $(result.success ? "OK" : "FAILED")
-      Status: $(result.has_mixed_sign_pivots ? "MIXED-SIGN PIVOTS" :
-              (result.all_pivots_positive ? "All pivots positive" :
-              (result.all_pivots_negative ? "All pivots negative" : "Has near-zero pivots")))
-
-    Symmetric Part (J + J^T)/2 (LU pivot signs):
-    ────────────────────────────────────────────────────────────
-      Positive pivots: $(sym_result.n_positive)
-      Negative pivots: $(sym_result.n_negative)
-      Near-zero pivots (tol=$(tolerance)): $(sym_result.n_zero)
-      Factorization: $(sym_result.success ? "OK" : "FAILED")
-      Status: $(sym_result.has_mixed_sign_pivots ? "MIXED-SIGN PIVOTS" :
-              (sym_result.all_pivots_positive ? "All pivots positive" :
-              (sym_result.all_pivots_negative ? "All pivots negative" : "Has near-zero pivots")))
+    $(_format_pivot_sign_section("Full Jacobian J (LU pivot signs — heuristic only)", result, tolerance))
+    $(_format_pivot_sign_section("Symmetric Part (J + J^T)/2 (LU pivot signs)", sym_result, tolerance))
     ═══════════════════════════════════════════════════════════
     """
-
-    return report
 end
 
 """
@@ -252,10 +264,12 @@ Run and optionally print pivot-sign diagnostics for a power flow Jacobian.
 """
 function monitor_jacobian_definiteness(jacobian::ACPowerFlowJacobian;
     verbose::Bool = true)
-    result = compute_inertia_via_sparse_lu(jacobian.Jv)
+    J = jacobian.Jv
+    result = compute_inertia_via_sparse_lu(J)
 
     if verbose
-        println(get_inertia_report(jacobian.Jv))
+        sym_result = check_jacobian_symmetric_part(J)
+        println(_format_inertia_report(J, result, sym_result, result.tolerance))
     end
 
     return result
