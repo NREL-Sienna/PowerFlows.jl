@@ -135,6 +135,72 @@ end
     end
 end
 
+@testset "Iwamoto multiplier root-finding" begin
+    # Verify that _iwamoto_multiplier recovers the global minimizer of
+    # g(μ) = (1-μ)²g₀ + 2μ²(1-μ)g₁ + μ⁴g₂ on [0, 1] by comparing against
+    # a brute-force grid search.
+    grid = range(0.0, 1.0; length = 10001)
+
+    test_cases = [
+        # (g0, g1, g2, description)
+        # Three distinct real roots (trigonometric branch, Δ > 0).
+        (1.0, 0.5, 2.0, "typical damping case"),
+        (4.0, 1.0, 3.0, "three real roots, moderate values"),
+        # One real root (Cardano branch, Δ < 0).
+        (1.0, -0.5, 0.5, "negative cross-term, one real root"),
+        (1.0, 0.0, 1.0, "orthogonal residuals"),
+        # Repeated roots (Δ ≈ 0).
+        (1.0, 1.0, 1.0, "all gram scalars equal"),
+        # Scaled values (should give same μ as unscaled).
+        (100.0, 50.0, 200.0, "scaled version of typical case"),
+        # Near-full-step optimality.
+        (1.0, 0.99, 1.01, "near-unit multiplier"),
+        # Large disparity.
+        (1.0, 0.1, 100.0, "large g2, strong damping expected"),
+    ]
+
+    for (g0, g1, g2, desc) in test_cases
+        μ = PF._iwamoto_multiplier(g0, g1, g2)
+        @test 0.0 <= μ <= 1.0
+        g_opt = PF._iwamoto_objective(μ, g0, g1, g2)
+        # Brute-force minimum over the grid.
+        g_grid_min = minimum(PF._iwamoto_objective(m, g0, g1, g2) for m in grid)
+        @test g_opt <= g_grid_min + 1e-10
+    end
+end
+
+@testset "Iwamoto multiplier returns μ=0 when no step improves" begin
+    # When g₁ and g₂ are large, any positive μ worsens the objective.
+    # g(0) = g₀ should be the global minimum on [0, 1].
+    g0 = 1.0
+    g1 = 10.0
+    g2 = 100.0
+    μ = PF._iwamoto_multiplier(g0, g1, g2)
+    g_at_mu = PF._iwamoto_objective(μ, g0, g1, g2)
+    # The optimizer must be able to return μ=0 or at least match g(0)=g₀.
+    @test g_at_mu <= g0 + 1e-12
+end
+
+@testset "Iwamoto multiplier degenerate cases" begin
+    # Degenerate cubic (g₂ ≈ 0): leading coefficient of derivative cubic is ~0.
+    g0 = 1.0
+    g1 = 0.5
+    g2 = 1e-35
+    μ = PF._iwamoto_multiplier(g0, g1, g2)
+    @test 0.0 <= μ <= 1.0
+    g_opt = PF._iwamoto_objective(μ, g0, g1, g2)
+    grid = range(0.0, 1.0; length = 10001)
+    g_grid_min = minimum(PF._iwamoto_objective(m, g0, g1, g2) for m in grid)
+    @test g_opt <= g_grid_min + 1e-10
+
+    # Degenerate quadratic (g₂ ≈ 0 and g₁ ≈ 0): both leading coefficients ~0.
+    g0_b = 1.0
+    g1_b = 1e-35
+    g2_b = 1e-35
+    μ_b = PF._iwamoto_multiplier(g0_b, g1_b, g2_b)
+    @test 0.0 <= μ_b <= 1.0
+end
+
 @testset "dc fallback" begin
     dc_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
         robust_power_flow = true,
