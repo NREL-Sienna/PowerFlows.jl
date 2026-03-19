@@ -31,6 +31,7 @@ const MAX_DOUBLE_TRUST_REGION = 0.5
 const DOUBLE_TRUST_REGION = 0.9
 const DEFAULT_AUTOSCALE = false # correct for scaling of the system
 # typically converges in fewer iteration without autoscaling.
+const DEFAULT_IWAMOTO_FALLBACK = true # when a trust region step is rejected, try Iwamoto damping
 
 const PF_MAX_LOG = 10
 # only used for Levenberg-Maquardt

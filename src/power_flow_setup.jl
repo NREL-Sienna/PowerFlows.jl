@@ -58,7 +58,7 @@ function _pick_better_x0(x0::Vector{Float64},
     else
         @debug "no improvement from $improvement_method"
     end
-    return nothing
+    return
 end
 
 """If initial residual is large, run a DC power flow and see if that gives
@@ -107,7 +107,7 @@ function _enhanced_flat_start(
     return newx0
 end
 
-"""When solving AC power flows, if the initial guess has large residual, we run a DC power 
+"""When solving AC power flows, if the initial guess has large residual, we run a DC power
 flow as a fallback. This runs a DC power flow on `data::ACPowerFlowData` for the given
 `time_step`, and writes the solution to `data.bus_angles`."""
 function _dc_power_flow_fallback!(data::ACPowerFlowData, time_step::Int)
