@@ -177,8 +177,6 @@ function _accept_trust_region_step!(
         for i in 1:length(stateVector.x)
             stateVector.d[i] = max(0.1 * stateVector.d[i], norm(view(Jv, :, i)))
         end
-    else
-        @assert all(stateVector.d .== 1.0)
     end
     return nothing
 end
@@ -231,6 +229,7 @@ function _trust_region_step(time_step::Int,
     residual::ACPowerFlowResidual,
     J::ACPowerFlowJacobian,
     delta::Float64,
+    delta_max::Float64,
     eta::Float64,
     autoscale::Bool,
     iwamoto_fallback::Bool,
@@ -273,17 +272,27 @@ function _trust_region_step(time_step::Int,
 
     @debug "Trust region step: ρ = $(siground(rho)), η = $(siground(eta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed)))"
 
+    step_accepted = false
     if rho > eta
         # Successful iteration
         @debug "Step accepted: sum of squares $(siground(dot(residual.Rv, residual.Rv))), L ∞ norm $(siground(norm(residual.Rv, Inf))), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed)))"
         J(time_step)
         _accept_trust_region_step!(stateVector, residual, J.Jv, autoscale)
+        step_accepted = true
     else
         # Unsuccessful step — try Iwamoto damping before reverting.
         if iwamoto_fallback
-            _iwamoto_fallback!(
+            iwamoto_accepted = _iwamoto_fallback!(
                 time_step, stateVector, residual, J,
                 oldResidual, old_residual_norm, new_residual_norm, autoscale)
+            if iwamoto_accepted
+                # Iwamoto accepted a damped step — shrink trust region since the
+                # full proposed step was rejected by rho. Do not use rho-based
+                # expansion logic because rho corresponds to the rejected full step.
+                delta = min(delta / 2, delta_max)
+                @debug "Trust region decreased (Iwamoto fallback accepted): δ $(siground(old_delta)) → $(siground(delta))"
+                return delta
+            end
         else
             stateVector.x .-= stateVector.Δx_proposed
             copyto!(residual.Rv, oldResidual)
@@ -291,19 +300,21 @@ function _trust_region_step(time_step::Int,
         end
     end
 
-    # Update size of trust region
+    # Update size of trust region based on rho (only reached when the full step
+    # was accepted via rho, or the step was fully rejected without Iwamoto).
     if rho < HALVE_TRUST_REGION # rho < 0.1: insufficient improvement
         delta = delta / 2
         @debug "Trust region decreased: δ $(siground(old_delta)) → $(siground(delta)) (ρ < $(HALVE_TRUST_REGION))"
-    elseif rho >= DOUBLE_TRUST_REGION # rho >= 0.9: good improvement
+    elseif step_accepted && rho >= DOUBLE_TRUST_REGION # rho >= 0.9: good improvement
         delta = 2 * wnorm(stateVector.d, stateVector.Δx_proposed)
         @debug "Trust region increased (good): δ $(siground(old_delta)) → $(siground(delta)) (ρ ≥ $(DOUBLE_TRUST_REGION))"
-    elseif rho >= MAX_DOUBLE_TRUST_REGION # rho >= 0.5: so-so improvement
+    elseif step_accepted && rho >= MAX_DOUBLE_TRUST_REGION # rho >= 0.5: so-so improvement
         delta = max(delta, 2 * wnorm(stateVector.d, stateVector.Δx_proposed))
         @debug "Trust region increased (moderate): δ $(siground(old_delta)) → $(siground(delta)) (ρ ≥ $(MAX_DOUBLE_TRUST_REGION))"
     else
         @debug "Trust region unchanged: δ = $(siground(delta))"
     end
+    delta = min(delta, delta_max)
     return delta
 end
 
@@ -628,7 +639,8 @@ function _run_power_flow_method(time_step::Int,
         end
     end
 
-    delta::Float64 = norm(stateVector.x) > 0 ? factor * norm(stateVector.x) : factor
+    delta = norm(stateVector.x) > 0 ? factor * norm(stateVector.x) : factor
+    delta_max = DEFAULT_TRUST_REGION_DELTA_MAX_FACTOR * delta
     i, converged = 0, false
     residualSize = dot(residual.Rv, residual.Rv)
     linf = norm(residual.Rv, Inf)
@@ -643,6 +655,7 @@ function _run_power_flow_method(time_step::Int,
             residual,
             J,
             delta,
+            delta_max,
             eta,
             autoscale,
             iwamoto_fallback,
