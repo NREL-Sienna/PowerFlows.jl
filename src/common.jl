@@ -52,6 +52,7 @@ function _compute_bus_active_power_range!(
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
+    generator_headroom::Union{Dict{Tuple{DataType, String}, Float64}, Nothing} = nothing,
 )
     for source in PSY.get_available_components(PSY.StaticInjection, sys)
         contributes_active_power(source) || continue
@@ -64,6 +65,9 @@ function _compute_bus_active_power_range!(
         range_k <= 0.0 && continue
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         bus_active_power_range[bus_ix, 1] += range_k
+        if generator_headroom !== nothing
+            generator_headroom[(typeof(source), PSY.get_name(source))] = range_k
+        end
     end
     return
 end

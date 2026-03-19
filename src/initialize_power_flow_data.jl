@@ -49,13 +49,18 @@ function initialize_power_flow_data!(
     data.bus_active_power_injections[:, 1] .= bus_active_power_injections
     data.bus_reactive_power_injections[:, 1] .= bus_reactive_power_injections
 
-    # bus active power range for headroom-proportional distributed slack
+    # bus active power range and per-generator headroom for headroom-proportional
+    # distributed slack. generator_headroom is populated inside
+    # _compute_bus_active_power_range! to avoid a second pass over the same components.
+    generator_headroom = nothing
     if get_distribute_slack_proportional_to_headroom(pf)
+        generator_headroom = Dict{Tuple{DataType, String}, Float64}()
         _compute_bus_active_power_range!(
             data.bus_active_power_range,
             bus_lookup,
             reverse_bus_search_map,
             sys,
+            generator_headroom,
         )
     end
 
@@ -127,19 +132,6 @@ function initialize_power_flow_data!(
             for t in 1:n_time_steps
                 data.bus_slack_participation_factors[ix, t] = R_k
             end
-        end
-        # Build per-generator headroom factors for post-processing redistribution.
-        generator_headroom = Dict{Tuple{DataType, String}, Float64}()
-        for source in PSY.get_available_components(PSY.StaticInjection, sys)
-            contributes_active_power(source) || continue
-            active_power_contribution_type(source) == PowerContributionType.INJECTION ||
-                continue
-            bus = PSY.get_bus(source)
-            PSY.get_bustype(bus) ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
-            limits = get_active_power_limits_for_power_flow(source)
-            range_k = limits.max - PSY.get_active_power(source)
-            range_k <= 0.0 && continue
-            generator_headroom[(typeof(source), PSY.get_name(source))] = range_k
         end
         # Same Dict reference shared across time steps, but never mutated so this is fine.
         append!(get_computed_gspf(data), repeat([generator_headroom], n_time_steps))
