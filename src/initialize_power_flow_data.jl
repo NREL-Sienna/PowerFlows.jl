@@ -49,13 +49,18 @@ function initialize_power_flow_data!(
     data.bus_active_power_injections[:, 1] .= bus_active_power_injections
     data.bus_reactive_power_injections[:, 1] .= bus_reactive_power_injections
 
-    # bus active power range for headroom-proportional distributed slack
+    # bus active power range and per-generator headroom for headroom-proportional
+    # distributed slack. generator_headroom is populated inside
+    # _compute_bus_active_power_range! to avoid a second pass over the same components.
+    generator_headroom = nothing
     if get_distribute_slack_proportional_to_headroom(pf)
+        generator_headroom = Dict{Tuple{DataType, String}, Float64}()
         _compute_bus_active_power_range!(
             data.bus_active_power_range,
             bus_lookup,
             reverse_bus_search_map,
             sys,
+            generator_headroom,
         )
     end
 
@@ -117,14 +122,19 @@ function initialize_power_flow_data!(
     # Headroom-proportional distributed slack: overwrite bus_slack_participation_factors
     # with R_k = P_max - P_setpoint values. This makes the standard distributed slack
     # machinery distribute slack proportional to headroom automatically.
+    # Also populate computed_generator_slack_participation_factors so that
+    # write_power_flow_solution! can redistribute among multiple generators at the same bus.
     if get_distribute_slack_proportional_to_headroom(pf)
+        n_time_steps = length(get_time_step_map(data))
         for ix in 1:n_buses
             R_k = data.bus_active_power_range[ix, 1]
             R_k == 0.0 && continue
-            for t in 1:length(get_time_step_map(data))
+            for t in 1:n_time_steps
                 data.bus_slack_participation_factors[ix, t] = R_k
             end
         end
+        # Same Dict reference shared across time steps, but never mutated so this is fine.
+        append!(get_computed_gspf(data), repeat([generator_headroom], n_time_steps))
     end
     # LCCs: initialize parameters. For DC power flow, this also writes the fixed flows to
     # data.lcc.arc_active_power_flow_from_to and data.lcc.arc_active_power_flow_to_from.
