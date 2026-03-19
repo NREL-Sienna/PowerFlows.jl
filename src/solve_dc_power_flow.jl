@@ -301,13 +301,14 @@ function dc_loss_factors(
     n_buses = size(P, 1)
     n_ts = size(P, 2)
     result = zeros(n_buses, n_ts)
-    # Single pass: fetch each PTDF row once, compute flow and accumulate PTDFᵀ contribution.
+    flows_k = Vector{Float64}(undef, n_ts)
+    # Single pass: fetch each PTDF row once, compute flows vectorized, then accumulate.
     for (k, arc) in enumerate(arc_ax)
         row_k = ptdf[arc, :]
         r_k = Rs[k]
+        mul!(flows_k, P', row_k)
         for t in 1:n_ts
-            flow_kt = dot(row_k, view(P, :, t))
-            w = 2.0 * r_k * flow_kt
+            @inbounds w = 2.0 * r_k * flows_k[t]
             @inbounds @simd for j in 1:n_buses
                 result[j, t] += row_k[j] * w
             end

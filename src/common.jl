@@ -373,9 +373,7 @@ function my_mul_mt(
     Y = Matrix{Float64}(undef, n_arcs, n_ts)
     for (i, name_) in enumerate(A.axes[1])
         row_i = A[name_, :]
-        for t in 1:n_ts
-            @inbounds Y[i, t] = dot(row_i, view(X, :, t))
-        end
+        mul!(view(Y, i, :), X', row_i)
     end
     return Y
 end
