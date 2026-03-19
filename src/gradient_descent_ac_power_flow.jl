@@ -117,8 +117,6 @@ function _interpolate_x!(x::Vector{Float64}, x_save::Vector{Float64}, α::Float6
     return nothing
 end
 
-const ADAM_BACKTRACK_FACTOR = 0.5
-const ADAM_MAX_BACKTRACKS = 10
 
 """Driver for the GradientDescentACPowerFlow method: sets up the data structures,
 runs the Adam-based power flow method with backtracking line search, then handles
@@ -141,20 +139,17 @@ function _newton_power_flow(
         x_save = zeros(length(x0))
 
         while i < maxIterations && !converged
-            # 1. Evaluate Jacobian at current x
-            J(time_step)
-
-            # 2. Compute gradient in-place: g ← Jᵀ F
+            # 1. Compute gradient in-place: g ← Jᵀ F
             compute_gradient!(state, J, residual)
 
-            # 3. Save current x for line search
+            # 2. Save current x for line search
             copyto!(x_save, x0)
             old_loss = dot(residual.Rv, residual.Rv)
 
-            # 4. Adam parameter update: x ← x − η · Adam(g)
+            # 3. Adam parameter update: x ← x − η · Adam(g)
             adam_step!(x0, state, cfg)
 
-            # 5. Backtracking line search on ½‖F‖²
+            # 4. Backtracking line search on ½‖F‖²
             residual(x0, time_step)
             new_loss = dot(residual.Rv, residual.Rv)
 
@@ -165,12 +160,20 @@ function _newton_power_flow(
                 new_loss = dot(residual.Rv, residual.Rv)
             end
 
-            # 6. Check convergence
+            # 5. Check convergence
             converged = norm(residual.Rv, Inf) < tol
             if !converged
                 i += 1
+                # Re-evaluate Jacobian for next iteration
+                J(time_step)
             end
         end
+    end
+
+    # Recompute Jacobian at the solution for post-processing (loss/stability factors)
+    if converged &&
+       (get_calculate_loss_factors(data) || get_calculate_voltage_stability_factors(data))
+        J(time_step)
     end
 
     return _finalize_power_flow(
