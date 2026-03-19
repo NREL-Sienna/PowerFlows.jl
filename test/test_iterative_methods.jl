@@ -47,11 +47,20 @@ end
     @test_logs (:debug, r"Newton-Raphson step selected.*") match_mode = :any min_level =
         Logging.Debug PF.solve_power_flow(tr_pf_large, sys)
 
-    # Large eta => step rejected
+    # Large eta => step rejected, Iwamoto fallback attempted (default on)
     tr_pf_large_eta = ACPowerFlow{TrustRegionACPowerFlow}(;
         solver_settings = Dict{Symbol, Any}(:eta => 2.0, :maxIterations => 1))
-    @test_logs (:debug, r"Step rejected.*") match_mode = :any min_level = Logging.Debug PF.solve_power_flow(
+    @test_logs (:debug, r"Iwamoto fallback.*") match_mode = :any min_level = Logging.Debug PF.solve_power_flow(
         tr_pf_large_eta,
+        sys,
+    )
+
+    # Large eta with iwamoto_fallback disabled => plain rejection
+    tr_pf_no_iwamoto = ACPowerFlow{TrustRegionACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(
+            :eta => 2.0, :maxIterations => 1, :iwamoto_fallback => false))
+    @test_logs (:debug, r"Step rejected.*") match_mode = :any min_level = Logging.Debug PF.solve_power_flow(
+        tr_pf_no_iwamoto,
         sys,
     )
 
