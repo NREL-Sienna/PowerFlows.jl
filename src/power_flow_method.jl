@@ -7,7 +7,7 @@
 The remainder of the fields are only used in the `TrustRegionACPowerFlow`:
 - `r_predict::Vector{Float64}`: the predicted residual at `x+Δx_proposed`,
     under a linear approximation: i.e `J_x⋅(x+Δx_proposed)`.
-- `Δx_proposed::Vector{Float64}`: the suggested step `Δx`, selected among `Δx_nr`, 
+- `Δx_proposed::Vector{Float64}`: the suggested step `Δx`, selected among `Δx_nr`,
     `Δx_cauchy`, and the dogleg interpolation between the two. The first is chosen when
     `x+Δx_nr` is inside the trust region, the second when both `x+Δx_cauchy`
     and `x+Δx_nr` are outside the trust region, and the third when `x+Δx_cauchy`
@@ -35,7 +35,7 @@ function StateVectorCache(x0::Vector{Float64}, f0::Vector{Float64})
     return StateVectorCache(x, r, r_predict, Δx_proposed, Δx_cauchy, Δx_nr, ones(size(x0)))
 end
 
-"""Solve for the Newton-Raphson step, given the factorization object for `J.Jv` 
+"""Solve for the Newton-Raphson step, given the factorization object for `J.Jv`
 (if non-singular) or its stand-in (if singular)."""
 function _solve_Δx_nr!(stateVector::StateVectorCache, cache::KLULinSolveCache{J_INDEX_TYPE})
     copyto!(stateVector.Δx_nr, stateVector.r)
@@ -144,7 +144,7 @@ function _dogleg!(Δx_proposed::Vector{Float64},
             # not needed because g is already an alias for Δx_proposed.
             # copyto!(Δx_proposed, g) # update Δx_proposed: cauchy point case
         else
-            # Δx_cauchy inside region => next point is the spot where the line from 
+            # Δx_cauchy inside region => next point is the spot where the line from
             # Δx_cauchy to Δx_nr crosses the boundary of the trust region.
             # this is the "dogleg" part.
 
@@ -163,9 +163,67 @@ function _dogleg!(Δx_proposed::Vector{Float64},
     return
 end
 
+"""Accept a trust region step: update cached residual and autoscale vector `d`.
+The caller is responsible for recomputing the Jacobian via `J(time_step)` before
+calling this, so that `Jv` reflects the new state."""
+function _accept_trust_region_step!(
+    stateVector::StateVectorCache,
+    residual::ACPowerFlowResidual,
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
+    autoscale::Bool,
+)
+    stateVector.r .= residual.Rv
+    if autoscale
+        for i in 1:length(stateVector.x)
+            stateVector.d[i] = max(0.1 * stateVector.d[i], norm(view(Jv, :, i)))
+        end
+    else
+        @assert all(stateVector.d .== 1.0)
+    end
+    return nothing
+end
+
+"""Attempt Iwamoto damping on a rejected trust region step.
+
+Uses the already-evaluated trial-point residual to compute an optimal damped step.
+Returns `true` if the damped step was accepted, `false` if reverted."""
+function _iwamoto_fallback!(
+    time_step::Int,
+    stateVector::StateVectorCache,
+    residual::ACPowerFlowResidual,
+    J::ACPowerFlowJacobian,
+    old_residual::Vector{Float64},
+    old_residual_norm::Float64,
+    new_residual_norm::Float64,
+    autoscale::Bool,
+)::Bool
+    g0 = old_residual_norm
+    g1 = dot(old_residual, residual.Rv)
+    g2 = new_residual_norm
+    μ = _iwamoto_multiplier(g0, g1, g2)
+    # Revert full step, apply damped step in a single fused pass.
+    @. stateVector.x += (μ - 1.0) * stateVector.Δx_proposed
+    residual(stateVector.x, time_step)
+    g_damped = dot(residual.Rv, residual.Rv)
+    if g_damped < g0
+        @debug "Iwamoto fallback accepted: μ = $(siground(μ)), " *
+               "g_damped/g₀ = $(siground(g_damped / g0))"
+        J(time_step)
+        _accept_trust_region_step!(stateVector, residual, J.Jv, autoscale)
+        return true
+    else
+        # Damped step also failed — full revert.
+        @. stateVector.x -= μ * stateVector.Δx_proposed
+        copyto!(residual.Rv, old_residual)
+        @debug "Iwamoto fallback rejected: μ = $(siground(μ)), " *
+               "g_damped/g₀ = $(siground(g_damped / g0)); reverting"
+        return false
+    end
+end
+
 """Does a single iteration of the `TrustRegionNRMethod`:
 updates the `x` and `r` fields of the `stateVector` and computes
-the value of the Jacobian at the new `x`, if needed. Unlike 
+the value of the Jacobian at the new `x`, if needed. Unlike
 `_simple_step`, this has a return value, the updated value of `delta``."""
 function _trust_region_step(time_step::Int,
     stateVector::StateVectorCache,
@@ -175,6 +233,7 @@ function _trust_region_step(time_step::Int,
     delta::Float64,
     eta::Float64,
     autoscale::Bool,
+    iwamoto_fallback::Bool,
 )
     old_delta = delta
     _set_Δx_nr!(
@@ -216,24 +275,20 @@ function _trust_region_step(time_step::Int,
 
     if rho > eta
         # Successful iteration
-        stateVector.r .= residual.Rv
-        residualSize = dot(residual.Rv, residual.Rv)
-        linf = norm(residual.Rv, Inf)
-        @debug "Step accepted: sum of squares $(siground(residualSize)), L ∞ norm $(siground(linf)), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed)))"
-        # we update J here so that if we don't change x (unsuccessful case), we don't re-compute J.
+        @debug "Step accepted: sum of squares $(siground(dot(residual.Rv, residual.Rv))), L ∞ norm $(siground(norm(residual.Rv, Inf))), Δ = $(siground(delta)), ||Δx|| = $(siground(norm(stateVector.Δx_proposed)))"
         J(time_step)
-        if autoscale
-            for i in 1:length(stateVector.x)
-                stateVector.d[i] = max(0.1 * stateVector.d[i], norm(view(J.Jv, :, i)))
-            end
-        else
-            @assert all(stateVector.d .== 1.0)
-        end
+        _accept_trust_region_step!(stateVector, residual, J.Jv, autoscale)
     else
-        # Unsuccessful: reset x and residual.
-        stateVector.x .-= stateVector.Δx_proposed
-        copyto!(residual.Rv, oldResidual)
-        @debug "Step rejected: ρ = $(siground(rho)) ≤ η = $(siground(eta))"
+        # Unsuccessful step — try Iwamoto damping before reverting.
+        if iwamoto_fallback
+            _iwamoto_fallback!(
+                time_step, stateVector, residual, J,
+                oldResidual, old_residual_norm, new_residual_norm, autoscale)
+        else
+            stateVector.x .-= stateVector.Δx_proposed
+            copyto!(residual.Rv, oldResidual)
+            @debug "Step rejected: ρ = $(siground(rho)) ≤ η = $(siground(eta))"
+        end
     end
 
     # Update size of trust region
@@ -464,7 +519,7 @@ end
     `norm(J_x Δx - r, 1)/norm(r, 1) > refinement_threshold`, do iterative refinement to
     improve the accuracy. Default: $DEFAULT_REFINEMENT_THRESHOLD.
 - `refinement_eps::Float64`: run iterative refinement on `J_x Δx = r` until
-    `norm(Δx_{i}-Δx_{i+1}, 1)/norm(r,1) < refinement_eps`. Default: 
+    `norm(Δx_{i}-Δx_{i+1}, 1)/norm(r,1) < refinement_eps`. Default:
     $DEFAULT_REFINEMENT_EPS """
 function _run_power_flow_method(time_step::Int,
     stateVector::StateVectorCache,
@@ -539,7 +594,9 @@ end
     where `x_0` is our initial guess, taken from `data`. Default: $DEFAULT_TRUST_REGION_FACTOR.
 - `eta::Float64`: improvement threshold. If the observed improvement in our residual
     exceeds `eta` times the predicted improvement, we accept the new `x_i`.
-    Default: $DEFAULT_TRUST_REGION_ETA."""
+    Default: $DEFAULT_TRUST_REGION_ETA.
+- `iwamoto_fallback::Bool`: when a trust region step is rejected, attempt Iwamoto
+    damping to salvage the step before reverting. Default: $DEFAULT_IWAMOTO_FALLBACK."""
 function _run_power_flow_method(time_step::Int,
     stateVector::StateVectorCache,
     linSolveCache::KLULinSolveCache{J_INDEX_TYPE},
@@ -551,6 +608,7 @@ function _run_power_flow_method(time_step::Int,
     factor::Float64 = DEFAULT_TRUST_REGION_FACTOR,
     eta::Float64 = DEFAULT_TRUST_REGION_ETA,
     autoscale::Bool = DEFAULT_AUTOSCALE,
+    iwamoto_fallback::Bool = DEFAULT_IWAMOTO_FALLBACK,
     validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
     vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
     _ignored...,  # absorb unknown keys from caller without error
@@ -587,6 +645,7 @@ function _run_power_flow_method(time_step::Int,
             delta,
             eta,
             autoscale,
+            iwamoto_fallback,
         )
         validate_vms && PowerFlows.validate_voltage_magnitudes(
             stateVector.x,
@@ -619,6 +678,7 @@ function _newton_power_flow(
     factor::Float64 = DEFAULT_TRUST_REGION_FACTOR,
     eta::Float64 = DEFAULT_TRUST_REGION_ETA,
     autoscale::Bool = DEFAULT_AUTOSCALE,
+    iwamoto_fallback::Bool = DEFAULT_IWAMOTO_FALLBACK,
     # initialize_power_flow_variables
     x0::Union{Vector{Float64}, Nothing} = nothing,
     _ignored...,
@@ -656,6 +716,7 @@ function _newton_power_flow(
             factor,
             eta,
             autoscale,
+            iwamoto_fallback,
         )
     end
     @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
