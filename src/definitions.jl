@@ -62,6 +62,10 @@ const FACTS_MODE_MAP = Dict(
 
 const OVERWRITE_NON_CONVERGED = true # overwrite non-converged time steps with NaN values
 
+# Adam / gradient descent power flow
+const ADAM_BACKTRACK_FACTOR = 0.5
+const ADAM_MAX_BACKTRACKS = 10
+
 # robust homotopy method constants
 const β = 10.0^-3
 const INSUFFICIENT_CHANGE_IN_X = 10^(-11)

@@ -101,6 +101,7 @@ Public = false
 Private = true
 Pages = [
     "power_flow_method.jl",
+    "gradient_descent_ac_power_flow.jl",
 ]
 ```
 

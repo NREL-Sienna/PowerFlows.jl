@@ -602,6 +602,32 @@ function _run_power_flow_method(time_step::Int,
     return converged, i
 end
 
+"""Log final residual, report convergence, compute optional post-processing factors,
+and return `true`/`false`. Shared by all AC power flow drivers."""
+function _finalize_power_flow(
+    converged::Bool,
+    i::Int,
+    solver_name::String,
+    residual::ACPowerFlowResidual,
+    data::ACPowerFlowData,
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
+    time_step::Int64,
+)
+    @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
+    if converged
+        @info("The $solver_name solver converged after $i iterations.")
+        if get_calculate_loss_factors(data)
+            _calculate_loss_factors(data, Jv, time_step)
+        end
+        if get_calculate_voltage_stability_factors(data)
+            _calculate_voltage_stability_factors(data, Jv, time_step)
+        end
+        return true
+    end
+    @error("The $solver_name solver failed to converge.")
+    return false
+end
+
 function _newton_power_flow(
     pf::ACPowerFlow{T},
     data::ACPowerFlowData,
@@ -658,18 +684,5 @@ function _newton_power_flow(
             autoscale,
         )
     end
-    @info("Final residual size: $(norm(residual.Rv, 2)) L2, $(norm(residual.Rv, Inf)) L∞.")
-
-    if converged
-        @info("The $T solver converged after $i iterations.")
-        if get_calculate_loss_factors(data)
-            _calculate_loss_factors(data, J.Jv, time_step)
-        end
-        if get_calculate_voltage_stability_factors(data)
-            _calculate_voltage_stability_factors(data, J.Jv, time_step)
-        end
-        return true
-    end
-    @error("The $T solver failed to converge.")
-    return false
+    return _finalize_power_flow(converged, i, string(T), residual, data, J.Jv, time_step)
 end
