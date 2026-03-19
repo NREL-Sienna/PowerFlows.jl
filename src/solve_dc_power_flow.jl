@@ -297,22 +297,21 @@ function dc_loss_factors(
 )
     Rs = _get_arc_resistances(data)
     ptdf = data.power_network_matrix
-    # PTDF * P via row-by-row access (VirtualPTDF has no .data field)
-    flows = my_mul_mt(ptdf, P)  # (n_arcs × n_ts)
-    weighted_flows = Rs .* flows
-    # PTDFᵀ * weighted_flows, accumulated row-by-row
     arc_ax = get_arc_axis(data)
     n_buses = size(P, 1)
     n_ts = size(P, 2)
     result = zeros(n_buses, n_ts)
+    # Single pass: fetch each PTDF row once, compute flow and accumulate PTDFᵀ contribution.
     for (k, arc) in enumerate(arc_ax)
-        row_k = ptdf[arc, :]  # length n_buses
+        row_k = ptdf[arc, :]
+        r_k = Rs[k]
         for t in 1:n_ts
-            w = weighted_flows[k, t]
+            flow_kt = dot(row_k, view(P, :, t))
+            w = 2.0 * r_k * flow_kt
             @inbounds @simd for j in 1:n_buses
                 result[j, t] += row_k[j] * w
             end
         end
     end
-    return 2 .* result
+    return result
 end

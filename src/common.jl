@@ -364,10 +364,21 @@ function my_mul_mt(
 end
 
 """Similar to above: A*X where X is a matrix."""
-my_mul_mt(
+function my_mul_mt(
     A::PNM.VirtualPTDF,
     X::Matrix{Float64},
-) = vcat((A[name_, :]' * X for name_ in A.axes[1])...)
+)
+    n_arcs = length(A.axes[1])
+    n_ts = size(X, 2)
+    Y = Matrix{Float64}(undef, n_arcs, n_ts)
+    for (i, name_) in enumerate(A.axes[1])
+        row_i = A[name_, :]
+        for t in 1:n_ts
+            @inbounds Y[i, t] = dot(row_i, view(X, :, t))
+        end
+    end
+    return Y
+end
 
 function _add_gspf_to_ijv!(
     I::Vector{Int},
