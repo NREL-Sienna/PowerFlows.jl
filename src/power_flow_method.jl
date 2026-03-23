@@ -301,7 +301,7 @@ function _trust_region_step(time_step::Int,
     end
 
     # Update size of trust region based on rho (only reached when the full step
-    # was accepted via rho, or the step was fully rejected without Iwamoto).
+    # was accepted via rho, or Iwamoto is disabled, or Iwamoto didn't help).
     if rho < HALVE_TRUST_REGION # rho < 0.1: insufficient improvement
         delta = delta / 2
         @debug "Trust region decreased: δ $(siground(old_delta)) → $(siground(delta)) (ρ < $(HALVE_TRUST_REGION))"
