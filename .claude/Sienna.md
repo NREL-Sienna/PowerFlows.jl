@@ -32,6 +32,8 @@ Struct fields must have concrete types or be parameterized.
 - Bad: `THRESHOLD = 0.5`
 - Good: `const THRESHOLD = 0.5`
 
+Note: `const` globals do not need type annotations. Adding a type annotation to a `const` (e.g., `const THRESHOLD::Float64 = 0.5`) provides no compilation or precompilation benefit — the compiler already infers the type from the assigned value.
+
 #### Unnecessary allocations
 
 - Use views instead of copies (`@view`, `@views`)

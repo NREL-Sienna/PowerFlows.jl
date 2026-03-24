@@ -8,12 +8,12 @@ const LARGE_RESIDUAL = 10 # threshold for "bad initial guess": default
 
 const ISAPPROX_ZERO_TOLERANCE = 1e-6
 
-const DEFAULT_NR_MAX_ITER::Int64 = 50 # default maxIterations for the NR power flow
+const DEFAULT_NR_MAX_ITER = 50 # default maxIterations for the NR power flow
 const OVERRIDE_x0 = true
-const DEFAULT_NR_TOL::Float64 = 1e-9 # default tolerance for the NR power flow
+const DEFAULT_NR_TOL = 1e-9 # default tolerance for the NR power flow
 const DEFAULT_REFINEMENT_THRESHOLD = 5e-2 # do refinement if relative error > 5%.
 const DEFAULT_REFINEMENT_MAX_ITER = 10 # how many times to try iterative refinement
-const DEFAULT_REFINEMENT_EPS::Float64 = 1e-6 # when to stop iterative refinement.
+const DEFAULT_REFINEMENT_EPS = 1e-6 # when to stop iterative refinement.
 const NR_SINGULAR_SCALING = 1e-6 # scaling factor in fallback method for singular Jacobian
 
 # Iwamoto step control constants
@@ -22,15 +22,17 @@ const IWAMOTO_MU_MAX = 1.0 # maximum step multiplier
 const IWAMOTO_DEGENERACY_TOL = 1e-30 # near-zero tolerance for degenerate cubic/quadratic
 const IWAMOTO_MAX_REVERTS = 3 # consecutive reverted steps before early termination
 # only used for trust region.
-const DEFAULT_TRUST_REGION_ETA::Float64 = 1e-4 # if actual improvement/predicted improvement
+const DEFAULT_TRUST_REGION_ETA = 1e-4 # if actual improvement/predicted improvement
 # is < eta, then reject the step Δx, shrink the trust region, and try again.
-const DEFAULT_TRUST_REGION_FACTOR::Float64 = 1.0 # controls starting size of trust region
+const DEFAULT_TRUST_REGION_FACTOR = 1.0 # controls starting size of trust region
 # improvement factor cutoffs for updating size of trust region.
 const HALVE_TRUST_REGION = 0.1
 const MAX_DOUBLE_TRUST_REGION = 0.5
 const DOUBLE_TRUST_REGION = 0.9
+const DEFAULT_TRUST_REGION_DELTA_MAX_FACTOR = 10.0 # δ_max = factor * δ_0 (Nocedal & Wright §4.1)
 const DEFAULT_AUTOSCALE = false # correct for scaling of the system
 # typically converges in fewer iteration without autoscaling.
+const DEFAULT_IWAMOTO_FALLBACK = true # when a trust region step is rejected, try Iwamoto damping
 
 const PF_MAX_LOG = 10
 # only used for Levenberg-Maquardt
