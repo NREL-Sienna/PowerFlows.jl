@@ -10,6 +10,9 @@ mutable struct LMWorkspace
     j_nzval_indices::Vector{Int}
     # Indices into A.nzval for the √λ diagonal entries (length n)
     λ_diag_indices::Vector{Int}
+    # PERF: have not investigated other factorization methods. SPQR does not allow 
+    #       for in-place updates or re-use of symbolic factorization, but with non
+    #       square matrices--J^T J form is more unstable--we don't have a lot of options.
     # Cached QR factorization
     F::SparseArrays.SPQR.QRSparse{Float64, Int64}
 end
@@ -83,11 +86,16 @@ function _newton_power_flow(
     validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
     vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
     λ_0::Float64 = DEFAULT_λ_0,
+    x0::Union{Vector{Float64}, Nothing} = nothing,
     _ignored...,
 )
+    init_kwargs = if isnothing(x0)
+        (; validate_voltage_magnitudes, vm_validation_range)
+    else
+        (; validate_voltage_magnitudes, vm_validation_range, x0)
+    end
     residual, J, x0 = initialize_power_flow_variables(
-        pf, data, time_step;
-        validate_voltage_magnitudes, vm_validation_range)
+        pf, data, time_step; init_kwargs...)
     converged = norm(residual.Rv, Inf) < tol
     i = 0
     if !converged
@@ -123,13 +131,13 @@ function _run_power_flow_method(
     resSize = dot(residual.Rv, residual.Rv)
     linf = norm(residual.Rv, Inf)
     @debug "initially: sum of squares $(siground(resSize)), L ∞ norm $(siground(linf)), λ = $λ"
-    while i < maxIterations && !converged && !isnan(λ)
+    while i < maxIterations && !converged && isfinite(λ)
         λ, μ = update_damping_factor!(x, residual, J, μ, time_step, ws)
-        converged = !isnan(λ) && norm(residual.Rv, Inf) < tol
+        converged = isfinite(λ) && norm(residual.Rv, Inf) < tol
         i += 1
     end
-    if isnan(λ)
-        @error "λ is NaN"
+    if !isfinite(λ)
+        @error "λ is not finite ($(λ))"
     elseif i == maxIterations
         @error "The LevenbergMarquardtACPowerFlow solver didn't coverge in $maxIterations iterations."
     end
@@ -139,6 +147,9 @@ end
 
 # LM implementation based on standard Levenberg-Marquardt method.
 # See Nocedal & Wright (2006), sections 10.3 and 11.2.
+
+"""Compute one LM trial step. Assumes `residual` and `J` are already evaluated
+at `x` by the caller. Returns the gain ratio ρ."""
 function compute_error(
     x::Vector{Float64},
     residual::ACPowerFlowResidual,
@@ -148,9 +159,6 @@ function compute_error(
     residualSize::Float64,
     ws::LMWorkspace,
 )
-    residual(x, time_step) # M(x_c)
-    J(time_step)
-
     # Update augmented matrix with current J values and λ, then factorize once.
     copy_jacobian!(ws, J.Jv)
     update_lambda!(ws, λ)
@@ -167,6 +175,13 @@ function compute_error(
 
     predicted_reduction = residualSize - dot(temp_x, temp_x)
     actual_reduction = residualSize - newResidualSize
+
+    # Guard against zero/negative predicted reduction.
+    if predicted_reduction <= 0.0 || !isfinite(predicted_reduction)
+        residual(x, time_step)
+        return 0.0
+    end
+
     ρ = actual_reduction / predicted_reduction
 
     if ρ > 1e-4
