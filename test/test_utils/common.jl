@@ -205,7 +205,7 @@ function _check_name(sys::System, name::String, component_type::DataType)
     return name
 end
 
-"""    
+"""
     _add_simple_bus!(sys::System, number::Int, bus_type::ACBusTypes, base_voltage::Number, voltage_magnitude::Float64=1.0, voltage_angle::Float64=0.0)
     Simplified function to create and add a bus to the system with the given parameters.
 """
@@ -231,7 +231,7 @@ function _add_simple_bus!(
     return bus
 end
 
-"""    
+"""
     _add_simple_load!(sys::System, bus::ACBus, active_power::Number, reactive_power::Number)
     Simplified function to create and add a load to the system with the given parameters.
 """
@@ -256,7 +256,7 @@ function _add_simple_load!(
     return load
 end
 
-"""    
+"""
     _add_simple_source!(sys::System, bus::ACBus, active_power::Number=0.0, reactive_power::Number=0.0)
     Simplified function to create and add a source to the system with the given parameters.
 """
@@ -279,7 +279,7 @@ function _add_simple_source!(
     return source
 end
 
-"""    
+"""
     _add_simple_thermal_standard!(sys::System, bus::ACBus, active_power::Number=0.0, reactive_power::Number=0.0)
     Simplified function to create and add a thermal standard generator to the system with the given parameters.
 """
@@ -313,7 +313,7 @@ function _add_simple_thermal_standard!(
     return gen
 end
 
-"""    
+"""
     _add_simple_line!(sys::System, bus1::ACBus, bus2::ACBus, r::Float64=1e-3, x::Float64=1e-3, b::Float64=0.0)
     Simplified function to create and add a line to the system with the given parameters.
 """
@@ -492,7 +492,7 @@ function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
 
     data.bus_active_power_injections .= deepcopy(injs[:, 1:time_steps])
     data.bus_active_power_withdrawals .= deepcopy(withs[:, 1:time_steps])
-    return nothing
+    return
 end
 
 function simple_lcc_system()

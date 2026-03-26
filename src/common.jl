@@ -42,12 +42,17 @@ function _get_injections!(
 end
 
 """Compute per-bus active power range R_k = sum(P_max - P_setpoint) for generators at
-REF/PV buses. Used for headroom-proportional distributed slack."""
+REF/PV buses. Used for headroom-proportional distributed slack.
+
+Only writes to column 1: PF uses single-value active power limits and setpoints
+(not time-varying). The caller copies column 1 to all time steps. For time-varying
+headroom, compute slack weights in PSI."""
 function _compute_bus_active_power_range!(
     bus_active_power_range::Matrix{Float64},
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
     sys::PSY.System,
+    generator_headroom::Union{Dict{Tuple{DataType, String}, Float64}, Nothing} = nothing,
 )
     for source in PSY.get_available_components(PSY.StaticInjection, sys)
         contributes_active_power(source) || continue
@@ -60,6 +65,9 @@ function _compute_bus_active_power_range!(
         range_k <= 0.0 && continue
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         bus_active_power_range[bus_ix, 1] += range_k
+        if generator_headroom !== nothing
+            generator_headroom[(typeof(source), PSY.get_name(source))] = range_k
+        end
     end
     return
 end
@@ -364,10 +372,19 @@ function my_mul_mt(
 end
 
 """Similar to above: A*X where X is a matrix."""
-my_mul_mt(
+function my_mul_mt(
     A::PNM.VirtualPTDF,
     X::Matrix{Float64},
-) = vcat((A[name_, :]' * X for name_ in A.axes[1])...)
+)
+    n_arcs = length(A.axes[1])
+    n_ts = size(X, 2)
+    Y = Matrix{Float64}(undef, n_arcs, n_ts)
+    for (i, name_) in enumerate(A.axes[1])
+        row_i = A[name_, :]
+        mul!(view(Y, i, :), X', row_i)
+    end
+    return Y
+end
 
 function _add_gspf_to_ijv!(
     I::Vector{Int},
@@ -525,7 +542,7 @@ function make_bus_slack_participation_factors!(
     return
 end
 
-function validate_voltages(x::Vector{Float64},
+function validate_voltage_magnitudes(x::Vector{Float64},
     bus_types::AbstractArray{PSY.ACBusTypes},
     range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = VM_VALIDATION_RANGE,
     i::Int64 = 1,

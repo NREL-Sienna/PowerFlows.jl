@@ -58,7 +58,7 @@ function _pick_better_x0(x0::Vector{Float64},
     else
         @debug "no improvement from $improvement_method"
     end
-    return nothing
+    return
 end
 
 """If initial residual is large, run a DC power flow and see if that gives
@@ -107,7 +107,7 @@ function _enhanced_flat_start(
     return newx0
 end
 
-"""When solving AC power flows, if the initial guess has large residual, we run a DC power 
+"""When solving AC power flows, if the initial guess has large residual, we run a DC power
 flow as a fallback. This runs a DC power flow on `data::ACPowerFlowData` for the given
 `time_step`, and writes the solution to `data.bus_angles`."""
 function _dc_power_flow_fallback!(data::ACPowerFlowData, time_step::Int)
@@ -128,15 +128,18 @@ end
 function initialize_power_flow_variables(pf::ACPowerFlow{T},
     data::ACPowerFlowData,
     time_step::Int64;
-    kwargs...,
+    x0::Union{Vector{Float64}, Nothing} = nothing,
+    validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
+    vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
+    _ignored...,
 ) where {T <: ACPowerFlowSolverType}
     residual = ACPowerFlowResidual(data, time_step)
-    x0 = improve_x0(pf, data, residual, time_step)
-    if OVERRIDE_x0 && :x0 in keys(kwargs)
+    x0_computed = improve_x0(pf, data, residual, time_step)
+    if OVERRIDE_x0 && !isnothing(x0)
         print_signorms(residual.Rv; intro = "corrected ", ps = [1, 2, Inf])
-        x0 .= get(kwargs, :x0, x0)
+        x0_computed .= x0
         @warn "Overriding initial guess x0."
-        residual(x0, time_step)  # re-calculate residual for new x0: might have changed.
+        residual(x0_computed, time_step)
         print_signorms(residual.Rv; ps = [1, 2, Inf])
     end
     @info "Initial residual size: " *
@@ -151,17 +154,12 @@ function initialize_power_flow_variables(pf::ACPowerFlow{T},
     )
     J(time_step)
 
-    validate_vms::Bool = get(
-        kwargs,
-        :validate_voltages,
-        DEFAULT_VALIDATE_VOLTAGES,
-    )
-    validation_range::MinMax = get(
-        kwargs,
-        :vm_validation_range,
-        DEFAULT_VALIDATION_RANGE,
-    )
     bus_types = @view get_bus_type(J.data)[:, time_step]
-    validate_vms && validate_voltages(x0, bus_types, validation_range, 0)
-    return residual, J, x0
+    validate_voltage_magnitudes && PowerFlows.validate_voltage_magnitudes(
+        x0_computed,
+        bus_types,
+        vm_validation_range,
+        0,
+    )
+    return residual, J, x0_computed
 end

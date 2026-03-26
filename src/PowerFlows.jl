@@ -8,6 +8,7 @@ export TrustRegionACPowerFlow
 export LevenbergMarquardtACPowerFlow
 export RobustHomotopyPowerFlow
 export ACPowerFlow
+export GradientDescentACPowerFlow
 export ACPowerFlowSolverType
 export AbstractDCPowerFlow
 export PowerFlowEvaluationModel
@@ -33,7 +34,7 @@ import DataFrames: Not
 import PowerSystems as PSY
 import PowerSystems: System, with_units_base
 import LinearAlgebra
-import LinearAlgebra: norm, dot, ldiv!
+import LinearAlgebra: norm, dot, ldiv!, mul!
 import JSON3
 import KLU
 import SparseArrays
@@ -69,6 +70,7 @@ include("solve_ac_power_flow.jl")
 include("power_flow_setup.jl")
 include("power_flow_method.jl")
 include("levenberg-marquardt.jl")
+include("gradient_descent_ac_power_flow.jl")
 include("post_processing.jl")
 include("RobustHomotopy/HessianSolver/hessian_solver.jl")
 include("RobustHomotopy/HessianSolver/KLU_hessian_solver.jl")

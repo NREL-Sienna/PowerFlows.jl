@@ -47,11 +47,20 @@ end
     @test_logs (:debug, r"Newton-Raphson step selected.*") match_mode = :any min_level =
         Logging.Debug PF.solve_power_flow(tr_pf_large, sys)
 
-    # Large eta => step rejected
+    # Large eta => step rejected, Iwamoto fallback attempted (default on)
     tr_pf_large_eta = ACPowerFlow{TrustRegionACPowerFlow}(;
         solver_settings = Dict{Symbol, Any}(:eta => 2.0, :maxIterations => 1))
-    @test_logs (:debug, r"Step rejected.*") match_mode = :any min_level = Logging.Debug PF.solve_power_flow(
+    @test_logs (:debug, r"Iwamoto fallback.*") match_mode = :any min_level = Logging.Debug PF.solve_power_flow(
         tr_pf_large_eta,
+        sys,
+    )
+
+    # Large eta with iwamoto_fallback disabled => plain rejection
+    tr_pf_no_iwamoto = ACPowerFlow{TrustRegionACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(
+            :eta => 2.0, :maxIterations => 1, :iwamoto_fallback => false))
+    @test_logs (:debug, r"Step rejected.*") match_mode = :any min_level = Logging.Debug PF.solve_power_flow(
+        tr_pf_no_iwamoto,
         sys,
     )
 
@@ -62,6 +71,165 @@ end
         tr_pf_small_eta,
         sys,
     )
+end
+
+@testset "Iwamoto step control convergence" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(:iwamoto => true))
+    @test_logs (:info, r".*NewtonRaphsonACPowerFlow solver converged"
+    ) match_mode = :any PF.solve_power_flow(iwamoto_pf, sys)
+end
+
+@testset "Iwamoto step control kwargs" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(
+            :iwamoto => true,
+            :maxIterations => 50,
+            :tol => 1e-10,
+        ))
+    @test_logs (:info, r".*NewtonRaphsonACPowerFlow solver converged"
+    ) match_mode = :any PF.solve_power_flow(iwamoto_pf, sys)
+end
+
+@testset "Iwamoto result equivalence with plain NR" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    nr_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}()
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        solver_settings = Dict{Symbol, Any}(:iwamoto => true))
+    nr_result = PF.solve_power_flow(nr_pf, sys)
+    sys2 = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    iwamoto_result = PF.solve_power_flow(iwamoto_pf, sys2)
+    # Both should converge to the same solution
+    for (key, nr_df) in nr_result
+        iw_df = iwamoto_result[key]
+        for col in names(nr_df)
+            if eltype(nr_df[!, col]) <: Number
+                @test isapprox(nr_df[!, col], iw_df[!, col]; atol = 1e-6)
+            end
+        end
+    end
+end
+
+@testset "Iwamoto convergence with bad initial guess" begin
+    # Bad initial guess — Iwamoto should still converge
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    bad_x0!(sys)
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        enhanced_flat_start = false,
+        solver_settings = Dict{Symbol, Any}(:iwamoto => true))
+    @test_logs (:info, r".*NewtonRaphsonACPowerFlow solver converged"
+    ) match_mode = :any PF.solve_power_flow(iwamoto_pf, sys)
+end
+
+@testset "Iwamoto on larger system (RTS_GMLC)" begin
+    sys = PSB.build_system(PSB.PSISystems, "RTS_GMLC_DA_sys")
+    PSY.set_units_base_system!(sys, PSY.UnitSystem.SYSTEM_BASE)
+    nr_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = true)
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        correct_bustypes = true,
+        solver_settings = Dict{Symbol, Any}(:iwamoto => true))
+    nr_result = PF.solve_power_flow(nr_pf, sys)
+    sys2 = PSB.build_system(PSB.PSISystems, "RTS_GMLC_DA_sys")
+    PSY.set_units_base_system!(sys2, PSY.UnitSystem.SYSTEM_BASE)
+    iwamoto_result = PF.solve_power_flow(iwamoto_pf, sys2)
+    for (key, nr_df) in nr_result
+        iw_df = iwamoto_result[key]
+        for col in names(nr_df)
+            if eltype(nr_df[!, col]) <: Number
+                @test isapprox(nr_df[!, col], iw_df[!, col]; atol = 1e-6)
+            end
+        end
+    end
+end
+
+@testset "Iwamoto early termination on stagnation" begin
+    # Sabotage voltage magnitudes so that every Newton step worsens the residual,
+    # triggering consecutive reverts and the early-termination break.
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys5")
+    iwamoto_pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
+        enhanced_flat_start = false,
+        solver_settings = Dict{Symbol, Any}(
+            :iwamoto => true,
+            :maxIterations => 20,
+        ))
+    data = PowerFlowData(iwamoto_pf, sys)
+    # Set all voltage magnitudes to zero so the Jacobian is singular
+    # and every proposed step increases the residual.
+    data.bus_magnitude .= 0.0
+    # Solver should fail to converge, and terminate early (not exhaust maxIterations).
+    @test_logs(
+        (:error, r".*solver failed to converge"),
+        match_mode = :any,
+        @test !solve_power_flow!(data)
+    )
+end
+
+@testset "Iwamoto multiplier root-finding" begin
+    # Verify that _iwamoto_multiplier recovers the global minimizer of
+    # g(μ) = (1-μ)²g₀ + 2μ²(1-μ)g₁ + μ⁴g₂ on [0, 1] by comparing against
+    # a brute-force grid search.
+    grid = range(0.0, 1.0; length = 10001)
+
+    test_cases = [
+        # (g0, g1, g2, description)
+        # Three distinct real roots (trigonometric branch, Δ > 0).
+        (1.0, 0.5, 2.0, "typical damping case"),
+        (4.0, 1.0, 3.0, "three real roots, moderate values"),
+        # One real root (Cardano branch, Δ < 0).
+        (1.0, -0.5, 0.5, "negative cross-term, one real root"),
+        (1.0, 0.0, 1.0, "orthogonal residuals"),
+        # Repeated roots (Δ ≈ 0).
+        (1.0, 1.0, 1.0, "all gram scalars equal"),
+        # Scaled values (should give same μ as unscaled).
+        (100.0, 50.0, 200.0, "scaled version of typical case"),
+        # Near-full-step optimality.
+        (1.0, 0.99, 1.01, "near-unit multiplier"),
+        # Large disparity.
+        (1.0, 0.1, 100.0, "large g2, strong damping expected"),
+    ]
+
+    for (g0, g1, g2, desc) in test_cases
+        μ = PF._iwamoto_multiplier(g0, g1, g2)
+        @test 0.0 <= μ <= 1.0
+        g_opt = PF._iwamoto_objective(μ, g0, g1, g2)
+        # Brute-force minimum over the grid.
+        g_grid_min = minimum(PF._iwamoto_objective(m, g0, g1, g2) for m in grid)
+        @test g_opt <= g_grid_min + 1e-10
+    end
+end
+
+@testset "Iwamoto multiplier returns μ=0 when no step improves" begin
+    # When g₁ and g₂ are large, any positive μ worsens the objective.
+    # g(0) = g₀ should be the global minimum on [0, 1].
+    g0 = 1.0
+    g1 = 10.0
+    g2 = 100.0
+    μ = PF._iwamoto_multiplier(g0, g1, g2)
+    g_at_mu = PF._iwamoto_objective(μ, g0, g1, g2)
+    # The optimizer must be able to return μ=0 or at least match g(0)=g₀.
+    @test g_at_mu <= g0 + 1e-12
+end
+
+@testset "Iwamoto multiplier degenerate cases" begin
+    # Degenerate cubic (g₂ ≈ 0): leading coefficient of derivative cubic is ~0.
+    g0 = 1.0
+    g1 = 0.5
+    g2 = 1e-35
+    μ = PF._iwamoto_multiplier(g0, g1, g2)
+    @test 0.0 <= μ <= 1.0
+    g_opt = PF._iwamoto_objective(μ, g0, g1, g2)
+    grid = range(0.0, 1.0; length = 10001)
+    g_grid_min = minimum(PF._iwamoto_objective(m, g0, g1, g2) for m in grid)
+    @test g_opt <= g_grid_min + 1e-10
+
+    # Degenerate quadratic (g₂ ≈ 0 and g₁ ≈ 0): both leading coefficients ~0.
+    g0_b = 1.0
+    g1_b = 1e-35
+    g2_b = 1e-35
+    μ_b = PF._iwamoto_multiplier(g0_b, g1_b, g2_b)
+    @test 0.0 <= μ_b <= 1.0
 end
 
 @testset "dc fallback" begin

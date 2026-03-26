@@ -15,8 +15,18 @@ abstract type ACPowerFlowSolverType end
 """
     NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType
 
-An [`ACPowerFlowSolverType`](@ref) corresponding to a basic Newton-Raphson iterative method. 
+An [`ACPowerFlowSolverType`](@ref) corresponding to a basic Newton-Raphson iterative method.
 The Newton step is taken verbatim at each iteration: no line search is performed.
+
+Iwamoto step control can be enabled via `solver_settings = Dict(:iwamoto => true)` in
+[`ACPowerFlow`](@ref). When enabled, each iteration checks whether the full Newton step
+reduces the residual norm. If it does, the full step is accepted (overhead: 3 dot products).
+If not, an optimal damping multiplier `μ` is computed by solving a cubic and the step
+`x += μ·Δx` is applied instead, preventing divergence on ill-conditioned or
+poorly-initialized systems.
+
+Based on: Iwamoto & Tamura, "A Load Flow Calculation Method for Ill-Conditioned Power
+Systems," IEEE Trans. PAS, 1981.
 
 See also: [`ACPowerFlow`](@ref).
 """
@@ -173,6 +183,15 @@ function ACPowerFlow{ACSolver}(;
        !isnothing(generator_slack_participation_factors)
         error(
             "Cannot use both distribute_slack_proportional_to_headroom and generator_slack_participation_factors.",
+        )
+    end
+    # This scenario can be handled fine from PSI, we just don't handle it in PF alone.
+    if distribute_slack_proportional_to_headroom && time_steps > 1
+        @warn(
+            "distribute_slack_proportional_to_headroom with multiple time steps: " *
+            "headroom (Pmax - Pset) is computed once from system data and applied " *
+            "to all time steps. Time-varying active power limits and generator " *
+            "setpoints are not supported.",
         )
     end
     return ACPowerFlow{ACSolver}(

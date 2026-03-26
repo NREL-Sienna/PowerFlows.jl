@@ -52,3 +52,62 @@ end
         @test nrow(results["1"]["bus_results"]) == n_study_buses
     end
 end
+
+@testset "Validation test: Ward Reduction and DC Power Flow" begin
+    sys = build_system(PSITestSystems, "c_sys5")
+    b6 = ACBus(;
+        number = 6,
+        name = "b6",
+        available = true,
+        bustype = PowerSystems.ACBusTypes.PQ,
+        angle = 0.0,
+        magnitude = 1.0,
+        voltage_limits = (min = 0.9, max = 1.1),
+        base_voltage = 230.0,
+    )
+    add_component!(sys, b6)
+    b2 = get_component(ACBus, sys, "nodeB")
+    b4 = get_component(ACBus, sys, "nodeD")
+    arc_2_6 = Arc(; from = b2, to = b6)
+    arc_4_6 = Arc(; from = b4, to = b6)
+    line_2_6 = Line(;
+        name = "l_2_6",
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = arc_2_6,
+        r = 0.01,
+        x = 0.2,
+        b = (from = 0.0, to = 0.0),
+        rating = 0.0,
+        angle_limits = (min = -pi, max = pi),
+    )
+    line_4_6 = Line(;
+        name = "l_4_6",
+        available = true,
+        active_power_flow = 0.0,
+        reactive_power_flow = 0.0,
+        arc = arc_4_6,
+        r = 0.01,
+        x = 0.2,
+        b = (from = 0.0, to = 0.0),
+        rating = 0.0,
+        angle_limits = (min = -pi, max = pi),
+    )
+    add_component!(sys, line_2_6)
+    add_component!(sys, line_4_6)
+    unreduced = PF.PowerFlowData(PF.DCPowerFlow(), sys)
+    PF.solve_power_flow!(unreduced)
+    @assert all(unreduced.converged)
+    ward_reduction = PNM.NetworkReduction[PNM.WardReduction([1, 2, 3, 4, 5])]
+    dc_pf_reduced =
+        PF.DCPowerFlow(;
+            network_reductions = ward_reduction,
+        )
+    validate_reduced_power_flow(
+        dc_pf_reduced,
+        sys,
+        ward_reduction,
+        unreduced,
+    )
+end
