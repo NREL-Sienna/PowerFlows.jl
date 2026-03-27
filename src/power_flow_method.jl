@@ -545,9 +545,9 @@ function _run_power_flow_method(time_step::Int,
     validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
     vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
     iwamoto::Bool = false,
+    monitor_jacobian::Bool = false,
     _ignored...,  # absorb unknown keys from caller without error
 )
-    validate_vms = validate_voltage_magnitudes
     i, converged = 1, false
     consecutive_reverts = 0
     bus_types = @view get_bus_type(J.data)[:, time_step]
@@ -582,12 +582,13 @@ function _run_power_flow_method(time_step::Int,
                 refinement_eps,
             )
         end
-        validate_vms && PowerFlows.validate_voltage_magnitudes(
+        validate_voltage_magnitudes && PowerFlows.validate_voltage_magnitudes(
             stateVector.x,
             bus_types,
             vm_validation_range,
             i,
         )
+        monitor_jacobian && monitor_jacobian_definiteness(J)
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -622,6 +623,7 @@ function _run_power_flow_method(time_step::Int,
     iwamoto_fallback::Bool = DEFAULT_IWAMOTO_FALLBACK,
     validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
     vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
+    monitor_jacobian::Bool = false,
     _ignored...,  # absorb unknown keys from caller without error
 )
     validate_vms = validate_voltage_magnitudes
@@ -660,12 +662,13 @@ function _run_power_flow_method(time_step::Int,
             autoscale,
             iwamoto_fallback,
         )
-        validate_vms && PowerFlows.validate_voltage_magnitudes(
+        validate_voltage_magnitudes && PowerFlows.validate_voltage_magnitudes(
             stateVector.x,
             bus_types,
             vm_validation_range,
             i,
         )
+        monitor_jacobian && monitor_jacobian_definiteness(J)
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1

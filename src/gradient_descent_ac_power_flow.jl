@@ -117,7 +117,6 @@ function _interpolate_x!(x::Vector{Float64}, x_save::Vector{Float64}, α::Float6
     return nothing
 end
 
-
 """Driver for the GradientDescentACPowerFlow method: sets up the data structures,
 runs the Adam-based power flow method with backtracking line search, then handles
 post-processing."""

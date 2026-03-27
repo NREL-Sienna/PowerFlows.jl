@@ -13,7 +13,10 @@ pages = OrderedDict(
     "Tutorials" => Any[
         "Solving a Power Flow" => "tutorials/solving-a-power-flow.md",
     ],
-    "Explanation" => "explanation/stub.md",
+    "Explanation" => Any[
+        "Overview" => "explanation/stub.md",
+        "Pivot-Sign Diagnostics" => "explanation/pivot_sign_diagnostics.md",
+    ],
     "Reference" => Any[
         "Code Base Developer Guide" => "reference/developers/developer.md",
         "LCC Model Implementation" => "reference/developers/lcc_model.md",
