@@ -27,9 +27,7 @@ Public = false
 Private = true
 Pages = [
     "RobustHomotopy/homotopy_hessian.jl",
-    "RobustHomotopy/homotopy_initialization.jl",
-    "RobustHomotopy/homotopy_power_flow.jl",
-    "RobustHomotopy/homotopy_residual.jl",
+    "RobustHomotopy/robust_homotopy_method.jl",
 ]
 ```
 
