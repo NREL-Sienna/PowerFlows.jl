@@ -1,6 +1,6 @@
 """
 Adjust the power injections vector to account for the power flows through LCCs.
-    
+
 Relies on the fact that we calculate those flows during initialization and save them
 to the `active_power_flow_from_to` and `active_power_flow_to_from` fields of the
 `LCCParameters` struct.
@@ -21,7 +21,7 @@ end
 
 """
     solve_power_flow!(data::PTDFPowerFlowData)
-Evaluates the PTDF power flow and writes the result to the fields of the 
+Evaluates the PTDF power flow and writes the result to the fields of the
 [`PTDFPowerFlowData`](@ref) structure.
 
 This function modifies the following fields of `data`, setting them to the computed values:
@@ -61,7 +61,7 @@ end
 """
     solve_power_flow!(data::vPTDFPowerFlowData)
 
-Evaluates the virtual PTDF power flow and writes the results to the fields 
+Evaluates the virtual PTDF power flow and writes the results to the fields
 of the [`vPTDFPowerFlowData`](@ref) structure.
 
 
@@ -102,7 +102,7 @@ end
 """
     solve_power_flow!(data::ABAPowerFlowData)
 
-Evaluates the DC power flow and writes the results (branch flows) to the fields 
+Evaluates the DC power flow and writes the results (branch flows) to the fields
 of the [`ABAPowerFlowData`](@ref) structure.
 
 
@@ -122,7 +122,7 @@ function solve_power_flow!(
     # get net injections
     power_injections = data.bus_active_power_injections - data.bus_active_power_withdrawals
     power_injections .+= data.bus_hvdc_net_power
-    # Pre-computed loss injections from AC base case (PSS/e DCLF style).
+    # Pre-computed loss injections from AC base case.
     if data.initial_loss_injections !== nothing
         power_injections .+= data.initial_loss_injections
     end
@@ -203,7 +203,7 @@ or for branches (FlowReporting.BRANCH_FLOWS)
 - `flow_reporting::FlowReporting`:
         Format for reporting flows
 
-Note that `data` must have been created from the [System](@extref PowerSystems.System) 
+Note that `data` must have been created from the [System](@extref PowerSystems.System)
 `sys` using one of the [`PowerFlowData`](@ref) constructors.
 
 # Example
@@ -227,36 +227,14 @@ end
 """
     _get_arc_resistances(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}) -> Vector{Float64}
 
-Look up the equivalent resistance of each arc from the network reduction data,
-using PNM API where available.
+Look up the equivalent resistance of each arc from the network reduction data.
+Delegates to [`_get_arc_branch_params`](@ref) and returns only the resistance vector.
 """
 function _get_arc_resistances(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
 )
-    nrd = get_network_reduction_data(data)
-    arc_ax = get_arc_axis(data)
-    Rs = zeros(length(arc_ax))
-    for (ix_arc, arc) in enumerate(arc_ax)
-        if arc in keys(PNM.get_direct_branch_map(nrd))
-            Rs[ix_arc] = PSY.get_r(PNM.get_direct_branch_map(nrd)[arc])
-        elseif arc in keys(PNM.get_parallel_branch_map(nrd))
-            parallel = PNM.get_parallel_branch_map(nrd)[arc]
-            eq = PNM.get_equivalent_physical_branch_parameters(parallel)
-            Rs[ix_arc] = PNM.get_equivalent_r(eq)
-        elseif arc in keys(PNM.get_series_branch_map(nrd))
-            series = PNM.get_series_branch_map(nrd)[arc]
-            eq = PNM.get_equivalent_physical_branch_parameters(series)
-            Rs[ix_arc] = PNM.get_equivalent_r(eq)
-        elseif arc in keys(PNM.get_transformer3W_map(nrd))
-            winding = PNM.get_transformer3W_map(nrd)[arc]
-            Rs[ix_arc] = PNM.get_equivalent_r(winding)
-        elseif arc in keys(PNM.get_added_arc_impedance_map(nrd))
-            Rs[ix_arc] = PSY.get_r(PNM.get_added_arc_impedance_map(nrd)[arc])
-        else
-            error("Arc $arc not found in any of the branch maps.")
-        end
-    end
-    return Rs
+    rs, _, _, _ = _get_arc_branch_params(data)
+    return rs
 end
 
 """
