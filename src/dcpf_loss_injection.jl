@@ -1,4 +1,4 @@
-# PSS/e DCLF-style loss injection (POM Section 8.4)
+# DCLF-style loss injection
 # Pre-compute branch losses from the AC voltage profile and inject at sending-end buses.
 
 # Helpers to extract tap ratio and phase shift from direct branches,
@@ -11,13 +11,17 @@ _branch_shift(::PSY.ACBranch) = 0.0
 _branch_shift(br::PSY.TwoWindingTransformer) = PSY.get_α(br)
 
 """
-    _get_arc_branch_params(data::ABAPowerFlowData) -> (rs, xs, taps, shifts)
+    _get_arc_branch_params(data) -> (rs, xs, taps, shifts)
 
 Return vectors of series resistance, reactance, tap ratio, and phase shift
-for each arc. Follows the same dispatch over NetworkReductionData branch maps
-as [`_get_arc_resistances`](@ref).
+for each arc, looking up every branch map in the `NetworkReductionData`.
+
+This is the single source of truth for per-arc electrical parameters;
+[`_get_arc_resistances`](@ref) delegates to it.
 """
-function _get_arc_branch_params(data::ABAPowerFlowData)
+function _get_arc_branch_params(
+    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
+)
     nrd = get_network_reduction_data(data)
     arc_ax = get_arc_axis(data)
     n_arcs = length(arc_ax)
@@ -78,7 +82,7 @@ _populate_loss_injections!(::PowerFlowData, ::PSY.System) = nothing
 """
     _populate_loss_injections!(data::ABAPowerFlowData, sys::PSY.System)
 
-Compute PSS/e DCLF-style loss injections from the AC voltage profile stored
+Compute DCLF-style loss injections from the AC voltage profile stored
 in `sys` and write them into `data.initial_loss_injections`.
 
 For each in-service branch k with from-bus i and to-bus j:
@@ -87,7 +91,7 @@ For each in-service branch k with from-bus i and to-bus j:
     P_loss_k = g_k · (Vi²/tap² + Vj² − 2·Vi·Vj/tap · cos(θi − θj − shift))
 
 Losses are withdrawn at the sending-end bus (the higher-angle side).
-This is a single-pass, non-iterative computation matching PSS/e DCLF (POM §8.4).
+This is a single-pass, non-iterative computation.
 
 When the system is flat-start (V=1, θ=0 everywhere), all losses are zero and
 the method degenerates to standard lossless DCLF.
@@ -134,7 +138,7 @@ function _populate_loss_injections!(data::ABAPowerFlowData, sys::PSY.System)
         δ = θi - θj - shift
         P_loss = g * (Vi^2 / tap^2 + Vj^2 - 2 * Vi * Vj / tap * cos(δ))
 
-        # Sending end = higher-angle bus; default to from-bus on tie (PSS/e convention).
+        # Sending end = higher-angle bus; default to from-bus on tie.
         from_ix = bus_lookup[from_bus_no]
         to_ix = bus_lookup[to_bus_no]
         sending_ix = (θi >= θj) ? from_ix : to_ix

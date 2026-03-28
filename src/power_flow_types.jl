@@ -270,7 +270,7 @@ or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.
     Default is `false`.
 - `loss_approximation_as_injection::Bool`: When `true`, pre-compute branch losses from the system's AC
     voltage profile and inject them as load at each branch's sending-end bus before the
-    B′θ = P solve. Follows the PSS/e DCLF convention (POM Section 8.4). Requires an
+    B′θ = P solve. Requires an
     AC-solved voltage profile in the system; on a flat-start case (V=1, θ=0) this
     degenerates to standard lossless DCLF. Default is `false`.
 """

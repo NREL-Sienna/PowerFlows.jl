@@ -122,7 +122,7 @@ function solve_power_flow!(
     # get net injections
     power_injections = data.bus_active_power_injections - data.bus_active_power_withdrawals
     power_injections .+= data.bus_hvdc_net_power
-    # Pre-computed loss injections from AC base case (PSS/e DCLF style).
+    # Pre-computed loss injections from AC base case.
     if data.initial_loss_injections !== nothing
         power_injections .+= data.initial_loss_injections
     end
@@ -227,37 +227,14 @@ end
 """
     _get_arc_resistances(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}) -> Vector{Float64}
 
-Look up the equivalent resistance of each arc from the network reduction data,
-using PNM API where available.
+Look up the equivalent resistance of each arc from the network reduction data.
+Delegates to [`_get_arc_branch_params`](@ref) and returns only the resistance vector.
 """
 function _get_arc_resistances(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
 )
-    nrd = get_network_reduction_data(data)
-    arc_ax = get_arc_axis(data)
-    Rs = zeros(length(arc_ax))
-    for (ix_arc, arc) in enumerate(arc_ax)
-        if arc in keys(PNM.get_direct_branch_map(nrd))
-            Rs[ix_arc] = PSY.get_r(PNM.get_direct_branch_map(nrd)[arc])
-        elseif arc in keys(PNM.get_parallel_branch_map(nrd))
-            parallel = PNM.get_parallel_branch_map(nrd)[arc]
-            eq = PNM.get_equivalent_physical_branch_parameters(parallel)
-            Rs[ix_arc] = PNM.get_equivalent_r(eq)
-        elseif arc in keys(PNM.get_series_branch_map(nrd))
-            series = PNM.get_series_branch_map(nrd)[arc]
-            eq = PNM.get_equivalent_physical_branch_parameters(series)
-            Rs[ix_arc] = PNM.get_equivalent_r(eq)
-        elseif arc in keys(PNM.get_transformer3W_map(nrd))
-            winding = PNM.get_transformer3W_map(nrd)[arc]
-            Rs[ix_arc] = PNM.get_equivalent_r(winding)
-        elseif arc in keys(PNM.get_added_branch_map(nrd))
-            y = PNM.get_added_branch_map(nrd)[arc]
-            Rs[ix_arc] = real(1 / y)
-        else
-            error("Arc $arc not found in any of the branch maps.")
-        end
-    end
-    return Rs
+    rs, _, _, _ = _get_arc_branch_params(data)
+    return rs
 end
 
 """
