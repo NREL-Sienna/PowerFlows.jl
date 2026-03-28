@@ -122,6 +122,10 @@ function solve_power_flow!(
     # get net injections
     power_injections = data.bus_active_power_injections - data.bus_active_power_withdrawals
     power_injections .+= data.bus_hvdc_net_power
+    # Pre-computed loss injections from AC base case (PSS/e DCLF style).
+    if data.initial_loss_injections !== nothing
+        power_injections .+= data.initial_loss_injections
+    end
     # save angles and power flows
     valid_ix = get_valid_ix(data)
     p_inj = power_injections[valid_ix, :]
