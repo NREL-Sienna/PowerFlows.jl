@@ -29,49 +29,43 @@ function _get_arc_branch_params(
     xs = zeros(n_arcs)
     taps = ones(n_arcs)
     shifts = zeros(n_arcs)
+    direct_map = PNM.get_direct_branch_map(nrd)
+    parallel_map = PNM.get_parallel_branch_map(nrd)
+    series_map = PNM.get_series_branch_map(nrd)
+    transformer3W_map = PNM.get_transformer3W_map(nrd)
+    added_map = PNM.get_added_branch_map(nrd)
     for (ix, arc) in enumerate(arc_ax)
-        branch = get(PNM.get_direct_branch_map(nrd), arc, nothing)
-        if branch !== nothing
+        if haskey(direct_map, arc)
+            branch = direct_map[arc]
             rs[ix] = PSY.get_r(branch)
             xs[ix] = PSY.get_x(branch)
             taps[ix] = _branch_tap(branch)
             shifts[ix] = _branch_shift(branch)
-            continue
-        end
-        parallel = get(PNM.get_parallel_branch_map(nrd), arc, nothing)
-        if parallel !== nothing
-            eq = PNM.get_equivalent_physical_branch_parameters(parallel)
+        elseif haskey(parallel_map, arc)
+            eq = PNM.get_equivalent_physical_branch_parameters(parallel_map[arc])
             rs[ix] = PNM.get_equivalent_r(eq)
             xs[ix] = PNM.get_equivalent_x(eq)
             taps[ix] = PNM.get_equivalent_tap(eq)
             shifts[ix] = PNM.get_equivalent_shift(eq)
-            continue
-        end
-        series = get(PNM.get_series_branch_map(nrd), arc, nothing)
-        if series !== nothing
-            eq = PNM.get_equivalent_physical_branch_parameters(series)
+        elseif haskey(series_map, arc)
+            eq = PNM.get_equivalent_physical_branch_parameters(series_map[arc])
             rs[ix] = PNM.get_equivalent_r(eq)
             xs[ix] = PNM.get_equivalent_x(eq)
             taps[ix] = PNM.get_equivalent_tap(eq)
             shifts[ix] = PNM.get_equivalent_shift(eq)
-            continue
-        end
-        winding = get(PNM.get_transformer3W_map(nrd), arc, nothing)
-        if winding !== nothing
+        elseif haskey(transformer3W_map, arc)
+            winding = transformer3W_map[arc]
             rs[ix] = PNM.get_equivalent_r(winding)
             xs[ix] = PNM.get_equivalent_x(winding)
             taps[ix] = PNM.get_equivalent_tap(winding)
             shifts[ix] = PNM.get_equivalent_α(winding)
-            continue
-        end
-        added = get(PNM.get_added_branch_map(nrd), arc, nothing)
-        if added !== nothing
-            z = 1 / added
+        elseif haskey(added_map, arc)
+            z = 1 / added_map[arc]
             rs[ix] = real(z)
             xs[ix] = imag(z)
-            continue
+        else
+            error("Arc $arc not found in any branch map.")
         end
-        error("Arc $arc not found in any branch map.")
     end
     return rs, xs, taps, shifts
 end
