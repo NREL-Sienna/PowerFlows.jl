@@ -10,6 +10,16 @@ _branch_tap(::PSY.Transformer2W) = 1.0
 _branch_shift(::PSY.ACBranch) = 0.0
 _branch_shift(br::PSY.TwoWindingTransformer) = PSY.get_α(br)
 
+# Helpers for three-winding transformer tap and shift.
+# Only PhaseShiftingTransformer3W windings carry tap/shift; regular Transformer3W defaults to 1.0/0.0.
+_winding_tap(w::PNM.ThreeWindingTransformerWinding{PSY.PhaseShiftingTransformer3W}) =
+    PNM.get_equivalent_tap(w)
+_winding_tap(::PNM.ThreeWindingTransformerWinding) = 1.0
+
+_winding_shift(w::PNM.ThreeWindingTransformerWinding{PSY.PhaseShiftingTransformer3W}) =
+    PNM.get_equivalent_α(w)
+_winding_shift(::PNM.ThreeWindingTransformerWinding) = 0.0
+
 """
     _get_arc_branch_params(data) -> (rs, xs, taps, shifts)
 
@@ -57,8 +67,8 @@ function _get_arc_branch_params(
             winding = transformer3W_map[arc]
             rs[ix] = PNM.get_equivalent_r(winding)
             xs[ix] = PNM.get_equivalent_x(winding)
-            taps[ix] = PNM.get_equivalent_tap(winding)
-            shifts[ix] = PNM.get_equivalent_α(winding)
+            taps[ix] = _winding_tap(winding)
+            shifts[ix] = _winding_shift(winding)
         elseif haskey(added_map, arc)
             z = 1 / added_map[arc]
             rs[ix] = real(z)
