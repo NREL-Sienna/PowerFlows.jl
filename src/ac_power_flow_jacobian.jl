@@ -629,9 +629,9 @@ for different `bus_from` values."""
 function _update_jacobian_rows_for_bus!(
     Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     data::ACPowerFlowData,
-    Yb,
-    Vm,
-    θ,
+    Yb::SparseMatrixCSC,
+    Vm::AbstractVector{Float64},
+    θ::AbstractVector{Float64},
     bus_from::Int,
     time_step::Int64,
     bus_slack_participation_factors::SparseVector{Float64, Int},
