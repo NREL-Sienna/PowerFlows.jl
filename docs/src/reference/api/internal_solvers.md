@@ -113,5 +113,6 @@ Pages = [
     "common.jl",
     "definitions.jl",
     "psi_utils.jl",
+    "threaded_sparse_mul.jl",
 ]
 ```
