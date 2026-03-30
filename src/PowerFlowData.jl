@@ -132,6 +132,7 @@ struct PowerFlowData{
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
     arc_active_power_losses::Union{Matrix{Float64}, Nothing}
     lcc::LCCParameters
+    initial_loss_injections::Union{Matrix{Float64}, Nothing}
 end
 
 # aliases for specific type parameter combinations.
@@ -212,6 +213,7 @@ get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
 get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
 get_arc_active_power_losses(pfd::PowerFlowData) = pfd.arc_active_power_losses
+get_initial_loss_injections(pfd::PowerFlowData) = pfd.initial_loss_injections
 
 # Field getter for expanded slack participation factors (one dict per time step)
 # Named "computed" to distinguish from the user-supplied pf.generator_slack_participation_factors
@@ -297,6 +299,10 @@ _make_arc_active_power_losses(::AbstractDCPowerFlow, n_arcs, n_time_steps) =
     zeros(n_arcs, n_time_steps)
 _make_arc_active_power_losses(::PowerFlowEvaluationModel, n_arcs, n_time_steps) = nothing
 
+_make_initial_loss_injections(pf::DCPowerFlow, n_buses, n_time_steps) =
+    get_loss_approximation_as_injection(pf) ? zeros(n_buses, n_time_steps) : nothing
+_make_initial_loss_injections(::PowerFlowEvaluationModel, _, _) = nothing
+
 """
 Sets the two `PowerNetworkMatrix` fields and a few others (`time_steps`, `time_step_map`),
 then creates arrays of default values (usually zeros) for the rest.
@@ -362,6 +368,7 @@ function PowerFlowData(
         calculate_voltage_stability_factors ? zeros(n_buses, n_time_steps) : nothing, # voltage_stability_factors
         _make_arc_active_power_losses(pf, n_arcs, n_time_steps), # arc_active_power_losses
         lcc_parameters,
+        _make_initial_loss_injections(pf, n_buses, n_time_steps), # initial_loss_injections
     )
 end
 
@@ -451,6 +458,7 @@ function make_and_initialize_power_flow_data(
     )
     @assert length(data.lcc.setpoint_at_rectifier) == n_lccs
     initialize_power_flow_data!(data, pf, sys; correct_bustypes = get_correct_bustypes(pf))
+    _populate_loss_injections!(data, sys)
     return data
 end
 

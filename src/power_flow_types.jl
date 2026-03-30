@@ -268,6 +268,11 @@ or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.
 - `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
 - `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
     Default is `false`.
+- `loss_approximation_as_injection::Bool`: When `true`, pre-compute branch losses from the system's AC
+    voltage profile and inject them as load at each branch's sending-end bus before the
+    B′θ = P solve. Requires an
+    AC-solved voltage profile in the system; on a flat-start case (V=1, θ=0) this
+    degenerates to standard lossless DCLF. Default is `false`.
 """
 @kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
@@ -275,7 +280,11 @@ or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.
     time_steps::Int = 1
     time_step_names::Vector{String} = String[]
     correct_bustypes::Bool = false
+    loss_approximation_as_injection::Bool = false
 end
+
+get_loss_approximation_as_injection(pf::DCPowerFlow) = pf.loss_approximation_as_injection
+get_loss_approximation_as_injection(::AbstractDCPowerFlow) = false
 
 """
     PTDFDCPowerFlow(; kwargs...)
