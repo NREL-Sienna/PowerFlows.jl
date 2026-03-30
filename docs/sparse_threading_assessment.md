@@ -66,49 +66,38 @@ requires the index type parameter too. More importantly, several call sites use
 | `solve_dc_power_flow.jl:291` | `PTDF · Diag(R) · PTDFᵀ · P` (loss factors) | `arcs × buses` | Once if loss factors enabled |
 | `common.jl:384` | `Xᵀ · row` (vPTDF multiply) | `buses × ts` | Per arc in vPTDF |
 
-### Analysis
+## What This PR Implements
 
-- **AC power flow (Newton/Trust Region):** The dominant cost is the KLU sparse
-  factorization (`O(nnz^{1.5})` typically), not the SpMV (`O(nnz)`). Threading
-  the SpMV would save a small fraction of total iteration time.
-- **DC power flow:** The `PTDF' * P` multiplication is called once per solve,
-  not in a loop. Threading has negligible impact.
-- **Gradient descent:** The `Jᵀ · F` multiply is called every iteration and is
-  the main linear algebra cost (no factorization). This is the best candidate
-  for threading, but the Adam solver is a fallback method, not the primary path.
+The proposed function's core idea (threaded transpose SpMV over CSC columns) is
+sound but needed corrections. This PR takes the corrected concept and applies it
+across the codebase:
 
-## Recommendation: Do Not Add the Proposed Function As-Is
+### 1. `src/threaded_sparse_mul.jl` — Corrected `threaded_mul!`
 
-The function has a correctness bug (computes transpose), an unnecessary
-restriction (square only), and targets operations that are not the performance
-bottleneck. The threading overhead will likely **hurt** performance for typical
-power system sizes (< 10k buses).
+- Dispatches on `Transpose`/`Adjoint` wrappers for type safety (not raw `SparseMatrixCSC`)
+- No square-matrix restriction
+- Size threshold (`THREADED_MUL_MIN_DIM = 1000`) to avoid overhead on small systems
+- Automatic fallback to `LinearAlgebra.mul!` when single-threaded or below threshold
+- Both vector (`Aᵀx`) and matrix (`AᵀX`) variants for multi-period support
+- Generic fallback for dense matrices (delegates to BLAS)
 
-### If Threading SpMV is Desired in the Future
+### 2. DC power flow integration (`solve_dc_power_flow.jl`)
 
-For large-scale systems (50k+ buses), a correct implementation would:
+- `PTDFPowerFlowData`: transpose multiply now uses `threaded_mul!`
+- `ABAPowerFlowData`: transpose multiply now uses `threaded_mul!`
+- Loss factor computation: eliminates `Diagonal` allocation (addresses existing
+  `PERF` comment), decomposes into fused 3-step computation
 
-1. **Use `polyester` or `@spawn`-based chunking** instead of `@threads` for
-   lower overhead.
-2. **Compute `Ax` correctly** by parallelizing over rows (requires CSR or
-   a row-partitioned approach), or use the transpose formulation explicitly.
-3. **Gate on problem size** — only thread when `nnz(A) > threshold`.
-4. **Benchmark with realistic systems** — IEEE 118, Polish 2383, PEGASE 9241,
-   and larger, to find the crossover point.
+### 3. VirtualPTDF threading (`common.jl`)
 
-### What Would Actually Help Performance
+- `my_mul_mt` vector and matrix variants now use `@threads` for large systems
+  (gated on `THREADED_MUL_MIN_DIM`)
 
-Based on the codebase analysis, higher-impact optimizations would be:
+### 4. Multi-threaded Jacobian construction (`ac_power_flow_jacobian.jl`)
 
-1. **Multi-threaded Jacobian construction** (`ac_power_flow_jacobian.jl`):
-   The per-bus neighbor loop that fills the Jacobian is embarrassingly parallel
-   and dominates the non-factorization cost. **Implemented in this PR** — the
-   `_update_jacobian_matrix_values!` function now uses `Base.Threads.@threads`
-   over the bus loop, with a thread-local `MVector{4, Float64}` diagonal
-   accumulator per bus (zero-cost stack allocation). Thread safety is guaranteed
-   because each bus writes exclusively to its own Jacobian rows (`2i-1`, `2i`).
-2. **Parallel multi-period solves** (`solve_dc_power_flow.jl`): Each time step
-   is independent after factorization; threading across time steps would give
-   near-linear speedup.
-3. **Threaded vPTDF row computation** (`common.jl:362–387`): Each row of the
-   VirtualPTDF is computed independently; `@threads` over arcs would help.
+- `_update_jacobian_matrix_values!` uses `Base.Threads.@threads` over the
+  per-bus loop, with a thread-local `MVector{4, Float64}` diagonal accumulator
+  per bus (zero-cost stack allocation)
+- Thread safety guaranteed: each bus writes exclusively to its own Jacobian
+  rows (`2i-1`, `2i`)
+- Gated on `THREADED_MUL_MIN_DIM` to avoid threading overhead on small systems

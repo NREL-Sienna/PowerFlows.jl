@@ -50,6 +50,10 @@ const BUS_VOLTAGE_MAGNITUDE_CUTOFF_MAX = 1.2
 const TIs = Union{Int32, Int64}
 const J_INDEX_TYPE = Int32
 
+# Threading threshold: only use @threads when the problem dimension exceeds this.
+# Threading overhead dominates for small systems (typical power flow tests have <100 buses).
+const THREADED_MUL_MIN_DIM = 1000
+
 # voltage validation
 const DEFAULT_VALIDATE_VOLTAGES = true
 const MinMax = NamedTuple{(:min, :max), Tuple{Float64, Float64}}

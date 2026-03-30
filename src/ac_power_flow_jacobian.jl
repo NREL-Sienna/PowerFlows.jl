@@ -730,9 +730,16 @@ function _update_jacobian_matrix_values!(
     θ = view(data.bus_angles, :, time_step)
     num_buses = first(size(data.bus_type))
 
-    Base.Threads.@threads for bus_from in 1:num_buses
-        _update_jacobian_rows_for_bus!(Jv, data, Yb, Vm, θ, bus_from, time_step,
-            bus_slack_participation_factors)
+    if num_buses >= THREADED_MUL_MIN_DIM && Base.Threads.nthreads() > 1
+        Base.Threads.@threads for bus_from in 1:num_buses
+            _update_jacobian_rows_for_bus!(Jv, data, Yb, Vm, θ, bus_from, time_step,
+                bus_slack_participation_factors)
+        end
+    else
+        for bus_from in 1:num_buses
+            _update_jacobian_rows_for_bus!(Jv, data, Yb, Vm, θ, bus_from, time_step,
+                bus_slack_participation_factors)
+        end
     end
 
     # Distributed slack cross-terms: for each participating bus k (other than the

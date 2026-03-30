@@ -356,32 +356,56 @@ handle_zip_loads!(
 ##############################################################################
 # Matrix Methods #############################################################
 
-"""Matrix multiplication A*x. Written this way because a VirtualPTDF 
+"""Matrix multiplication A*x. Written this way because a VirtualPTDF
 matrix does not store all of its entries: instead, it calculates
-them (or retrieves them from cache), one element or one row at a time."""
+them (or retrieves them from cache), one element or one row at a time.
+
+Uses `Threads.@threads` when the number of arcs exceeds
+`THREADED_MUL_MIN_DIM` and multiple Julia threads are available."""
 function my_mul_mt(
     A::PNM.VirtualPTDF,
     x::Vector{Float64},
 )
-    y = zeros(length(A.axes[1]))
-    for i in 1:length(A.axes[1])
-        name_ = A.axes[1][i]
-        y[i] = dot(A[name_, :], x)
+    axes_1 = A.axes[1]
+    n = length(axes_1)
+    y = zeros(n)
+    if n >= THREADED_MUL_MIN_DIM && Threads.nthreads() > 1
+        Threads.@threads for i in 1:n
+            @inbounds name_ = axes_1[i]
+            @inbounds y[i] = dot(A[name_, :], x)
+        end
+    else
+        for i in 1:n
+            name_ = axes_1[i]
+            y[i] = dot(A[name_, :], x)
+        end
     end
     return y
 end
 
-"""Similar to above: A*X where X is a matrix."""
+"""Similar to above: A*X where X is a matrix.
+
+Uses `Threads.@threads` when the number of arcs exceeds
+`THREADED_MUL_MIN_DIM` and multiple Julia threads are available."""
 function my_mul_mt(
     A::PNM.VirtualPTDF,
     X::Matrix{Float64},
 )
-    n_arcs = length(A.axes[1])
+    axes_1 = A.axes[1]
+    n_arcs = length(axes_1)
     n_ts = size(X, 2)
     Y = Matrix{Float64}(undef, n_arcs, n_ts)
-    for (i, name_) in enumerate(A.axes[1])
-        row_i = A[name_, :]
-        mul!(view(Y, i, :), X', row_i)
+    if n_arcs >= THREADED_MUL_MIN_DIM && Threads.nthreads() > 1
+        Threads.@threads for i in 1:n_arcs
+            @inbounds name_ = axes_1[i]
+            row_i = A[name_, :]
+            mul!(view(Y, i, :), X', row_i)
+        end
+    else
+        for (i, name_) in enumerate(axes_1)
+            row_i = A[name_, :]
+            mul!(view(Y, i, :), X', row_i)
+        end
     end
     return Y
 end
