@@ -40,11 +40,8 @@ function solve_power_flow!(
     power_injections = data.bus_active_power_injections .- data.bus_active_power_withdrawals
     power_injections .+= data.bus_hvdc_net_power
     # evaluate flows
-    threaded_mul!(
-        data.arc_active_power_flow_from_to,
-        transpose(data.power_network_matrix.data),
-        power_injections,
-    )
+    data.arc_active_power_flow_from_to .=
+        data.power_network_matrix.data' * power_injections
     data.arc_active_power_flow_to_from .= -data.arc_active_power_flow_from_to
     # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
     valid_ix = get_valid_ix(data)
@@ -130,11 +127,7 @@ function solve_power_flow!(
     p_inj = power_injections[valid_ix, :]
     solve!(solver_cache, p_inj)
     data.bus_angles[valid_ix, :] .= p_inj
-    threaded_mul!(
-        data.arc_active_power_flow_from_to,
-        transpose(data.aux_network_matrix.data),
-        data.bus_angles,
-    )
+    data.arc_active_power_flow_from_to .= data.aux_network_matrix.data' * data.bus_angles
     data.arc_active_power_flow_to_from .= -data.arc_active_power_flow_from_to
     # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
     _compute_arc_angle_differences_from_data!(data)
@@ -293,25 +286,9 @@ function dc_loss_factors(
     P::Matrix{Float64},
 )
     Rs = _get_arc_resistances(data)
-    ptdf_t = data.power_network_matrix.data   # buses × arcs (stored transposed)
-    n_arcs = size(ptdf_t, 2)
-    n_ts = size(P, 2)
-
-    # Original: 2 * ptdf_t * Diagonal(Rs) * ptdf_t' * P
-    # Step 1: flows = ptdf_t' * P  (arcs × timesteps)
-    flows = Matrix{Float64}(undef, n_arcs, n_ts)
-    threaded_mul!(flows, transpose(ptdf_t), P)
-
-    # Step 2: fuse diagonal scaling into flows to avoid Diagonal allocation.
-    @inbounds for k in 1:n_arcs
-        r2 = 2.0 * Rs[k]
-        @simd for t in 1:n_ts
-            flows[k, t] *= r2
-        end
-    end
-
-    # Step 3: result = ptdf_t * scaled_flows  (buses × timesteps)
-    return ptdf_t * flows
+    ptdf_t = data.power_network_matrix.data
+    # PERF could be optimized: remove the Diagonal call.
+    return 2 * ptdf_t * LinearAlgebra.Diagonal(Rs) * ptdf_t' * P
 end
 
 function dc_loss_factors(
