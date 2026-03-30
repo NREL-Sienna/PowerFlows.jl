@@ -100,9 +100,13 @@ For large-scale systems (50k+ buses), a correct implementation would:
 
 Based on the codebase analysis, higher-impact optimizations would be:
 
-1. **Multi-threaded Jacobian construction** (`ac_power_flow_jacobian.jl:489–555`):
+1. **Multi-threaded Jacobian construction** (`ac_power_flow_jacobian.jl`):
    The per-bus neighbor loop that fills the Jacobian is embarrassingly parallel
-   and dominates the non-factorization cost.
+   and dominates the non-factorization cost. **Implemented in this PR** — the
+   `_update_jacobian_matrix_values!` function now uses `Base.Threads.@threads`
+   over the bus loop, with a thread-local `MVector{4, Float64}` diagonal
+   accumulator per bus (zero-cost stack allocation). Thread safety is guaranteed
+   because each bus writes exclusively to its own Jacobian rows (`2i-1`, `2i`).
 2. **Parallel multi-period solves** (`solve_dc_power_flow.jl`): Each time step
    is independent after factorization; threading across time steps would give
    near-linear speedup.

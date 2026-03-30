@@ -623,12 +623,105 @@ function _set_entries_for_lcc(data::ACPowerFlowData,
     return
 end
 
-"""Used to update Jv based on the bus voltages, angles, etc. in data."""
+"""Update Jacobian rows for a single bus. Each bus writes exclusively to rows
+`2*bus_from-1` and `2*bus_from`, so this function is safe to call concurrently
+for different `bus_from` values."""
+function _update_jacobian_rows_for_bus!(
+    Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
+    data::ACPowerFlowData,
+    Yb,
+    Vm,
+    θ,
+    bus_from::Int,
+    time_step::Int64,
+    bus_slack_participation_factors::SparseVector{Float64, Int},
+)
+    row_from_p = 2 * bus_from - 1
+    row_from_q = 2 * bus_from
+
+    # Thread-local diagonal accumulator (stack-allocated, zero cost)
+    diag_elements = MVector{4, Float64}(0.0, 0.0, 0.0, 0.0)
+
+    Vm_from = Vm[bus_from]
+    for bus_to in data.neighbors[bus_from]
+        if bus_to != bus_from
+            col_to_vm = 2 * bus_to - 1
+            col_to_va = 2 * bus_to
+            bus_type = data.bus_type[bus_to, time_step]
+            θ_from_to = θ[bus_from] - θ[bus_to]
+            Vm_to = Vm[bus_to]
+            Y_from_to = Yb[bus_from, bus_to]
+            # 3 case if-else with Val(constant) is faster than 1 case with Val(bus_type)
+            if bus_type == PSY.ACBusTypes.PQ
+                _set_entries_for_neighbor(Jv,
+                    Y_from_to,
+                    Vm_from,
+                    Vm_to,
+                    θ_from_to,
+                    row_from_p,
+                    row_from_q,
+                    col_to_vm,
+                    col_to_va,
+                    diag_elements,
+                    Val(PSY.ACBusTypes.PQ))
+            elseif bus_type == PSY.ACBusTypes.PV
+                _set_entries_for_neighbor(Jv,
+                    Y_from_to,
+                    Vm_from,
+                    Vm_to,
+                    θ_from_to,
+                    row_from_p,
+                    row_from_q,
+                    col_to_vm,
+                    col_to_va,
+                    diag_elements,
+                    Val(PSY.ACBusTypes.PV))
+            elseif bus_type == PSY.ACBusTypes.REF
+                _set_entries_for_neighbor(Jv,
+                    Y_from_to,
+                    Vm_from,
+                    Vm_to,
+                    θ_from_to,
+                    row_from_p,
+                    row_from_q,
+                    col_to_vm,
+                    col_to_va,
+                    diag_elements,
+                    Val(PSY.ACBusTypes.REF))
+            end
+        end
+    end
+    col_from_vm = 2 * bus_from - 1
+    col_from_va = 2 * bus_from
+    # set entries in diagonal blocks
+    if data.bus_type[bus_from, time_step] == PSY.ACBusTypes.PQ
+        Jv[row_from_p, col_from_va] = diag_elements[1]  # ∂P∂θ_from
+        Jv[row_from_q, col_from_va] = diag_elements[2]  # ∂Q∂θ_from
+        diag_elements[3] += 2 * real(Yb[bus_from, bus_from]) * Vm[bus_from]  # ∂P∂V_from
+        diag_elements[4] -= 2 * imag(Yb[bus_from, bus_from]) * Vm[bus_from]  # ∂Q∂V_from
+        Jv[row_from_p, col_from_vm] = diag_elements[3]  # ∂P∂V_from
+        Jv[row_from_q, col_from_vm] = diag_elements[4]  # ∂Q∂V_from
+    elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.PV
+        Jv[row_from_q, col_from_vm] = -1.0
+        Jv[row_from_p, col_from_va] = diag_elements[1]  # ∂P∂θ_from
+        Jv[row_from_q, col_from_va] = diag_elements[2]  # ∂Q∂θ_from
+    elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.REF
+        Jv[row_from_p, col_from_vm] = -bus_slack_participation_factors[bus_from]
+        Jv[row_from_q, col_from_va] = -1.0
+    end
+    return
+end
+
+"""Used to update Jv based on the bus voltages, angles, etc. in data.
+Each bus writes exclusively to its own rows (2*bus-1 and 2*bus) in the Jacobian,
+so the per-bus loop is parallelized with `@threads` when multiple threads are
+available. A thread-local `MVector{4, Float64}` accumulates diagonal elements
+with zero allocation cost (stack-allocated StaticArray)."""
 function _update_jacobian_matrix_values!(
     Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     data::ACPowerFlowData,
     time_step::Int64,
-    diag_elements::MVector{4, Float64},
+    ::MVector{4, Float64},
     bus_slack_participation_factors::SparseVector{Float64, Int},
     subnetworks::Dict{Int64, Vector{Int64}},
 )
@@ -637,80 +730,9 @@ function _update_jacobian_matrix_values!(
     θ = view(data.bus_angles, :, time_step)
     num_buses = first(size(data.bus_type))
 
-    for bus_from in 1:num_buses
-        row_from_p = 2 * bus_from - 1
-        row_from_q = 2 * bus_from
-
-        # Reset diagonal elements for this bus
-        fill!(diag_elements, 0.0)
-
-        Vm_from = Vm[bus_from]
-        for bus_to in data.neighbors[bus_from]
-            if bus_to != bus_from
-                col_to_vm = 2 * bus_to - 1
-                col_to_va = 2 * bus_to
-                bus_type = data.bus_type[bus_to, time_step]
-                θ_from_to = θ[bus_from] - θ[bus_to]
-                Vm_to = Vm[bus_to]
-                Y_from_to = Yb[bus_from, bus_to]
-                # 3 case if-else with Val(constant) is faster than 1 case with Val(bus_type)
-                if bus_type == PSY.ACBusTypes.PQ
-                    _set_entries_for_neighbor(Jv,
-                        Y_from_to,
-                        Vm_from,
-                        Vm_to,
-                        θ_from_to,
-                        row_from_p,
-                        row_from_q,
-                        col_to_vm,
-                        col_to_va,
-                        diag_elements,
-                        Val(PSY.ACBusTypes.PQ))
-                elseif bus_type == PSY.ACBusTypes.PV
-                    _set_entries_for_neighbor(Jv,
-                        Y_from_to,
-                        Vm_from,
-                        Vm_to,
-                        θ_from_to,
-                        row_from_p,
-                        row_from_q,
-                        col_to_vm,
-                        col_to_va,
-                        diag_elements,
-                        Val(PSY.ACBusTypes.PV))
-                elseif bus_type == PSY.ACBusTypes.REF
-                    _set_entries_for_neighbor(Jv,
-                        Y_from_to,
-                        Vm_from,
-                        Vm_to,
-                        θ_from_to,
-                        row_from_p,
-                        row_from_q,
-                        col_to_vm,
-                        col_to_va,
-                        diag_elements,
-                        Val(PSY.ACBusTypes.REF))
-                end
-            end
-        end
-        col_from_vm = 2 * bus_from - 1
-        col_from_va = 2 * bus_from
-        # set entries in diagonal blocks
-        if data.bus_type[bus_from, time_step] == PSY.ACBusTypes.PQ
-            Jv[row_from_p, col_from_va] = diag_elements[1]  # ∂P∂θ_from
-            Jv[row_from_q, col_from_va] = diag_elements[2]  # ∂Q∂θ_from
-            diag_elements[3] += 2 * real(Yb[bus_from, bus_from]) * Vm[bus_from]  # ∂P∂V_from
-            diag_elements[4] -= 2 * imag(Yb[bus_from, bus_from]) * Vm[bus_from]  # ∂Q∂V_from
-            Jv[row_from_p, col_from_vm] = diag_elements[3]  # ∂P∂V_from
-            Jv[row_from_q, col_from_vm] = diag_elements[4]  # ∂Q∂V_from
-        elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.PV
-            Jv[row_from_q, col_from_vm] = -1.0
-            Jv[row_from_p, col_from_va] = diag_elements[1]  # ∂P∂θ_from
-            Jv[row_from_q, col_from_va] = diag_elements[2]  # ∂Q∂θ_from
-        elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.REF
-            Jv[row_from_p, col_from_vm] = -bus_slack_participation_factors[bus_from]
-            Jv[row_from_q, col_from_va] = -1.0
-        end
+    Base.Threads.@threads for bus_from in 1:num_buses
+        _update_jacobian_rows_for_bus!(Jv, data, Yb, Vm, θ, bus_from, time_step,
+            bus_slack_participation_factors)
     end
 
     # Distributed slack cross-terms: for each participating bus k (other than the
