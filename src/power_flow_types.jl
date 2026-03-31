@@ -244,6 +244,7 @@ or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.
     time_steps::Int = 1
     time_step_names::Vector{String} = String[]
     correct_bustypes::Bool = false
+    lossy_flows::Bool = false
 end
 
 """
@@ -305,3 +306,4 @@ where creating and storing the full PTDF matrix would be infeasible or slow. See
 end
 
 # see also: PSSEExportPowerFlow in psse_export.jl
+get_lossy_flows(pf::DCPowerFlow) = pf.lossy_flows
