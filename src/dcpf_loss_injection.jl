@@ -89,10 +89,15 @@ _populate_loss_injections!(::PowerFlowData, ::PSY.System) = nothing
 Compute DCLF-style loss injections from the AC voltage profile stored
 in `sys` and write them into `data.initial_loss_injections`.
 
-For each in-service branch k with from-bus i and to-bus j:
+For each in-service branch k with from-bus i and to-bus j, the branch
+current magnitude is estimated from the complex voltage phasors:
 
-    g_k = r_k / (r_k² + x_k²)
-    P_loss_k = g_k · (Vi²/tap² + Vj² − 2·Vi·Vj/tap · cos(θi − θj − shift))
+    I_k = |V_i∠θ_i − V_j∠θ_j| / |Z_eff_k|
+
+where `Z_eff = Z · tap` accounts for the transformer turns ratio.
+Branch losses are then:
+
+    P_loss_k = |I_k|² · r_k
 
 Losses are withdrawn at the sending-end bus (the higher-angle side).
 This is a single-pass, non-iterative computation.
@@ -120,27 +125,27 @@ function _populate_loss_injections!(data::ABAPowerFlowData, sys::PSY.System)
             (PSY.get_magnitude(bus), PSY.get_angle(bus))
     end
 
-    rs, xs, taps, shifts = _get_arc_branch_params(data)
+    rs, xs, taps, _ = _get_arc_branch_params(data)
 
     for (ix, arc) in enumerate(arc_ax)
         from_bus_no, to_bus_no = arc
         r = rs[ix]
         x = xs[ix]
         tap = taps[ix]
-        shift = shifts[ix]
 
-        # Skip zero-impedance arcs.
-        z2 = r^2 + x^2
-        z2 == 0.0 && continue
-
-        g = r / z2
+        # |Z_eff|² = (r² + x²) · tap², where Z_eff = Z · tap.
+        z_eff_sq = (r^2 + x^2) * tap^2
+        z_eff_sq == 0.0 && continue
 
         # Read AC voltages from the system (not from PowerFlowData, which forces V=1 for DC).
         Vi, θi = bus_voltage[from_bus_no]
         Vj, θj = bus_voltage[to_bus_no]
 
-        δ = θi - θj - shift
-        P_loss = g * (Vi^2 / tap^2 + Vj^2 - 2 * Vi * Vj / tap * cos(δ))
+        # |V_i - V_j|² using complex phasors: Vi²+Vj²−2·Vi·Vj·cos(θi−θj).
+        dV_sq = Vi^2 + Vj^2 - 2 * Vi * Vj * cos(θi - θj)
+
+        # P_loss = |I|² · r = |ΔV|² · r / |Z_eff|²
+        P_loss = dV_sq * r / z_eff_sq
 
         # Sending end = higher-angle bus; default to from-bus on tie.
         from_ix = bus_lookup[from_bus_no]
