@@ -54,6 +54,18 @@ end
     # Flows should differ (system has nonzero angles and V != 1.0).
     @test lossless["1"]["flow_results"].P_from_to !=
           lossy["1"]["flow_results"].P_from_to
+    # Lossy model reports asymmetric flows: P_to_from != -P_from_to
+    lossy_flows = lossy["1"]["flow_results"]
+    @test lossy_flows.P_to_from != -lossy_flows.P_from_to
+    # Loss conservation: P_from_to + P_to_from ≈ P_losses
+    @test isapprox(
+        lossy_flows.P_from_to .+ lossy_flows.P_to_from,
+        lossy_flows.P_losses;
+        atol = 1e-6,
+    )
+    # Lossless model still has symmetric flows.
+    lossless_flows = lossless["1"]["flow_results"]
+    @test lossless_flows.P_to_from == -lossless_flows.P_from_to
 end
 
 @testset "Lossy DCLF: initial_loss_injections field" begin
@@ -104,23 +116,24 @@ end
     loss_inj = data.initial_loss_injections
     @test loss_inj !== nothing
 
-    # Hand-compute expected losses for line 1→2:
-    # g = 0.01 / (0.01^2 + 0.1^2) = 0.01 / 0.0101 ≈ 0.990099
-    # delta = 0.0 - (-0.05) = 0.05
-    # P_loss = g * (1.05^2 + 1.02^2 - 2*1.05*1.02*cos(0.05))
+    # Hand-compute expected losses using I²r where I = |Vi∠θi - Vj∠θj| / |Z|.
+    # For lines (tap=1): |Z_eff|² = r² + x², |ΔV|² = Vi²+Vj²−2·Vi·Vj·cos(θi−θj).
+    # P_loss = |ΔV|² · r / |Z_eff|²
+
+    # Line 1→2: r=0.01, x=0.1, Vi=1.05, Vj=1.02, θi=0.0, θj=-0.05
     r12, x12 = 0.01, 0.1
-    g12 = r12 / (r12^2 + x12^2)
-    P_loss_12 = g12 * (1.05^2 + 1.02^2 - 2 * 1.05 * 1.02 * cos(0.05))
+    dV_sq_12 = 1.05^2 + 1.02^2 - 2 * 1.05 * 1.02 * cos(0.0 - (-0.05))
+    P_loss_12 = dV_sq_12 * r12 / (r12^2 + x12^2)
 
-    # Line 2→3:
+    # Line 2→3: r=0.02, x=0.15, Vi=1.02, Vj=0.98, θi=-0.05, θj=-0.10
     r23, x23 = 0.02, 0.15
-    g23 = r23 / (r23^2 + x23^2)
-    P_loss_23 = g23 * (1.02^2 + 0.98^2 - 2 * 1.02 * 0.98 * cos(-0.05 - (-0.10)))
+    dV_sq_23 = 1.02^2 + 0.98^2 - 2 * 1.02 * 0.98 * cos(-0.05 - (-0.10))
+    P_loss_23 = dV_sq_23 * r23 / (r23^2 + x23^2)
 
-    # Line 1→3:
+    # Line 1→3: r=0.015, x=0.12, Vi=1.05, Vj=0.98, θi=0.0, θj=-0.10
     r13, x13 = 0.015, 0.12
-    g13 = r13 / (r13^2 + x13^2)
-    P_loss_13 = g13 * (1.05^2 + 0.98^2 - 2 * 1.05 * 0.98 * cos(0.0 - (-0.10)))
+    dV_sq_13 = 1.05^2 + 0.98^2 - 2 * 1.05 * 0.98 * cos(0.0 - (-0.10))
+    P_loss_13 = dV_sq_13 * r13 / (r13^2 + x13^2)
 
     total_loss = P_loss_12 + P_loss_23 + P_loss_13
     # Total loss injections should equal negative of total losses.
