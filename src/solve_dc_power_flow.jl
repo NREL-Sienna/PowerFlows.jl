@@ -137,6 +137,11 @@ function solve_power_flow!(
     _compute_arc_angle_differences_from_data!(data)
     Rs = _get_arc_resistances(data)
     data.arc_active_power_losses .= Rs .* data.arc_active_power_flow_from_to .^ 2
+    # When loss injections are active, adjust to_from so that
+    # P_from_to + P_to_from = P_loss (matching the AC sign convention).
+    if data.initial_loss_injections !== nothing
+        data.arc_active_power_flow_to_from .+= data.arc_active_power_losses
+    end
     data.converged .= true
     return
 end
