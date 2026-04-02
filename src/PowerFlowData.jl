@@ -396,10 +396,10 @@ function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_reactive_power_constant_current_withdrawals .= 0.0
     pfd.bus_reactive_power_constant_impedance_withdrawals .= 0.0
     for col in eachcol(pfd.bus_angles)
-        any(isnan, col) && col .= 0.0
+        any(isnan, col) && (col .= 0.0)
     end
     for col in eachcol(pfd.bus_magnitude)
-        any(isnan, col) && col .= 1.0
+        any(isnan, col) && (col .= 1.0)
     end
     return
 end
