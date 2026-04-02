@@ -29,11 +29,10 @@ function initialize_power_flow_data!(
         sys,
         correct_bustypes,
     )
-    for i in 1:size(data.bus_type, 2)
-        data.bus_type[:, i] .= bus_type
-    end
-    data.bus_angles[:, 1] .= bus_angles
-    data.bus_magnitude[:, 1] .= bus_magnitude
+    # initialize for all time steps, or just the first?
+    data.bus_type[:, :] .= bus_type
+    data.bus_angles[:, :] .= bus_angles
+    data.bus_magnitude[:, :] .= bus_magnitude
 
     # active, reactive power injections, withdrawals
     bus_active_power_injections = zeros(Float64, n_buses)
