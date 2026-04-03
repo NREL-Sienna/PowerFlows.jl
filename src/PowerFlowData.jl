@@ -561,10 +561,7 @@ function PowerFlowData(
         # Reorder rows of the arc admittance matrices to match the BA matrix arc
         # axis ordering (which is what get_arc_axis(data) returns at solve time).
         ba_arcs = PNM.get_arc_axis(aux_network_matrix)
-        ybus_arc_lookup = Dict(
-            arc => i
-            for (i, arc) in enumerate(PNM.get_arc_axis(ybus.arc_admittance_from_to))
-        )
+        ybus_arc_lookup = PNM.get_arc_lookup(ybus.arc_admittance_from_to)
         perm = [ybus_arc_lookup[arc] for arc in ba_arcs]
         arc_lossy_from_to = ybus.arc_admittance_from_to.data[perm, :]
         arc_lossy_to_from = ybus.arc_admittance_to_from.data[perm, :]

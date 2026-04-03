@@ -112,6 +112,17 @@ This function modifies the following fields of `data`, setting them to the compu
 - `data.branch_active_power_flow_to_from`: the active power flow from the "to" bus to the "from" bus of each branch
 
 Additionally, it sets `data.converged` to `true`, indicating that the power flow calculation was successful.
+
+# Loss estimation
+
+Losses are estimated differently depending on whether lossy flows are enabled
+(`DCPowerFlow(; lossy_flows = true)`):
+
+- **Lossless (default):** Flows are estimated from `BA' * θ` and losses are approximated as
+  `Rₖ * Pₖ²` (the classical DC loss approximation).
+- **Lossy:** Flows are computed from the arc admittance matrices to match PSS/e's DCPF
+  formulation: `Sft = V_f * conj(Y_ft * V)`, `Stf = V_t * conj(Y_tf * V)`. Losses are
+  then `Pft + Ptf` (the exact real-power balance across each arc).
 """
 # DC flow: ABA and BA case
 function solve_power_flow!(
@@ -128,6 +139,7 @@ function solve_power_flow!(
     data.bus_angles[valid_ix, :] .= p_inj
 
     if data.arc_lossy_admittance_from_to !== nothing
+        # DC assumption: all bus voltage magnitudes are 1.0 p.u., so V = e^(jθ).
         V = exp.(1im .* data.bus_angles)
         arcs = get_arc_axis(data)
         bus_lookup = get_bus_lookup(data)
