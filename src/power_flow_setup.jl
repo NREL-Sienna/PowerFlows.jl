@@ -5,14 +5,11 @@ function improve_x0(pf::ACPowerFlow,
 )
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
-    # FIXME should this be conditional on large residual or not?
-    #if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv)
     prev = findlast(@view(data.converged[1:(time_step - 1)]))
     if !isnothing(prev)
         newx0 = _previous_solution_start(x0, data, prev)
         _pick_better_x0(x0, newx0, time_step, residual, "previous converged solution")
     end
-    #end
     if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
        get_enhanced_flat_start(pf)
         newx0 = _enhanced_flat_start(x0, data, time_step)
