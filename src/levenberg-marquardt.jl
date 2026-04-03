@@ -51,7 +51,7 @@ function _run_power_flow_method(
     @debug "initially: sum of squares $(siground(resSize)), L ∞ norm $(siground(linf)), λ = $λ"
     while i < maxIterations && !converged && !isnan(λ)
         λ = update_damping_factor!(x, residual, J, time_step, maxTestλs)
-        monitor_jacobian && monitor_jacobian_definiteness(J)
+        monitor_jacobian && monitor_jacobian_definiteness(J, time_step)
         converged = !isnan(λ) && norm(residual.Rv, Inf) < tol
         i += 1
     end

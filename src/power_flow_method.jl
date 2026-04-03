@@ -588,7 +588,7 @@ function _run_power_flow_method(time_step::Int,
             vm_validation_range,
             i,
         )
-        monitor_jacobian && monitor_jacobian_definiteness(J)
+        monitor_jacobian && monitor_jacobian_definiteness(J, time_step)
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -668,7 +668,7 @@ function _run_power_flow_method(time_step::Int,
             vm_validation_range,
             i,
         )
-        monitor_jacobian && monitor_jacobian_definiteness(J)
+        monitor_jacobian && monitor_jacobian_definiteness(J, time_step)
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -721,6 +721,8 @@ function _newton_power_flow(
     eta::Float64 = DEFAULT_TRUST_REGION_ETA,
     autoscale::Bool = DEFAULT_AUTOSCALE,
     iwamoto_fallback::Bool = DEFAULT_IWAMOTO_FALLBACK,
+    # diagnostics
+    monitor_jacobian::Bool = false,
     # initialize_power_flow_variables
     x0::Union{Vector{Float64}, Nothing} = nothing,
     _ignored...,
@@ -759,6 +761,7 @@ function _newton_power_flow(
             eta,
             autoscale,
             iwamoto_fallback,
+            monitor_jacobian,
         )
     end
     return _finalize_power_flow(converged, i, string(T), residual, data, J.Jv, time_step)

@@ -103,8 +103,8 @@ function compute_jacobian_diagnostics(
 
     U_diag = LinearAlgebra.diag(K.U)
     abs_pivots = abs.(U_diag)
-    min_piv = length(abs_pivots) > 0 ? minimum(abs_pivots) : 0.0
-    max_piv = length(abs_pivots) > 0 ? maximum(abs_pivots) : 0.0
+    min_piv = minimum(abs_pivots)
+    max_piv = maximum(abs_pivots)
 
     is_sing = numerical_rank < n
     is_ill = !isnan(rcond_val) && rcond_val < tolerance

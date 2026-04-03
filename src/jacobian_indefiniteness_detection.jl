@@ -1,273 +1,273 @@
 """
-    jacobian_indefiniteness_detection.jl
+Voltage stability diagnostics via reduced Jacobian eigenvalues.
 
-Heuristic pivot-sign diagnostics for Jacobian matrices. Uses sparse LU factorization
-(KLU) to count positive, negative, and near-zero pivots in the U factor.
+The reduced Jacobian J_R = J_QV - J_Qθ · J_Pθ⁻¹ · J_PV relates to voltage stability:
+positive definiteness of J_R means the system is voltage-stable. Loss of positive
+definiteness signals a voltage collapse bifurcation.
 
-**Important:** For a general (non-symmetric) matrix, pivot signs from LU factorization
-do NOT correspond to eigenvalue signs. These diagnostics are a fast heuristic for
-detecting potential singularity or mixed-sign pivots, which can indicate convergence
-issues in Newton-type solvers. They should not be interpreted as eigenvalue inertia
-or used to claim positive/negative definiteness of non-symmetric matrices.
-
-Key Methods:
-- Pivot-sign counting via sparse LU factorization (exploits sparsity)
-- Quick mixed-pivot checks (heuristic for potential convergence issues)
-- Symmetric-part pivot analysis via LU on (J + J^T)/2
+Uses ARPACK (implicitly restarted Lanczos) to compute extreme eigenvalues of J_R
+without materializing the dense reduced Jacobian. The operator v -> J_R v is applied
+via sparse sub-block multiplies and a KLU factorization of J_Pθ.
 """
 
 """
-    PivotSignResult
+    DefinitenessResult
 
-Result of pivot-sign analysis from sparse LU factorization.
-
-The counts refer to signs of diagonal entries in the U factor of the LU decomposition,
-NOT eigenvalues. For non-symmetric matrices, pivot signs are a heuristic indicator
-and do not determine definiteness.
-
-Fields:
-- `n_positive::Int`: Number of positive pivots in U
-- `n_negative::Int`: Number of negative pivots in U
-- `n_zero::Int`: Number of near-zero pivots in U (within tolerance)
-- `tolerance::Float64`: Tolerance used for near-zero pivot detection
-- `success::Bool`: True if factorization succeeded; false if it failed
+Result of eigenvalue-based definiteness analysis on the reduced Jacobian.
 """
-struct PivotSignResult
-    n_positive::Int
-    n_negative::Int
-    n_zero::Int
-    tolerance::Float64
-    success::Bool
+struct DefinitenessResult
+    is_positive_definite::Bool
+    is_negative_definite::Bool
+    smallest_eigenvalue::Float64
+    largest_eigenvalue::Float64
+    nearest_zero_eigenvalue::Float64
 end
 
-# Keep InertiaResult as an alias for backward compatibility
-const InertiaResult = PivotSignResult
+is_indefinite(r::DefinitenessResult) = !r.is_positive_definite && !r.is_negative_definite
 
-has_mixed_sign_pivots(r::PivotSignResult) =
-    r.success && (r.n_positive > 0) && (r.n_negative > 0)
-all_pivots_positive(r::PivotSignResult) =
-    r.success && (r.n_negative == 0) && (r.n_zero == 0)
-all_pivots_negative(r::PivotSignResult) =
-    r.success && (r.n_positive == 0) && (r.n_zero == 0)
-
-function Base.show(io::IO, r::PivotSignResult)
-    println(io, "PivotSignResult (LU pivot-sign heuristic):")
-    if r.success
-        println(io, "  Positive pivots: $(r.n_positive)")
-        println(io, "  Negative pivots: $(r.n_negative)")
-        println(io, "  Near-zero pivots (tol=$(r.tolerance)): $(r.n_zero)")
-        println(io, "  Mixed-sign pivots: $(has_mixed_sign_pivots(r))")
-        println(io, "  All pivots positive: $(all_pivots_positive(r))")
-        println(io, "  All pivots negative: $(all_pivots_negative(r))")
+function Base.show(io::IO, r::DefinitenessResult)
+    status = if r.is_positive_definite
+        "POSITIVE DEFINITE"
+    elseif r.is_negative_definite
+        "NEGATIVE DEFINITE"
     else
-        println(io, "  Factorization FAILED — results are unknown")
-        println(io, "  Matrix is likely singular or severely ill-conditioned")
+        "INDEFINITE"
     end
+    print(
+        io,
+        "DefinitenessResult: $(status) (λ_min=$(r.smallest_eigenvalue), λ_max=$(r.largest_eigenvalue), λ_nearest_zero=$(r.nearest_zero_eigenvalue))",
+    )
 end
 
 """
-    compute_inertia_via_sparse_lu(J::SparseMatrixCSC{Float64,Int32};
-                                   tolerance::Float64=1e-14) -> PivotSignResult
+    ReducedJacobianOperator
 
-Count the signs of pivots (diagonal of U) from a sparse KLU factorization.
+Matrix-free linear operator representing the symmetric part of the reduced Jacobian:
+    S = (J_R + J_R') / 2,  where  J_R = J_QV - J_Qθ · J_Pθ⁻¹ · J_PV.
 
-This is a fast heuristic that exploits sparsity. For symmetric matrices, pivot signs
-from LU (without pivoting that breaks symmetry) relate to eigenvalue signs via
-Sylvester's law of inertia. For non-symmetric matrices (like the power flow Jacobian),
-pivot signs are NOT eigenvalue signs — use this only as a diagnostic indicator for
-potential singularity or convergence issues.
-
-# Arguments
-- `J::SparseMatrixCSC{Float64,Int32}`: Sparse matrix
-- `tolerance::Float64`: Tolerance for detecting near-zero pivots (default: 1e-14)
-
-# Returns
-- `PivotSignResult`: Pivot-sign counts with a `success` flag.
-  When `success == false`, the factorization failed and counts are set to
-  `n_zero == size(J,1)` (unknown pivots treated as zero).
-
-# Example
-```julia
-result = compute_inertia_via_sparse_lu(J)
-if !result.success
-    @warn "Factorization failed — matrix may be singular"
-elseif has_mixed_sign_pivots(result)
-    @warn "Mixed-sign pivots detected — potential convergence issues"
-end
-```
+Applies `v -> S v = (J_R v + J_R' v) / 2` using sparse sub-block multiplies and
+a single KLU factorization of J_Pθ (transposed solves via `transpose(F)`).
 """
-function compute_inertia_via_sparse_lu(J::SparseMatrixCSC{Float64, Int32};
-    tolerance::Float64 = 1e-14)
-    n = size(J, 1)
+struct ReducedJacobianOperator
+    J_QV::SparseMatrixCSC{Float64, J_INDEX_TYPE}
+    J_Qθ::SparseMatrixCSC{Float64, J_INDEX_TYPE}
+    J_PV::SparseMatrixCSC{Float64, J_INDEX_TYPE}
+    # Transposed sub-blocks stored explicitly for fast CSC column access
+    J_QV_t::SparseMatrixCSC{Float64, J_INDEX_TYPE}
+    J_Qθ_t::SparseMatrixCSC{Float64, J_INDEX_TYPE}
+    J_PV_t::SparseMatrixCSC{Float64, J_INDEX_TYPE}
+    F_Pθ::KLU.KLUFactorization{Float64, J_INDEX_TYPE}
+    n::Int
+    n_pvpq::Int
+    # work buffers
+    tmp_pvpq::Vector{Float64}   # length n_pvpq
+    tmp_pvpq2::Vector{Float64}  # length n_pvpq, for transpose path
+    tmp_pq::Vector{Float64}     # length n_pq
+end
 
-    try
-        F = KLU.klu(J)
-        U = F.U
+Base.size(op::ReducedJacobianOperator) = (op.n, op.n)
+Base.size(op::ReducedJacobianOperator, d::Integer) = d <= 2 ? op.n : 1
+Base.eltype(::ReducedJacobianOperator) = Float64
+LinearAlgebra.issymmetric(::ReducedJacobianOperator) = true
+LinearAlgebra.checksquare(op::ReducedJacobianOperator) = op.n
 
-        # Single pass over U diagonal to count pivot signs
-        n_positive = 0
-        n_negative = 0
-        n_zero = 0
-        for col in 1:n
-            # Last nonzero in each column of upper triangular U is the diagonal
-            col_end = U.colptr[col + 1] - 1
-            if col_end >= U.colptr[col] && U.rowval[col_end] == col
-                val = U.nzval[col_end]
-                if val > tolerance
-                    n_positive += 1
-                elseif val < -tolerance
-                    n_negative += 1
-                else
-                    n_zero += 1
-                end
-            else
-                n_zero += 1
-            end
-        end
+function LinearAlgebra.mul!(
+    y::AbstractVector{Float64},
+    op::ReducedJacobianOperator,
+    x::AbstractVector{Float64},
+)
+    # Compute J_R v:  y = J_QV * x - J_Qθ * (J_Pθ \ (J_PV * x))
+    mul!(op.tmp_pvpq, op.J_PV, x)
+    ldiv!(op.F_Pθ, op.tmp_pvpq)
+    mul!(y, op.J_QV, x)
+    mul!(y, op.J_Qθ, op.tmp_pvpq, -1.0, 1.0)
 
-        return PivotSignResult(n_positive, n_negative, n_zero, tolerance, true)
-    catch e
-        @warn "LU factorization failed: $(e). Matrix may be singular or ill-conditioned."
-        return PivotSignResult(0, 0, n, tolerance, false)
+    # Compute J_R' v:  tmp_pq = J_QV' * x - J_PV' * (J_Pθ' \ (J_Qθ' * x))
+    mul!(op.tmp_pvpq2, op.J_Qθ_t, x)
+    ldiv!(transpose(op.F_Pθ), op.tmp_pvpq2)
+    mul!(op.tmp_pq, op.J_QV_t, x)
+    mul!(op.tmp_pq, op.J_PV_t, op.tmp_pvpq2, -1.0, 1.0)
+
+    # y = (J_R v + J_R' v) / 2
+    y .= (y .+ op.tmp_pq) ./ 2
+    return y
+end
+
+"""
+    ReducedJacobianCache
+
+Pre-allocated workspace for extracting sub-blocks of the interleaved full Jacobian
+and building the [`ReducedJacobianOperator`](@ref). Reuse across iterations.
+"""
+mutable struct ReducedJacobianCache
+    P_row_mask::BitVector
+    Q_row_mask::BitVector
+    θ_col_mask::BitVector
+    V_col_mask::BitVector
+    n_pvpq::Int
+    n_pq::Int
+end
+
+function ReducedJacobianCache(data::ACPowerFlowData, time_step::Integer)
+    bus_types = @view data.bus_type[:, time_step]
+    n_bus = size(data.bus_type, 1)
+    pvpq_mask = bus_types .!= (PSY.ACBusTypes.REF,)
+    pq_mask = bus_types .== (PSY.ACBusTypes.PQ,)
+
+    n_pvpq = count(pvpq_mask)
+    n_pq = count(pq_mask)
+
+    odd = repeat([true, false]; outer = n_bus)
+    even = repeat([false, true]; outer = n_bus)
+    pvpq_interleaved = repeat(pvpq_mask; inner = 2)
+    pq_interleaved = repeat(pq_mask; inner = 2)
+
+    return ReducedJacobianCache(
+        pvpq_interleaved .& odd,    # P rows (pvpq)
+        pq_interleaved .& even,     # Q rows (pq)
+        pvpq_interleaved .& even,   # θ cols (pvpq)
+        pq_interleaved .& odd,      # V cols (pq)
+        n_pvpq,
+        n_pq,
+    )
+end
+
+"""
+    build_reduced_jacobian_operator(cache, Jv) -> ReducedJacobianOperator
+
+Build the matrix-free operator for J_R from the full interleaved Jacobian.
+"""
+function build_reduced_jacobian_operator(
+    cache::ReducedJacobianCache,
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
+)
+    J_Pθ = Jv[cache.P_row_mask, cache.θ_col_mask]
+    J_PV = Jv[cache.P_row_mask, cache.V_col_mask]
+    J_Qθ = Jv[cache.Q_row_mask, cache.θ_col_mask]
+    J_QV = Jv[cache.Q_row_mask, cache.V_col_mask]
+
+    F_Pθ = KLU.klu(J_Pθ)
+
+    return ReducedJacobianOperator(
+        J_QV, J_Qθ, J_PV,
+        SparseMatrixCSC{Float64, J_INDEX_TYPE}(J_QV'),
+        SparseMatrixCSC{Float64, J_INDEX_TYPE}(J_Qθ'),
+        SparseMatrixCSC{Float64, J_INDEX_TYPE}(J_PV'),
+        F_Pθ,
+        cache.n_pq,
+        cache.n_pvpq,
+        Vector{Float64}(undef, cache.n_pvpq),
+        Vector{Float64}(undef, cache.n_pvpq),
+        Vector{Float64}(undef, cache.n_pq),
+    )
+end
+
+"""
+    check_definiteness(cache, Jv; nev, tol) -> DefinitenessResult
+
+Check whether the reduced Jacobian is positive definite, negative definite,
+or indefinite by computing extreme eigenvalues with ARPACK.
+
+Returns both the classification and the actual smallest/largest eigenvalues.
+"""
+function check_definiteness(
+    cache::ReducedJacobianCache,
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE};
+    nev::Int = 1,
+    ncv::Int = max(40, 2 * nev + 1),
+    maxiter::Int = 1000,
+    tol::Float64 = 0.0,
+)
+    if cache.n_pq == 0
+        return DefinitenessResult(true, false, Inf, -Inf, Inf)
     end
+    if cache.n_pq <= ncv + 1
+        return _check_definiteness_dense(cache, Jv)
+    end
+
+    # TODO: could accept an existing ReducedJacobianOperator and reuse it
+    # between calls (e.g. across Newton iterations), re-factorizing J_Pθ in place.
+    op = build_reduced_jacobian_operator(cache, Jv)
+
+    v0 = zeros(Float64, 0)
+
+    # smallest algebraic eigenvalue (most negative)
+    λ_sm, = Arpack.eigs(op; nev = nev, ncv = ncv, which = :SR,
+        tol = tol, maxiter = maxiter, v0 = v0)
+    λ_min = real(λ_sm[end])
+
+    # largest algebraic eigenvalue (most positive)
+    λ_lg, = Arpack.eigs(op; nev = nev, ncv = ncv, which = :LR,
+        tol = tol, maxiter = maxiter, v0 = v0)
+    λ_max = real(λ_lg[1])
+
+    # eigenvalue nearest to zero (smallest magnitude)
+    λ_nz, = Arpack.eigs(op; nev = nev, ncv = ncv, which = :SM,
+        tol = tol, maxiter = maxiter, v0 = v0)
+    λ_nearest_zero = real(λ_nz[1])
+
+    is_pd = λ_min > 0
+    is_nd = λ_max < 0
+    return DefinitenessResult(is_pd, is_nd, λ_min, λ_max, λ_nearest_zero)
+end
+
+function _check_definiteness_dense(
+    cache::ReducedJacobianCache,
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
+)
+    J_Pθ = Jv[cache.P_row_mask, cache.θ_col_mask]
+    J_PV = Jv[cache.P_row_mask, cache.V_col_mask]
+    J_Qθ = Jv[cache.Q_row_mask, cache.θ_col_mask]
+    J_QV = Jv[cache.Q_row_mask, cache.V_col_mask]
+    J_R = Matrix(J_QV) - Matrix(J_Qθ) * (Matrix(J_Pθ) \ Matrix(J_PV))
+    S = LinearAlgebra.Symmetric((J_R + J_R') ./ 2)
+    λs = LinearAlgebra.eigvals(S)
+    λ_min = first(λs)
+    λ_max = last(λs)
+    _, idx = findmin(abs, λs)
+    λ_nearest_zero = λs[idx]
+    return DefinitenessResult(λ_min > 0, λ_max < 0, λ_min, λ_max, λ_nearest_zero)
+end
+
+function check_definiteness(jacobian::ACPowerFlowJacobian, time_step::Integer; kwargs...)
+    cache = ReducedJacobianCache(jacobian.data, time_step)
+    return check_definiteness(cache, jacobian.Jv; kwargs...)
 end
 
 """
-    is_jacobian_indefinite(J::SparseMatrixCSC{Float64,Int32};
-                          tolerance::Float64=1e-14) -> Bool
-
-Heuristic check: returns `true` if the LU pivots have mixed signs.
-
-This does NOT determine eigenvalue indefiniteness for non-symmetric matrices.
-It is a fast diagnostic for detecting potential convergence issues.
+    get_definiteness_report(jacobian::ACPowerFlowJacobian, time_step::Integer) -> String
 """
-function is_jacobian_indefinite(J::SparseMatrixCSC{Float64, Int32};
-    tolerance::Float64 = 1e-14)
-    result = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
-    return has_mixed_sign_pivots(result)
-end
-
-"""
-    is_positive_definite(J::SparseMatrixCSC{Float64,Int32};
-                        tolerance::Float64=1e-14) -> Bool
-
-Heuristic check: returns `true` if all LU pivots are positive.
-
-For non-symmetric matrices, all-positive pivots do NOT guarantee positive definiteness.
-This is a necessary condition only for symmetric positive definite matrices with
-no pivoting.
-"""
-function is_positive_definite(J::SparseMatrixCSC{Float64, Int32};
-    tolerance::Float64 = 1e-14)
-    result = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
-    return all_pivots_positive(result)
-end
-
-"""
-    is_negative_definite(J::SparseMatrixCSC{Float64,Int32};
-                        tolerance::Float64=1e-14) -> Bool
-
-Heuristic check: returns `true` if all LU pivots are negative.
-
-For non-symmetric matrices, all-negative pivots do NOT guarantee negative definiteness.
-"""
-function is_negative_definite(J::SparseMatrixCSC{Float64, Int32};
-    tolerance::Float64 = 1e-14)
-    result = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
-    return all_pivots_negative(result)
-end
-
-"""
-    check_jacobian_symmetric_part(J::SparseMatrixCSC{Float64,Int32};
-                                  tolerance::Float64=1e-14) -> PivotSignResult
-
-Analyze the LU pivot signs of the symmetric part (J + J^T) / 2.
-
-For symmetric matrices, LU pivot signs are more meaningful as a definiteness
-diagnostic (though row-pivoting can still change signs). This computes
-the symmetric part and runs the pivot-sign analysis on it.
-"""
-function check_jacobian_symmetric_part(J::SparseMatrixCSC{Float64, Int32};
-    tolerance::Float64 = 1e-14)
-    J_symmetric = (J + J') ./ 2
-    return compute_inertia_via_sparse_lu(J_symmetric; tolerance = tolerance)
-end
-
-"""
-    quick_indefiniteness_check(jacobian::ACPowerFlowJacobian;
-                              tolerance::Float64=1e-14) -> Bool
-
-Convenience wrapper: checks if the Jacobian's LU pivots have mixed signs.
-"""
-function quick_indefiniteness_check(jacobian::ACPowerFlowJacobian;
-    tolerance::Float64 = 1e-14)
-    return is_jacobian_indefinite(jacobian.Jv; tolerance = tolerance)
-end
-
-"""
-    _format_pivot_sign_section(label::String, r::PivotSignResult,
-                               tolerance::Float64) -> String
-
-Format a section of the pivot-sign report for a single matrix analysis.
-"""
-function _format_pivot_sign_section(label::String, r::PivotSignResult,
-    tolerance::Float64)
+function get_definiteness_report(jacobian::ACPowerFlowJacobian, time_step::Integer)
+    cache = ReducedJacobianCache(jacobian.data, time_step)
+    result = check_definiteness(cache, jacobian.Jv)
+    n = size(jacobian.Jv, 1)
+    definiteness = if result.is_positive_definite
+        "POSITIVE DEFINITE"
+    elseif result.is_negative_definite
+        "NEGATIVE DEFINITE"
+    else
+        "INDEFINITE"
+    end
     return """
-      $(label):
-      ────────────────────────────────────────────────────────────
-        Positive pivots: $(r.n_positive)
-        Negative pivots: $(r.n_negative)
-        Near-zero pivots (tol=$(tolerance)): $(r.n_zero)
-        Factorization: $(r.success ? "OK" : "FAILED")
-        Status: $(has_mixed_sign_pivots(r) ? "MIXED-SIGN PIVOTS" :
-                (all_pivots_positive(r) ? "All pivots positive" :
-                (all_pivots_negative(r) ? "All pivots negative" : "Has near-zero pivots")))
-    """
+    Reduced Jacobian Definiteness Report
+    ────────────────────────────────────────────
+      Full Jacobian:     $(n)×$(n)
+      Reduced J_R:       $(cache.n_pq)×$(cache.n_pq) (PQ buses, matrix-free)
+      Definiteness:      $(definiteness)
+      λ_min:             $(result.smallest_eigenvalue)
+      λ_max:             $(result.largest_eigenvalue)
+      λ_nearest_zero:    $(result.nearest_zero_eigenvalue)
+    ────────────────────────────────────────────"""
 end
 
 """
-    get_inertia_report(J::SparseMatrixCSC{Float64,Int32};
-                      tolerance::Float64=1e-14) -> String
+    monitor_jacobian_definiteness(jacobian::ACPowerFlowJacobian, time_step::Integer) -> DefinitenessResult
 
-Generate a text report of LU pivot-sign diagnostics for the matrix and its
-symmetric part. Useful for debugging convergence issues.
+Run reduced Jacobian definiteness diagnostics and log the result.
+Called from solver loops when `monitor_jacobian = true`.
 """
-function get_inertia_report(J::SparseMatrixCSC{Float64, Int32};
-    tolerance::Float64 = 1e-14)
-    result = compute_inertia_via_sparse_lu(J; tolerance = tolerance)
-    sym_result = check_jacobian_symmetric_part(J; tolerance = tolerance)
-    return _format_inertia_report(J, result, sym_result, tolerance)
-end
-
-function _format_inertia_report(J::SparseMatrixCSC{Float64, Int32},
-    result::PivotSignResult, sym_result::PivotSignResult,
-    tolerance::Float64)
-    n = size(J, 1)
-    nz = SparseArrays.nnz(J)
-    sparsity = 1.0 - nz / (n * n)
-
-    return """
-    ═══════════════════════════════════════════════════════════
-    Jacobian Matrix Pivot-Sign Diagnostic Report
-    ═══════════════════════════════════════════════════════════
-    Matrix Dimensions: $(n) × $(n)
-    Non-zeros: $(nz) (sparsity: $(round(sparsity*100; digits=2))%)
-
-    $(_format_pivot_sign_section("Full Jacobian J (LU pivot signs — heuristic only)", result, tolerance))
-    $(_format_pivot_sign_section("Symmetric Part (J + J^T)/2 (LU pivot signs)", sym_result, tolerance))
-    ═══════════════════════════════════════════════════════════
-    """
-end
-
-"""
-    monitor_jacobian_definiteness(jacobian::ACPowerFlowJacobian) -> PivotSignResult
-
-Run pivot-sign diagnostics for a power flow Jacobian and log the results.
-"""
-function monitor_jacobian_definiteness(jacobian::ACPowerFlowJacobian)
-    J = jacobian.Jv
-    result = compute_inertia_via_sparse_lu(J)
-    sym_result = check_jacobian_symmetric_part(J)
-    @info _format_inertia_report(J, result, sym_result, result.tolerance)
+function monitor_jacobian_definiteness(jacobian::ACPowerFlowJacobian, time_step::Integer)
+    result = check_definiteness(jacobian, time_step)
+    @info "Reduced Jacobian definiteness: $(result)"
     return result
 end

@@ -46,6 +46,7 @@ import StaticArrays: MVector
 import DataStructures: OrderedDict
 import Dates
 import LineSearches: BackTracking
+import Arpack
 
 include("definitions.jl")
 include("branch_flow_results.jl")
