@@ -268,11 +268,10 @@ or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.
 - `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
 - `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
     Default is `false`.
-- `loss_approximation_as_injection::Bool`: When `true`, pre-compute branch losses from the system's AC
-    voltage profile and inject them as load at each branch's sending-end bus before the
-    B′θ = P solve. Requires an
-    AC-solved voltage profile in the system; on a flat-start case (V=1, θ=0) this
-    degenerates to standard lossless DCLF. Default is `false`.
+- `lossy_flows::Bool`: When `true`, branch flows are computed from the DC-solved bus angles
+    using the full π-model arc admittance matrices (`Y_ft`, `Y_tf`), giving asymmetric
+    `P_from_to` and `P_to_from` that include resistive losses. When `false` (default),
+    flows are computed from the lossless `BA·θ` formula, which is symmetric.
 """
 @kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
@@ -280,11 +279,8 @@ or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.
     time_steps::Int = 1
     time_step_names::Vector{String} = String[]
     correct_bustypes::Bool = false
-    loss_approximation_as_injection::Bool = false
+    lossy_flows::Bool = false
 end
-
-get_loss_approximation_as_injection(pf::DCPowerFlow) = pf.loss_approximation_as_injection
-get_loss_approximation_as_injection(::AbstractDCPowerFlow) = false
 
 """
     PTDFDCPowerFlow(; kwargs...)
@@ -354,3 +350,4 @@ get_calculate_loss_factors(pf::PTDFDCPowerFlow) = pf.calculate_loss_factors
 get_calculate_loss_factors(pf::vPTDFDCPowerFlow) = pf.calculate_loss_factors
 
 # see also: PSSEExportPowerFlow in psse_export.jl
+get_lossy_flows(pf::DCPowerFlow) = pf.lossy_flows

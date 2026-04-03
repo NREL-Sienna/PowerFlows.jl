@@ -132,7 +132,8 @@ struct PowerFlowData{
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
     arc_active_power_losses::Union{Matrix{Float64}, Nothing}
     lcc::LCCParameters
-    initial_loss_injections::Union{Matrix{Float64}, Nothing}
+    arc_lossy_admittance_from_to::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing}
+    arc_lossy_admittance_to_from::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing}
 end
 
 # aliases for specific type parameter combinations.
@@ -213,7 +214,6 @@ get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
 get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
 get_arc_active_power_losses(pfd::PowerFlowData) = pfd.arc_active_power_losses
-get_initial_loss_injections(pfd::PowerFlowData) = pfd.initial_loss_injections
 
 # Field getter for expanded slack participation factors (one dict per time step)
 # Named "computed" to distinguish from the user-supplied pf.generator_slack_participation_factors
@@ -299,10 +299,6 @@ _make_arc_active_power_losses(::AbstractDCPowerFlow, n_arcs, n_time_steps) =
     zeros(n_arcs, n_time_steps)
 _make_arc_active_power_losses(::PowerFlowEvaluationModel, n_arcs, n_time_steps) = nothing
 
-_make_initial_loss_injections(pf::DCPowerFlow, n_buses, n_time_steps) =
-    get_loss_approximation_as_injection(pf) ? zeros(n_buses, n_time_steps) : nothing
-_make_initial_loss_injections(::PowerFlowEvaluationModel, _, _) = nothing
-
 """
 Sets the two `PowerNetworkMatrix` fields and a few others (`time_steps`, `time_step_map`),
 then creates arrays of default values (usually zeros) for the rest.
@@ -313,6 +309,8 @@ function PowerFlowData(
     aux_network_matrix::N,
     n_lccs::Int;
     neighbors = Vector{Set{Int}}(),
+    arc_lossy_admittance_from_to::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing} = nothing,
+    arc_lossy_admittance_to_from::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing} = nothing,
 ) where {
     T <: PowerFlowEvaluationModel,
     M <: PNM.PowerNetworkMatrix,
@@ -368,7 +366,8 @@ function PowerFlowData(
         calculate_voltage_stability_factors ? zeros(n_buses, n_time_steps) : nothing, # voltage_stability_factors
         _make_arc_active_power_losses(pf, n_arcs, n_time_steps), # arc_active_power_losses
         lcc_parameters,
-        _make_initial_loss_injections(pf, n_buses, n_time_steps), # initial_loss_injections
+        arc_lossy_admittance_from_to,
+        arc_lossy_admittance_to_from,
     )
 end
 
@@ -446,6 +445,8 @@ function make_and_initialize_power_flow_data(
     power_network_matrix::M,
     aux_network_matrix::N;
     neighbors = Vector{Set{Int}}(),
+    arc_lossy_admittance_from_to::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing} = nothing,
+    arc_lossy_admittance_to_from::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing} = nothing,
 ) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
     check_unit_setting(sys)
     n_lccs = length(PSY.get_available_components(PSY.TwoTerminalLCCLine, sys))
@@ -455,10 +456,11 @@ function make_and_initialize_power_flow_data(
         aux_network_matrix,
         n_lccs;
         neighbors = neighbors,
+        arc_lossy_admittance_from_to = arc_lossy_admittance_from_to,
+        arc_lossy_admittance_to_from = arc_lossy_admittance_to_from,
     )
     @assert length(data.lcc.setpoint_at_rectifier) == n_lccs
     initialize_power_flow_data!(data, pf, sys; correct_bustypes = get_correct_bustypes(pf))
-    _populate_loss_injections!(data, sys)
     return data
 end
 
@@ -547,15 +549,37 @@ function PowerFlowData(
 )
     network_reductions = get_network_reductions(pf)
     network_reduction_message(network_reductions, pf)
-    # get the network matrices
-    ybus = PNM.Ybus(sys; network_reductions = network_reductions)
+    ybus = PNM.Ybus(
+        sys;
+        network_reductions = network_reductions,
+        make_arc_admittance_matrices = pf.lossy_flows,
+    )
     power_network_matrix = PNM.ABA_Matrix(ybus; factorize = true)
     aux_network_matrix = PNM.BA_Matrix(ybus)
+
+    if pf.lossy_flows
+        # Reorder rows of the arc admittance matrices to match the BA matrix arc
+        # axis ordering (which is what get_arc_axis(data) returns at solve time).
+        ba_arcs = PNM.get_arc_axis(aux_network_matrix)
+        ybus_arc_lookup = Dict(
+            arc => i
+            for (i, arc) in enumerate(PNM.get_arc_axis(ybus.arc_admittance_from_to))
+        )
+        perm = [ybus_arc_lookup[arc] for arc in ba_arcs]
+        arc_lossy_from_to = ybus.arc_admittance_from_to.data[perm, :]
+        arc_lossy_to_from = ybus.arc_admittance_to_from.data[perm, :]
+    else
+        arc_lossy_from_to = nothing
+        arc_lossy_to_from = nothing
+    end
+
     return make_and_initialize_power_flow_data(
         pf,
         sys,
         power_network_matrix,
-        aux_network_matrix,
+        aux_network_matrix;
+        arc_lossy_admittance_from_to = arc_lossy_from_to,
+        arc_lossy_admittance_to_from = arc_lossy_to_from,
     )
 end
 
