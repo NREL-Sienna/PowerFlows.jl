@@ -119,29 +119,35 @@ function solve_power_flow!(
 )
     solver_cache = KLULinSolveCache(data.power_network_matrix.data)
     full_factor!(solver_cache, data.power_network_matrix.data)
-    # get net injections
+
     power_injections = data.bus_active_power_injections - data.bus_active_power_withdrawals
     power_injections .+= data.bus_hvdc_net_power
-    # Pre-computed loss injections from AC base case.
-    if data.initial_loss_injections !== nothing
-        power_injections .+= data.initial_loss_injections
-    end
-    # save angles and power flows
     valid_ix = get_valid_ix(data)
     p_inj = power_injections[valid_ix, :]
     solve!(solver_cache, p_inj)
     data.bus_angles[valid_ix, :] .= p_inj
-    data.arc_active_power_flow_from_to .= data.aux_network_matrix.data' * data.bus_angles
-    data.arc_active_power_flow_to_from .= -data.arc_active_power_flow_from_to
-    # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
-    _compute_arc_angle_differences_from_data!(data)
-    Rs = _get_arc_resistances(data)
-    data.arc_active_power_losses .= Rs .* data.arc_active_power_flow_from_to .^ 2
-    # When loss injections are active, adjust to_from so that
-    # P_from_to + P_to_from = P_loss (matching the AC sign convention).
-    if data.initial_loss_injections !== nothing
-        data.arc_active_power_flow_to_from .+= data.arc_active_power_losses
+
+    if data.arc_lossy_admittance_from_to !== nothing
+        V = exp.(1im .* data.bus_angles)
+        arcs = get_arc_axis(data)
+        bus_lookup = get_bus_lookup(data)
+        fb_ix = [bus_lookup[first(arc)] for arc in arcs]
+        tb_ix = [bus_lookup[last(arc)] for arc in arcs]
+        Sft = V[fb_ix, :] .* conj.(data.arc_lossy_admittance_from_to * V)
+        Stf = V[tb_ix, :] .* conj.(data.arc_lossy_admittance_to_from * V)
+        data.arc_active_power_flow_from_to .= real.(Sft)
+        data.arc_active_power_flow_to_from .= real.(Stf)
+        # True losses come directly from the admittance calculation.
+        data.arc_active_power_losses .=
+            data.arc_active_power_flow_from_to .+ data.arc_active_power_flow_to_from
+    else
+        data.arc_active_power_flow_from_to .=
+            data.aux_network_matrix.data' * data.bus_angles
+        data.arc_active_power_flow_to_from .= -data.arc_active_power_flow_from_to
+        Rs = _get_arc_resistances(data)
+        data.arc_active_power_losses .= Rs .* data.arc_active_power_flow_from_to .^ 2
     end
+    _compute_arc_angle_differences_from_data!(data)
     data.converged .= true
     return
 end
