@@ -132,8 +132,8 @@ struct PowerFlowData{
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
     arc_active_power_losses::Union{Matrix{Float64}, Nothing}
     lcc::LCCParameters
-    arc_lossy_admittance_from_to::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing}
-    arc_lossy_admittance_to_from::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing}
+    arc_lossy_admittance_from_to::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing}
+    arc_lossy_admittance_to_from::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing}
 end
 
 # aliases for specific type parameter combinations.
@@ -309,8 +309,8 @@ function PowerFlowData(
     aux_network_matrix::N,
     n_lccs::Int;
     neighbors = Vector{Set{Int}}(),
-    arc_lossy_admittance_from_to::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing} = nothing,
-    arc_lossy_admittance_to_from::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing} = nothing,
+    arc_lossy_admittance_from_to::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing} = nothing,
+    arc_lossy_admittance_to_from::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing} = nothing,
 ) where {
     T <: PowerFlowEvaluationModel,
     M <: PNM.PowerNetworkMatrix,
@@ -445,8 +445,8 @@ function make_and_initialize_power_flow_data(
     power_network_matrix::M,
     aux_network_matrix::N;
     neighbors = Vector{Set{Int}}(),
-    arc_lossy_admittance_from_to::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing} = nothing,
-    arc_lossy_admittance_to_from::Union{SparseMatrixCSC{ComplexF32, Int}, Nothing} = nothing,
+    arc_lossy_admittance_from_to::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing} = nothing,
+    arc_lossy_admittance_to_from::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing} = nothing,
 ) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
     check_unit_setting(sys)
     n_lccs = length(PSY.get_available_components(PSY.TwoTerminalLCCLine, sys))
