@@ -37,6 +37,7 @@ import KLU
 import SparseArrays
 import InfrastructureSystems as IS
 import PowerNetworkMatrices as PNM
+import PowerNetworkMatrices: YBUS_ELTYPE
 import SparseArrays:
     SparseMatrixCSC, SparseVector, sparse, sparsevec, AbstractSparseMatrix, spzeros
 import StaticArrays: MVector
