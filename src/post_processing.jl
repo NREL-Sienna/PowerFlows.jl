@@ -938,7 +938,7 @@ function _post_process_flows(
     arc_P_losses::Vector{Float64},
     arc_Q_losses::Vector{Float64},
     arc_angle_diff::Vector{Float64};
-    kwargs...,
+    time_step::Int = 1,
 )
     arc_lookup = get_arc_lookup(data)
     result = BranchFlowResults(length(arc_lookup))
@@ -972,7 +972,7 @@ function _post_process_flows(
     arc_P_losses::Vector{Float64},
     arc_Q_losses::Vector{Float64},
     arc_angle_diff::Vector{Float64};
-    kwargs...,
+    time_step::Int = 1,
 )
     nrd = data.power_network_matrix.network_reduction_data
     arc_lookup = get_arc_lookup(data)
@@ -1000,8 +1000,9 @@ function _post_process_flows(
                 arc_P_from_to,
                 arc_Q_from_to,
                 arc_P_to_from,
-                arc_Q_to_from;
-                kwargs...,
+                arc_Q_to_from,
+                arc_P_losses,
+                time_step,
             )
                 push!(result, flow_entry)
                 result.angle_diff[result.count] = arc_angle_diff[ix_arc]
@@ -1013,17 +1014,19 @@ function _post_process_flows(
 end
 
 """Non-AC: distribute pre-computed arc-level flows to individual branches.
-Losses are computed per-segment inside `_distribute_arc_flows`."""
+When `arc_P_losses` are provided (e.g. from lossy DC power flow), they are passed
+through to `_distribute_arc_flows` instead of being recomputed as `R·P²`."""
 function _branch_flow_entries(
     entry,
     data::PowerFlowData,
-    arc,
-    arc_lookup,
-    arc_P_from_to,
-    arc_Q_from_to,
-    arc_P_to_from,
-    arc_Q_to_from;
-    kwargs...,
+    arc::Tuple{Int, Int},
+    arc_lookup::Dict{Tuple{Int, Int}, Int},
+    arc_P_from_to::Vector{Float64},
+    arc_Q_from_to::Vector{Float64},
+    arc_P_to_from::Vector{Float64},
+    arc_Q_to_from::Vector{Float64},
+    arc_P_losses::Vector{Float64},
+    ::Int,
 )
     ix_arc = arc_lookup[arc]
     return _distribute_arc_flows(
@@ -1032,6 +1035,7 @@ function _branch_flow_entries(
         arc_Q_from_to[ix_arc],
         arc_P_to_from[ix_arc],
         arc_Q_to_from[ix_arc],
+        arc_P_losses[ix_arc],
     )
 end
 
@@ -1039,29 +1043,30 @@ end
 function _branch_flow_entries(
     entry,
     data::ACPowerFlowData,
-    arc,
-    arc_lookup,
-    arc_P_from_to,
-    arc_Q_from_to,
-    arc_P_to_from,
-    arc_Q_to_from;
-    time_step::Int = 1,
+    arc::Tuple{Int, Int},
+    ::Dict{Tuple{Int, Int}, Int},
+    ::Vector{Float64},
+    ::Vector{Float64},
+    ::Vector{Float64},
+    ::Vector{Float64},
+    ::Vector{Float64},
+    time_step::Int,
 )
     return _compute_segment_flows(entry, data, arc, time_step)
 end
 
 """Distribute pre-computed arc-level flows to individual branches for non-AC power flow.
 Returns a `Vector{BranchFlowEntry}`, analogous to `_compute_segment_flows` for AC.
-Losses are computed per-segment as `R * flow^2`."""
+Uses the precomputed `arc_P_losses` (e.g. from lossy DC `P_ft + P_tf`) directly."""
 function _distribute_arc_flows(
     arc_entry::PSY.ACTransmission,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
     Q_to_from::Float64,
+    arc_P_losses::Float64,
 )
     arc_tuple = PNM.get_arc_tuple(arc_entry)
-    P_losses = PSY.get_r(arc_entry) * P_from_to^2
     return [
         BranchFlowEntry((
             PNM.get_name(arc_entry),
@@ -1069,7 +1074,7 @@ function _distribute_arc_flows(
             arc_tuple[2],
             P_from_to,
             P_to_from,
-            P_losses,
+            arc_P_losses,
             Q_from_to,
             Q_to_from,
             0.0,
@@ -1083,9 +1088,9 @@ function _distribute_arc_flows(
     Q_from_to::Float64,
     P_to_from::Float64,
     Q_to_from::Float64,
+    arc_P_losses::Float64,
 )
     arc_tuple = PNM.get_arc_tuple(arc_entry)
-    P_losses = PNM.get_equivalent_r(arc_entry) * P_from_to^2
     return [
         BranchFlowEntry((
             PNM.get_name(arc_entry),
@@ -1093,7 +1098,7 @@ function _distribute_arc_flows(
             arc_tuple[2],
             P_from_to,
             P_to_from,
-            P_losses,
+            arc_P_losses,
             Q_from_to,
             Q_to_from,
             0.0,
@@ -1107,6 +1112,7 @@ function _distribute_arc_flows(
     Q_from_to::Float64,
     P_to_from::Float64,
     Q_to_from::Float64,
+    arc_P_losses::Float64,
 )
     entries = BranchFlowEntry[]
     for br in arc_entry
@@ -1114,7 +1120,6 @@ function _distribute_arc_flows(
         m = PNM.compute_parallel_multiplier(arc_entry, PNM.get_name(br))
         P_ft = P_from_to * m
         P_tf = P_to_from * m
-        P_losses = PSY.get_r(br) * P_ft^2
         push!(
             entries,
             BranchFlowEntry((
@@ -1123,7 +1128,7 @@ function _distribute_arc_flows(
                 arc_tuple[2],
                 P_ft,
                 P_tf,
-                P_losses,
+                arc_P_losses * m,
                 Q_from_to * m,
                 Q_to_from * m,
                 0.0,
@@ -1139,8 +1144,10 @@ function _distribute_arc_flows(
     Q_from_to::Float64,
     P_to_from::Float64,
     Q_to_from::Float64,
+    arc_P_losses::Float64,
 )
     entries = BranchFlowEntry[]
+    n_segments = length(arc_entry)
     for (segment_ix, segment) in enumerate(arc_entry)
         m = arc_entry.segment_orientations[segment_ix] == :ToFrom ? -1.0 : 1.0
         for entry in _distribute_arc_flows(
@@ -1149,6 +1156,7 @@ function _distribute_arc_flows(
             Q_from_to * m,
             P_to_from * m,
             Q_to_from * m,
+            arc_P_losses / n_segments,
         )
             push!(entries, entry)
         end
