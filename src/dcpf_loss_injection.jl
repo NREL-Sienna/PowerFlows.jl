@@ -20,6 +20,9 @@ _winding_shift(w::PNM.ThreeWindingTransformerWinding{PSY.PhaseShiftingTransforme
     PNM.get_equivalent_α(w)
 _winding_shift(::PNM.ThreeWindingTransformerWinding) = 0.0
 
+_added_impedance_rx(z::Number) = (real(z), imag(z))
+_added_impedance_rx(z::PSY.GenericArcImpedance) = (z.r, z.x)
+
 """
     _get_arc_branch_params(data) -> (rs, xs, taps, shifts)
 
@@ -66,8 +69,9 @@ function _get_arc_branch_params(
             shifts[ix] = _winding_shift(winding)
         elseif haskey(added_map, arc)
             z = added_map[arc]
-            rs[ix] = real(z)
-            xs[ix] = imag(z)
+            r, x = _added_impedance_rx(z)
+            rs[ix] = r
+            xs[ix] = x
         else
             error("Arc $arc not found in any branch map.")
         end
