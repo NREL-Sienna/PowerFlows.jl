@@ -63,6 +63,7 @@ function _compute_bus_active_power_range!(
         limits = get_active_power_limits_for_power_flow(source)
         range_k = limits.max - PSY.get_active_power(source)
         range_k <= 0.0 && continue
+        isfinite(range_k) || continue
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         bus_active_power_range[bus_ix, 1] += range_k
         if generator_headroom !== nothing

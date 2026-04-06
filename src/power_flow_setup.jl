@@ -5,6 +5,11 @@ function improve_x0(pf::ACPowerFlow,
 )
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
+    prev = findlast(@view(data.converged[1:(time_step - 1)]))
+    if !isnothing(prev)
+        newx0 = _previous_solution_start(x0, data, prev)
+        _pick_better_x0(x0, newx0, time_step, residual, "previous converged solution")
+    end
     if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
        get_enhanced_flat_start(pf)
         newx0 = _enhanced_flat_start(x0, data, time_step)
@@ -83,6 +88,18 @@ function calculate_x0(data::ACPowerFlowData,
     x0 = Vector{Float64}(undef, 2 * n_buses + 4 * n_lcc)
     update_state!(x0, data, time_step)
     return x0
+end
+
+"""Use state variables from a previous converged time step (`prev`) as a
+candidate starting point."""
+function _previous_solution_start(
+    x0::Vector{Float64},
+    data::ACPowerFlowData,
+    prev::Int64,
+)
+    newx0 = copy(x0)
+    update_state!(newx0, data, prev)
+    return newx0
 end
 
 function _enhanced_flat_start(
