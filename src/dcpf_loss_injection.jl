@@ -128,7 +128,7 @@ function _populate_loss_injections!(data::ABAPowerFlowData, sys::PSY.System)
 
         z = r + x * im
         abs2(z) < eps && continue
-        g_k = real(1/z)
+        g_k = real(1 / z)
 
         Vi = bus_voltage[from_bus_no]
         Vj = bus_voltage[to_bus_no]
