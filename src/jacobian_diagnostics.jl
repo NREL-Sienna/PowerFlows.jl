@@ -106,8 +106,15 @@ function compute_jacobian_diagnostics(
     min_piv = minimum(abs_pivots)
     max_piv = maximum(abs_pivots)
 
-    is_sing = numerical_rank < n
-    is_ill = !isnan(rcond_val) && rcond_val < tolerance
+    # numerical_rank is only set by klu_factor, not klu_refactor (returns -1).
+    # After refactor, use rcond for singularity detection.
+    # FIXME tolerance might be too low: I've never seen this return singular.
+    is_sing = if numerical_rank >= 0
+        numerical_rank < n
+    else
+        !isnan(rcond_val) && rcond_val == 0.0
+    end
+    is_ill = !is_sing && !isnan(rcond_val) && rcond_val < tolerance
 
     return JacobianDiagnostics(
         rcond_val, condest_val, rgrowth_val,
@@ -212,4 +219,27 @@ function get_diagnostics_report(diag::JacobianDiagnostics)
       Pivot range:                 [$(diag.min_pivot), $(diag.max_pivot)]
       Status:                      $(status)
     ────────────────────────────────────────────"""
+end
+
+"""
+    _log_klu_diagnostics(cache, Jv, iteration)
+
+Lightweight per-iteration Jacobian health logging using only KLU diagnostics (O(n)).
+No eigenvalue computation.
+"""
+function _log_klu_diagnostics(
+    cache::KLULinSolveCache{T},
+    Jv::SparseMatrixCSC{Float64, T},
+    iteration::Int,
+) where {T <: TIs}
+    diag = compute_jacobian_diagnostics(cache, Jv)
+    status =
+        diag.is_singular ? "SINGULAR" :
+        (diag.is_ill_conditioned ? "ILL-CONDITIONED" : "OK")
+    @info "iter $iteration: rcond=$(round(diag.rcond; sigdigits=4)), " *
+          "condest=$(round(diag.condest; sigdigits=4)), " *
+          "rgrowth=$(round(diag.rgrowth; sigdigits=4)), " *
+          "pivots=[$(round(diag.min_pivot; sigdigits=4)), $(round(diag.max_pivot; sigdigits=4))], " *
+          "rank=$(diag.numerical_rank)/$(diag.n), " *
+          "status=$status"
 end

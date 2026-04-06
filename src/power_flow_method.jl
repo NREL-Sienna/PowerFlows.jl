@@ -546,6 +546,8 @@ function _run_power_flow_method(time_step::Int,
     vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
     iwamoto::Bool = false,
     monitor_jacobian::Bool = false,
+    monitor_jacobian_klu::Bool = false,
+    probe_negative_mode_at::Union{Nothing, Tuple{Int, Int, String}} = nothing,
     _ignored...,  # absorb unknown keys from caller without error
 )
     i, converged = 1, false
@@ -589,6 +591,13 @@ function _run_power_flow_method(time_step::Int,
             i,
         )
         monitor_jacobian && monitor_jacobian_definiteness(J, time_step)
+        monitor_jacobian_klu && _log_klu_diagnostics(linSolveCache, J.Jv, i)
+        if probe_negative_mode_at !== nothing &&
+           probe_negative_mode_at[1] == time_step && probe_negative_mode_at[2] == i
+            rj_cache = ReducedJacobianCache(J.data, time_step)
+            probe_negative_mode_to_csv(
+                rj_cache, J.Jv, J.data, time_step, probe_negative_mode_at[3])
+        end
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -624,6 +633,8 @@ function _run_power_flow_method(time_step::Int,
     validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
     vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
     monitor_jacobian::Bool = false,
+    monitor_jacobian_klu::Bool = false,
+    probe_negative_mode_at::Union{Nothing, Tuple{Int, Int, String}} = nothing,
     _ignored...,  # absorb unknown keys from caller without error
 )
     validate_vms = validate_voltage_magnitudes
@@ -669,6 +680,13 @@ function _run_power_flow_method(time_step::Int,
             i,
         )
         monitor_jacobian && monitor_jacobian_definiteness(J, time_step)
+        monitor_jacobian_klu && _log_klu_diagnostics(linSolveCache, J.Jv, i)
+        if probe_negative_mode_at !== nothing &&
+           probe_negative_mode_at[1] == time_step && probe_negative_mode_at[2] == i
+            rj_cache = ReducedJacobianCache(J.data, time_step)
+            probe_negative_mode_to_csv(
+                rj_cache, J.Jv, J.data, time_step, probe_negative_mode_at[3])
+        end
         converged = norm(residual.Rv, Inf) < tol
         if !converged
             i += 1
@@ -723,6 +741,8 @@ function _newton_power_flow(
     iwamoto_fallback::Bool = DEFAULT_IWAMOTO_FALLBACK,
     # diagnostics
     monitor_jacobian::Bool = false,
+    monitor_jacobian_klu::Bool = false,
+    probe_negative_mode_at::Union{Nothing, Tuple{Int, Int, String}} = nothing,
     # initialize_power_flow_variables
     x0::Union{Vector{Float64}, Nothing} = nothing,
     _ignored...,
@@ -762,6 +782,8 @@ function _newton_power_flow(
             autoscale,
             iwamoto_fallback,
             monitor_jacobian,
+            monitor_jacobian_klu,
+            probe_negative_mode_at,
         )
     end
     return _finalize_power_flow(converged, i, string(T), residual, data, J.Jv, time_step)
