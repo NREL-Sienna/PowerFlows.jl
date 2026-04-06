@@ -126,9 +126,9 @@ function _populate_loss_injections!(data::ABAPowerFlowData, sys::PSY.System)
         tap = taps[ix]
         shift = shifts[ix]
 
-        z_sq = r^2 + x^2
-        z_sq < eps() && continue
-        g_k = r / z_sq
+        z = r + x * im
+        abs2(z) < eps && continue
+        g_k = real(1/z)
 
         Vi = bus_voltage[from_bus_no]
         Vj = bus_voltage[to_bus_no]
