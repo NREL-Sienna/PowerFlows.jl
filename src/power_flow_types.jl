@@ -268,6 +268,12 @@ or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.
 - `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
 - `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
     Default is `false`.
+- `lossy_flows::Bool`: Controls how branch flows and losses are computed after solving
+    for bus angles. When `true`, flows are computed from the full π-model arc admittance
+    matrices (`Y_ft`, `Y_tf`), giving asymmetric `P_from_to` and `P_to_from`; losses are
+    then `P_from_to + P_to_from` (exact real-power balance). When `false` (default),
+    flows are computed from the lossless `BA·θ` formula (symmetric), and losses are
+    approximated as `R·P²`.
 """
 @kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
@@ -275,6 +281,7 @@ or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.
     time_steps::Int = 1
     time_step_names::Vector{String} = String[]
     correct_bustypes::Bool = false
+    lossy_flows::Bool = false
 end
 
 """
@@ -343,5 +350,6 @@ end
 
 get_calculate_loss_factors(pf::PTDFDCPowerFlow) = pf.calculate_loss_factors
 get_calculate_loss_factors(pf::vPTDFDCPowerFlow) = pf.calculate_loss_factors
+get_lossy_flows(pf::DCPowerFlow) = pf.lossy_flows
 
-# see also: PSSEExportPowerFlow in psse_export.jl
+# See also: PSSEExportPowerFlow in psse_export.jl

@@ -37,6 +37,7 @@ import KLU
 import SparseArrays
 import InfrastructureSystems as IS
 import PowerNetworkMatrices as PNM
+import PowerNetworkMatrices: YBUS_ELTYPE
 import SparseArrays:
     SparseMatrixCSC, SparseVector, sparse, sparsevec, AbstractSparseMatrix, spzeros
 import StaticArrays: MVector
@@ -57,6 +58,7 @@ include("initialize_power_flow_data.jl")
 include("psse_export.jl")
 include("LinearSolverCache/linear_solver_cache.jl")
 include("LinearSolverCache/klu_linear_solver.jl")
+include("dcpf_loss_injection.jl")
 include("solve_dc_power_flow.jl")
 include("state_indexing_helpers.jl")
 include("ac_power_flow_residual.jl")
