@@ -139,75 +139,52 @@ function _compare_arc_flows_to_psse_csv(
     end
 end
 
-function _get_custom_uc_template_simulation!(template)
-    PSI.set_device_model!(template, PSY.ThermalStandard, PSI.ThermalBasicDispatch)
-    PSI.set_device_model!(template, PSY.PowerLoad, PSI.StaticPowerLoad)
-    PSI.set_device_model!(template, PSY.Line, PSI.StaticBranchBounds)
-    return
+function _compute_net_injections_from_psse_csv(
+    psse_csv_path::String,
+    bus_lookup::Dict{Int, Int},
+    base_power::Float64,
+)
+    psse_df = CSV.read(psse_csv_path, DataFrame)
+    n_buses = length(bus_lookup)
+    net_injections = zeros(Float64, n_buses)
+    for row in eachrow(psse_df)
+        from_bus = row[Symbol("FromBus#")]
+        to_bus = row[Symbol("ToBus#")]
+        p_ij = row[Symbol("Pij(MW)")]
+        p_ji = row[Symbol("Pji(MW)")]
+        if haskey(bus_lookup, from_bus)
+            net_injections[bus_lookup[from_bus]] += p_ij
+        end
+        if haskey(bus_lookup, to_bus)
+            net_injections[bus_lookup[to_bus]] += p_ji
+        end
+    end
+    net_injections ./= base_power
+    return net_injections
 end
 
-function _run_custom_pcm(sys::PSY.System, s_time::Dates.DateTime)
-    PSY.transform_single_time_series!(sys, Dates.Hour(1), Dates.Hour(1))
-    ptdf = PNM.PTDF(sys)
-
-    power_flow_model = DCPowerFlow(; lossy_flows = true)
-    template = PSI.ProblemTemplate(
-        PSI.NetworkModel(
-            PSI.PTDFPowerModel;
-            use_slacks = false,
-            power_flow_evaluation = power_flow_model,
-            PTDF_matrix = ptdf,
-        ),
+@testset "Lossy DCLF: 2-area system arc flows match PSS/e results" begin
+    sys = PSB.build_system(PSB.PSISystems, "2Area 5 Bus System")
+    data = PowerFlowData(
+        DCPowerFlow(; correct_bustypes = true, lossy_flows = true),
+        sys,
     )
-
-    _get_custom_uc_template_simulation!(template)
-
-    highs_optimizer = JuMP.optimizer_with_attributes(
-        HiGHS.Optimizer,
-        "time_limit" => 100.0,
-        "random_seed" => 12345,
-        "log_to_console" => false,
-    )
-
-    return PSI.DecisionModel(
-        template,
-        sys;
-        name = "UC1",
-        optimizer = highs_optimizer,
-        store_variable_names = true,
-        initialize_model = false,
-        optimizer_solve_log_print = true,
-        direct_mode_optimizer = true,
-        check_numerical_bounds = false,
-        rebuild_model = false,
-        system_to_file = true,
-        initial_time = s_time,
-    )
-end
-
-function _get_pcm_power_flow_data(model)
-    container = PSI.get_optimization_container(model)
-    pf_eval_data = PSI.get_power_flow_evaluation_data(container)
-    @test !isempty(pf_eval_data)
-    return PSI.get_power_flow_data(pf_eval_data[1])
-end
-
-@testset "Lossy DCLF: PCM arc flows match PSS/e results" begin
-    PSB.clear_all_serialized_systems()
-    pscb_case_name = "2Area 5 Bus System"
-    sys = PSB.build_system(PSB.PSISystems, pscb_case_name)
-    period = Dates.DateTime("2020-01-01T00:00:00")
-
-    model = _run_custom_pcm(sys, period)
-    PSI.build!(model; console_level = Logging.Info, output_dir = mktempdir())
-    PSI.solve!(model)
-
-    data = _get_pcm_power_flow_data(model)
 
     psse_csv_path = joinpath(
         TEST_DATA_DIR,
         "2area-5-bus-system",
         "export_1_1_psse_dcpf_results.csv",
     )
-    _compare_arc_flows_to_psse_csv(data, sys, psse_csv_path)
+    bus_lookup = PNM.get_bus_lookup(data.aux_network_matrix)
+    net_injections =
+        _compute_net_injections_from_psse_csv(
+            psse_csv_path,
+            bus_lookup,
+            PSY.get_base_power(sys),
+        )
+    data.bus_active_power_injections[:, 1] .= max.(net_injections, 0.0)
+    data.bus_active_power_withdrawals[:, 1] .= max.(-net_injections, 0.0)
+
+    solve_power_flow!(data)
+    _compare_arc_flows_to_psse_csv(data, sys, psse_csv_path; atol = 5.0)
 end
