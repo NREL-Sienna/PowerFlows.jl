@@ -31,9 +31,6 @@ import PowerSystemCaseBuilder as PSB
 import PowerSystems as PSY
 import PowerNetworkMatrices as PNM
 import PowerFlows as PF
-import PowerSimulations as PSI
-import JuMP
-import HiGHS
 
 # used to be public, no longer: import here so we can use in tests
 import PowerFlows: PowerFlowData
