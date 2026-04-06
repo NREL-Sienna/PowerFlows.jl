@@ -35,6 +35,17 @@ Pages = [
 ]
 ```
 
+## Jacobian Diagnostics
+
+```@autodocs
+Modules = [PowerFlows]
+Public = true
+Private = false
+Pages = [
+    "jacobian_diagnostics.jl",
+]
+```
+
 ## PSSE Export
 ```@autodocs
 Modules = [PowerFlows]

@@ -1,9 +1,10 @@
 name = "PowerFlows"
 uuid = "94fada2c-fd9a-4e89-8d82-81405f5cb4f6"
-authors = ["Jose Daniel Lara", "Gabriel Konar-Steenberg", "Luke Kiernan"]
 version = "0.16.1"
+authors = ["Jose Daniel Lara", "Gabriel Konar-Steenberg", "Luke Kiernan"]
 
 [deps]
+Arpack = "7d9fca2a-8960-54d3-9f78-7d1dccf2cb97"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
@@ -19,6 +20,7 @@ SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
+Arpack = "0.5.4"
 DataFrames = "1"
 DataStructures = "0.19"
 Dates = "1"
