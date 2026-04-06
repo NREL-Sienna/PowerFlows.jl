@@ -246,9 +246,8 @@ function _get_arc_resistances(
         elseif arc in keys(PNM.get_transformer3W_map(nrd))
             winding = PNM.get_transformer3W_map(nrd)[arc]
             Rs[ix_arc] = PNM.get_equivalent_r(winding)
-        elseif arc in keys(PNM.get_added_branch_map(nrd))
-            y = PNM.get_added_branch_map(nrd)[arc]
-            Rs[ix_arc] = real(1 / y)
+        elseif arc in keys(PNM.get_added_arc_impedance_map(nrd))
+            Rs[ix_arc] = PSY.get_r(PNM.get_added_arc_impedance_map(nrd)[arc])
         else
             error("Arc $arc not found in any of the branch maps.")
         end

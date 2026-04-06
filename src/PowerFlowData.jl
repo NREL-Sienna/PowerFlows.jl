@@ -386,6 +386,7 @@ function get_bus_reactive_power_total_withdrawals(
 end
 
 function clear_injection_data!(pfd::PowerFlowData)
+    # anything overwritten with NaNs in the case of non-convergence should be reset here.
     pfd.bus_active_power_injections .= 0.0
     pfd.bus_reactive_power_injections .= 0.0
     pfd.bus_active_power_withdrawals .= 0.0
@@ -394,6 +395,12 @@ function clear_injection_data!(pfd::PowerFlowData)
     pfd.bus_reactive_power_withdrawals .= 0.0
     pfd.bus_reactive_power_constant_current_withdrawals .= 0.0
     pfd.bus_reactive_power_constant_impedance_withdrawals .= 0.0
+    for col in eachcol(pfd.bus_angles)
+        any(isnan, col) && (col .= 0.0)
+    end
+    for col in eachcol(pfd.bus_magnitude)
+        any(isnan, col) && (col .= 1.0)
+    end
     return
 end
 
