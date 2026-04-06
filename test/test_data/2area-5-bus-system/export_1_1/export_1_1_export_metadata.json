@@ -2,7 +2,7 @@
     "case_name": "export_1_1",
     "export_settings": {
         "psse_version": "v33",
-        "export_dir": "/Users/mvelasqu/Documents/marck/GDO/PJM_Co-planning/2-area-5-bus-system",
+        "export_dir": "test/test_data/2area-5-bus-system",
         "original_name": "export",
         "write_comments": true,
         "overwrite": true,

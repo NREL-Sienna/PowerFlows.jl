@@ -61,6 +61,7 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     data = PowerFlowData(
         DCPowerFlow(;
+            correct_bustypes = true,
             lossy_flows = true,
             time_steps = 3,
         ),
