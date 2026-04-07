@@ -75,59 +75,23 @@ end
 
 function HomotopyHessian(data::ACPowerFlowData, time_step::Int)
     pfResidual = ACPowerFlowResidual(data, time_step)
-    Hv = _create_hessian_matrix_structure(data, time_step)
     J = ACPowerFlowJacobian(data,
         pfResidual.bus_slack_participation_factors,
         pfResidual.subnetworks,
         time_step,
     )
+    # Allocate Hv with the sparsity pattern of J' * J. The Jacobian's structural
+    # pattern is fixed at construction, so we temporarily fill nzval with ones
+    # (so no entries get dropped as numeric zeros), compute the product, and zero
+    # it out. Subsequent calls to J(time_step) will overwrite J.Jv's nzval.
+    fill!(SparseArrays.nonzeros(J.Jv), 1.0)
+    Hv = J.Jv' * J.Jv
+    SparseArrays.nonzeros(Hv) .= 0.0
+    SparseArrays.nonzeros(J.Jv) .= 0.0
     nbuses = size(get_bus_type(data), 1)
     PQ_mask = get_bus_type(data)[:, time_step] .== (PSY.ACBusTypes.PQ,)
     PQ_V_mags = collect(Iterators.flatten(zip(PQ_mask, falses(nbuses))))
     return HomotopyHessian(data, pfResidual, J, PQ_V_mags, zeros(2 * nbuses), Hv)
-end
-
-function _create_hessian_matrix_structure(data::ACPowerFlowData, ::Int64)
-    rows = J_INDEX_TYPE[]      # I
-    columns = J_INDEX_TYPE[]   # J
-    values = Float64[]  # V
-
-    # an over-estimate: I want ordered pairs of vertices that are 2 or fewer
-    # steps apart, whereas this counts directed paths of 2 edges.
-    numEdgePairs = sum(x -> (length(x) - 1)^2, get_neighbor(data); init = 0.0)
-    numEdgePairs += length(get_arc_axis(data))
-    sizehint!(rows, 4 * numEdgePairs)
-    sizehint!(columns, 4 * numEdgePairs)
-    sizehint!(values, 4 * numEdgePairs)
-
-    # H is J'*J + c*I
-    # J' * J is dot products of pairs of columns.
-    # so look at pairs of columns and check if there's a row in which both are nonzero.
-    # i.e. look at pairs of buses and see if they have a neighbor in common.
-
-    visited = Set{Tuple{Int, Int}}()
-    # non structurally zero block correspond to pairs of buses with a neighbor in common.
-    # instead of checking pairs of buses O(n^2 d), we travel 2 hops from each bus O(n d^2)
-    # (d = degree of typical vertex, n = number of vertices; d << n.)
-    for (ind, nbrs) in enumerate(get_neighbor(data))
-        for nbr in nbrs
-            for nbrOfNbr in get_neighbor(data)[nbr]
-                if !((ind, nbrOfNbr) in visited)
-                    bus_from, bus_to = ind, nbrOfNbr
-                    # PERF: J.Jv^T * J.Jv would have fewer nonzero entries if J.Jv's sparse
-                    # structure took into account the bus type
-                    for (i, j) in Iterators.product((2 * bus_from - 1, 2 * bus_from),
-                        (2 * bus_to - 1, 2 * bus_to))
-                        push!(rows, i) # PERF: allocating
-                        push!(columns, j) # PERF: allocating
-                        push!(values, 0.0) # (oddly enough, this line is non-allocating)
-                    end
-                    push!(visited, (ind, nbrOfNbr))
-                end
-            end
-        end
-    end
-    return SparseArrays.sparse(rows, columns, values)
 end
 
 """
