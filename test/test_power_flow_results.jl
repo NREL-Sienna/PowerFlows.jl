@@ -75,3 +75,154 @@
         @test length(results.converged) == 1
     end
 end
+
+@testset "TimeContingencyPowerFlowData" begin
+    n_buses = 5
+    n_arcs = 4
+    n_time_steps = 3
+    ctg_labels = ["base", "line_1_out", "line_2_out"]
+
+    @testset "Default construction" begin
+        results = TimeContingencyPowerFlowData(n_buses, n_arcs, n_time_steps, ctg_labels)
+        n_ctg = length(ctg_labels)
+
+        # Bus fields have correct 3D dimensions (entity, time_step, contingency).
+        @test size(results.bus_magnitude) == (n_buses, n_time_steps, n_ctg)
+        @test size(results.bus_angles) == (n_buses, n_time_steps, n_ctg)
+        @test size(results.bus_type) == (n_buses, n_time_steps, n_ctg)
+
+        # Bus magnitude defaults to ones (flat start).
+        @test all(results.bus_magnitude .== 1.0)
+        # Bus angles default to zeros.
+        @test all(results.bus_angles .== 0.0)
+        # Bus types default to PQ.
+        @test all(results.bus_type .== Ref(PowerSystems.ACBusTypes.PQ))
+
+        # Arc fields have correct 3D dimensions and default to zeros.
+        for field in [
+            :arc_active_power_flow_from_to,
+            :arc_reactive_power_flow_from_to,
+            :arc_active_power_flow_to_from,
+            :arc_reactive_power_flow_to_from,
+            :arc_angle_differences,
+        ]
+            arr = getfield(results, field)
+            @test size(arr) == (n_arcs, n_time_steps, n_ctg)
+            @test all(arr .== 0.0)
+        end
+
+        # Converged is a BitMatrix of (time_steps, contingencies), all false.
+        @test size(results.converged) == (n_time_steps, n_ctg)
+        @test !any(results.converged)
+
+        # Optional fields default to nothing.
+        @test results.loss_factors === nothing
+        @test results.voltage_stability_factors === nothing
+        @test results.arc_active_power_losses === nothing
+
+        # Network modifications default to nothing for each contingency.
+        @test all(isnothing, results.network_modifications)
+    end
+
+    @testset "Contingency lookup" begin
+        results = TimeContingencyPowerFlowData(n_buses, n_arcs, n_time_steps, ctg_labels)
+        lookup = PowerFlows.get_contingency_lookup(results)
+
+        @test lookup["base"] == 1
+        @test lookup["line_1_out"] == 2
+        @test lookup["line_2_out"] == 3
+        @test PowerFlows.get_contingency_labels(results) == ctg_labels
+        @test PowerFlows.get_n_contingencies(results) == 3
+    end
+
+    @testset "NetworkModification storage and access" begin
+        mod1 = PNM.NetworkModification(
+            "line_1_out",
+            [PNM.ArcModification(1, -0.5)],
+        )
+        mod2 = PNM.NetworkModification(
+            "line_2_out",
+            [PNM.ArcModification(2, -0.3)],
+        )
+        mods = Union{Nothing, PNM.NetworkModification}[nothing, mod1, mod2]
+        results = TimeContingencyPowerFlowData(
+            n_buses,
+            n_arcs,
+            n_time_steps,
+            ctg_labels;
+            network_modifications = mods,
+        )
+
+        # Access by label.
+        @test PowerFlows.get_network_modification(results, "base") === nothing
+        @test PowerFlows.get_network_modification(results, "line_1_out") === mod1
+        @test PowerFlows.get_network_modification(results, "line_2_out") === mod2
+
+        # Access by index.
+        @test PowerFlows.get_network_modification(results, 1) === nothing
+        @test PowerFlows.get_network_modification(results, 2) === mod1
+
+        # get_network_modifications returns the full vector.
+        @test length(PowerFlows.get_network_modifications(results)) == 3
+    end
+
+    @testset "set_network_modification!" begin
+        results = TimeContingencyPowerFlowData(n_buses, n_arcs, n_time_steps, ctg_labels)
+        @test PowerFlows.get_network_modification(results, "base") === nothing
+
+        new_mod = PNM.NetworkModification(
+            "base_mod",
+            [PNM.ArcModification(3, -0.1)],
+        )
+        PowerFlows.set_network_modification!(results, "base", new_mod)
+        @test PowerFlows.get_network_modification(results, "base") === new_mod
+    end
+
+    @testset "Optional fields enabled" begin
+        results = TimeContingencyPowerFlowData(
+            n_buses,
+            n_arcs,
+            n_time_steps,
+            ctg_labels;
+            calculate_loss_factors = true,
+            calculate_voltage_stability_factors = true,
+            make_arc_active_power_losses = true,
+        )
+        n_ctg = length(ctg_labels)
+
+        @test results.loss_factors !== nothing
+        @test size(results.loss_factors) == (n_buses, n_time_steps, n_ctg)
+        @test all(results.loss_factors .== 0.0)
+
+        @test results.voltage_stability_factors !== nothing
+        @test size(results.voltage_stability_factors) == (n_buses, n_time_steps, n_ctg)
+        @test all(results.voltage_stability_factors .== 0.0)
+
+        @test results.arc_active_power_losses !== nothing
+        @test size(results.arc_active_power_losses) == (n_arcs, n_time_steps, n_ctg)
+        @test all(results.arc_active_power_losses .== 0.0)
+    end
+
+    @testset "Subtype relationship" begin
+        @test TimeContingencyPowerFlowData <: AbstractPowerFlowResults
+    end
+
+    @testset "Mismatched network_modifications length throws" begin
+        bad_mods = Union{Nothing, PNM.NetworkModification}[nothing, nothing]
+        @test_throws ArgumentError TimeContingencyPowerFlowData(
+            n_buses,
+            n_arcs,
+            n_time_steps,
+            ctg_labels;
+            network_modifications = bad_mods,
+        )
+    end
+
+    @testset "Single contingency" begin
+        results =
+            TimeContingencyPowerFlowData(n_buses, n_arcs, n_time_steps, ["base_case"])
+        @test size(results.bus_magnitude) == (n_buses, n_time_steps, 1)
+        @test size(results.converged) == (n_time_steps, 1)
+        @test PowerFlows.get_n_contingencies(results) == 1
+    end
+end
