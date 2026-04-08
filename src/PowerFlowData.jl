@@ -59,22 +59,12 @@ the respective type of power flow evaluations.
 - `bus_reactive_power_bounds::Matrix{Float64}`:
         matrix containing upper and lower bounds for the reactive supply at each
         bus at each time period.
-- `bus_type::Matrix{PSY.ACBusTypes}`:
-        matrix containing type of buses present in the system.
-- `bus_magnitude::Matrix{Float64}`:
-        matrix containing the bus voltage magnitudes.
-- `bus_angles::Matrix{Float64}`:
-        matrix containing the bus voltage angles.
-- `arc_active_power_flow_from_to::Matrix{Float64}`:
-        matrix containing the active power flows measured at the `from` bus.
-- `arc_reactive_power_flow_from_to::Matrix{Float64}`:
-        matrix containing the reactive power flows measured at the `from` bus.
-- `arc_active_power_flow_to_from::Matrix{Float64}`:
-        matrix containing the active power flows measured at the `to` bus.
-- `arc_reactive_power_flow_to_from::Matrix{Float64}`:
-        matrix containing the reactive power flows measured at the `to` bus.
-- `arc_angle_differences::Matrix{Float64}`:
-        matrix containing the voltage angle difference (θ_from − θ_to) across each arc.
+- `results::R`:
+        result storage container (see [`TimePowerFlowData`](@ref) or
+        [`TimeContingencyPowerFlowData`](@ref)). Result fields such as `bus_magnitude`,
+        `bus_angles`, `bus_type`, arc flows, `converged`, `loss_factors`, etc. are
+        stored here but accessible directly via `data.bus_magnitude` through property
+        forwarding.
 - `generic_hvdc_flows::Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}`:
         dictionary mapping each generic HVDC line (represented as a tuple of the from and to bus
         numbers) to a tuple of `(P_from_to, P_to_from)` active power flows.
@@ -222,6 +212,7 @@ get_arc_reactive_power_flow_to_from(pfd::PowerFlowData) =
     pfd.arc_reactive_power_flow_to_from
 get_arc_angle_differences(pfd::PowerFlowData) = pfd.arc_angle_differences
 get_time_step_map(pfd::PowerFlowData) = pfd.time_step_map
+get_results(pfd::PowerFlowData) = pfd.results
 get_power_network_matrix(pfd::PowerFlowData) = pfd.power_network_matrix
 get_aux_network_matrix(pfd::PowerFlowData) = pfd.aux_network_matrix
 get_neighbor(pfd::PowerFlowData) = pfd.neighbors

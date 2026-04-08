@@ -224,3 +224,26 @@ function set_network_modification!(
     r.network_modifications[idx] = mod
     return nothing
 end
+
+"""
+    get_contingency_slice(r::TimeContingencyPowerFlowData, field::Symbol, idx::Int)
+
+Return a 2D view `(entity, time_step)` into the 3D result array for contingency `idx`.
+"""
+function get_contingency_slice(
+    r::TimeContingencyPowerFlowData,
+    field::Symbol,
+    idx::Int,
+)
+    arr = getfield(r, field)
+    return @view arr[:, :, idx]
+end
+
+function get_contingency_slice(
+    r::TimeContingencyPowerFlowData,
+    field::Symbol,
+    label::String,
+)
+    idx = r.contingency_lookup[label]
+    return get_contingency_slice(r, field, idx)
+end

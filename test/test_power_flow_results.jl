@@ -242,3 +242,39 @@ end
     data.bus_magnitude[1, 1] = 0.95
     @test data.results.bus_magnitude[1, 1] == 0.95
 end
+
+@testset "get_results accessor" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    pf = ACPowerFlow()
+    data = PowerFlows.PowerFlowData(pf, sys)
+
+    r = PowerFlows.get_results(data)
+    @test r isa PowerFlows.TimePowerFlowData
+    @test r.bus_magnitude === data.bus_magnitude
+end
+
+@testset "Contingency-aware slicing on TimeContingencyPowerFlowData" begin
+    n_buses = 4
+    n_arcs = 5
+    n_time_steps = 2
+    labels = ["base", "ctg_1", "ctg_2"]
+
+    results = PowerFlows.TimeContingencyPowerFlowData(
+        n_buses, n_arcs, n_time_steps, labels,
+    )
+    # Write a value into contingency 2, time_step 1, bus 3
+    results.bus_magnitude[3, 1, 2] = 0.97
+
+    # Slice by contingency index
+    slice = PowerFlows.get_contingency_slice(results, :bus_magnitude, 2)
+    @test size(slice) == (n_buses, n_time_steps)
+    @test slice[3, 1] == 0.97
+
+    # Slice by contingency label
+    slice2 = PowerFlows.get_contingency_slice(results, :bus_magnitude, "ctg_1")
+    @test slice2 === slice
+
+    # Verify it's a view (mutation reflects back)
+    slice[1, 1] = 0.5
+    @test results.bus_magnitude[1, 1, 2] == 0.5
+end
