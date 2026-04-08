@@ -108,6 +108,7 @@ struct ACPowerFlow{ACSolver <: ACPowerFlowSolverType} <: PowerFlowEvaluationMode
     exporter::Union{Nothing, PowerFlowEvaluationModel}
     calculate_loss_factors::Bool
     calculate_voltage_stability_factors::Bool
+    compute_fixed_point_spectral_radius::Bool
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
@@ -161,6 +162,7 @@ function ACPowerFlow{ACSolver}(;
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
     calculate_loss_factors::Bool = false,
     calculate_voltage_stability_factors::Bool = false,
+    compute_fixed_point_spectral_radius::Bool = false,
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
@@ -199,6 +201,7 @@ function ACPowerFlow{ACSolver}(;
         exporter,
         calculate_loss_factors,
         calculate_voltage_stability_factors,
+        compute_fixed_point_spectral_radius,
         generator_slack_participation_factors,
         enhanced_flat_start,
         robust_power_flow,
@@ -224,6 +227,9 @@ get_slack_participation_factors(pf::ACPowerFlow) = pf.generator_slack_participat
 get_calculate_loss_factors(pf::ACPowerFlow) = pf.calculate_loss_factors
 get_calculate_voltage_stability_factors(pf::ACPowerFlow) =
     pf.calculate_voltage_stability_factors
+get_compute_fixed_point_spectral_radius(::PowerFlowEvaluationModel) = false
+get_compute_fixed_point_spectral_radius(pf::ACPowerFlow) =
+    pf.compute_fixed_point_spectral_radius
 get_network_reductions(pf::ACPowerFlow) = pf.network_reductions
 get_time_steps(pf::ACPowerFlow) = pf.time_steps
 get_time_step_names(pf::ACPowerFlow) = pf.time_step_names
