@@ -81,12 +81,19 @@ function HomotopyHessian(data::ACPowerFlowData, time_step::Int)
         pfResidual.subnetworks,
         time_step,
     )
-    # Allocate Hv with the sparsity pattern of J' * J. Sparse `*` preserves the
-    # structural pattern regardless of nzval, so we just zero out the result.
-    # The per-call assertion in `A_plus_eq_BT_B!` guards against any future
-    # change in Julia that would drop structural zeros here.
+    # Allocate Hv with the maximal sparsity pattern of J' * J. Sparse `*`
+    # currently preserves structural zeros, but that isn't a documented
+    # SparseArrays contract, so we defensively fill nzval with ones to force
+    # the maximal pattern. We then restore J.Jv's original nzval — some
+    # entries (e.g. LCC angle-constraint diagonals of 1.0) are set at
+    # structure creation and not rewritten by subsequent J(time_step) calls.
+    # The per-call IS.@assert_op in A_plus_eq_BT_B! guards against any future
+    # change in Julia that would drop structural zeros at runtime.
+    original_J_nzval = copy(SparseArrays.nonzeros(J.Jv))
+    fill!(SparseArrays.nonzeros(J.Jv), 1.0)
     Hv = J.Jv' * J.Jv
     SparseArrays.nonzeros(Hv) .= 0.0
+    copyto!(SparseArrays.nonzeros(J.Jv), original_J_nzval)
     nbuses = size(get_bus_type(data), 1)
     PQ_mask = get_bus_type(data)[:, time_step] .== (PSY.ACBusTypes.PQ,)
     PQ_V_mags = collect(Iterators.flatten(zip(PQ_mask, falses(nbuses))))
