@@ -226,3 +226,19 @@ end
         @test PowerFlows.get_n_contingencies(results) == 1
     end
 end
+
+@testset "PowerFlowData contains TimePowerFlowData results" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    pf = ACPowerFlow()
+    data = PowerFlows.PowerFlowData(pf, sys)
+
+    @test data.results isa PowerFlows.TimePowerFlowData
+    @test data.bus_magnitude === data.results.bus_magnitude
+    @test data.bus_angles === data.results.bus_angles
+    @test data.bus_type === data.results.bus_type
+    @test data.converged === data.results.converged
+
+    # Mutation through forwarding works
+    data.bus_magnitude[1, 1] = 0.95
+    @test data.results.bus_magnitude[1, 1] == 0.95
+end

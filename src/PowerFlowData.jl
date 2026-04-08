@@ -97,6 +97,7 @@ struct PowerFlowData{
     T <: PowerFlowEvaluationModel,
     M <: PNM.PowerNetworkMatrix,
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
+    R <: AbstractPowerFlowResults,
 } <: PowerFlowContainer
     pf::T
     bus_active_power_injections::Matrix{Float64}
@@ -113,27 +114,38 @@ struct PowerFlowData{
     computed_generator_slack_participation_factors::Vector{
         Dict{Tuple{DataType, String}, Float64},
     }
-    bus_type::Matrix{PSY.ACBusTypes}
-    bus_magnitude::Matrix{Float64}
-    bus_angles::Matrix{Float64}
-    arc_active_power_flow_from_to::Matrix{Float64}
-    arc_reactive_power_flow_from_to::Matrix{Float64}
-    arc_active_power_flow_to_from::Matrix{Float64}
-    arc_reactive_power_flow_to_from::Matrix{Float64}
-    arc_angle_differences::Matrix{Float64}
+    results::R
     generic_hvdc_flows::Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}
     bus_hvdc_net_power::Matrix{Float64}
     time_step_map::Dict{Int, String}
     power_network_matrix::M
     aux_network_matrix::N
     neighbors::Vector{Set{Int}}
-    converged::BitVector
-    loss_factors::Union{Matrix{Float64}, Nothing}
-    voltage_stability_factors::Union{Matrix{Float64}, Nothing}
-    arc_active_power_losses::Union{Matrix{Float64}, Nothing}
     lcc::LCCParameters
     arc_lossy_admittance_from_to::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing}
     arc_lossy_admittance_to_from::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing}
+end
+
+const _RESULT_FIELD_NAMES = Set{Symbol}([
+    :bus_magnitude,
+    :bus_angles,
+    :bus_type,
+    :arc_active_power_flow_from_to,
+    :arc_reactive_power_flow_from_to,
+    :arc_active_power_flow_to_from,
+    :arc_reactive_power_flow_to_from,
+    :arc_angle_differences,
+    :converged,
+    :loss_factors,
+    :voltage_stability_factors,
+    :arc_active_power_losses,
+])
+
+function Base.getproperty(pfd::PowerFlowData, s::Symbol)
+    if s in _RESULT_FIELD_NAMES
+        return getfield(getfield(pfd, :results), s)
+    end
+    return getfield(pfd, s)
 end
 
 # aliases for specific type parameter combinations.
@@ -146,6 +158,7 @@ const ACPowerFlowData = PowerFlowData{
         PNM.DC_ABA_Matrix_Factorized,
         Nothing,
     },
+    <:AbstractPowerFlowResults,
 }
 get_metadata_matrix(pfd::ACPowerFlowData) = pfd.power_network_matrix
 
@@ -155,6 +168,7 @@ const PTDFPowerFlowData = PowerFlowData{
     PTDFDCPowerFlow,
     PNM.DC_PTDF_Matrix,
     PNM.DC_ABA_Matrix_Factorized,
+    <:AbstractPowerFlowResults,
 }
 
 """A type alias for a `PowerFlowData` struct whose type parameters
@@ -163,6 +177,7 @@ const vPTDFPowerFlowData = PowerFlowData{
     vPTDFDCPowerFlow,
     <:PNM.DC_vPTDF_Matrix,
     PNM.DC_ABA_Matrix_Factorized,
+    <:AbstractPowerFlowResults,
 }
 get_metadata_matrix(pfd::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
     pfd.power_network_matrix
@@ -173,6 +188,7 @@ const ABAPowerFlowData = PowerFlowData{
     DCPowerFlow,
     PNM.DC_ABA_Matrix_Factorized,
     PNM.DC_BA_Matrix,
+    <:AbstractPowerFlowResults,
 }
 get_metadata_matrix(pfd::ABAPowerFlowData) = pfd.aux_network_matrix
 
@@ -295,10 +311,6 @@ bus_count(::DCPowerFlow,
     aux_network_matrix::Union{PNM.PowerNetworkMatrix, Nothing}) =
     length(PNM.get_bus_axis(aux_network_matrix))
 
-_make_arc_active_power_losses(::AbstractDCPowerFlow, n_arcs, n_time_steps) =
-    zeros(n_arcs, n_time_steps)
-_make_arc_active_power_losses(::PowerFlowEvaluationModel, n_arcs, n_time_steps) = nothing
-
 """
 Sets the two `PowerNetworkMatrix` fields and a few others (`time_steps`, `time_step_map`),
 then creates arrays of default values (usually zeros) for the rest.
@@ -333,6 +345,16 @@ function PowerFlowData(
     calculate_voltage_stability_factors = get_calculate_voltage_stability_factors(pf)
 
     lcc_parameters = LCCParameters(n_time_steps, n_lccs)
+
+    results = TimePowerFlowData(
+        n_buses,
+        n_arcs,
+        n_time_steps;
+        calculate_loss_factors = calculate_loss_factors,
+        calculate_voltage_stability_factors = calculate_voltage_stability_factors,
+        make_arc_active_power_losses = pf isa AbstractDCPowerFlow,
+    )
+
     return PowerFlowData(
         pf,
         zeros(n_buses, n_time_steps), # bus_active_power_injections
@@ -347,24 +369,13 @@ function PowerFlowData(
         spzeros(n_buses, n_time_steps), # bus_slack_participation_factors
         zeros(n_buses, n_time_steps), # bus_active_power_range
         Vector{Dict{Tuple{DataType, String}, Float64}}(), # computed_generator_slack_participation_factors
-        fill(PSY.ACBusTypes.PQ, (n_buses, n_time_steps)), # bus_type
-        ones(n_buses, n_time_steps), # bus_magnitude
-        zeros(n_buses, n_time_steps), # bus_angles
-        zeros(n_arcs, n_time_steps), # arc_active_power_flow_from_to
-        zeros(n_arcs, n_time_steps), # arc_reactive_power_flow_from_to
-        zeros(n_arcs, n_time_steps), # arc_active_power_flow_to_from
-        zeros(n_arcs, n_time_steps), # arc_reactive_power_flow_to_from
-        zeros(n_arcs, n_time_steps), # arc_angle_differences
+        results,
         Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}(), # generic_hvdc_flows
         zeros(n_buses, n_time_steps), # bus_hvdc_net_power
         time_step_map,
         power_network_matrix,
         aux_network_matrix,
         neighbors,
-        falses(n_time_steps), # converged
-        calculate_loss_factors ? zeros(n_buses, n_time_steps) : nothing, # loss_factors
-        calculate_voltage_stability_factors ? zeros(n_buses, n_time_steps) : nothing, # voltage_stability_factors
-        _make_arc_active_power_losses(pf, n_arcs, n_time_steps), # arc_active_power_losses
         lcc_parameters,
         arc_lossy_admittance_from_to,
         arc_lossy_admittance_to_from,
