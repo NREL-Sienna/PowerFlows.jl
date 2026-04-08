@@ -82,12 +82,15 @@ function HomotopyHessian(data::ACPowerFlowData, time_step::Int)
     )
     # Allocate Hv with the sparsity pattern of J' * J. The Jacobian's structural
     # pattern is fixed at construction, so we temporarily fill nzval with ones
-    # (so no entries get dropped as numeric zeros), compute the product, and zero
-    # it out. Subsequent calls to J(time_step) will overwrite J.Jv's nzval.
+    # (so no entries get dropped as numeric zeros), compute the product, then
+    # restore J.Jv's original nzval — some entries (e.g. LCC angle-constraint
+    # diagonals of 1.0) are set at structure creation and not rewritten by
+    # subsequent J(time_step) calls.
+    original_J_nzval = copy(SparseArrays.nonzeros(J.Jv))
     fill!(SparseArrays.nonzeros(J.Jv), 1.0)
     Hv = J.Jv' * J.Jv
     SparseArrays.nonzeros(Hv) .= 0.0
-    SparseArrays.nonzeros(J.Jv) .= 0.0
+    copyto!(SparseArrays.nonzeros(J.Jv), original_J_nzval)
     nbuses = size(get_bus_type(data), 1)
     PQ_mask = get_bus_type(data)[:, time_step] .== (PSY.ACBusTypes.PQ,)
     PQ_V_mags = collect(Iterators.flatten(zip(PQ_mask, falses(nbuses))))
