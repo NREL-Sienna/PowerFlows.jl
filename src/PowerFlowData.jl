@@ -36,14 +36,6 @@ these are all aliases for `PowerFlowData{N, M}` with specific `N`,`M`, that are 
 the respective type of power flow evaluations.
 
 # Fields:
-- `bus_active_power_injections::Matrix{Float64}`:
-        matrix containing the bus active power injections.
-- `bus_reactive_power_injections::Matrix{Float64}`:
-        matrix containing the bus reactive power injections.
-- `bus_active_power_withdrawals::Matrix{Float64}`:
-        matrix containing the bus reactive power withdrawals.
-- `bus_reactive_power_withdrawals::Matrix{Float64}`:
-        matrix containing the bus reactive power withdrawals.
 - `bus_active_power_constant_current_withdrawals::Matrix{Float64}`:
         matrix containing the bus active power constant current
         withdrawals.
@@ -90,10 +82,6 @@ struct PowerFlowData{
     R <: AbstractPowerFlowResults,
 } <: PowerFlowContainer
     pf::T
-    bus_active_power_injections::Matrix{Float64}
-    bus_reactive_power_injections::Matrix{Float64}
-    bus_active_power_withdrawals::Matrix{Float64}
-    bus_reactive_power_withdrawals::Matrix{Float64}
     bus_active_power_constant_current_withdrawals::Matrix{Float64}
     bus_reactive_power_constant_current_withdrawals::Matrix{Float64}
     bus_active_power_constant_impedance_withdrawals::Matrix{Float64}
@@ -116,26 +104,31 @@ struct PowerFlowData{
     arc_lossy_admittance_to_from::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing}
 end
 
-const _RESULT_FIELD_NAMES = Set{Symbol}([
-    :bus_magnitude,
-    :bus_angles,
-    :bus_type,
-    :arc_active_power_flow_from_to,
-    :arc_reactive_power_flow_from_to,
-    :arc_active_power_flow_to_from,
-    :arc_reactive_power_flow_to_from,
-    :arc_angle_differences,
-    :converged,
-    :loss_factors,
-    :voltage_stability_factors,
-    :arc_active_power_losses,
-])
-
+# Uses an explicit === chain instead of `s in _RESULT_FIELD_NAMES` for type stability.
 function Base.getproperty(pfd::PowerFlowData, s::Symbol)
-    if s in _RESULT_FIELD_NAMES
+    if s === :bus_magnitude ||
+       s === :bus_angles ||
+       s === :bus_type ||
+       s === :bus_active_power_injections ||
+       s === :bus_reactive_power_injections ||
+       s === :bus_active_power_withdrawals ||
+       s === :bus_reactive_power_withdrawals ||
+       s === :arc_active_power_flow_from_to ||
+       s === :arc_reactive_power_flow_from_to ||
+       s === :arc_active_power_flow_to_from ||
+       s === :arc_reactive_power_flow_to_from ||
+       s === :arc_angle_differences ||
+       s === :converged ||
+       s === :loss_factors ||
+       s === :voltage_stability_factors ||
+       s === :arc_active_power_losses
         return getfield(getfield(pfd, :results), s)
     end
     return getfield(pfd, s)
+end
+
+function Base.propertynames(pfd::PowerFlowData, private::Bool = false)
+    return (fieldnames(typeof(pfd))..., _RESULT_FIELD_NAMES...)
 end
 
 # aliases for specific type parameter combinations.
@@ -348,10 +341,6 @@ function PowerFlowData(
 
     return PowerFlowData(
         pf,
-        zeros(n_buses, n_time_steps), # bus_active_power_injections
-        zeros(n_buses, n_time_steps), # bus_reactive_power_injections
-        zeros(n_buses, n_time_steps), # bus_active_power_withdrawals
-        zeros(n_buses, n_time_steps), # bus_reactive_power_withdrawals
         zeros(n_buses, n_time_steps), # bus_active_power_constant_current_withdrawals
         zeros(n_buses, n_time_steps), # bus_reactive_power_constant_current_withdrawals
         zeros(n_buses, n_time_steps), # bus_active_power_constant_impedance_withdrawals
@@ -684,12 +673,8 @@ end
 """Compute arc angle differences for all arcs and all time steps, looking up
 bus indices from the arc axis and bus lookup stored in `data`. Used by DC solvers."""
 function _compute_arc_angle_differences_from_data!(
-    data::PowerFlowData{T, M, N},
-) where {
-    T <: PowerFlowEvaluationModel,
-    M <: PNM.PowerNetworkMatrix,
-    N <: Union{PNM.PowerNetworkMatrix, Nothing},
-}
+    data::PowerFlowData,
+)
     arcs = get_arc_axis(data)
     bus_lookup = get_bus_lookup(data)
     fb_ix = [bus_lookup[bus_no] for bus_no in first.(arcs)]
@@ -703,15 +688,11 @@ end
 over specified time steps. Used by the AC solver where `fb_ix`/`tb_ix` are
 already available from the branch flow calculation."""
 function _compute_arc_angle_differences_from_indices!(
-    data::PowerFlowData{T, M, N},
+    data::PowerFlowData,
     fb_ix::Vector{Int},
     tb_ix::Vector{Int},
     time_steps::Vector{Int},
-) where {
-    T <: PowerFlowEvaluationModel,
-    M <: PNM.PowerNetworkMatrix,
-    N <: Union{PNM.PowerNetworkMatrix, Nothing},
-}
+)
     @views data.arc_angle_differences[:, time_steps] .=
         data.bus_angles[fb_ix, time_steps] .- data.bus_angles[tb_ix, time_steps]
     return

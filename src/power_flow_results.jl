@@ -3,6 +3,26 @@ Abstract supertype for all power flow result containers.
 """
 abstract type AbstractPowerFlowResults end
 
+"""Fields stored in result containers and forwarded from `PowerFlowData` via `getproperty`."""
+const _RESULT_FIELD_NAMES = (
+    :bus_magnitude,
+    :bus_angles,
+    :bus_type,
+    :bus_active_power_injections,
+    :bus_reactive_power_injections,
+    :bus_active_power_withdrawals,
+    :bus_reactive_power_withdrawals,
+    :arc_active_power_flow_from_to,
+    :arc_reactive_power_flow_from_to,
+    :arc_active_power_flow_to_from,
+    :arc_reactive_power_flow_to_from,
+    :arc_angle_differences,
+    :converged,
+    :loss_factors,
+    :voltage_stability_factors,
+    :arc_active_power_losses,
+)
+
 """
     TimePowerFlowData <: AbstractPowerFlowResults
 
@@ -13,6 +33,10 @@ multiple time steps as matrices (rows = buses/arcs, columns = time steps).
 - `bus_magnitude::Matrix{Float64}`: bus voltage magnitudes.
 - `bus_angles::Matrix{Float64}`: bus voltage angles.
 - `bus_type::Matrix{PSY.ACBusTypes}`: bus type classification at each time step.
+- `bus_active_power_injections::Matrix{Float64}`: bus active power injections.
+- `bus_reactive_power_injections::Matrix{Float64}`: bus reactive power injections.
+- `bus_active_power_withdrawals::Matrix{Float64}`: bus active power withdrawals.
+- `bus_reactive_power_withdrawals::Matrix{Float64}`: bus reactive power withdrawals.
 - `arc_active_power_flow_from_to::Matrix{Float64}`: active power flow measured at the from bus.
 - `arc_reactive_power_flow_from_to::Matrix{Float64}`: reactive power flow measured at the from bus.
 - `arc_active_power_flow_to_from::Matrix{Float64}`: active power flow measured at the to bus.
@@ -27,6 +51,10 @@ struct TimePowerFlowData <: AbstractPowerFlowResults
     bus_magnitude::Matrix{Float64}
     bus_angles::Matrix{Float64}
     bus_type::Matrix{PSY.ACBusTypes}
+    bus_active_power_injections::Matrix{Float64}
+    bus_reactive_power_injections::Matrix{Float64}
+    bus_active_power_withdrawals::Matrix{Float64}
+    bus_reactive_power_withdrawals::Matrix{Float64}
     arc_active_power_flow_from_to::Matrix{Float64}
     arc_reactive_power_flow_from_to::Matrix{Float64}
     arc_active_power_flow_to_from::Matrix{Float64}
@@ -63,6 +91,10 @@ function TimePowerFlowData(
         ones(n_buses, n_time_steps),
         zeros(n_buses, n_time_steps),
         fill(PSY.ACBusTypes.PQ, (n_buses, n_time_steps)),
+        zeros(n_buses, n_time_steps),
+        zeros(n_buses, n_time_steps),
+        zeros(n_buses, n_time_steps),
+        zeros(n_buses, n_time_steps),
         zeros(n_arcs, n_time_steps),
         zeros(n_arcs, n_time_steps),
         zeros(n_arcs, n_time_steps),
@@ -86,6 +118,10 @@ across multiple time steps and contingencies as 3D arrays with dimensions
 - `bus_magnitude::Array{Float64, 3}`: bus voltage magnitudes.
 - `bus_angles::Array{Float64, 3}`: bus voltage angles.
 - `bus_type::Array{PSY.ACBusTypes, 3}`: bus type classification at each time step and contingency.
+- `bus_active_power_injections::Array{Float64, 3}`: bus active power injections.
+- `bus_reactive_power_injections::Array{Float64, 3}`: bus reactive power injections.
+- `bus_active_power_withdrawals::Array{Float64, 3}`: bus active power withdrawals.
+- `bus_reactive_power_withdrawals::Array{Float64, 3}`: bus reactive power withdrawals.
 - `arc_active_power_flow_from_to::Array{Float64, 3}`: active power flow measured at the from bus.
 - `arc_reactive_power_flow_from_to::Array{Float64, 3}`: reactive power flow measured at the from bus.
 - `arc_active_power_flow_to_from::Array{Float64, 3}`: active power flow measured at the to bus.
@@ -103,6 +139,10 @@ struct TimeContingencyPowerFlowData <: AbstractPowerFlowResults
     bus_magnitude::Array{Float64, 3}
     bus_angles::Array{Float64, 3}
     bus_type::Array{PSY.ACBusTypes, 3}
+    bus_active_power_injections::Array{Float64, 3}
+    bus_reactive_power_injections::Array{Float64, 3}
+    bus_active_power_withdrawals::Array{Float64, 3}
+    bus_reactive_power_withdrawals::Array{Float64, 3}
     arc_active_power_flow_from_to::Array{Float64, 3}
     arc_reactive_power_flow_from_to::Array{Float64, 3}
     arc_active_power_flow_to_from::Array{Float64, 3}
@@ -145,6 +185,18 @@ function TimeContingencyPowerFlowData(
     make_arc_active_power_losses::Bool = false,
 )
     n_ctg = length(contingency_labels)
+    seen = Set{String}()
+    duplicates = String[]
+    for label in contingency_labels
+        label in seen ? push!(duplicates, label) : push!(seen, label)
+    end
+    if !isempty(duplicates)
+        throw(
+            ArgumentError(
+                "contingency_labels must be unique. Duplicates found: $(duplicates)",
+            ),
+        )
+    end
     if length(network_modifications) != n_ctg
         throw(
             ArgumentError(
@@ -160,6 +212,10 @@ function TimeContingencyPowerFlowData(
         ones(n_buses, n_time_steps, n_ctg),
         zeros(n_buses, n_time_steps, n_ctg),
         fill(PSY.ACBusTypes.PQ, (n_buses, n_time_steps, n_ctg)),
+        zeros(n_buses, n_time_steps, n_ctg),
+        zeros(n_buses, n_time_steps, n_ctg),
+        zeros(n_buses, n_time_steps, n_ctg),
+        zeros(n_buses, n_time_steps, n_ctg),
         zeros(n_arcs, n_time_steps, n_ctg),
         zeros(n_arcs, n_time_steps, n_ctg),
         zeros(n_arcs, n_time_steps, n_ctg),
@@ -225,17 +281,47 @@ function set_network_modification!(
     return nothing
 end
 
+"""Result fields that are 3D arrays in `TimeContingencyPowerFlowData` and support slicing.
+Derived from `_RESULT_FIELD_NAMES`, excluding `:converged` (which is a 2D `BitMatrix`)."""
+const _CONTINGENCY_3D_FIELDS =
+    filter(s -> s !== :converged, _RESULT_FIELD_NAMES)
+
 """
     get_contingency_slice(r::TimeContingencyPowerFlowData, field::Symbol, idx::Int)
 
 Return a 2D view `(entity, time_step)` into the 3D result array for contingency `idx`.
+Only 3D array fields are supported; optional fields that are `nothing` will throw.
 """
 function get_contingency_slice(
     r::TimeContingencyPowerFlowData,
     field::Symbol,
     idx::Int,
 )
+    if !(field in _CONTINGENCY_3D_FIELDS)
+        throw(
+            ArgumentError(
+                "field `$field` is not a valid 3D contingency result field. " *
+                "Valid fields: $(sort(collect(_CONTINGENCY_3D_FIELDS)))",
+            ),
+        )
+    end
     arr = getfield(r, field)
+    if arr === nothing
+        throw(
+            ArgumentError(
+                "field `$field` is `nothing` (was not computed). " *
+                "Enable it at construction time.",
+            ),
+        )
+    end
+    n_ctg = get_n_contingencies(r)
+    if idx < 1 || idx > n_ctg
+        throw(
+            ArgumentError(
+                "contingency index $idx is out of bounds. Valid range: 1:$n_ctg",
+            ),
+        )
+    end
     return @view arr[:, :, idx]
 end
 
@@ -244,6 +330,15 @@ function get_contingency_slice(
     field::Symbol,
     label::String,
 )
-    idx = r.contingency_lookup[label]
+    lookup = get_contingency_lookup(r)
+    if !haskey(lookup, label)
+        throw(
+            ArgumentError(
+                "contingency label \"$label\" not found. " *
+                "Available labels: $(get_contingency_labels(r))",
+            ),
+        )
+    end
+    idx = lookup[label]
     return get_contingency_slice(r, field, idx)
 end

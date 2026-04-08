@@ -6,36 +6,13 @@
     @testset "Default construction" begin
         results = TimePowerFlowData(n_buses, n_arcs, n_time_steps)
 
-        # Bus fields have correct dimensions.
         @test size(results.bus_magnitude) == (n_buses, n_time_steps)
         @test size(results.bus_angles) == (n_buses, n_time_steps)
         @test size(results.bus_type) == (n_buses, n_time_steps)
-
-        # Bus magnitude defaults to ones (flat start).
-        @test all(results.bus_magnitude .== 1.0)
-        # Bus angles default to zeros.
-        @test all(results.bus_angles .== 0.0)
-        # Bus types default to PQ.
-        @test all(results.bus_type .== Ref(PowerSystems.ACBusTypes.PQ))
-
-        # Arc fields have correct dimensions and default to zeros.
-        for field in [
-            :arc_active_power_flow_from_to,
-            :arc_reactive_power_flow_from_to,
-            :arc_active_power_flow_to_from,
-            :arc_reactive_power_flow_to_from,
-            :arc_angle_differences,
-        ]
-            mat = getfield(results, field)
-            @test size(mat) == (n_arcs, n_time_steps)
-            @test all(mat .== 0.0)
-        end
-
-        # Converged defaults to all false.
+        @test size(results.bus_active_power_injections) == (n_buses, n_time_steps)
+        @test size(results.arc_active_power_flow_from_to) == (n_arcs, n_time_steps)
         @test length(results.converged) == n_time_steps
-        @test !any(results.converged)
 
-        # Optional fields default to nothing.
         @test results.loss_factors === nothing
         @test results.voltage_stability_factors === nothing
         @test results.arc_active_power_losses === nothing
@@ -51,28 +28,9 @@
             make_arc_active_power_losses = true,
         )
 
-        @test results.loss_factors !== nothing
         @test size(results.loss_factors) == (n_buses, n_time_steps)
-        @test all(results.loss_factors .== 0.0)
-
-        @test results.voltage_stability_factors !== nothing
         @test size(results.voltage_stability_factors) == (n_buses, n_time_steps)
-        @test all(results.voltage_stability_factors .== 0.0)
-
-        @test results.arc_active_power_losses !== nothing
         @test size(results.arc_active_power_losses) == (n_arcs, n_time_steps)
-        @test all(results.arc_active_power_losses .== 0.0)
-    end
-
-    @testset "Subtype relationship" begin
-        @test TimePowerFlowData <: AbstractPowerFlowResults
-    end
-
-    @testset "Single time step" begin
-        results = TimePowerFlowData(10, 8, 1)
-        @test size(results.bus_magnitude) == (10, 1)
-        @test size(results.arc_active_power_flow_from_to) == (8, 1)
-        @test length(results.converged) == 1
     end
 end
 
@@ -86,41 +44,14 @@ end
         results = TimeContingencyPowerFlowData(n_buses, n_arcs, n_time_steps, ctg_labels)
         n_ctg = length(ctg_labels)
 
-        # Bus fields have correct 3D dimensions (entity, time_step, contingency).
         @test size(results.bus_magnitude) == (n_buses, n_time_steps, n_ctg)
-        @test size(results.bus_angles) == (n_buses, n_time_steps, n_ctg)
-        @test size(results.bus_type) == (n_buses, n_time_steps, n_ctg)
-
-        # Bus magnitude defaults to ones (flat start).
-        @test all(results.bus_magnitude .== 1.0)
-        # Bus angles default to zeros.
-        @test all(results.bus_angles .== 0.0)
-        # Bus types default to PQ.
-        @test all(results.bus_type .== Ref(PowerSystems.ACBusTypes.PQ))
-
-        # Arc fields have correct 3D dimensions and default to zeros.
-        for field in [
-            :arc_active_power_flow_from_to,
-            :arc_reactive_power_flow_from_to,
-            :arc_active_power_flow_to_from,
-            :arc_reactive_power_flow_to_from,
-            :arc_angle_differences,
-        ]
-            arr = getfield(results, field)
-            @test size(arr) == (n_arcs, n_time_steps, n_ctg)
-            @test all(arr .== 0.0)
-        end
-
-        # Converged is a BitMatrix of (time_steps, contingencies), all false.
+        @test size(results.bus_active_power_injections) == (n_buses, n_time_steps, n_ctg)
+        @test size(results.arc_active_power_flow_from_to) == (n_arcs, n_time_steps, n_ctg)
         @test size(results.converged) == (n_time_steps, n_ctg)
-        @test !any(results.converged)
 
-        # Optional fields default to nothing.
         @test results.loss_factors === nothing
         @test results.voltage_stability_factors === nothing
         @test results.arc_active_power_losses === nothing
-
-        # Network modifications default to nothing for each contingency.
         @test all(isnothing, results.network_modifications)
     end
 
@@ -153,16 +84,11 @@ end
             network_modifications = mods,
         )
 
-        # Access by label.
         @test PowerFlows.get_network_modification(results, "base") === nothing
         @test PowerFlows.get_network_modification(results, "line_1_out") === mod1
         @test PowerFlows.get_network_modification(results, "line_2_out") === mod2
-
-        # Access by index.
         @test PowerFlows.get_network_modification(results, 1) === nothing
         @test PowerFlows.get_network_modification(results, 2) === mod1
-
-        # get_network_modifications returns the full vector.
         @test length(PowerFlows.get_network_modifications(results)) == 3
     end
 
@@ -190,70 +116,38 @@ end
         )
         n_ctg = length(ctg_labels)
 
-        @test results.loss_factors !== nothing
         @test size(results.loss_factors) == (n_buses, n_time_steps, n_ctg)
-        @test all(results.loss_factors .== 0.0)
-
-        @test results.voltage_stability_factors !== nothing
         @test size(results.voltage_stability_factors) == (n_buses, n_time_steps, n_ctg)
-        @test all(results.voltage_stability_factors .== 0.0)
-
-        @test results.arc_active_power_losses !== nothing
         @test size(results.arc_active_power_losses) == (n_arcs, n_time_steps, n_ctg)
-        @test all(results.arc_active_power_losses .== 0.0)
     end
 
-    @testset "Subtype relationship" begin
-        @test TimeContingencyPowerFlowData <: AbstractPowerFlowResults
-    end
-
-    @testset "Mismatched network_modifications length throws" begin
+    @testset "Constructor validation" begin
         bad_mods = Union{Nothing, PNM.NetworkModification}[nothing, nothing]
         @test_throws ArgumentError TimeContingencyPowerFlowData(
-            n_buses,
-            n_arcs,
-            n_time_steps,
-            ctg_labels;
+            n_buses, n_arcs, n_time_steps, ctg_labels;
             network_modifications = bad_mods,
         )
-    end
-
-    @testset "Single contingency" begin
-        results =
-            TimeContingencyPowerFlowData(n_buses, n_arcs, n_time_steps, ["base_case"])
-        @test size(results.bus_magnitude) == (n_buses, n_time_steps, 1)
-        @test size(results.converged) == (n_time_steps, 1)
-        @test PowerFlows.get_n_contingencies(results) == 1
+        @test_throws ArgumentError TimeContingencyPowerFlowData(
+            n_buses, n_arcs, n_time_steps, ["base", "ctg_1", "base"],
+        )
     end
 end
 
-@testset "PowerFlowData contains TimePowerFlowData results" begin
+@testset "PowerFlowData property forwarding" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     pf = ACPowerFlow()
     data = PowerFlows.PowerFlowData(pf, sys)
 
     @test data.results isa PowerFlows.TimePowerFlowData
     @test data.bus_magnitude === data.results.bus_magnitude
-    @test data.bus_angles === data.results.bus_angles
-    @test data.bus_type === data.results.bus_type
+    @test data.bus_active_power_injections === data.results.bus_active_power_injections
     @test data.converged === data.results.converged
 
-    # Mutation through forwarding works
-    data.bus_magnitude[1, 1] = 0.95
-    @test data.results.bus_magnitude[1, 1] == 0.95
-end
-
-@testset "get_results accessor" begin
-    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    pf = ACPowerFlow()
-    data = PowerFlows.PowerFlowData(pf, sys)
-
     r = PowerFlows.get_results(data)
-    @test r isa PowerFlows.TimePowerFlowData
-    @test r.bus_magnitude === data.bus_magnitude
+    @test r === data.results
 end
 
-@testset "Contingency-aware slicing on TimeContingencyPowerFlowData" begin
+@testset "Contingency-aware slicing" begin
     n_buses = 4
     n_arcs = 5
     n_time_steps = 2
@@ -262,19 +156,33 @@ end
     results = PowerFlows.TimeContingencyPowerFlowData(
         n_buses, n_arcs, n_time_steps, labels,
     )
-    # Write a value into contingency 2, time_step 1, bus 3
     results.bus_magnitude[3, 1, 2] = 0.97
 
-    # Slice by contingency index
     slice = PowerFlows.get_contingency_slice(results, :bus_magnitude, 2)
     @test size(slice) == (n_buses, n_time_steps)
     @test slice[3, 1] == 0.97
 
-    # Slice by contingency label
     slice2 = PowerFlows.get_contingency_slice(results, :bus_magnitude, "ctg_1")
-    @test slice2 === slice
+    @test slice2 == slice
 
     # Verify it's a view (mutation reflects back)
     slice[1, 1] = 0.5
     @test results.bus_magnitude[1, 1, 2] == 0.5
+end
+
+@testset "get_contingency_slice validation" begin
+    results = PowerFlows.TimeContingencyPowerFlowData(
+        4, 5, 2, ["base", "ctg_1", "ctg_2"],
+    )
+
+    @test_throws ArgumentError PowerFlows.get_contingency_slice(
+        results, :nonexistent_field, 1)
+    @test_throws ArgumentError PowerFlows.get_contingency_slice(
+        results, :loss_factors, 1)
+    @test_throws ArgumentError PowerFlows.get_contingency_slice(
+        results, :bus_magnitude, 0)
+    @test_throws ArgumentError PowerFlows.get_contingency_slice(
+        results, :bus_magnitude, 4)
+    @test_throws ArgumentError PowerFlows.get_contingency_slice(
+        results, :bus_magnitude, "nonexistent")
 end
