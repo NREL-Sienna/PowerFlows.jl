@@ -139,7 +139,7 @@ function TimeContingencyPowerFlowData(
     n_time_steps::Int,
     contingency_labels::Vector{String};
     network_modifications::Vector{Union{Nothing, PNM.NetworkModification}} =
-        Union{Nothing, PNM.NetworkModification}[nothing for _ in contingency_labels],
+    Union{Nothing, PNM.NetworkModification}[nothing for _ in contingency_labels],
     calculate_loss_factors::Bool = false,
     calculate_voltage_stability_factors::Bool = false,
     make_arc_active_power_losses::Bool = false,
