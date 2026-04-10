@@ -16,6 +16,10 @@
         @test results.loss_factors === nothing
         @test results.voltage_stability_factors === nothing
         @test results.arc_active_power_losses === nothing
+        @test results.lcc_active_power_flow_from_to === nothing
+        @test results.lcc_active_power_flow_to_from === nothing
+        @test results.lcc_reactive_power_flow_from_to === nothing
+        @test results.lcc_reactive_power_flow_to_from === nothing
     end
 
     @testset "Optional fields enabled" begin
@@ -31,6 +35,16 @@
         @test size(results.loss_factors) == (n_buses, n_time_steps)
         @test size(results.voltage_stability_factors) == (n_buses, n_time_steps)
         @test size(results.arc_active_power_losses) == (n_arcs, n_time_steps)
+    end
+
+    @testset "LCC fields" begin
+        n_lccs = 2
+        results = TimePowerFlowData(n_buses, n_arcs, n_time_steps; n_lccs = n_lccs)
+
+        @test size(results.lcc_active_power_flow_from_to) == (n_lccs, n_time_steps)
+        @test size(results.lcc_active_power_flow_to_from) == (n_lccs, n_time_steps)
+        @test size(results.lcc_reactive_power_flow_from_to) == (n_lccs, n_time_steps)
+        @test size(results.lcc_reactive_power_flow_to_from) == (n_lccs, n_time_steps)
     end
 end
 
@@ -52,6 +66,10 @@ end
         @test results.loss_factors === nothing
         @test results.voltage_stability_factors === nothing
         @test results.arc_active_power_losses === nothing
+        @test results.lcc_active_power_flow_from_to === nothing
+        @test results.lcc_active_power_flow_to_from === nothing
+        @test results.lcc_reactive_power_flow_from_to === nothing
+        @test results.lcc_reactive_power_flow_to_from === nothing
         @test all(isnothing, results.network_modifications)
     end
 
@@ -119,6 +137,21 @@ end
         @test size(results.loss_factors) == (n_buses, n_time_steps, n_ctg)
         @test size(results.voltage_stability_factors) == (n_buses, n_time_steps, n_ctg)
         @test size(results.arc_active_power_losses) == (n_arcs, n_time_steps, n_ctg)
+    end
+
+    @testset "LCC fields" begin
+        n_lccs = 2
+        results = TimeContingencyPowerFlowData(
+            n_buses, n_arcs, n_time_steps, ctg_labels; n_lccs = n_lccs,
+        )
+        n_ctg = length(ctg_labels)
+
+        @test size(results.lcc_active_power_flow_from_to) == (n_lccs, n_time_steps, n_ctg)
+        @test size(results.lcc_active_power_flow_to_from) == (n_lccs, n_time_steps, n_ctg)
+        @test size(results.lcc_reactive_power_flow_from_to) ==
+              (n_lccs, n_time_steps, n_ctg)
+        @test size(results.lcc_reactive_power_flow_to_from) ==
+              (n_lccs, n_time_steps, n_ctg)
     end
 
     @testset "Constructor validation" begin

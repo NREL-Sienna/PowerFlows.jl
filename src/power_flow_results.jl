@@ -21,6 +21,10 @@ const _RESULT_FIELD_NAMES = (
     :loss_factors,
     :voltage_stability_factors,
     :arc_active_power_losses,
+    :lcc_active_power_flow_from_to,
+    :lcc_active_power_flow_to_from,
+    :lcc_reactive_power_flow_from_to,
+    :lcc_reactive_power_flow_to_from,
 )
 
 """
@@ -46,6 +50,10 @@ multiple time steps as matrices (rows = buses/arcs, columns = time steps).
 - `loss_factors::Union{Matrix{Float64}, Nothing}`: bus loss factors, or `nothing` if not computed.
 - `voltage_stability_factors::Union{Matrix{Float64}, Nothing}`: voltage stability factors, or `nothing` if not computed.
 - `arc_active_power_losses::Union{Matrix{Float64}, Nothing}`: active power losses per arc, or `nothing` if not computed.
+- `lcc_active_power_flow_from_to::Union{Matrix{Float64}, Nothing}`: LCC active power flow at the from bus, or `nothing` if no LCCs.
+- `lcc_active_power_flow_to_from::Union{Matrix{Float64}, Nothing}`: LCC active power flow at the to bus, or `nothing` if no LCCs.
+- `lcc_reactive_power_flow_from_to::Union{Matrix{Float64}, Nothing}`: LCC reactive power flow at the from bus, or `nothing` if no LCCs.
+- `lcc_reactive_power_flow_to_from::Union{Matrix{Float64}, Nothing}`: LCC reactive power flow at the to bus, or `nothing` if no LCCs.
 """
 struct TimePowerFlowData <: AbstractPowerFlowResults
     bus_magnitude::Matrix{Float64}
@@ -64,10 +72,15 @@ struct TimePowerFlowData <: AbstractPowerFlowResults
     loss_factors::Union{Matrix{Float64}, Nothing}
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
     arc_active_power_losses::Union{Matrix{Float64}, Nothing}
+    lcc_active_power_flow_from_to::Union{Matrix{Float64}, Nothing}
+    lcc_active_power_flow_to_from::Union{Matrix{Float64}, Nothing}
+    lcc_reactive_power_flow_from_to::Union{Matrix{Float64}, Nothing}
+    lcc_reactive_power_flow_to_from::Union{Matrix{Float64}, Nothing}
 end
 
 """
     TimePowerFlowData(n_buses::Int, n_arcs::Int, n_time_steps::Int;
+        n_lccs::Int = 0,
         calculate_loss_factors::Bool = false,
         calculate_voltage_stability_factors::Bool = false,
         make_arc_active_power_losses::Bool = false)
@@ -77,12 +90,14 @@ Construct a `TimePowerFlowData` with pre-allocated arrays for the given dimensio
 Bus magnitudes default to 1.0 (flat start), bus angles default to 0.0, and bus types
 default to `PSY.ACBusTypes.PQ`. Arc fields default to zeros. Optional fields
 (`loss_factors`, `voltage_stability_factors`, `arc_active_power_losses`) are `nothing`
-unless the corresponding keyword argument is `true`.
+unless the corresponding keyword argument is `true`. LCC flow fields are allocated
+when `n_lccs > 0`, otherwise `nothing`.
 """
 function TimePowerFlowData(
     n_buses::Int,
     n_arcs::Int,
     n_time_steps::Int;
+    n_lccs::Int = 0,
     calculate_loss_factors::Bool = false,
     calculate_voltage_stability_factors::Bool = false,
     make_arc_active_power_losses::Bool = false,
@@ -104,6 +119,10 @@ function TimePowerFlowData(
         calculate_loss_factors ? zeros(n_buses, n_time_steps) : nothing,
         calculate_voltage_stability_factors ? zeros(n_buses, n_time_steps) : nothing,
         make_arc_active_power_losses ? zeros(n_arcs, n_time_steps) : nothing,
+        n_lccs > 0 ? zeros(n_lccs, n_time_steps) : nothing,
+        n_lccs > 0 ? zeros(n_lccs, n_time_steps) : nothing,
+        n_lccs > 0 ? zeros(n_lccs, n_time_steps) : nothing,
+        n_lccs > 0 ? zeros(n_lccs, n_time_steps) : nothing,
     )
 end
 
@@ -131,6 +150,10 @@ across multiple time steps and contingencies as 3D arrays with dimensions
 - `loss_factors::Union{Array{Float64, 3}, Nothing}`: bus loss factors, or `nothing` if not computed.
 - `voltage_stability_factors::Union{Array{Float64, 3}, Nothing}`: voltage stability factors, or `nothing` if not computed.
 - `arc_active_power_losses::Union{Array{Float64, 3}, Nothing}`: active power losses per arc, or `nothing` if not computed.
+- `lcc_active_power_flow_from_to::Union{Array{Float64, 3}, Nothing}`: LCC active power flow at the from bus, or `nothing` if no LCCs.
+- `lcc_active_power_flow_to_from::Union{Array{Float64, 3}, Nothing}`: LCC active power flow at the to bus, or `nothing` if no LCCs.
+- `lcc_reactive_power_flow_from_to::Union{Array{Float64, 3}, Nothing}`: LCC reactive power flow at the from bus, or `nothing` if no LCCs.
+- `lcc_reactive_power_flow_to_from::Union{Array{Float64, 3}, Nothing}`: LCC reactive power flow at the to bus, or `nothing` if no LCCs.
 - `contingency_labels::Vector{String}`: human-readable labels for each contingency.
 - `contingency_lookup::Dict{String, Int}`: mapping from contingency label to index.
 - `network_modifications::Vector{Union{Nothing, PNM.NetworkModification}}`: network modification for each contingency.
@@ -152,6 +175,10 @@ struct TimeContingencyPowerFlowData <: AbstractPowerFlowResults
     loss_factors::Union{Array{Float64, 3}, Nothing}
     voltage_stability_factors::Union{Array{Float64, 3}, Nothing}
     arc_active_power_losses::Union{Array{Float64, 3}, Nothing}
+    lcc_active_power_flow_from_to::Union{Array{Float64, 3}, Nothing}
+    lcc_active_power_flow_to_from::Union{Array{Float64, 3}, Nothing}
+    lcc_reactive_power_flow_from_to::Union{Array{Float64, 3}, Nothing}
+    lcc_reactive_power_flow_to_from::Union{Array{Float64, 3}, Nothing}
     contingency_labels::Vector{String}
     contingency_lookup::Dict{String, Int}
     network_modifications::Vector{Union{Nothing, PNM.NetworkModification}}
@@ -160,6 +187,7 @@ end
 """
     TimeContingencyPowerFlowData(n_buses::Int, n_arcs::Int, n_time_steps::Int,
         contingency_labels::Vector{String};
+        n_lccs::Int = 0,
         network_modifications::Vector{Union{Nothing, PNM.NetworkModification}} = ...,
         calculate_loss_factors::Bool = false,
         calculate_voltage_stability_factors::Bool = false,
@@ -170,7 +198,8 @@ Construct a `TimeContingencyPowerFlowData` with pre-allocated 3D arrays of dimen
 
 Bus magnitudes default to 1.0 (flat start), bus angles default to 0.0, bus types default
 to `PSY.ACBusTypes.PQ`, and arc fields default to zeros. Optional fields are `nothing`
-unless the corresponding keyword argument is `true`. The `contingency_lookup` dictionary
+unless the corresponding keyword argument is `true`. LCC flow fields are allocated
+when `n_lccs > 0`, otherwise `nothing`. The `contingency_lookup` dictionary
 is built automatically from `contingency_labels`.
 """
 function TimeContingencyPowerFlowData(
@@ -178,6 +207,7 @@ function TimeContingencyPowerFlowData(
     n_arcs::Int,
     n_time_steps::Int,
     contingency_labels::Vector{String};
+    n_lccs::Int = 0,
     network_modifications::Vector{Union{Nothing, PNM.NetworkModification}} =
     Union{Nothing, PNM.NetworkModification}[nothing for _ in contingency_labels],
     calculate_loss_factors::Bool = false,
@@ -226,6 +256,10 @@ function TimeContingencyPowerFlowData(
         calculate_voltage_stability_factors ?
         zeros(n_buses, n_time_steps, n_ctg) : nothing,
         make_arc_active_power_losses ? zeros(n_arcs, n_time_steps, n_ctg) : nothing,
+        n_lccs > 0 ? zeros(n_lccs, n_time_steps, n_ctg) : nothing,
+        n_lccs > 0 ? zeros(n_lccs, n_time_steps, n_ctg) : nothing,
+        n_lccs > 0 ? zeros(n_lccs, n_time_steps, n_ctg) : nothing,
+        n_lccs > 0 ? zeros(n_lccs, n_time_steps, n_ctg) : nothing,
         contingency_labels,
         contingency_lookup,
         network_modifications,
