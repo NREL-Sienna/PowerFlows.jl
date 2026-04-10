@@ -104,25 +104,10 @@ struct PowerFlowData{
     arc_lossy_admittance_to_from::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing}
 end
 
-# Uses an explicit === chain instead of `s in _RESULT_FIELD_NAMES` for type stability.
-function Base.getproperty(pfd::PowerFlowData, s::Symbol)
-    if s === :bus_magnitude ||
-       s === :bus_angles ||
-       s === :bus_type ||
-       s === :bus_active_power_injections ||
-       s === :bus_reactive_power_injections ||
-       s === :bus_active_power_withdrawals ||
-       s === :bus_reactive_power_withdrawals ||
-       s === :arc_active_power_flow_from_to ||
-       s === :arc_reactive_power_flow_from_to ||
-       s === :arc_active_power_flow_to_from ||
-       s === :arc_reactive_power_flow_to_from ||
-       s === :arc_angle_differences ||
-       s === :converged ||
-       s === :loss_factors ||
-       s === :voltage_stability_factors ||
-       s === :arc_active_power_losses
-        return getfield(getfield(pfd, :results), s)
+Base.@constprop :aggressive @inline function Base.getproperty(pfd::PowerFlowData, s::Symbol)
+    results = getfield(pfd, :results)
+    if hasfield(typeof(results), s)
+        return getfield(results, s)
     end
     return getfield(pfd, s)
 end
@@ -334,6 +319,7 @@ function PowerFlowData(
         n_buses,
         n_arcs,
         n_time_steps;
+        n_lccs = n_lccs,
         calculate_loss_factors = calculate_loss_factors,
         calculate_voltage_stability_factors = calculate_voltage_stability_factors,
         make_arc_active_power_losses = pf isa AbstractDCPowerFlow,
