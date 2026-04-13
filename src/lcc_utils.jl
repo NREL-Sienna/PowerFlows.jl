@@ -112,23 +112,22 @@ function initialize_LCC_arcs_and_buses!(
     lccs::Vector{PSY.TwoTerminalLCCLine},
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
-    removed_buses::Set{Int},
 )
     lcc_arcs = PSY.get_arc.(lccs)
     nrd = get_network_reduction_data(data)
     for (i, arc) in enumerate(lcc_arcs)
-        from_number = PSY.get_number(PSY.get_from(arc))
-        to_number = PSY.get_number(PSY.get_to(arc))
-        if from_number in removed_buses || to_number in removed_buses
-            error(
-                "LCC line $(PSY.get_name(lccs[i])) connects to a removed bus. " *
-                "LCC lines on removed buses are not supported.",
-            )
-        end
         data.lcc.arcs[i] = PNM.get_arc_tuple(arc, nrd)
         data.lcc.bus_indices[i] = (
-            _get_bus_ix(bus_lookup, reverse_bus_search_map, from_number),
-            _get_bus_ix(bus_lookup, reverse_bus_search_map, to_number),
+            _get_bus_ix(
+                bus_lookup,
+                reverse_bus_search_map,
+                PSY.get_number(PSY.get_from(arc)),
+            ),
+            _get_bus_ix(
+                bus_lookup,
+                reverse_bus_search_map,
+                PSY.get_number(PSY.get_to(arc)),
+            ),
         )
     end
     return
@@ -142,10 +141,16 @@ function initialize_LCCParameters!(
     removed_buses::Set{Int},
 )
     check_unit_setting(sys)
-    lccs = collect(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys))
+    lccs = collect(
+        PSY.get_available_components(
+            x -> x.arc.from.number ∉ removed_buses && x.arc.to.number ∉ removed_buses,
+            PSY.TwoTerminalLCCLine,
+            sys,
+        ),
+    )
     isempty(lccs) && return
 
-    initialize_LCC_arcs_and_buses!(data, lccs, bus_lookup, reverse_bus_search_map, removed_buses)
+    initialize_LCC_arcs_and_buses!(data, lccs, bus_lookup, reverse_bus_search_map)
 
     # for DC power flow calculations, LCC arc flows are known from quantities from setup.
     for (i, lcc_branch) in enumerate(lccs)
@@ -165,7 +170,13 @@ function initialize_LCCParameters!(
     removed_buses::Set{Int},
 )
     check_unit_setting(sys)
-    lccs = collect(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys))
+    lccs = collect(
+        PSY.get_available_components(
+            x -> x.arc.from.number ∉ removed_buses && x.arc.to.number ∉ removed_buses,
+            PSY.TwoTerminalLCCLine,
+            sys,
+        ),
+    )
     isempty(lccs) && return
 
     lcc_setpoint_at_rectifier = get_lcc_setpoint_at_rectifier(data)
@@ -185,7 +196,7 @@ function initialize_LCCParameters!(
     lcc_rectifier_min_alpha = get_lcc_rectifier_min_thyristor_angle(data)
     lcc_inverter_min_gamma = get_lcc_inverter_min_thyristor_angle(data)
 
-    initialize_LCC_arcs_and_buses!(data, lccs, bus_lookup, reverse_bus_search_map, removed_buses)
+    initialize_LCC_arcs_and_buses!(data, lccs, bus_lookup, reverse_bus_search_map)
 
     lcc_arcs = PSY.get_arc.(lccs)
 
