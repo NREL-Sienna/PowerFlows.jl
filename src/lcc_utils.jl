@@ -112,23 +112,23 @@ function initialize_LCC_arcs_and_buses!(
     lccs::Vector{PSY.TwoTerminalLCCLine},
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
 )
     lcc_arcs = PSY.get_arc.(lccs)
-    # TODO error if LCCs are involved in reductions.
     nrd = get_network_reduction_data(data)
     for (i, arc) in enumerate(lcc_arcs)
+        from_number = PSY.get_number(PSY.get_from(arc))
+        to_number = PSY.get_number(PSY.get_to(arc))
+        if from_number in removed_buses || to_number in removed_buses
+            error(
+                "LCC line $(PSY.get_name(lccs[i])) connects to a removed bus. " *
+                "LCC lines on removed buses are not supported.",
+            )
+        end
         data.lcc.arcs[i] = PNM.get_arc_tuple(arc, nrd)
         data.lcc.bus_indices[i] = (
-            _get_bus_ix(
-                bus_lookup,
-                reverse_bus_search_map,
-                PSY.get_number(PSY.get_from(arc)),
-            ),
-            _get_bus_ix(
-                bus_lookup,
-                reverse_bus_search_map,
-                PSY.get_number(PSY.get_to(arc)),
-            ),
+            _get_bus_ix(bus_lookup, reverse_bus_search_map, from_number),
+            _get_bus_ix(bus_lookup, reverse_bus_search_map, to_number),
         )
     end
     return
@@ -139,12 +139,13 @@ function initialize_LCCParameters!(
     sys::PSY.System,
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
 )
     check_unit_setting(sys)
     lccs = collect(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys))
     isempty(lccs) && return
 
-    initialize_LCC_arcs_and_buses!(data, lccs, bus_lookup, reverse_bus_search_map)
+    initialize_LCC_arcs_and_buses!(data, lccs, bus_lookup, reverse_bus_search_map, removed_buses)
 
     # for DC power flow calculations, LCC arc flows are known from quantities from setup.
     for (i, lcc_branch) in enumerate(lccs)
@@ -161,6 +162,7 @@ function initialize_LCCParameters!(
     sys::PSY.System,
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
 )
     check_unit_setting(sys)
     lccs = collect(PSY.get_components(PSY.get_available, PSY.TwoTerminalLCCLine, sys))
@@ -183,7 +185,7 @@ function initialize_LCCParameters!(
     lcc_rectifier_min_alpha = get_lcc_rectifier_min_thyristor_angle(data)
     lcc_inverter_min_gamma = get_lcc_inverter_min_thyristor_angle(data)
 
-    initialize_LCC_arcs_and_buses!(data, lccs, bus_lookup, reverse_bus_search_map)
+    initialize_LCC_arcs_and_buses!(data, lccs, bus_lookup, reverse_bus_search_map, removed_buses)
 
     lcc_arcs = PSY.get_arc.(lccs)
 
@@ -229,20 +231,17 @@ function hvdc_fixed_injections!(
     sys::PSY.System,
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
 )
     for hvdc in PSY.get_available_components(hvdc_type, sys)
         arc = PSY.get_arc(hvdc)
+        from_number = PSY.get_number(PSY.get_from(arc))
+        to_number = PSY.get_number(PSY.get_to(arc))
+        from_number in removed_buses && continue
+        to_number in removed_buses && continue
         (P_net_from, P_net_to) = get_hvdc_injections(hvdc, sys)
-        from_bus_ix = _get_bus_ix(
-            bus_lookup,
-            reverse_bus_search_map,
-            PSY.get_number(PSY.get_from(arc)),
-        )
-        to_bus_ix = _get_bus_ix(
-            bus_lookup,
-            reverse_bus_search_map,
-            PSY.get_number(PSY.get_to(arc)),
-        )
+        from_bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, from_number)
+        to_bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, to_number)
         data.bus_hvdc_net_power[from_bus_ix, :] .+= P_net_from
         data.bus_hvdc_net_power[to_bus_ix, :] .+= P_net_to
     end
@@ -254,6 +253,7 @@ lcc_vsc_fixed_injections!(
     ::PSY.System,
     ::Dict{Int, Int},
     ::Dict{Int, Int},
+    ::Set{Int},
 ) = nothing
 
 lcc_vsc_fixed_injections!(
@@ -261,6 +261,7 @@ lcc_vsc_fixed_injections!(
     sys::PSY.System,
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
 ) =
     hvdc_fixed_injections!.(
         (data,),
@@ -268,6 +269,7 @@ lcc_vsc_fixed_injections!(
         (sys,),
         (bus_lookup,),
         (reverse_bus_search_map,),
+        (removed_buses,),
     )
 
 function initialize_generic_hvdc_flows!(
