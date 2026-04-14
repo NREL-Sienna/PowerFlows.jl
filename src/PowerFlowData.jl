@@ -456,7 +456,14 @@ function make_and_initialize_power_flow_data(
     arc_lossy_admittance_to_from::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing} = nothing,
 ) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
     check_unit_setting(sys)
-    n_lccs = length(PSY.get_available_components(PSY.TwoTerminalLCCLine, sys))
+    removed_buses =
+        PNM.get_removed_buses(PNM.get_network_reduction_data(power_network_matrix))
+    n_lccs = count(
+        lcc ->
+            PSY.get_number(PSY.get_from(PSY.get_arc(lcc))) ∉ removed_buses &&
+                PSY.get_number(PSY.get_to(PSY.get_arc(lcc))) ∉ removed_buses,
+        PSY.get_available_components(PSY.TwoTerminalLCCLine, sys),
+    )
     data = PowerFlowData(
         pf,
         power_network_matrix,
