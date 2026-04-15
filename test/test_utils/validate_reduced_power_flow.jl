@@ -1,19 +1,13 @@
-function test_reduced_powerflow(
+function test_reduced_power_flow(
     pf::PF.PowerFlowEvaluationModel,
     sys::PSY.System,
     nrs::Vector{PNM.NetworkReduction},
 )
-    data = PF.PowerFlowData(
-        pf,
-        sys;
-        correct_bustypes = true,
-        time_steps = 1,
-        network_reductions = deepcopy(nrs),
-    )
+    data = PF.PowerFlowData(pf, sys)
     if pf isa PF.ACPowerFlow
-        PF.solve_powerflow!(data; pf = pf)
+        PF.solve_power_flow!(data; pf = pf)
     else
-        PF.solve_powerflow!(data)
+        PF.solve_power_flow!(data)
     end
     return data
 end
@@ -33,11 +27,11 @@ function get_branch_flows(data::PF.PowerFlowData)
     arc_ax = PF.get_arc_axis(data)
     for (i, arc) in enumerate(arc_ax)
         branch_flows[arc] =
-            data.arc_activepower_flow_from_to[i] .+
-            (im .* data.arc_reactivepower_flow_from_to[i])
+            data.arc_active_power_flow_from_to[i] .+
+            (im .* data.arc_reactive_power_flow_from_to[i])
         branch_flows[reverse(arc)] =
-            data.arc_activepower_flow_to_from[i] .+
-            (im .* data.arc_reactivepower_flow_to_from[i])
+            data.arc_active_power_flow_to_from[i] .+
+            (im .* data.arc_reactive_power_flow_to_from[i])
     end
     return branch_flows
 end
@@ -52,22 +46,17 @@ function get_reduced_buses(nrd::PNM.NetworkReductionData)
     return reduced_buses
 end
 
-function validate_reduced_powerflow(
+function validate_reduced_power_flow(
     pf::PF.PowerFlowEvaluationModel,
     sys::PSY.System,
     nrs::Vector{PNM.NetworkReduction},
     unreduced_solved_data::PF.PowerFlowData,
 )
-    data = PF.PowerFlowData(
-        pf,
-        sys;
-        network_reductions = deepcopy(nrs),
-        correct_bustypes = true,
-    )
+    data = PF.PowerFlowData(pf, sys)
     if pf isa PF.ACPowerFlow
-        PF.solve_powerflow!(data; pf = pf)
+        PF.solve_power_flow!(data; pf = pf)
     else
-        PF.solve_powerflow!(data)
+        PF.solve_power_flow!(data)
     end
     @test all(data.converged)
     reduced_bus_results = get_bus_voltages(data)

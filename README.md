@@ -19,4 +19,4 @@ Contributions to the development and enahancement of PowerFlows is welcome. Plea
 ## License
 
 PowerFlows is released under a BSD [license](https://github.com/NREL/PowerFlows.jl/blob/master/LICENSE). PowerFlows has been developed as part of the Scalable Integrated Infrastructure Planning (SIIP)
-initiative at the U.S. Department of Energy's National Renewable Energy Laboratory ([NREL](https://www.nrel.gov/))
+initiative at the U.S. Department of Energy's National Laboratory of the Rockies ([NLR](https://www.nlr.gov/), formerly NREL)

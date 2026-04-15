@@ -5,7 +5,7 @@ struct HomotopyHessian
     J::ACPowerFlowJacobian
     PQ_V_mags::BitVector # true iff that coordinate in the state vector is V_mag at a PQ bus
     grad::Vector{Float64}
-    Hv::SparseMatrixCSC{Float64, Int32}
+    Hv::SparseMatrixCSC{Float64, J_INDEX_TYPE}
 end
 
 """Does `A += B' * B`, in a way that preserves the sparse structure of `A`, if possible.
@@ -76,7 +76,11 @@ end
 function HomotopyHessian(data::ACPowerFlowData, time_step::Int)
     pfResidual = ACPowerFlowResidual(data, time_step)
     Hv = _create_hessian_matrix_structure(data, time_step)
-    J = ACPowerFlowJacobian(data, time_step)
+    J = ACPowerFlowJacobian(data,
+        pfResidual.bus_slack_participation_factors,
+        pfResidual.subnetworks,
+        time_step,
+    )
     nbuses = size(get_bus_type(data), 1)
     PQ_mask = get_bus_type(data)[:, time_step] .== (PSY.ACBusTypes.PQ,)
     PQ_V_mags = collect(Iterators.flatten(zip(PQ_mask, falses(nbuses))))
@@ -84,8 +88,8 @@ function HomotopyHessian(data::ACPowerFlowData, time_step::Int)
 end
 
 function _create_hessian_matrix_structure(data::ACPowerFlowData, ::Int64)
-    rows = Int32[]      # I
-    columns = Int32[]   # J
+    rows = J_INDEX_TYPE[]      # I
+    columns = J_INDEX_TYPE[]   # J
     values = Float64[]  # V
 
     # an over-estimate: I want ordered pairs of vertices that are 2 or fewer
@@ -128,7 +132,7 @@ end
 
 """
     _update_hessian_matrix_values!(
-        Hv::SparseMatrixCSC{Float64, Int32},
+        Hv::SparseMatrixCSC{Float64, $J_INDEX_TYPE},
         F_value::Vector{Float64},
         data::ACPowerFlowData,
         time_step::Int64
@@ -176,13 +180,13 @@ Diagonal blocks (where ``i = k``) follow the same pattern as if each bus is its 
 Off-diagonal blocks for pairs of buses not connected by a branch are structurally zero.
 
 # Arguments
-- `Hv::SparseMatrixCSC{Float64, Int32}`: The Hessian matrix to be updated (modified in-place).
+- `Hv::SparseMatrixCSC{Float64, $J_INDEX_TYPE}`: The Hessian matrix to be updated (modified in-place).
 - `F_value::Vector{Float64}`: Current values of the power balance residuals.
 - `data::ACPowerFlowData`: The power flow data containing bus and network information.
 - `time_step::Int64`: The time step for which to compute the Hessian.
 """
 function _update_hessian_matrix_values!(
-    Hv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Hv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     F_value::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64)

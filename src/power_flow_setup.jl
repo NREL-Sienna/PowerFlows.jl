@@ -5,6 +5,11 @@ function improve_x0(pf::ACPowerFlow,
 )
     x0 = calculate_x0(data, time_step)
     residual(x0, time_step)
+    prev = findlast(@view(data.converged[1:(time_step - 1)]))
+    if !isnothing(prev)
+        newx0 = _previous_solution_start(x0, data, prev)
+        _pick_better_x0(x0, newx0, time_step, residual, "previous converged solution")
+    end
     if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
        get_enhanced_flat_start(pf)
         newx0 = _enhanced_flat_start(x0, data, time_step)
@@ -14,9 +19,9 @@ function improve_x0(pf::ACPowerFlow,
     end
     if norm(residual.Rv, 1) > LARGE_RESIDUAL * length(residual.Rv) &&
        get_robust_power_flow(pf)
-        dc_powerflow_start!(x0, data, time_step, residual)
+        dc_power_flow_start!(x0, data, time_step, residual)
     else
-        @debug "skipping running DC powerflow fallback"
+        @debug "skipping running DC power flow fallback"
     end
     residual(x0, time_step)  # re-calculate residual for new x0: might have changed.
 
@@ -58,20 +63,20 @@ function _pick_better_x0(x0::Vector{Float64},
     else
         @debug "no improvement from $improvement_method"
     end
-    return nothing
+    return
 end
 
 """If initial residual is large, run a DC power flow and see if that gives
 a better starting point for angles. If so, then overwrite `x0` with the result of the DC
 power flow. If not, keep the original `x0`."""
-function dc_powerflow_start!(x0::Vector{Float64},
+function dc_power_flow_start!(x0::Vector{Float64},
     data::ACPowerFlowData,
     time_step::Int64,
     residual::ACPowerFlowResidual,
 )
-    _dc_powerflow_fallback!(data, time_step)
+    _dc_power_flow_fallback!(data, time_step)
     newx0 = calculate_x0(data, time_step)
-    _pick_better_x0(x0, newx0, time_step, residual, "DC powerflow fallback")
+    _pick_better_x0(x0, newx0, time_step, residual, "DC power flow fallback")
     return
 end
 
@@ -83,6 +88,18 @@ function calculate_x0(data::ACPowerFlowData,
     x0 = Vector{Float64}(undef, 2 * n_buses + 4 * n_lcc)
     update_state!(x0, data, time_step)
     return x0
+end
+
+"""Use state variables from a previous converged time step (`prev`) as a
+candidate starting point."""
+function _previous_solution_start(
+    x0::Vector{Float64},
+    data::ACPowerFlowData,
+    prev::Int64,
+)
+    newx0 = copy(x0)
+    update_state!(newx0, data, prev)
+    return newx0
 end
 
 function _enhanced_flat_start(
@@ -107,58 +124,59 @@ function _enhanced_flat_start(
     return newx0
 end
 
-"""When solving AC power flows, if the initial guess has large residual, we run a DC power 
-flow as a fallback. This runs a DC powerflow on `data::ACPowerFlowData` for the given
+"""When solving AC power flows, if the initial guess has large residual, we run a DC power
+flow as a fallback. This runs a DC power flow on `data::ACPowerFlowData` for the given
 `time_step`, and writes the solution to `data.bus_angles`."""
-function _dc_powerflow_fallback!(data::ACPowerFlowData, time_step::Int)
-    # dev note: for DC, we can efficiently solve for all timesteps at once, and we want branch
-    # flows. For AC fallback, we're only interested in the current timestep, and no branch flows
-    # PERF: if multi-period and multiple time steps have bad initial guesses,
-    #       we're re-creating this factorization for each time step. Store it inside
-    #       data.aux_network_matrix instead.
-    ABA_matrix = data.aux_network_matrix.data
-    solver_cache = KLULinSolveCache(ABA_matrix)
-    full_factor!(solver_cache, ABA_matrix)
+function _dc_power_flow_fallback!(data::ACPowerFlowData, time_step::Int)
+    # dev note: for DC, we can efficiently solve for all time_steps at once, and we want branch
+    # flows. For AC fallback, we're only interested in the current time_step, and no branch flows
+    solver_cache = get_aux_network_matrix(data).K
+    # factored in constructor; no need to factor again (as long as network is same)
     valid_ix = get_valid_ix(data)
     p_inj =
-        data.bus_activepower_injection[valid_ix, time_step] -
-        data.bus_activepower_withdrawals[valid_ix, time_step]
-    solve!(solver_cache, p_inj)
+        data.bus_active_power_injections[valid_ix, time_step] -
+        data.bus_active_power_withdrawals[valid_ix, time_step] +
+        data.bus_hvdc_net_power[valid_ix, time_step]
+    # assumption: the linear algebra backend we're using implements and exports ldiv!
+    ldiv!(solver_cache, p_inj)
     data.bus_angles[valid_ix, time_step] .= p_inj
 end
 
-function initialize_powerflow_variables(pf::ACPowerFlow{T},
+function initialize_power_flow_variables(pf::ACPowerFlow{T},
     data::ACPowerFlowData,
     time_step::Int64;
-    kwargs...,
+    x0::Union{Vector{Float64}, Nothing} = nothing,
+    validate_voltage_magnitudes::Bool = DEFAULT_VALIDATE_VOLTAGES,
+    vm_validation_range::MinMax = DEFAULT_VALIDATION_RANGE,
+    _ignored...,
 ) where {T <: ACPowerFlowSolverType}
     residual = ACPowerFlowResidual(data, time_step)
-    x0 = improve_x0(pf, data, residual, time_step)
-    if OVERRIDE_x0 && :x0 in keys(kwargs)
+    x0_computed = improve_x0(pf, data, residual, time_step)
+    if OVERRIDE_x0 && !isnothing(x0)
         print_signorms(residual.Rv; intro = "corrected ", ps = [1, 2, Inf])
-        x0 .= get(kwargs, :x0, x0)
+        x0_computed .= x0
         @warn "Overriding initial guess x0."
-        residual(x0, time_step)  # re-calculate residual for new x0: might have changed.
+        residual(x0_computed, time_step)
         print_signorms(residual.Rv; ps = [1, 2, Inf])
     end
     @info "Initial residual size: " *
           "$(norm(residual.Rv, 2)) L2, " *
           "$(norm(residual.Rv, Inf)) L∞"
 
-    J = ACPowerFlowJacobian(data, time_step)
+    J = ACPowerFlowJacobian(
+        data,
+        residual.bus_slack_participation_factors,
+        residual.subnetworks,
+        time_step,
+    )
     J(time_step)
 
-    validate_vms::Bool = get(
-        kwargs,
-        :validate_voltages,
-        DEFAULT_VALIDATE_VOLTAGES,
-    )
-    validation_range::MinMax = get(
-        kwargs,
-        :vm_validation_range,
-        DEFAULT_VALIDATION_RANGE,
-    )
     bus_types = @view get_bus_type(J.data)[:, time_step]
-    validate_vms && validate_voltages(x0, bus_types, validation_range, 0)
-    return residual, J, x0
+    validate_voltage_magnitudes && PowerFlows.validate_voltage_magnitudes(
+        x0_computed,
+        bus_types,
+        vm_validation_range,
+        0,
+    )
+    return residual, J, x0_computed
 end

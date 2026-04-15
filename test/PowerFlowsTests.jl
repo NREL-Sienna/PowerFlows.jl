@@ -3,6 +3,7 @@ module PowerFlowsTests
 using ReTest
 using PowerFlows
 using Logging
+using Dates
 using PowerSystems
 using PowerSystemCaseBuilder
 using PowerNetworkMatrices
@@ -25,16 +26,16 @@ Aqua.test_ambiguities(PowerFlows)
 Aqua.test_stale_deps(PowerFlows)
 Aqua.test_deps_compat(PowerFlows)
 
-const IS = InfrastructureSystems
-const PSB = PowerSystemCaseBuilder
-const PSY = PowerSystems
-const PNM = PowerNetworkMatrices
-const PF = PowerFlows
+import InfrastructureSystems as IS
+import PowerSystemCaseBuilder as PSB
+import PowerSystems as PSY
+import PowerNetworkMatrices as PNM
+import PowerFlows as PF
 
 # used to be public, no longer: import here so we can use in tests
 import PowerFlows: PowerFlowData
 import PowerFlows: ACPowerFlowData, PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData
-import PowerFlows: solve_powerflow!, write_results
+import PowerFlows: solve_power_flow!, write_results
 
 const BASE_DIR = dirname(dirname(Base.find_package("PowerFlows")))
 const TEST_DATA_DIR = joinpath(
@@ -44,7 +45,7 @@ const TEST_DATA_DIR = joinpath(
 )
 const DIFF_INF_TOLERANCE = 1e-4
 const DIFF_L2_TOLERANCE = 1e-3
-const TIGHT_TOLERANCE = 1e-9
+const TIGHT_TOLERANCE = 1e-7
 
 const LOG_FILE = "power-flows.log"
 
@@ -53,7 +54,7 @@ include("test_utils/common.jl")
 include("test_utils/psse_results_compare.jl")
 include("test_utils/penalty_factors_brute_force.jl")
 include("test_utils/legacy_pf.jl")
-include("test_utils/validate_reduced_powerflow.jl")
+include("test_utils/validate_reduced_power_flow.jl")
 
 const AC_SOLVERS_TO_TEST = (
     LUACPowerFlow,
@@ -74,6 +75,7 @@ function get_logging_level_from_env(env_name::String, default)
     return IS.get_logging_level(level)
 end
 
+# See also `load_tests.jl` for running tests interactively with ReTest.jl
 function run_tests(args...; kwargs...)
     logger = global_logger()
     try

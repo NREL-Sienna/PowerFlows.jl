@@ -10,30 +10,31 @@ considers_reactive_power(::AbstractDCPowerFlow) = false
 
 function _get_injections!(
     pf::PowerFlowEvaluationModel,
-    bus_activepower_injection::Vector{Float64},
-    bus_reactivepower_injection::Vector{Float64},
+    bus_active_power_injections::Vector{Float64},
+    bus_reactive_power_injections::Vector{Float64},
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
     sys::PSY.System,
 )
     check_unit_setting(sys)
     for source in PSY.get_available_components(PSY.StaticInjection, sys)
+        bus = PSY.get_bus(source)
+        PSY.get_number(bus) in removed_buses && continue
         if contributes_active_power(source) &&
            active_power_contribution_type(source) == PowerContributionType.INJECTION
-            bus = PSY.get_bus(source)
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-            bus_activepower_injection[bus_ix] += PSY.get_active_power(source)
+            bus_active_power_injections[bus_ix] += PSY.get_active_power(source)
         end
         if considers_reactive_power(pf) && contributes_reactive_power(source) &&
            reactive_power_contribution_type(source) == PowerContributionType.INJECTION
-            bus = PSY.get_bus(source)
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
             # yet to implement control mode etc. for FACTS devices.
             if source isa PSY.FACTSControlDevice
-                bus_reactivepower_injection[bus_ix] +=
+                bus_reactive_power_injections[bus_ix] +=
                     PSY.get_reactive_power_required(source)
             else
-                bus_reactivepower_injection[bus_ix] += PSY.get_reactive_power(source)
+                bus_reactive_power_injections[bus_ix] += PSY.get_reactive_power(source)
             end
         end
     end
@@ -41,31 +42,66 @@ function _get_injections!(
     return
 end
 
-function _get_withdrawals!(
-    pf::PowerFlowEvaluationModel,
-    bus_activepower_withdrawals::Vector{Float64},
-    bus_reactivepower_withdrawals::Vector{Float64},
-    bus_activepower_constant_current_withdrawals::Vector{Float64},
-    bus_reactivepower_constant_current_withdrawals::Vector{Float64},
-    bus_activepower_constant_impedance_withdrawals::Vector{Float64},
-    bus_reactivepower_constant_impedance_withdrawals::Vector{Float64},
+"""Compute per-bus active power range R_k = sum(P_max - P_setpoint) for generators at
+REF/PV buses. Used for headroom-proportional distributed slack.
+
+Only writes to column 1: PF uses single-value active power limits and setpoints
+(not time-varying). The caller copies column 1 to all time steps. For time-varying
+headroom, compute slack weights in PSI."""
+function _compute_bus_active_power_range!(
+    bus_active_power_range::Matrix{Float64},
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
+    sys::PSY.System,
+    generator_headroom::Union{Dict{Tuple{DataType, String}, Float64}, Nothing} = nothing,
+)
+    for source in PSY.get_available_components(PSY.StaticInjection, sys)
+        contributes_active_power(source) || continue
+        active_power_contribution_type(source) == PowerContributionType.INJECTION ||
+            continue
+        bus = PSY.get_bus(source)
+        PSY.get_number(bus) in removed_buses && continue
+        PSY.get_bustype(bus) ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
+        limits = get_active_power_limits_for_power_flow(source)
+        range_k = limits.max - PSY.get_active_power(source)
+        range_k <= 0.0 && continue
+        isfinite(range_k) || continue
+        bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
+        bus_active_power_range[bus_ix, 1] += range_k
+        if generator_headroom !== nothing
+            generator_headroom[(typeof(source), PSY.get_name(source))] = range_k
+        end
+    end
+    return
+end
+
+function _get_withdrawals!(
+    pf::PowerFlowEvaluationModel,
+    bus_active_power_withdrawals::Vector{Float64},
+    bus_reactive_power_withdrawals::Vector{Float64},
+    bus_active_power_constant_current_withdrawals::Vector{Float64},
+    bus_reactive_power_constant_current_withdrawals::Vector{Float64},
+    bus_active_power_constant_impedance_withdrawals::Vector{Float64},
+    bus_reactive_power_constant_impedance_withdrawals::Vector{Float64},
+    bus_lookup::Dict{Int, Int},
+    reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
     sys::PSY.System,
 )
     # constant power withdrawals
     for l in PSY.get_available_components(PSY.StaticInjection, sys)
+        bus = PSY.get_bus(l)
+        PSY.get_number(bus) in removed_buses && continue
         if contributes_active_power(l) &&
            active_power_contribution_type(l) == PowerContributionType.WITHDRAWAL
-            bus = PSY.get_bus(l)
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-            bus_activepower_withdrawals[bus_ix] += PSY.get_active_power(l)
+            bus_active_power_withdrawals[bus_ix] += PSY.get_active_power(l)
         end
         if considers_reactive_power(pf) && contributes_reactive_power(l) &&
            reactive_power_contribution_type(l) == PowerContributionType.WITHDRAWAL
-            bus = PSY.get_bus(l)
             bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-            bus_reactivepower_withdrawals[bus_ix] += PSY.get_reactive_power(l)
+            bus_reactive_power_withdrawals[bus_ix] += PSY.get_reactive_power(l)
         end
     end
     # handle StandardLoad: they have constant current and constant impedance withdrawals,
@@ -75,21 +111,23 @@ function _get_withdrawals!(
         sys,
     )
         bus = PSY.get_bus(l)
+        PSY.get_number(bus) in removed_buses && continue
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-        bus_activepower_withdrawals[bus_ix] += PSY.get_constant_active_power(l)
-        bus_reactivepower_withdrawals[bus_ix] += PSY.get_constant_reactive_power(l)
-        bus_activepower_constant_current_withdrawals[bus_ix] +=
+        bus_active_power_withdrawals[bus_ix] += PSY.get_constant_active_power(l)
+        bus_reactive_power_withdrawals[bus_ix] += PSY.get_constant_reactive_power(l)
+        bus_active_power_constant_current_withdrawals[bus_ix] +=
             PSY.get_current_active_power(l)
-        bus_activepower_constant_impedance_withdrawals[bus_ix] +=
+        bus_active_power_constant_impedance_withdrawals[bus_ix] +=
             PSY.get_impedance_active_power(l)
-        bus_reactivepower_constant_current_withdrawals[bus_ix] +=
+        bus_reactive_power_constant_current_withdrawals[bus_ix] +=
             PSY.get_current_reactive_power(l)
-        bus_reactivepower_constant_impedance_withdrawals[bus_ix] +=
+        bus_reactive_power_constant_impedance_withdrawals[bus_ix] +=
             PSY.get_impedance_reactive_power(l)
     end
     # FixedAdmittance components are already included in the Ybus matrix.
     for sa in PSY.get_available_components(PSY.SwitchedAdmittance, sys)
         bus = PSY.get_bus(sa)
+        PSY.get_number(bus) in removed_buses && continue
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         Y = PSY.get_Y(sa) + sum(PSY.get_initial_status(sa) .* PSY.get_Y_increase(sa))
         # Here we implement the switched admittance element as a constant impedance load.
@@ -97,13 +135,14 @@ function _get_withdrawals!(
         # the following is equivalent to S = V * conj(Y * V) for V = 1.0 p.u.
         # As conj(Y) = G - jB, we have P = G and Q = -B
         # (we could use +=real(conj(Y)) and +=imag(conj(Y)) as well).
-        bus_activepower_constant_impedance_withdrawals[bus_ix] += real(Y)
-        bus_reactivepower_constant_impedance_withdrawals[bus_ix] -= imag(Y)
+        bus_active_power_constant_impedance_withdrawals[bus_ix] += real(Y)
+        bus_reactive_power_constant_impedance_withdrawals[bus_ix] -= imag(Y)
     end
     for sc in PSY.get_available_components(PSY.SynchronousCondenser, sys)
         bus = PSY.get_bus(sc)
+        PSY.get_number(bus) in removed_buses && continue
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
-        bus_activepower_withdrawals[bus_ix] += PSY.get_active_power_losses(sc)
+        bus_active_power_withdrawals[bus_ix] += PSY.get_active_power_losses(sc)
         # reactive power handled already:
         # contributes_reactive_power(PSY.SynchronousCondenser) is true.
     end
@@ -111,26 +150,28 @@ function _get_withdrawals!(
 end
 
 function _get_reactive_power_bound!(
-    bus_reactivepower_bounds::Vector{Tuple{Float64, Float64}},
+    bus_reactive_power_bounds::Vector{Tuple{Float64, Float64}},
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
     sys::PSY.System,
 )
     for source in PSY.get_available_components(PSY.StaticInjection, sys)
         isa(source, PSY.ElectricLoad) && continue
         isa(source, PSY.FACTSControlDevice) && continue # FACTS devices.
         bus = PSY.get_bus(source)
+        PSY.get_number(bus) in removed_buses && continue
         bus_ix = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         reactive_power_limits = get_reactive_power_limits_for_power_flow(source)
         if !isnothing(reactive_power_limits) && !isinf(reactive_power_limits.min) &&
            !isinf(reactive_power_limits.max)
-            bus_reactivepower_bounds[bus_ix] = (
-                bus_reactivepower_bounds[bus_ix][1] + reactive_power_limits.min,
-                bus_reactivepower_bounds[bus_ix][2] + reactive_power_limits.max,
+            bus_reactive_power_bounds[bus_ix] = (
+                bus_reactive_power_bounds[bus_ix][1] + reactive_power_limits.min,
+                bus_reactive_power_bounds[bus_ix][2] + reactive_power_limits.max,
             )
         else
             @warn("Reactive Power Bounds at Bus $(PSY.get_name(bus)) set to (-Inf, Inf)")
-            bus_reactivepower_bounds[bus_ix] = (-Inf, Inf)
+            bus_reactive_power_bounds[bus_ix] = (-Inf, Inf)
         end
     end
     return
@@ -306,6 +347,22 @@ function _initialize_bus_data!(
     )
     return
 end
+
+handle_zip_loads!(
+    ::PowerFlowData,
+    ::ACPowerFlow{<:ACPowerFlowSolverType},
+) = nothing
+
+handle_zip_loads!(
+    data::PowerFlowData,
+    ::AbstractDCPowerFlow,
+) = convert_zip_to_constant_power!(
+    data.bus_active_power_withdrawals,
+    data.bus_active_power_constant_current_withdrawals,
+    data.bus_active_power_constant_impedance_withdrawals,
+    1.0,
+) # we could do same for reactive power fields, but it's DC so no need.
+
 ##############################################################################
 # Matrix Methods #############################################################
 
@@ -325,10 +382,19 @@ function my_mul_mt(
 end
 
 """Similar to above: A*X where X is a matrix."""
-my_mul_mt(
+function my_mul_mt(
     A::PNM.VirtualPTDF,
     X::Matrix{Float64},
-) = vcat((A[name_, :]' * X for name_ in A.axes[1])...)
+)
+    n_arcs = length(A.axes[1])
+    n_ts = size(X, 2)
+    Y = Matrix{Float64}(undef, n_arcs, n_ts)
+    for (i, name_) in enumerate(A.axes[1])
+        row_i = A[name_, :]
+        mul!(view(Y, i, :), X', row_i)
+    end
+    return Y
+end
 
 function _add_gspf_to_ijv!(
     I::Vector{Int},
@@ -338,6 +404,7 @@ function _add_gspf_to_ijv!(
     gsp_factors::Dict{Tuple{DataType, String}, Float64},
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
     time_steps_iter::AbstractVector{<:Integer},
 )
     for ((gen_type, gen_name), val) in gsp_factors
@@ -346,6 +413,7 @@ function _add_gspf_to_ijv!(
         isnothing(gen) && throw(ArgumentError("$gen_type $gen_name not found"))
         PSY.get_available(gen) || continue
         bus = PSY.get_bus(gen)
+        PSY.get_number(bus) in removed_buses && continue
         bus_idx = _get_bus_ix(bus_lookup, reverse_bus_search_map, PSY.get_number(bus))
         for time_step in time_steps_iter
             push!(I, bus_idx)
@@ -362,6 +430,7 @@ function make_bus_slack_participation_factors!(
     generator_slack_participation_factors_input::Dict{Tuple{DataType, String}, Float64},
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
     time_steps::Int,
     n_buses::Int,
     ::Matrix{PSY.ACBusTypes},
@@ -378,12 +447,13 @@ function make_bus_slack_participation_factors!(
         generator_slack_participation_factors_input,
         bus_lookup,
         reverse_bus_search_map,
+        removed_buses,
         1:time_steps,
     )
 
     data.bus_slack_participation_factors .= sparse(I, J, V, n_buses, time_steps)
     append!(
-        data.generator_slack_participation_factors,
+        get_computed_gspf(data),
         repeat([generator_slack_participation_factors_input], time_steps),
     )
     return
@@ -397,6 +467,7 @@ function make_bus_slack_participation_factors!(
     },
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
+    removed_buses::Set{Int},
     time_steps::Int,
     n_buses::Int,
     bus_type::Matrix{PSY.ACBusTypes},
@@ -408,6 +479,7 @@ function make_bus_slack_participation_factors!(
             generator_slack_participation_factors_input[1],
             bus_lookup,
             reverse_bus_search_map,
+            removed_buses,
             time_steps,
             n_buses,
             bus_type,
@@ -432,7 +504,7 @@ function make_bus_slack_participation_factors!(
         )
     end
     append!(
-        data.generator_slack_participation_factors,
+        get_computed_gspf(data),
         generator_slack_participation_factors_input,
     )
 
@@ -451,6 +523,7 @@ function make_bus_slack_participation_factors!(
             factors,
             bus_lookup,
             reverse_bus_search_map,
+            removed_buses,
             time_step:time_step,
         )
     end
@@ -465,6 +538,7 @@ function make_bus_slack_participation_factors!(
     ::Nothing,
     ::Dict{Int, Int},
     ::Dict{Int, Int},
+    ::Set{Int},
     time_steps::Int,
     n_buses::Int,
     bus_type::Matrix{PSY.ACBusTypes},
@@ -486,7 +560,7 @@ function make_bus_slack_participation_factors!(
     return
 end
 
-function validate_voltages(x::Vector{Float64},
+function validate_voltage_magnitudes(x::Vector{Float64},
     bus_types::AbstractArray{PSY.ACBusTypes},
     range::NamedTuple{(:min, :max), Tuple{Float64, Float64}} = VM_VALIDATION_RANGE,
     i::Int64 = 1,

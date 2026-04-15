@@ -127,18 +127,6 @@ function can_be_PV(sys::System)
     return source_buses
 end
 
-get_complex_voltage(bus::PSY.ACBus) = PSY.get_magnitude(bus) * exp(1im * PSY.get_angle(bus))
-
-function get_segment_flow(
-    segment::PSY.ACTransmission,
-    V_from::ComplexF64,
-    V_to::ComplexF64,
-)
-    (y11, y12, _, _) = PNM.ybus_branch_entries(segment)
-    I_from = y11 * V_from + y12 * V_to
-    return V_from * conj(I_from)
-end
-
 error_if_reversed(::PSY.TwoTerminalHVDC, ::Float64) = nothing
 
 function error_if_reversed(hvdc::PSY.TwoTerminalLCCLine, P_dc::Float64)
@@ -170,6 +158,26 @@ function hvdc_power_loss_natural_units(hvdc::PSY.TwoTerminalHVDC)
           "Setting the loss equal to the transmitted power instead."
     P_loss < 0.0 && @warn "The loss curve of $(PSY.summary(hvdc)) " *
           "indicates negative losses for transmitted power $P_dc. " *
+          "Setting the loss equal to zero instead."
+    return (P_dc, clamp(P_loss, 0.0, P_dc), flow_reversed)
+end
+
+# VSC lines have separate converter losses on each end
+function hvdc_power_loss_natural_units(hvdc::PSY.TwoTerminalVSCLine)
+    P_dc = with_units_base(hvdc, "NATURAL_UNITS") do
+        PSY.get_active_power_flow(hvdc)
+    end
+    flow_reversed = P_dc < 0
+    P_dc = abs(P_dc)
+    # Sum losses from both converters
+    loss_from = _eval_loss_function(PSY.get_converter_loss_from(hvdc), P_dc)
+    loss_to = _eval_loss_function(PSY.get_converter_loss_to(hvdc), P_dc)
+    P_loss = loss_from + loss_to
+    P_loss > P_dc && @warn "The converter losses of $(PSY.summary(hvdc)) " *
+          "indicate losses greater than the transmitted power $P_dc. " *
+          "Setting the loss equal to the transmitted power instead."
+    P_loss < 0.0 && @warn "The converter losses of $(PSY.summary(hvdc)) " *
+          "indicate negative losses for transmitted power $P_dc. " *
           "Setting the loss equal to zero instead."
     return (P_dc, clamp(P_loss, 0.0, P_dc), flow_reversed)
 end
@@ -209,4 +217,15 @@ function get_arc_tuple(arc::PSY.Arc, reverse_bus_search_map::Dict{Int, Int})
         get(reverse_bus_search_map, from_bus, from_bus),
         get(reverse_bus_search_map, to_bus, to_bus),
     )
+end
+
+function convert_zip_to_constant_power!(p_load::AbstractArray{T, N},
+    i_load::AbstractArray{T, N},
+    z_load::AbstractArray{T, N},
+    voltage_magnitude::T,
+) where {T <: Real, N}
+    # faster with broadcast fusion via @. ?
+    p_load .+= voltage_magnitude .* i_load .+ voltage_magnitude^2 .* z_load
+    i_load .= zero(T)
+    z_load .= zero(T)
 end

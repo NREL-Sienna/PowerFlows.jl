@@ -6,17 +6,21 @@ A struct that represents the Jacobian matrix for AC power flow calculations.
 This struct uses the functor pattern, meaning instances of `ACPowerFlowJacobian` store the data (Jacobian matrix) internally
 and can be called as a function at the same time. Calling the instance as a function updates the stored Jacobian matrix.
 
-
 # Fields
 - `data::ACPowerFlowData`: The grid model data used for power flow calculations.
 - `Jf!::Function`: A function that calculates the Jacobian matrix inplace.
-- `Jv::SparseArrays.SparseMatrixCSC{Float64, Int32}`: The Jacobian matrix, which is updated by the function `Jf!`.
+- `Jv::SparseArrays.SparseMatrixCSC{Float64, $J_INDEX_TYPE}`: The Jacobian matrix, which is updated by the function `Jf!`.
+- `diag_elements::MVector{4, Float64}`: Temporary storage for diagonal elements during Jacobian update.
+- `bus_slack_participation_factors::SparseVector{Float64, Int}`: Normalized per-bus slack participation factors for the current time step (from the `ACPowerFlowResidual`). Used for the distributed slack Jacobian entries.
+- `subnetworks::Dict{Int64, Vector{Int64}}`: Subnetwork mapping from REF bus to bus list (from the `ACPowerFlowResidual`). Used for the distributed slack Jacobian entries.
 """
 struct ACPowerFlowJacobian
     data::ACPowerFlowData
     Jf!::Function   # This is the function that calculates the Jacobian matrix and updates Jv inplace
-    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32}  # This is the Jacobian matrix, that is updated by the function Jf
+    Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE}  # This is the Jacobian matrix, that is updated by the function Jf
     diag_elements::MVector{4, Float64}  # Temporary storage for diagonal elements during Jacobian update
+    bus_slack_participation_factors::SparseVector{Float64, Int}
+    subnetworks::Dict{Int64, Vector{Int64}}
 end
 
 """
@@ -31,17 +35,23 @@ Defining this method allows an instance of `ACPowerFlowJacobian` to be called as
 
 # Example
 ```julia
-J = ACPowerFlowJacobian(data, time_step)
+residual = ACPowerFlowResidual(data, time_step)
+J = ACPowerFlowJacobian(data,
+        residual.bus_slack_participation_factors,
+        residual.subnetworks,
+        time_step
+    )
 J(time_step)  # Updates the Jacobian matrix Jv
 ```
 """
 function (J::ACPowerFlowJacobian)(time_step::Int64)
-    J.Jf!(J.Jv, J.data, time_step, J.diag_elements)
+    J.Jf!(J.Jv, J.data, time_step, J.diag_elements,
+        J.bus_slack_participation_factors, J.subnetworks)
     return
 end
 
 """
-    (J::ACPowerFlowJacobian)(J::SparseArrays.SparseMatrixCSC{Float64, Int32}, time_step::Int64)
+    (J::ACPowerFlowJacobian)(J::SparseArrays.SparseMatrixCSC{Float64, $J_INDEX_TYPE}, time_step::Int64)
 
 Use the `ACPowerFlowJacobian` to update the provided Jacobian matrix `J` inplace.
 
@@ -50,37 +60,50 @@ Update the internally stored Jacobian matrix `Jv` using the function `Jf!` and t
 This method allows an instance of ACPowerFlowJacobian to be called as a function, following the functor pattern.
 
 # Arguments
-- `J::SparseArrays.SparseMatrixCSC{Float64, Int32}``: A sparse matrix to be updated with new values of the Jacobian matrix.
+- `J::SparseArrays.SparseMatrixCSC{Float64, $J_INDEX_TYPE}`: A sparse matrix to be updated with new values of the Jacobian matrix.
 - `time_step::Int64`: The time step for the calculations.
 
 # Example
 ```julia
-J = ACPowerFlowJacobian(data, time_step)
-Jv = SparseArrays.sparse(Float64[], Int32[], Int32[])
+residual = ACPowerFlowResidual(data, time_step)
+J = ACPowerFlowJacobian(data,
+    residual.bus_slack_participation_factors,
+    residual.subnetworks,
+    time_step
+)
+Jv = SparseArrays.sparse(Float64[], J_INDEX_TYPE[], J_INDEX_TYPE[])
 J(Jv, time_step)  # Updates the Jacobian matrix Jv and writes it to J
 ```
 """
 function (J::ACPowerFlowJacobian)(
-    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     time_step::Int64,
 )
-    J.Jf!(J.Jv, J.data, time_step, J.diag_elements)
+    J.Jf!(J.Jv, J.data, time_step, J.diag_elements,
+        J.bus_slack_participation_factors, J.subnetworks)
     copyto!(Jv, J.Jv)
     return
 end
 
 """
-    ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64) -> ACPowerFlowJacobian
+    ACPowerFlowJacobian(data::ACPowerFlowData,
+        bus_slack_participation_factors::SparseVector{Float64, Int},
+        subnetworks::Dict{Int64, Vector{Int64}}, time_step::Int64) -> ACPowerFlowJacobian
 
 This is the constructor for ACPowerFlowJacobian.
-Create an `ACPowerFlowJacobian` instance. As soon as the instance is created, it already has 
+Create an `ACPowerFlowJacobian` instance. As soon as the instance is created, it already has
 the Jacobian matrix structure initialized and its values updated, stored internally as `Jv`.
-The data instance is stored internally and used to update the Jacobian matrix because the 
-structure of the Jacobian matrix is tied to the data. Changing the data requires creating a 
+The data instance is stored internally and used to update the Jacobian matrix because the
+structure of the Jacobian matrix is tied to the data. Changing the data requires creating a
 new instance of `ACPowerFlowJacobian`.
+
+The `bus_slack_participation_factors` and `subnetworks` are needed for the distributed slack
+Jacobian entries: each participating bus k has ∂F_P_k/∂x[2*ref-1] = -c_k in the Jacobian.
 
 # Arguments
 - `data::ACPowerFlowData`: The data used for power flow calculations.
+- `bus_slack_participation_factors::SparseVector{Float64, Int}`: Normalized per-bus slack participation factors (from the `ACPowerFlowResidual`).
+- `subnetworks::Dict{Int64, Vector{Int64}}`: Subnetwork mapping from REF bus to bus list (from the `ACPowerFlowResidual`).
 - `time_step::Int64`: The time step for the calculations.
 
 # Returns
@@ -88,22 +111,36 @@ new instance of `ACPowerFlowJacobian`.
 
 # Example
 ```julia
-J = ACPowerFlowJacobian(data, time_step)  # Creates an instance J of ACPowerFlowJacobian, with the Jacobian matrix stored internally as J.Jv initialized and updated.
-J(time_step)  # Updates the Jacobian matrix stored internally in J (J.Jv) with the latest state of the `data` (`ACPowerFlowData` instance) and the provided time step.
+residual = ACPowerFlowResidual(data, time_step)
+J = ACPowerFlowJacobian(data,
+    residual.bus_slack_participation_factors, residual.subnetworks, time_step)
+J(time_step)  # Updates the Jacobian matrix stored internally in J.
 J.Jv  # Access the Jacobian matrix stored internally in J.
 ```
 """
-function ACPowerFlowJacobian(data::ACPowerFlowData, time_step::Int64)
+function ACPowerFlowJacobian(
+    data::ACPowerFlowData,
+    bus_slack_participation_factors::SparseVector{Float64, Int},
+    subnetworks::Dict{Int64, Vector{Int64}},
+    time_step::Int64,
+)
     # Create the initial Jacobian matrix structure - a sparse matrix with structural zeros
     # that will be updated by the function Jf! It has the same structure as the expected
     # Jacobian matrix.
-    Jv0 = _create_jacobian_matrix_structure(data, time_step)
+    Jv0 = _create_jacobian_matrix_structure(
+        data,
+        bus_slack_participation_factors,
+        subnetworks,
+        time_step,
+    )
     # We just initialize the structure here, evaluation must happen later
     return ACPowerFlowJacobian(
         data,
         _update_jacobian_matrix_values!,
         Jv0,
         MVector{4, Float64}(undef),
+        bus_slack_participation_factors,
+        subnetworks,
     )
 end
 
@@ -111,8 +148,8 @@ end
 Create the Jacobian matrix structure for a reference bus (REF). Currently unused: we \
 fill all four values even for PV buses with structiural zeros using the same function as for PQ buses.
 """
-function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
-    columns::Vector{Int32},
+function _create_jacobian_matrix_structure_bus!(rows::Vector{J_INDEX_TYPE},
+    columns::Vector{J_INDEX_TYPE},
     values::Vector{Float64},
     bus_from::Int,
     bus_to::Int,
@@ -131,15 +168,15 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
         push!(columns, col_to_va)
         push!(values, 0.0)
     end
-    return nothing
+    return
 end
 
 """
 Create the Jacobian matrix structure for a PV bus. Currently unused: we \
 fill all four values even for PV buses with structiural zeros using the same function as for PQ buses.
 """
-function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
-    columns::Vector{Int32},
+function _create_jacobian_matrix_structure_bus!(rows::Vector{J_INDEX_TYPE},
+    columns::Vector{J_INDEX_TYPE},
     values::Vector{Float64},
     bus_from::Int,
     bus_to::Int,
@@ -162,16 +199,16 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
         push!(columns, col_to_vm)
         push!(values, 0.0)
     end
-    return nothing
+    return
 end
 
 """
-Create the Jacobian matrix structure for a PQ bus. Using this for all buses because 
+Create the Jacobian matrix structure for a PQ bus. Using this for all buses because
     a) for REF buses it doesn't matter if there are 2 values or 4 values - there are not many of them in the grid
     b) for PV buses we fill all four values because we can have a PV -> PQ transition and then we need to fill all four values
 """
-function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
-    columns::Vector{Int32},
+function _create_jacobian_matrix_structure_bus!(rows::Vector{J_INDEX_TYPE},
+    columns::Vector{J_INDEX_TYPE},
     values::Vector{Float64},
     bus_from::Int,
     bus_to::Int,
@@ -197,14 +234,14 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{Int32},
     push!(rows, row_from_q)
     push!(columns, col_to_va)
     push!(values, 0.0)
-    return nothing
+    return
 end
 
 """
     _create_jacobian_matrix_structure_lcc(
         data::ACPowerFlowData,
-        rows::Vector{Int32},
-        columns::Vector{Int32},
+        rows::Vector{$J_INDEX_TYPE},
+        columns::Vector{$J_INDEX_TYPE},
         values::Vector{Float64},
         num_buses::Int
     )
@@ -219,7 +256,7 @@ The indices of non-zero entries correspond to the positions of these variables i
 
 For an LCC system connecting bus ``i`` (rectifier side) and bus ``j`` (inverter side), the state variables are:
 - ``t_i``: tap position at rectifier
-- ``t_j``: tap position at inverter  
+- ``t_j``: tap position at inverter
 - ``\\alpha_i``: thyristor angle at rectifier
 - ``\\alpha_j``: thyristor angle at inverter
 
@@ -253,15 +290,15 @@ This function sets up the indices of these non-zero entries in the sparse Jacobi
 
 # Arguments
 - `data::ACPowerFlowData`: The power flow data containing LCC system information.
-- `rows::Vector{Int32}`: Vector to store row indices of non-zero Jacobian entries.
-- `columns::Vector{Int32}`: Vector to store column indices of non-zero Jacobian entries.
+- `rows::Vector{$J_INDEX_TYPE}`: Vector to store row indices of non-zero Jacobian entries.
+- `columns::Vector{$J_INDEX_TYPE}`: Vector to store column indices of non-zero Jacobian entries.
 - `values::Vector{Float64}`: Vector to store initial values of non-zero Jacobian entries.
 - `num_buses::Int`: Total number of buses in the system.
 """
 function _create_jacobian_matrix_structure_lcc(
     data::ACPowerFlowData,
-    rows::Vector{Int32},
-    columns::Vector{Int32},
+    rows::Vector{J_INDEX_TYPE},
+    columns::Vector{J_INDEX_TYPE},
     values::Vector{Float64},
     num_buses::Int,
 )
@@ -304,7 +341,7 @@ function _create_jacobian_matrix_structure_lcc(
 end
 
 """
-    _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64) -> SparseMatrixCSC{Float64, Int32}
+    _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64) -> SparseMatrixCSC{Float64, $J_INDEX_TYPE}
 
 Create the structure of the Jacobian matrix for an AC power flow problem.
 
@@ -313,11 +350,11 @@ Create the structure of the Jacobian matrix for an AC power flow problem.
 - `time_step::Int64`: The specific time step for which the Jacobian matrix structure is created.
 
 # Returns
-- `SparseMatrixCSC{Float64, Int32}`: A sparse matrix with structural zeros representing the structure of the Jacobian matrix.
+- `SparseMatrixCSC{Float64, $J_INDEX_TYPE}`: A sparse matrix with structural zeros representing the structure of the Jacobian matrix.
 
 # Description
 
-This function initializes the structure of the Jacobian matrix for an AC power flow problem. 
+This function initializes the structure of the Jacobian matrix for an AC power flow problem.
 The Jacobian matrix is used in power flow analysis to represent the partial derivatives of bus active and reactive power injections with respect to bus voltage magnitudes and angles.
 
 Unlike some commonly used approaches where the Jacobian matrix is constructed as four submatrices, each grouping values for the four types of partial derivatives,
@@ -328,7 +365,7 @@ Refer to Electric Energy Systems: Analysis and Operation by Antonio Gomez-Exposi
 
 The function initializes three arrays (`rows`, `columns`, and `values`) to store the row indices, column indices, and values of the non-zero elements of the Jacobian matrix, respectively.
 
-For each bus in the system, the function iterates over its neighboring buses and determines the type of each neighboring bus (`REF`, `PV`, or `PQ`). 
+For each bus in the system, the function iterates over its neighboring buses and determines the type of each neighboring bus (`REF`, `PV`, or `PQ`).
 Depending on the bus type, the function adds the appropriate entries to the Jacobian matrix structure.
 
 - For `REF` buses, entries are added for local active and reactive power.
@@ -347,11 +384,11 @@ The Jacobian matrix ``J = \\nabla F(x)`` has the structure:
 
 ```math
 J = \\begin{bmatrix}
-\\frac{\\partial \\vec{F}}{\\partial P_1} & 
-\\frac{\\partial \\vec{F}}{\\partial Q_1} & 
-\\frac{\\partial \\vec{F}}{\\partial Q_2} & 
-\\frac{\\partial \\vec{F}}{\\partial \\theta_2} & 
-\\frac{\\partial \\vec{F}}{\\partial V_3} & 
+\\frac{\\partial \\vec{F}}{\\partial P_1} &
+\\frac{\\partial \\vec{F}}{\\partial Q_1} &
+\\frac{\\partial \\vec{F}}{\\partial Q_2} &
+\\frac{\\partial \\vec{F}}{\\partial \\theta_2} &
+\\frac{\\partial \\vec{F}}{\\partial V_3} &
 \\frac{\\partial \\vec{F}}{\\partial \\theta_3}
 \\end{bmatrix}
 ```
@@ -361,11 +398,16 @@ when there's a line between the respective buses.
 
 Finally, the function constructs a sparse matrix from the collected indices and values and returns it.
 """
-function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int64)
+function _create_jacobian_matrix_structure(
+    data::ACPowerFlowData,
+    bus_slack_participation_factors::SparseVector{Float64, Int},
+    subnetworks::Dict{Int64, Vector{Int64}},
+    time_step::Int64,
+)
     # Create Jacobian structure
     # Initialize arrays to store the row indices, column indices, and values of the non-zero elements of the Jacobian matrix
-    rows = Int32[]      # I
-    columns = Int32[]   # J
+    rows = J_INDEX_TYPE[]      # I
+    columns = J_INDEX_TYPE[]   # J
     values = Float64[]  # V
 
     num_buses = first(size(data.bus_type))
@@ -382,7 +424,7 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
         for bus_to in data.neighbors[bus_from]
             col_to_vm = 2 * bus_to - 1  # Column index for the value related to voltage magnitude
             col_to_va = 2 * bus_to      # Column index for the value related to voltage angle
-            # We ignore the bus type and initialize the structure as if all buses were PQ - 
+            # We ignore the bus type and initialize the structure as if all buses were PQ -
             # mainly because we can have a PV -> PQ transition, and the number of REF buses is small
             # bus_type = data.bus_type[bus_to, time_step]
             _create_jacobian_matrix_structure_bus!(
@@ -399,12 +441,27 @@ function _create_jacobian_matrix_structure(data::ACPowerFlowData, time_step::Int
             )
         end
     end
+
+    # Add structural entries for distributed slack: each participating bus k has
+    # ∂F_P_k/∂x[2*ref-1] = -c_k. If bus k is not a neighbor of the ref bus,
+    # this entry doesn't exist yet in the sparsity pattern.
+    for (ref_bus, subnetwork_buses) in subnetworks
+        for bus_k in subnetwork_buses
+            bus_slack_participation_factors[bus_k] == 0.0 && continue
+            if !(ref_bus in data.neighbors[bus_k])
+                push!(rows, J_INDEX_TYPE(2 * bus_k - 1))
+                push!(columns, J_INDEX_TYPE(2 * ref_bus - 1))
+                push!(values, 0.0)
+            end
+        end
+    end
+
     _create_jacobian_matrix_structure_lcc(data, rows, columns, values, num_buses)
     Jv0 = SparseArrays.sparse(rows, columns, values)
     return Jv0
 end
 
-function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32},
+function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     Y_from_to::ComplexF32,
     Vm_from::Float64,
     Vm_to::Float64,
@@ -429,7 +486,7 @@ function _set_entries_for_neighbor(::SparseArrays.SparseMatrixCSC{Float64, Int32
     return
 end
 
-function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     Y_from_to::ComplexF32,
     Vm_from::Float64,
     Vm_to::Float64,
@@ -463,7 +520,7 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
     return
 end
 
-function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     Y_from_to::ComplexF32,
     Vm_from::Float64,
     Vm_to::Float64,
@@ -498,7 +555,7 @@ function _set_entries_for_neighbor(Jv::SparseArrays.SparseMatrixCSC{Float64, Int
 end
 
 function _set_entries_for_lcc(data::ACPowerFlowData,
-    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     num_buses::Int,
     time_step::Int)
     sqrt6_div_pi = sqrt(6) / π
@@ -568,10 +625,12 @@ end
 
 """Used to update Jv based on the bus voltages, angles, etc. in data."""
 function _update_jacobian_matrix_values!(
-    Jv::SparseArrays.SparseMatrixCSC{Float64, Int32},
+    Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
     data::ACPowerFlowData,
     time_step::Int64,
     diag_elements::MVector{4, Float64},
+    bus_slack_participation_factors::SparseVector{Float64, Int},
+    subnetworks::Dict{Int64, Vector{Int64}},
 )
     Yb = data.power_network_matrix.data
     Vm = view(data.bus_magnitude, :, time_step)
@@ -649,62 +708,78 @@ function _update_jacobian_matrix_values!(
             Jv[row_from_p, col_from_va] = diag_elements[1]  # ∂P∂θ_from
             Jv[row_from_q, col_from_va] = diag_elements[2]  # ∂Q∂θ_from
         elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.REF
-            Jv[row_from_p, col_from_vm] = -1.0
+            Jv[row_from_p, col_from_vm] = -bus_slack_participation_factors[bus_from]
             Jv[row_from_q, col_from_va] = -1.0
         end
     end
+
+    # Distributed slack cross-terms: for each participating bus k (other than the
+    # REF bus), the active power residual depends on the REF bus state variable
+    # x[2*ref-1] through the slack distribution: ∂F_P_k/∂x[2*ref-1] = -c_k.
+    for (ref_bus, subnetwork_buses) in subnetworks
+        col_ref = 2 * ref_bus - 1
+        for bus_k in subnetwork_buses
+            bus_k == ref_bus && continue
+            c_k = bus_slack_participation_factors[bus_k]
+            c_k == 0.0 && continue
+            Jv[2 * bus_k - 1, col_ref] = -c_k
+        end
+    end
+
     _set_entries_for_lcc(data, Jv, num_buses, time_step)
     return
 end
 
 """
-    calculate_loss_factors(data::ACPowerFlowData, Jv::SparseMatrixCSC{Float64, Int32}, time_step::Int)
+    calculate_loss_factors(data::ACPowerFlowData, Jv::SparseMatrixCSC{Float64, $J_INDEX_TYPE}, time_step::Int)
 
 Calculate and store the active power loss factors in the `loss_factors` matrix of the `ACPowerFlowData` structure for a given time step.
 
-The loss factors are computed using the Jacobian matrix `Jv` and the vector `dSbus_dV_ref`, which contains the 
-partial derivatives of slack power with respect to bus voltages. The function interprets changes in 
-slack active power injection as indicative of changes in grid active power losses. 
+The loss factors are computed using the Jacobian matrix `Jv` and the vector `dSbus_dV_ref`, which contains the
+partial derivatives of slack power with respect to bus voltages. The function interprets changes in
+slack active power injections as indicative of changes in grid active power losses.
 KLU is used to factorize the sparse Jacobian matrix to solve for the loss factors.
 
 # Arguments
 - `data::ACPowerFlowData`: The data structure containing power flow information, including the `loss_factors` matrix.
-- `Jv::SparseMatrixCSC{Float64, Int32}`: The sparse Jacobian matrix of the power flow system.
+- `Jv::SparseMatrixCSC{Float64, $J_INDEX_TYPE}`: The sparse Jacobian matrix of the power flow system.
 - `time_step::Int`: The time step index for which the loss factors are calculated.
 """
 function _calculate_loss_factors(
     data::ACPowerFlowData,
-    Jv::SparseMatrixCSC{Float64, Int32},
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
     time_step::Int,
 )
     bus_numbers = 1:first(size(data.bus_type))
     ref_mask = data.bus_type[:, time_step] .== (PSY.ACBusTypes.REF,)
-    pvpq_mask = .!ref_mask
-    ref = bus_numbers[ref_mask]
-    pvpq = bus_numbers[pvpq_mask]
-    pvpq_coords = Int32[]
-    for i in pvpq
-        push!(pvpq_coords, 2 * i - 1)  # 2x - 1
-        push!(pvpq_coords, 2 * i)      # 2x
+    if count(ref_mask) > 1
+        error(
+            "Loss factors with multiple REF buses isn't supported.",
+        )
     end
-    J_t = sparse(transpose(Jv[pvpq_coords, pvpq_coords]))
-    dSbus_dV_ref = collect(Jv[2 .* ref .- 1, pvpq_coords])[:]
-    fact = KLU.klu(J_t)
-    lf = fact \ dSbus_dV_ref
-    idx = 1:2:(2 * length(pvpq) - 1)  # only take the dPref_dP loss factors, ignore dPref_dQ
-    data.loss_factors[pvpq_mask, time_step] .= lf[idx]
-    data.loss_factors[ref_mask, time_step] .= 1.0
+    pvpq_mask = .!ref_mask
+    ref = findfirst(ref_mask)
+    new_ref_mask = falses(size(ref_mask))
+    new_ref_mask[ref] = true
+    pvpq_mask = .!(new_ref_mask)
+    pvpq_coord_mask = repeat(pvpq_mask; inner = 2)
+    J_t = sparse(transpose(Jv[pvpq_coord_mask, pvpq_coord_mask]))
+    dSbus_dV_ref = collect(Jv[2 .* ref .- 1, pvpq_coord_mask])[:]
+    lf = KLU.klu(J_t) \ dSbus_dV_ref
+    # only take the dPref_dP loss factors, ignore dPref_dQ
+    data.loss_factors[pvpq_mask, time_step] .= lf[1:2:end]
+    data.loss_factors[new_ref_mask, time_step] .= -1.0
 end
 
 """
     calculate_voltage_stability_factors(data::ACPowerFlowData, J::ACPowerFlowJacobian, time_step::Integer)
 
 Calculate and store the voltage stability factors in the `voltage_stability_factors` matrix of the `ACPowerFlowData` structure for a given time step.
-The voltage stability factors are computed using the Jacobian matrix `J` in block format after a converged power flow calculation. 
+The voltage stability factors are computed using the Jacobian matrix `J` in block format after a converged power flow calculation.
 The results are stored in the `voltage_stability_factors` matrix in the `data` instance.
 The factor for the grid as a whole (σ) is stored in the position of the REF bus.
 The values of the singular vector `v` indicate the sensitivity of the buses and are stored in the positions of the PQ buses.
-The values of `v` for PV buses are set to zero. 
+The values of `v` for PV buses are set to zero.
 The function uses the method described in \"Fast calculation of a voltage stability index\" by PA Lof et. al.
 # Arguments
 - `data::ACPowerFlowData`: The instance containing the grid model data.
@@ -713,24 +788,25 @@ The function uses the method described in \"Fast calculation of a voltage stabil
 """
 function _calculate_voltage_stability_factors(
     data::ACPowerFlowData,
-    Jv::SparseMatrixCSC{Float64, Int32},
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
     time_step::Integer,
 )
     ref, pv, pq = bus_type_idx(data, time_step)
     pvpq = [pv; pq]
-    npvpq = length(pvpq)
     rows, cols = _block_J_indices(pvpq, pq)
-    σ, left, right = _singular_value_decomposition(Jv[rows, cols], npvpq)
-    data.voltage_stability_factors[ref, time_step] .= 0.0
+    σ, _, right = _singular_value_decomposition(Jv[rows, cols], length(pvpq))
+    # Store σ at REF bus, set remaining REF buses (if any) to zero
     data.voltage_stability_factors[first(ref), time_step] = σ
+    data.voltage_stability_factors[ref[2:end], time_step] .= 0.0
+    # PV buses have zero sensitivity, PQ buses get the right singular vector
     data.voltage_stability_factors[pv, time_step] .= 0.0
     data.voltage_stability_factors[pq, time_step] .= right
     return
 end
 
 """
-    _block_J_indices(data::ACPowerFlowData, time_step::Int) -> (Vector{Int32}, Vector{Int32})
-    
+    _block_J_indices(data::ACPowerFlowData, time_step::Int) -> (Vector{$J_INDEX_TYPE}, Vector{$J_INDEX_TYPE})
+
 Get the indices to reindex the Jacobian matrix from the interleaved form to the block form:
 
 ```math
@@ -741,12 +817,12 @@ Get the indices to reindex the Jacobian matrix from the interleaved form to the 
 ```
 
 # Arguments
-- `pvpq::Vector{Int32}`: Indices of the buses that are PV or PQ buses.
-- `pq::Vector{Int32}`: Indices of the buses that are PQ buses.
+- `pvpq::Vector{$J_INDEX_TYPE}`: Indices of the buses that are PV or PQ buses.
+- `pq::Vector{$J_INDEX_TYPE}`: Indices of the buses that are PQ buses.
 
 # Returns
-- `rows::Vector{Int32}`: Row indices for the block Jacobian matrix.
-- `cols::Vector{Int32}`: Column indices for the block Jacobian matrix.
+- `rows::Vector{$J_INDEX_TYPE}`: Row indices for the block Jacobian matrix.
+- `cols::Vector{$J_INDEX_TYPE}`: Column indices for the block Jacobian matrix.
 """
 function _block_J_indices(pvpq::Vector{<:Integer}, pq::Vector{<:Integer})
     rows = vcat(2 .* pvpq .- 1, 2 .* pq)
@@ -756,15 +832,15 @@ function _block_J_indices(pvpq::Vector{<:Integer}, pq::Vector{<:Integer})
 end
 
 """
-    _singular_value_decomposition(J::SparseMatrixCSC{Float64, Int32}, npvpq::Integer; tol::Float64 = 1e-9, max_iter::Integer = 100,)
+    _singular_value_decomposition(J::SparseMatrixCSC{Float64, $J_INDEX_TYPE}, npvpq::Integer; tol::Float64 = 1e-9, max_iter::Integer = 100,)
 
 Estimate the smallest singular value `σ` and corresponding left and right singular vectors `u` and `v` of a sparse matrix `G_s` (a sub-matrix of `J`).
-This function uses an iterative method involving LU factorization of the Jacobian matrix to estimate the smallest singular value of `G_s`. 
+This function uses an iterative method involving LU factorization of the Jacobian matrix to estimate the smallest singular value of `G_s`.
 The algorithm alternates between updating `u` and `v`, normalizing, and checking for convergence based on the change in the estimated singular value `σ`.
 The function uses the method described in `Algorithm 3` of \"Fast calculation of a voltage stability index\" by PA Lof et. al.
 
 # Arguments
-- `J::SparseMatrixCSC{Float64, Int32}`: The sparse block-form Jacobian matrix.
+- `J::SparseMatrixCSC{Float64, $J_INDEX_TYPE}`: The sparse block-form Jacobian matrix.
 - `npvpq::Integer`: Number of PV and PQ buses in J.
 
 # Keyword Arguments
@@ -777,7 +853,7 @@ The function uses the method described in `Algorithm 3` of \"Fast calculation of
 - `right::Vector{Float64}`: The estimated right singular vector (referred to as `v` in the cited paper).
 """
 function _singular_value_decomposition(
-    Jv::SparseMatrixCSC{Float64, Int32},
+    Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
     npvpq::Integer;
     tol::Float64 = 1e-9,
     max_iter::Integer = 100,

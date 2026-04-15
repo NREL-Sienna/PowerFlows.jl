@@ -1,4 +1,4 @@
-# Internal
+# Internal - Core
 
 ```@meta
 CurrentModule = PowerFlows
@@ -14,13 +14,13 @@ Modules = [PowerFlows]
 Public = false
 Private = true
 Pages = [
-    "powerflow_types.jl",
+    "power_flow_types.jl",
 ]
 ```
 
 # PowerFlowData
 
-## Struct and Type Definitions 
+## Struct and Type Definitions
 
 ```@autodocs
 Modules = [PowerFlows]
@@ -38,8 +38,8 @@ Modules = [PowerFlows]
 Public = false
 Private = true
 Pages = [
-    "solve_ac_powerflow.jl",
-    "solve_dc_powerflow.jl"
+    "solve_ac_power_flow.jl",
+    "solve_dc_power_flow.jl"
 ]
 ```
 
@@ -51,8 +51,8 @@ Public = true
 Private = true
 Pages = [
     "state_indexing_helpers.jl",
-    "initialize_powerflow_data.jl",
-    "powerflow_setup.jl",
+    "initialize_power_flow_data.jl",
+    "power_flow_setup.jl",
 ]
 ```
 
@@ -92,114 +92,3 @@ Pages = [
     "ac_power_flow_jacobian.jl",
 ]
 ```
-
-## Iterative Methods
-
-```@autodocs
-Modules = [PowerFlows]
-Public = false
-Private = true
-Pages = [
-    "powerflow_method.jl",
-]
-```
-
-## Robust Homotopy Method
-
-```@autodocs
-Modules = [PowerFlows]
-Public = false
-Private = true
-Pages = [
-    "RobustHomotopy/homotopy_hessian.jl",
-    "RobustHomotopy/homotopy_initialization.jl",
-    "RobustHomotopy/homotopy_powerflow.jl",
-    "RobustHomotopy/homotopy_residual.jl",
-]
-```
-
-## Levenberg-Marquardt Method
-
-```@autodocs
-Modules = [PowerFlows]
-Public = true
-Private = true
-Pages = [
-    "levenberg-marquardt.jl",
-]
-```
-
-# Linear Algebra Backends
-
-## Robust Homotopy
-```@autodocs
-Modules = [PowerFlows]
-Public = true
-Private = true
-Pages = [
-    "RobustHomotopy/HessianSolver/cholesky_solver.jl",
-    "RobustHomotopy/HessianSolver/fixed_structure_CHOLMOD.jl",
-    "RobustHomotopy/HessianSolver/hessian_solver.jl",
-    "RobustHomotopy/HessianSolver/KLU_hessian_solver.jl",
-]
-```
-
-## Newton-Raphson
-```@autodocs
-Modules = [PowerFlows]
-Public = true
-Private = true
-Pages = [
-    "LinearSolverCache/klu_linear_solver.jl",
-    "LinearSolverCache/linear_solver_cache.jl",
-]
-```
-
-# Misc.
-
-## PSSE Export
-
-```@autodocs
-Modules = [PowerFlows]
-Public = false
-Private = true
-Pages = [
-    "psse_export.jl",
-]
-```
-
-## Post-Processing
-
-```@autodocs
-Modules = [PowerFlows]
-Public = false
-Private = true
-Pages = [
-    "post_processing.jl",
-]
-```
-
-## Power Systems Utilities
-
-```@autodocs
-Modules = [PowerFlows]
-Public = false
-Private = true
-Pages = [
-    "powersystems_utils.jl",
-]
-```
-
-## Common Utilities and Definitions
-
-```@autodocs
-Modules = [PowerFlows]
-Public = false
-Private = true
-Pages = [
-    "common.jl",
-    "definitions.jl",
-    "psi_utils.jl",
-]
-```
-
