@@ -458,12 +458,11 @@ function make_and_initialize_power_flow_data(
     check_unit_setting(sys)
     removed_buses =
         PNM.get_removed_buses(PNM.get_network_reduction_data(power_network_matrix))
-    n_lccs = count(
+    lcc_filter =
         lcc ->
             PSY.get_number(PSY.get_from(PSY.get_arc(lcc))) ∉ removed_buses &&
-                PSY.get_number(PSY.get_to(PSY.get_arc(lcc))) ∉ removed_buses,
-        PSY.get_available_components(PSY.TwoTerminalLCCLine, sys),
-    )
+                PSY.get_number(PSY.get_to(PSY.get_arc(lcc))) ∉ removed_buses
+    n_lccs = length(PSY.get_available_components(lcc_filter, PSY.TwoTerminalLCCLine, sys))
     data = PowerFlowData(
         pf,
         power_network_matrix,
