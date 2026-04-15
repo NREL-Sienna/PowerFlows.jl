@@ -348,6 +348,22 @@ where creating and storing the full PTDF matrix would be infeasible or slow. See
     correct_bustypes::Bool = false
 end
 
+"""
+    ContingencyDCPowerFlow(; strategy=:auto, woodbury_max_rank=8)
+
+Evaluation model marker for DC contingency analysis. The actual solve
+configuration is passed via kwargs to `solve_contingency_dc_power_flow`;
+this type exists so the Sienna evaluation-model registry can dispatch on it.
+
+Not a subtype of `AbstractDCPowerFlow` — standard DC models are consumed by
+`PowerFlowData(pf, sys)`, but `ContingencyDCPowerFlow` is a meta-analysis
+driving its own pipeline.
+"""
+@kwdef struct ContingencyDCPowerFlow <: PowerFlowEvaluationModel
+    strategy::Symbol = :auto
+    woodbury_max_rank::Int = 8
+end
+
 get_calculate_loss_factors(pf::PTDFDCPowerFlow) = pf.calculate_loss_factors
 get_calculate_loss_factors(pf::vPTDFDCPowerFlow) = pf.calculate_loss_factors
 get_lossy_flows(pf::DCPowerFlow) = pf.lossy_flows

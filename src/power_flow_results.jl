@@ -182,6 +182,13 @@ struct TimeContingencyPowerFlowData <: AbstractPowerFlowResults
     contingency_labels::Vector{String}
     contingency_lookup::Dict{String, Int}
     network_modifications::Vector{Union{Nothing, PNM.NetworkModification}}
+    # Islanding reporting — populated by the contingency solve. A contingency
+    # can island the network and still be "converged" in the sense that the
+    # solve produced a minimum-norm pseudo-inverse solution (relative angles
+    # within each island are meaningful). Absolute angles across islands are
+    # not. Downstream consumers reading absolute angles MUST check `islanded`.
+    islanded::Vector{Bool}
+    n_islands::Vector{Int}
 end
 
 """
@@ -263,6 +270,8 @@ function TimeContingencyPowerFlowData(
         contingency_labels,
         contingency_lookup,
         network_modifications,
+        fill(false, n_ctg),  # islanded — base (slot 1) is never islanded
+        ones(Int, n_ctg),    # n_islands — default 1 (single connected component)
     )
 end
 
@@ -279,6 +288,22 @@ get_network_modifications(r::TimeContingencyPowerFlowData) = r.network_modificat
 
 """Return the number of contingencies."""
 get_n_contingencies(r::TimeContingencyPowerFlowData) = length(r.contingency_labels)
+
+"""Return `true` if contingency `k` (or the one matching `label`) caused the
+network to split into more than one electrical island. An islanded
+contingency produces minimum-norm (pseudo-inverse) angles; ABSOLUTE angles
+across distinct islands are not comparable, but relative angles within each
+island are meaningful. `converged` remains `true` for islanded contingencies
+that solved via pinv."""
+get_islanded(r::TimeContingencyPowerFlowData, k::Int) = r.islanded[k]
+get_islanded(r::TimeContingencyPowerFlowData, label::String) =
+    r.islanded[r.contingency_lookup[label]]
+
+"""Return the number of electrical islands after applying contingency `k` (or
+`label`). `1` for a connected post-contingency network."""
+get_n_islands(r::TimeContingencyPowerFlowData, k::Int) = r.n_islands[k]
+get_n_islands(r::TimeContingencyPowerFlowData, label::String) =
+    r.n_islands[r.contingency_lookup[label]]
 
 """
     get_network_modification(r::TimeContingencyPowerFlowData, label::String)
