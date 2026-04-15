@@ -105,6 +105,29 @@ for (group, name) in systems
     end
 end
 
+# DC Power Flow solvers
+dc_solvers = [
+    (DCPowerFlow(; correct_bustypes = true), "DCPowerFlow"),
+    (PTDFDCPowerFlow(; correct_bustypes = true), "PTDFDCPowerFlow"),
+    (vPTDFDCPowerFlow(; correct_bustypes = true), "vPTDFDCPowerFlow"),
+]
+for (group, name) in systems
+    sys = build_system(group, name)
+    for (dc_pf, solver_label) in dc_solvers
+        try
+            pf_data = PF.PowerFlowData(dc_pf, sys)
+            _, time_solve_1, _, _ = @timed PF.solve_power_flow!(pf_data)
+            record_time("$(name)-$(solver_label) First Solve", time_solve_1)
+            pf_data = PF.PowerFlowData(dc_pf, sys)
+            _, time_solve_2, _, _ = @timed PF.solve_power_flow!(pf_data)
+            record_time("$(name)-$(solver_label) Second Solve", time_solve_2)
+        catch e
+            @error exception = (e, catch_backtrace())
+            record_failure("$(name)-$(solver_label)")
+        end
+    end
+end
+
 if !is_running_on_ci()
     println("Precompile time: $(precompile.time) s")
     csv_file = "solve_time_$(ARGS[1]).csv"
