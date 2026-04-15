@@ -14,6 +14,9 @@ export AbstractDCPowerFlow
 export PowerFlowEvaluationModel
 export PTDFDCPowerFlow
 export vPTDFDCPowerFlow
+export ContingencyDCPowerFlow
+export solve_contingency_dc_power_flow
+export solve_contingency_dc_power_flow!
 export PSSEExportPowerFlow
 export PSSEExporter
 export update_exporter!
@@ -64,6 +67,7 @@ include("LinearSolverCache/linear_solver_cache.jl")
 include("LinearSolverCache/klu_linear_solver.jl")
 include("dcpf_loss_injection.jl")
 include("solve_dc_power_flow.jl")
+include("solve_contingency_dc_power_flow.jl")
 include("state_indexing_helpers.jl")
 include("ac_power_flow_residual.jl")
 include("ac_power_flow_jacobian.jl")
