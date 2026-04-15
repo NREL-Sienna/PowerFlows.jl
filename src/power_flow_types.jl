@@ -15,8 +15,18 @@ abstract type ACPowerFlowSolverType end
 """
     NewtonRaphsonACPowerFlow <: ACPowerFlowSolverType
 
-An [`ACPowerFlowSolverType`](@ref) corresponding to a basic Newton-Raphson iterative method. 
+An [`ACPowerFlowSolverType`](@ref) corresponding to a basic Newton-Raphson iterative method.
 The Newton step is taken verbatim at each iteration: no line search is performed.
+
+Iwamoto step control can be enabled via `solver_settings = Dict(:iwamoto => true)` in
+[`ACPowerFlow`](@ref). When enabled, each iteration checks whether the full Newton step
+reduces the residual norm. If it does, the full step is accepted (overhead: 3 dot products).
+If not, an optimal damping multiplier `μ` is computed by solving a cubic and the step
+`x += μ·Δx` is applied instead, preventing divergence on ill-conditioned or
+poorly-initialized systems.
+
+Based on: Iwamoto & Tamura, "A Load Flow Calculation Method for Ill-Conditioned Power
+Systems," IEEE Trans. PAS, 1981.
 
 See also: [`ACPowerFlow`](@ref).
 """
@@ -175,6 +185,15 @@ function ACPowerFlow{ACSolver}(;
             "Cannot use both distribute_slack_proportional_to_headroom and generator_slack_participation_factors.",
         )
     end
+    # This scenario can be handled fine from PSI, we just don't handle it in PF alone.
+    if distribute_slack_proportional_to_headroom && time_steps > 1
+        @warn(
+            "distribute_slack_proportional_to_headroom with multiple time steps: " *
+            "headroom (Pmax - Pset) is computed once from system data and applied " *
+            "to all time steps. Time-varying active power limits and generator " *
+            "setpoints are not supported.",
+        )
+    end
     return ACPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,
@@ -249,6 +268,12 @@ or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.
 - `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
 - `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
     Default is `false`.
+- `lossy_flows::Bool`: Controls how branch flows and losses are computed after solving
+    for bus angles. When `true`, flows are computed from the full π-model arc admittance
+    matrices (`Y_ft`, `Y_tf`), giving asymmetric `P_from_to` and `P_to_from`; losses are
+    then `P_from_to + P_to_from` (exact real-power balance). When `false` (default),
+    flows are computed from the lossless `BA·θ` formula (symmetric), and losses are
+    approximated as `R·P²`.
 """
 @kwdef struct DCPowerFlow <: AbstractDCPowerFlow
     exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
@@ -256,6 +281,7 @@ or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.
     time_steps::Int = 1
     time_step_names::Vector{String} = String[]
     correct_bustypes::Bool = false
+    lossy_flows::Bool = false
 end
 
 """
@@ -324,5 +350,6 @@ end
 
 get_calculate_loss_factors(pf::PTDFDCPowerFlow) = pf.calculate_loss_factors
 get_calculate_loss_factors(pf::vPTDFDCPowerFlow) = pf.calculate_loss_factors
+get_lossy_flows(pf::DCPowerFlow) = pf.lossy_flows
 
-# see also: PSSEExportPowerFlow in psse_export.jl
+# See also: PSSEExportPowerFlow in psse_export.jl

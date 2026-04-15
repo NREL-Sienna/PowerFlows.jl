@@ -1,6 +1,6 @@
 """
 Adjust the power injections vector to account for the power flows through LCCs.
-    
+
 Relies on the fact that we calculate those flows during initialization and save them
 to the `active_power_flow_from_to` and `active_power_flow_to_from` fields of the
 `LCCParameters` struct.
@@ -21,7 +21,7 @@ end
 
 """
     solve_power_flow!(data::PTDFPowerFlowData)
-Evaluates the PTDF power flow and writes the result to the fields of the 
+Evaluates the PTDF power flow and writes the result to the fields of the
 [`PTDFPowerFlowData`](@ref) structure.
 
 This function modifies the following fields of `data`, setting them to the computed values:
@@ -61,7 +61,7 @@ end
 """
     solve_power_flow!(data::vPTDFPowerFlowData)
 
-Evaluates the virtual PTDF power flow and writes the results to the fields 
+Evaluates the virtual PTDF power flow and writes the results to the fields
 of the [`vPTDFPowerFlowData`](@ref) structure.
 
 
@@ -102,7 +102,7 @@ end
 """
     solve_power_flow!(data::ABAPowerFlowData)
 
-Evaluates the DC power flow and writes the results (branch flows) to the fields 
+Evaluates the DC power flow and writes the results (branch flows) to the fields
 of the [`ABAPowerFlowData`](@ref) structure.
 
 
@@ -112,6 +112,17 @@ This function modifies the following fields of `data`, setting them to the compu
 - `data.branch_active_power_flow_to_from`: the active power flow from the "to" bus to the "from" bus of each branch
 
 Additionally, it sets `data.converged` to `true`, indicating that the power flow calculation was successful.
+
+# Loss estimation
+
+Losses are estimated differently depending on whether lossy flows are enabled
+(`DCPowerFlow(; lossy_flows = true)`):
+
+- **Lossless (default):** Flows are estimated from `BA' * θ` and losses are approximated as
+  `Rₖ * Pₖ²` (the classical DC loss approximation).
+- **Lossy:** Flows are computed from the arc admittance matrices to match PSS/e's DCPF
+  formulation: `Sft = V_f * conj(Y_ft * V)`, `Stf = V_t * conj(Y_tf * V)`. Losses are
+  then `Pft + Ptf` (the exact real-power balance across each arc).
 """
 # DC flow: ABA and BA case
 function solve_power_flow!(
@@ -119,20 +130,36 @@ function solve_power_flow!(
 )
     solver_cache = KLULinSolveCache(data.power_network_matrix.data)
     full_factor!(solver_cache, data.power_network_matrix.data)
-    # get net injections
+
     power_injections = data.bus_active_power_injections - data.bus_active_power_withdrawals
     power_injections .+= data.bus_hvdc_net_power
-    # save angles and power flows
     valid_ix = get_valid_ix(data)
     p_inj = power_injections[valid_ix, :]
     solve!(solver_cache, p_inj)
     data.bus_angles[valid_ix, :] .= p_inj
-    data.arc_active_power_flow_from_to .= data.aux_network_matrix.data' * data.bus_angles
-    data.arc_active_power_flow_to_from .= -data.arc_active_power_flow_from_to
-    # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
+
+    if data.arc_lossy_admittance_from_to !== nothing
+        # DC assumption: all bus voltage magnitudes are 1.0 p.u., so V = e^(jθ).
+        V = exp.(1im .* data.bus_angles)
+        arcs = get_arc_axis(data)
+        bus_lookup = get_bus_lookup(data)
+        fb_ix = [bus_lookup[first(arc)] for arc in arcs]
+        tb_ix = [bus_lookup[last(arc)] for arc in arcs]
+        Sft = V[fb_ix, :] .* conj.(data.arc_lossy_admittance_from_to * V)
+        Stf = V[tb_ix, :] .* conj.(data.arc_lossy_admittance_to_from * V)
+        data.arc_active_power_flow_from_to .= real.(Sft)
+        data.arc_active_power_flow_to_from .= real.(Stf)
+        # True losses come directly from the admittance calculation.
+        data.arc_active_power_losses .=
+            data.arc_active_power_flow_from_to .+ data.arc_active_power_flow_to_from
+    else
+        data.arc_active_power_flow_from_to .=
+            data.aux_network_matrix.data' * data.bus_angles
+        data.arc_active_power_flow_to_from .= -data.arc_active_power_flow_from_to
+        Rs = _get_arc_resistances(data)
+        data.arc_active_power_losses .= Rs .* data.arc_active_power_flow_from_to .^ 2
+    end
     _compute_arc_angle_differences_from_data!(data)
-    Rs = _get_arc_resistances(data)
-    data.arc_active_power_losses .= Rs .* data.arc_active_power_flow_from_to .^ 2
     data.converged .= true
     return
 end
@@ -199,7 +226,7 @@ or for branches (FlowReporting.BRANCH_FLOWS)
 - `flow_reporting::FlowReporting`:
         Format for reporting flows
 
-Note that `data` must have been created from the [System](@extref PowerSystems.System) 
+Note that `data` must have been created from the [System](@extref PowerSystems.System)
 `sys` using one of the [`PowerFlowData`](@ref) constructors.
 
 # Example
@@ -223,37 +250,14 @@ end
 """
     _get_arc_resistances(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}) -> Vector{Float64}
 
-Look up the equivalent resistance of each arc from the network reduction data,
-using PNM API where available.
+Look up the equivalent resistance of each arc from the network reduction data.
+Delegates to [`_get_arc_branch_params`](@ref) and returns only the resistance vector.
 """
 function _get_arc_resistances(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
 )
-    nrd = get_network_reduction_data(data)
-    arc_ax = get_arc_axis(data)
-    Rs = zeros(length(arc_ax))
-    for (ix_arc, arc) in enumerate(arc_ax)
-        if arc in keys(PNM.get_direct_branch_map(nrd))
-            Rs[ix_arc] = PSY.get_r(PNM.get_direct_branch_map(nrd)[arc])
-        elseif arc in keys(PNM.get_parallel_branch_map(nrd))
-            parallel = PNM.get_parallel_branch_map(nrd)[arc]
-            eq = PNM.get_equivalent_physical_branch_parameters(parallel)
-            Rs[ix_arc] = PNM.get_equivalent_r(eq)
-        elseif arc in keys(PNM.get_series_branch_map(nrd))
-            series = PNM.get_series_branch_map(nrd)[arc]
-            eq = PNM.get_equivalent_physical_branch_parameters(series)
-            Rs[ix_arc] = PNM.get_equivalent_r(eq)
-        elseif arc in keys(PNM.get_transformer3W_map(nrd))
-            winding = PNM.get_transformer3W_map(nrd)[arc]
-            Rs[ix_arc] = PNM.get_equivalent_r(winding)
-        elseif arc in keys(PNM.get_added_branch_map(nrd))
-            y = PNM.get_added_branch_map(nrd)[arc]
-            Rs[ix_arc] = real(1 / y)
-        else
-            error("Arc $arc not found in any of the branch maps.")
-        end
-    end
-    return Rs
+    rs, _, _, _ = _get_arc_branch_params(data)
+    return rs
 end
 
 """
@@ -297,22 +301,22 @@ function dc_loss_factors(
 )
     Rs = _get_arc_resistances(data)
     ptdf = data.power_network_matrix
-    # PTDF * P via row-by-row access (VirtualPTDF has no .data field)
-    flows = my_mul_mt(ptdf, P)  # (n_arcs × n_ts)
-    weighted_flows = Rs .* flows
-    # PTDFᵀ * weighted_flows, accumulated row-by-row
     arc_ax = get_arc_axis(data)
     n_buses = size(P, 1)
     n_ts = size(P, 2)
     result = zeros(n_buses, n_ts)
+    flows_k = Vector{Float64}(undef, n_ts)
+    # Single pass: fetch each PTDF row once, compute flows vectorized, then accumulate.
     for (k, arc) in enumerate(arc_ax)
-        row_k = ptdf[arc, :]  # length n_buses
+        row_k = ptdf[arc, :]
+        r_k = Rs[k]
+        mul!(flows_k, P', row_k)
         for t in 1:n_ts
-            w = weighted_flows[k, t]
-            for j in 1:n_buses
+            @inbounds w = 2.0 * r_k * flows_k[t]
+            @inbounds @simd for j in 1:n_buses
                 result[j, t] += row_k[j] * w
             end
         end
     end
-    return 2 .* result
+    return result
 end

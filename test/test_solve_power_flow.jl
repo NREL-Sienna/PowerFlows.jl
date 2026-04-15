@@ -434,7 +434,7 @@ end
     solve_power_flow!(data_sienna)
     sienna_df = PowerFlowData_to_DataFrame(data_sienna)
     @assert all(sienna_df[!, "bus_number"] .== matpower_df[!, "bus_number"])
-    # The bus types don't match, so we don't compare them here. (We changed PQ with 
+    # The bus types don't match, so we don't compare them here. (We changed PQ with
     # generators to PV. Matpower doesn't do this, though it treats them as PV internally.)
     @test norm(sienna_df[!, "Vm"] .- matpower_df[!, "Vm"], Inf) < 1e-3
     @test norm(sienna_df[!, "angle"] .- matpower_df[!, "angle"], Inf) < 1e-3
@@ -676,7 +676,7 @@ end
 
     # Make sure the results are the same for both cases:
     #  1. The switched admittance is included in the Ybus matrix
-    #  2. The switched admittance is represented as a constant impedance load 
+    #  2. The switched admittance is represented as a constant impedance load
     #     and is not in the Ybus matrix
     @test isapprox(
         data1.bus_magnitude[:, 1],
@@ -706,7 +706,7 @@ function check_lcc_consistency(
     @test lcc_results[1, :rectifier_tap] == PSY.get_rectifier_tap_setting(lcc)
     @test lcc_results[1, :inverter_tap] == PSY.get_inverter_tap_setting(lcc)
     @test lcc_results[1, :P_from_to] == base_power .* PSY.get_active_power_flow(lcc)
-    return nothing
+    return
 end
 
 @testset "Test LCC consistency" begin

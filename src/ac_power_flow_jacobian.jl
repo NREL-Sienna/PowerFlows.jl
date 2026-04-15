@@ -66,7 +66,7 @@ This method allows an instance of ACPowerFlowJacobian to be called as a function
 # Example
 ```julia
 residual = ACPowerFlowResidual(data, time_step)
-J = ACPowerFlowJacobian(data, 
+J = ACPowerFlowJacobian(data,
     residual.bus_slack_participation_factors,
     residual.subnetworks,
     time_step
@@ -86,7 +86,7 @@ function (J::ACPowerFlowJacobian)(
 end
 
 """
-    ACPowerFlowJacobian(data::ACPowerFlowData, 
+    ACPowerFlowJacobian(data::ACPowerFlowData,
         bus_slack_participation_factors::SparseVector{Float64, Int},
         subnetworks::Dict{Int64, Vector{Int64}}, time_step::Int64) -> ACPowerFlowJacobian
 
@@ -168,7 +168,7 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{J_INDEX_TYPE},
         push!(columns, col_to_va)
         push!(values, 0.0)
     end
-    return nothing
+    return
 end
 
 """
@@ -199,11 +199,11 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{J_INDEX_TYPE},
         push!(columns, col_to_vm)
         push!(values, 0.0)
     end
-    return nothing
+    return
 end
 
 """
-Create the Jacobian matrix structure for a PQ bus. Using this for all buses because 
+Create the Jacobian matrix structure for a PQ bus. Using this for all buses because
     a) for REF buses it doesn't matter if there are 2 values or 4 values - there are not many of them in the grid
     b) for PV buses we fill all four values because we can have a PV -> PQ transition and then we need to fill all four values
 """
@@ -234,7 +234,7 @@ function _create_jacobian_matrix_structure_bus!(rows::Vector{J_INDEX_TYPE},
     push!(rows, row_from_q)
     push!(columns, col_to_va)
     push!(values, 0.0)
-    return nothing
+    return
 end
 
 """
@@ -256,7 +256,7 @@ The indices of non-zero entries correspond to the positions of these variables i
 
 For an LCC system connecting bus ``i`` (rectifier side) and bus ``j`` (inverter side), the state variables are:
 - ``t_i``: tap position at rectifier
-- ``t_j``: tap position at inverter  
+- ``t_j``: tap position at inverter
 - ``\\alpha_i``: thyristor angle at rectifier
 - ``\\alpha_j``: thyristor angle at inverter
 
@@ -354,7 +354,7 @@ Create the structure of the Jacobian matrix for an AC power flow problem.
 
 # Description
 
-This function initializes the structure of the Jacobian matrix for an AC power flow problem. 
+This function initializes the structure of the Jacobian matrix for an AC power flow problem.
 The Jacobian matrix is used in power flow analysis to represent the partial derivatives of bus active and reactive power injections with respect to bus voltage magnitudes and angles.
 
 Unlike some commonly used approaches where the Jacobian matrix is constructed as four submatrices, each grouping values for the four types of partial derivatives,
@@ -365,7 +365,7 @@ Refer to Electric Energy Systems: Analysis and Operation by Antonio Gomez-Exposi
 
 The function initializes three arrays (`rows`, `columns`, and `values`) to store the row indices, column indices, and values of the non-zero elements of the Jacobian matrix, respectively.
 
-For each bus in the system, the function iterates over its neighboring buses and determines the type of each neighboring bus (`REF`, `PV`, or `PQ`). 
+For each bus in the system, the function iterates over its neighboring buses and determines the type of each neighboring bus (`REF`, `PV`, or `PQ`).
 Depending on the bus type, the function adds the appropriate entries to the Jacobian matrix structure.
 
 - For `REF` buses, entries are added for local active and reactive power.
@@ -384,11 +384,11 @@ The Jacobian matrix ``J = \\nabla F(x)`` has the structure:
 
 ```math
 J = \\begin{bmatrix}
-\\frac{\\partial \\vec{F}}{\\partial P_1} & 
-\\frac{\\partial \\vec{F}}{\\partial Q_1} & 
-\\frac{\\partial \\vec{F}}{\\partial Q_2} & 
-\\frac{\\partial \\vec{F}}{\\partial \\theta_2} & 
-\\frac{\\partial \\vec{F}}{\\partial V_3} & 
+\\frac{\\partial \\vec{F}}{\\partial P_1} &
+\\frac{\\partial \\vec{F}}{\\partial Q_1} &
+\\frac{\\partial \\vec{F}}{\\partial Q_2} &
+\\frac{\\partial \\vec{F}}{\\partial \\theta_2} &
+\\frac{\\partial \\vec{F}}{\\partial V_3} &
 \\frac{\\partial \\vec{F}}{\\partial \\theta_3}
 \\end{bmatrix}
 ```
@@ -735,9 +735,9 @@ end
 
 Calculate and store the active power loss factors in the `loss_factors` matrix of the `ACPowerFlowData` structure for a given time step.
 
-The loss factors are computed using the Jacobian matrix `Jv` and the vector `dSbus_dV_ref`, which contains the 
-partial derivatives of slack power with respect to bus voltages. The function interprets changes in 
-slack active power injections as indicative of changes in grid active power losses. 
+The loss factors are computed using the Jacobian matrix `Jv` and the vector `dSbus_dV_ref`, which contains the
+partial derivatives of slack power with respect to bus voltages. The function interprets changes in
+slack active power injections as indicative of changes in grid active power losses.
 KLU is used to factorize the sparse Jacobian matrix to solve for the loss factors.
 
 # Arguments
@@ -775,11 +775,11 @@ end
     calculate_voltage_stability_factors(data::ACPowerFlowData, J::ACPowerFlowJacobian, time_step::Integer)
 
 Calculate and store the voltage stability factors in the `voltage_stability_factors` matrix of the `ACPowerFlowData` structure for a given time step.
-The voltage stability factors are computed using the Jacobian matrix `J` in block format after a converged power flow calculation. 
+The voltage stability factors are computed using the Jacobian matrix `J` in block format after a converged power flow calculation.
 The results are stored in the `voltage_stability_factors` matrix in the `data` instance.
 The factor for the grid as a whole (σ) is stored in the position of the REF bus.
 The values of the singular vector `v` indicate the sensitivity of the buses and are stored in the positions of the PQ buses.
-The values of `v` for PV buses are set to zero. 
+The values of `v` for PV buses are set to zero.
 The function uses the method described in \"Fast calculation of a voltage stability index\" by PA Lof et. al.
 # Arguments
 - `data::ACPowerFlowData`: The instance containing the grid model data.
@@ -806,7 +806,7 @@ end
 
 """
     _block_J_indices(data::ACPowerFlowData, time_step::Int) -> (Vector{$J_INDEX_TYPE}, Vector{$J_INDEX_TYPE})
-    
+
 Get the indices to reindex the Jacobian matrix from the interleaved form to the block form:
 
 ```math
@@ -835,7 +835,7 @@ end
     _singular_value_decomposition(J::SparseMatrixCSC{Float64, $J_INDEX_TYPE}, npvpq::Integer; tol::Float64 = 1e-9, max_iter::Integer = 100,)
 
 Estimate the smallest singular value `σ` and corresponding left and right singular vectors `u` and `v` of a sparse matrix `G_s` (a sub-matrix of `J`).
-This function uses an iterative method involving LU factorization of the Jacobian matrix to estimate the smallest singular value of `G_s`. 
+This function uses an iterative method involving LU factorization of the Jacobian matrix to estimate the smallest singular value of `G_s`.
 The algorithm alternates between updating `u` and `v`, normalizing, and checking for convergence based on the change in the estimated singular value `σ`.
 The function uses the method described in `Algorithm 3` of \"Fast calculation of a voltage stability index\" by PA Lof et. al.
 

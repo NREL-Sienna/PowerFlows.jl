@@ -342,3 +342,139 @@ end
         end
     end
 end
+
+@testset "Headroom-proportional slack: DataFrame and generator-level redistribution" begin
+    for ACSolver in
+        filter(x -> !(x in (RobustHomotopyPowerFlow, LUACPowerFlow)), AC_SOLVERS_TO_TEST)
+        @testset "$(ACSolver)" begin
+            sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
+
+            # Add a duplicate generator at a PV bus so that generator-level redistribution
+            # is exercised (multiple generators at the same bus).
+            g1 = first(
+                get_components(
+                    x -> get_bustype(get_bus(x)) == ACBusTypes.PV,
+                    ThermalStandard,
+                    sys,
+                ),
+            )
+            g2 = ThermalStandard(;
+                name = "HeadroomDuplicate",
+                available = true,
+                status = true,
+                bus = get_bus(g1),
+                active_power = 0.1,
+                reactive_power = 0.05,
+                rating = 1.0,
+                active_power_limits = (min = 0.0, max = 0.8),
+                reactive_power_limits = (min = -1.0, max = 1.0),
+                ramp_limits = nothing,
+                operation_cost = ThermalGenerationCost(nothing),
+                base_power = 100.0,
+                time_limits = nothing,
+                prime_mover_type = PrimeMovers.OT,
+                fuel = ThermalFuels.OTHER,
+                services = Device[],
+                dynamic_injector = nothing,
+                ext = Dict{String, Any}(),
+            )
+            add_component!(sys, g2)
+
+            # Introduce active power imbalance
+            ref_gen = first(
+                get_components(
+                    x -> get_bustype(get_bus(x)) == ACBusTypes.REF,
+                    ThermalStandard,
+                    sys,
+                ),
+            )
+            with_units_base(sys, UnitSystem.NATURAL_UNITS) do
+                set_active_power!(ref_gen, 20.0)
+            end
+
+            # Record original generator powers and headroom (in natural units) before solving
+            original_gen_power = Float64[]
+            original_gen_headroom = Dict{String, Float64}()
+            original_gen_p = Dict{String, Float64}()
+            with_units_base(sys, UnitSystem.NATURAL_UNITS) do
+                original_gen_power = [
+                    get_active_power(g) for
+                    g in get_components(Union{Generator, Source}, sys)
+                ]
+                for g in get_components(ThermalStandard, sys)
+                    limits = get_active_power_limits(g)
+                    original_gen_headroom[get_name(g)] =
+                        limits.max - get_active_power(g)
+                    original_gen_p[get_name(g)] = get_active_power(g)
+                end
+            end
+
+            pf = ACPowerFlow{ACSolver}(;
+                correct_bustypes = true,
+                distribute_slack_proportional_to_headroom = true,
+            )
+
+            # --- Test 1: solve_power_flow returns sensible DataFrame ---
+            res = solve_power_flow(pf, sys)
+            @test !ismissing(res)
+            bus_results = res["bus_results"]
+            @test :P_gen in propertynames(bus_results)
+            @test :Vm in propertynames(bus_results)
+
+            # Power balance: total generation ≈ total load (within tolerance)
+            total_gen = sum(bus_results.P_gen)
+            total_load = sum(bus_results.P_load)
+            flow_results = res["flow_results"]
+            total_losses = sum(flow_results.P_losses)
+            @test isapprox(total_gen - total_load, total_losses; atol = 0.1)
+
+            # --- Test 2: solve_and_store_power_flow! writes headroom-proportional
+            #     generator setpoints, including for the multi-generator bus ---
+            _reset_gen_power!(sys, original_gen_power)
+            converged = solve_and_store_power_flow!(pf, sys)
+            @test converged
+
+            # Check generator-level headroom proportionality at the shared bus
+            shared_bus = get_bus(g1)
+            gens_at_bus = collect(
+                get_components(
+                    x -> get_bus(x) == shared_bus && get_available(x),
+                    ThermalStandard,
+                    sys,
+                ),
+            )
+            @test length(gens_at_bus) >= 2
+
+            # The ratio (solved_P - original_P) / original_headroom should be the same
+            # for all generators with positive headroom at the shared bus.
+            with_units_base(sys, UnitSystem.NATURAL_UNITS) do
+                ratios = Float64[]
+                for g in gens_at_bus
+                    h = original_gen_headroom[get_name(g)]
+                    h <= 0.0 && continue
+                    slack = get_active_power(g) - original_gen_p[get_name(g)]
+                    push!(ratios, slack / h)
+                end
+                @test length(ratios) >= 2
+                @test all(isapprox.(ratios, ratios[1]; atol = 1e-6, rtol = 0))
+            end
+
+            # --- Test 3: DataFrame P_gen matches system after solve_and_store ---
+            _reset_gen_power!(sys, original_gen_power)
+            bus_numbers = get_bus_numbers(sys)
+            res2 = solve_power_flow(pf, sys)
+            @test !ismissing(res2)
+
+            _reset_gen_power!(sys, original_gen_power)
+            solve_and_store_power_flow!(pf, sys)
+            solved_bus_power, _ = _system_generation_power(sys, bus_numbers)
+
+            @test isapprox(
+                solved_bus_power,
+                res2["bus_results"][:, :P_gen];
+                atol = 1e-4,
+                rtol = 0,
+            )
+        end
+    end
+end
