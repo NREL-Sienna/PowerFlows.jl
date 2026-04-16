@@ -39,7 +39,8 @@ Public = false
 Private = true
 Pages = [
     "solve_ac_power_flow.jl",
-    "solve_dc_power_flow.jl"
+    "solve_dc_power_flow.jl",
+    "dcpf_loss_injection.jl",
 ]
 ```
 
