@@ -16,6 +16,19 @@ after it, see the tutorial [Running Power Flow In The Loop with Unit Commitment]
 
 ## Setup
 
+!!! tip "Activate the project environment first"
+    If you are following this tutorial from within the cloned PowerFlows.jl repository,
+    activate the local project environment before loading packages so that Julia uses the
+    local version rather than any globally-installed version:
+    ```julia
+    import Pkg
+    Pkg.activate(".")
+    Pkg.instantiate()  # first time only: downloads packages listed in Manifest.toml
+    ```
+    `Pkg.instantiate()` is only needed the first time you activate the project (or after
+    pulling changes that update `Manifest.toml`). It is safe to skip on subsequent sessions.
+    If you installed PowerFlows.jl via `Pkg.add`, you can skip both steps.
+
 Load the needed packages:
 
 ```@repl uc_validation
@@ -108,9 +121,11 @@ Look at line flows for hour 1:
 results["1"]["flow_results"]
 ```
 
-Notice that `P_from_to` and `P_to_from` are equal and opposite (i.e.,
-`P_to_from ≈ -P_from_to`) and `P_losses` is 0 for every branch. DC power flow assumes
-lossless lines, so power entering a branch at one end equals power leaving at the other.
+Notice that `P_from_to` and `P_to_from` are **not** equal and opposite, and `P_losses`
+is non-zero for resistive branches. Although DC power flow ignores reactive power and
+assumes flat voltage magnitudes, PowerFlows.jl computes a first-order active power loss
+estimate as $R \cdot P^2$, where $R$ is the branch resistance. Purely inductive branches
+(zero resistance) will still show zero losses.
 
 ## Checking for Overloads
 
@@ -146,6 +161,25 @@ end
 overloads
 ```
 
-An empty DataFrame means the committed dispatch is network-feasible at every interval.
-Non-empty rows indicate congestion the UC model missed — useful feedback for tightening
-the network representation.
+An empty DataFrame means the committed dispatch is network-feasible at every interval —
+every branch stays within its thermal rating at every hour of the day.
+
+If the DataFrame is non-empty, each row identifies a specific congestion event:
+
+- **`time_step`**: the interval (hour) in which the overload occurred.
+- **`flow_name`**: the name of the overloaded branch, matching the PowerSystems.jl component name.
+- **`P_from_to`**: the actual active power flow on that branch in MW (signed, from the
+  "from" bus to the "to" bus).
+- **`rating`**: the branch's thermal rating in MW. The severity of the overload is
+  `abs(P_from_to) - rating`.
+
+In a real UC workflow, overloaded branches indicate that the UC model's network
+representation was too loose — it allowed a dispatch that the full DC network model rejects.
+Common responses include:
+
+- **Add transmission constraints** to the UC model for the congested branches.
+- **Re-run the UC** with those constraints active and repeat the power flow check.
+- **Manually curtail** generation near the overloaded branch and re-check.
+
+Iterating this process until the overloads DataFrame is empty gives you a
+network-feasible dispatch schedule.

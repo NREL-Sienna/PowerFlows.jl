@@ -9,6 +9,19 @@ solvers and compare their results.
 To get started, load the needed packages. We're using a standard test system and want to 
 keep output clean, so we adjust the logging settings to filter out a few precautionary warnings.
 
+!!! tip "Activate the project environment first"
+    If you are following this tutorial from within the cloned PowerFlows.jl repository,
+    activate the local project environment before loading packages so that Julia uses the
+    local version rather than any globally-installed version:
+    ```julia
+    import Pkg
+    Pkg.activate(".")
+    Pkg.instantiate()  # first time only: downloads packages listed in Manifest.toml
+    ```
+    `Pkg.instantiate()` is only needed the first time you activate the project (or after
+    pulling changes that update `Manifest.toml`). It is safe to skip on subsequent sessions.
+    If you installed PowerFlows.jl via `Pkg.add`, you can skip both steps.
+
 ```@repl basic_tutorial
 using PowerSystemCaseBuilder
 using PowerFlows
@@ -24,14 +37,10 @@ sys = build_system(MatpowerTestSystems, "matpower_case5_sys")
 ```
 
 !!! warning "Run the setup blocks first"
-    Every code block in this tutorial shares the same REPL session (`basic_tutorial`). If
-    you skip or re-order blocks, variables like `sys` and `pf_dc` will be undefined and
-    you will see `UndefVarError`. Always run the setup blocks above before proceeding to
-    each subsequent section.
 
     If any `using` statement in the setup block failed because a package was not yet
     installed, install it with `Pkg.add("PackageName")` and then **re-run the entire
-    setup block** — simply installing a package does not load it into the current session.
+    setup block** — simply installing a package by typing 'using'  does not load it into the current session.
 
 ## DC Power Flow
 
@@ -65,7 +74,9 @@ This is expected for DC power flow, which assumes flat voltage magnitudes and ig
 dc_results["1"]["flow_results"]
 ```
 
-Likewise, `Q_from_to` and `Q_to_from` (reactive power flow on the line) are zero, for all lines.
+Likewise, `Q_from_to` and `Q_to_from` (reactive power flow on the line) are zero for all lines.
+`P_losses` will be non-zero for resistive branches — PowerFlows.jl computes a first-order
+loss estimate as $R \cdot P^2$ even in DC power flow. Purely inductive branches will show zero losses.
 
 ## PTDF DC Power Flow
 
@@ -148,19 +159,6 @@ ac_results["flow_results"][!, [:flow_name, :P_from_to]]
 
 DC and PTDF-DC are identical (they are mathematically equivalent). AC values differ
 because the Newton-Raphson solver finds the physically exact solution including losses.
-
-## When AC Power Flow Fails
-
-AC power flow is iterative and not guaranteed to converge. If it fails, `solve_power_flow`
-returns `missing` and logs an error. Switch to a more robust solver and retry:
-
-```@repl basic_tutorial
-pf_tr = TrustRegionACPowerFlow()
-tr_results = solve_power_flow(pf_tr, sys)
-```
-
-If the Trust Region solver also fails, [`RobustHomotopyPowerFlow`](@ref) is the most
-robust option and can find solutions for systems that standard Newton methods cannot.
 
 ## Next Steps
 

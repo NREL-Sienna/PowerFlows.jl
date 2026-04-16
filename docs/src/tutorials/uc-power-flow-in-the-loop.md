@@ -12,17 +12,31 @@ the system and optionally exported to PSS/e format.
     This tutorial requires [`PowerSystemCaseBuilder.jl`](https://nrel-sienna.github.io/PowerSystemCaseBuilder.jl/stable/),
     [`PowerSimulations.jl`](https://nrel-sienna.github.io/PowerSimulations.jl/stable/), and
     [`PowerSystems.jl`](https://nrel-sienna.github.io/PowerSystems.jl/stable/) in addition to `PowerFlows.jl`. Make sure
-    all are installed in your Julia environment before proceeding. If you have not already
-    installed these packages, run the following commands:
-    ```julia
-    import Pkg
-    Pkg.add(["PowerSystemCaseBuilder", "PowerSimulations", "PowerSystems", "PowerFlows", "HiGHS"])
-    ```
+    all are installed in your Julia environment before proceeding.
 
 If you want to run power flow independently *after* a UC simulation rather than during
 it, see the tutorial [Validating a UC Dispatch with Multi-Period Power Flow](@ref).
 
 ## Setup
+
+!!! tip "Activate the project environment first"
+    If you are following this tutorial from within the cloned PowerFlows.jl repository,
+    activate the local project environment before loading packages so that Julia uses the
+    local version rather than any globally-installed version:
+    ```julia
+    import Pkg
+    Pkg.activate(".")
+    Pkg.instantiate()  # first time only: downloads packages listed in Manifest.toml
+    ```
+    `Pkg.instantiate()` is only needed the first time you activate the project (or after
+    pulling changes that update `Manifest.toml`). It is safe to skip on subsequent sessions.
+    If you installed PowerFlows.jl via `Pkg.add` into your global environment (i.e. you
+    are **not** working from the cloned repo), you can skip both steps. If you need to
+    install the packages into your global environment first, run:
+    ```julia
+    import Pkg
+    Pkg.add(["PowerSystemCaseBuilder", "PowerSimulations", "PowerSystems", "PowerFlows", "HiGHS"])
+    ```
 
 Load the needed packages:
 
