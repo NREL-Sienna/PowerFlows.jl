@@ -48,13 +48,11 @@ Solve the power flow with [`solve_power_flow`](@ref):
 dc_results = solve_power_flow(pf_dc, sys)
 ```
 
-<!-- dc_results = solve_power_flow(pf_dc, sys, FlowReporting.ARC_FLOWS)  -->
-
 The result is a `Dict{String, Dict{String, DataFrame}}`. The outer key is the time step
 name: `"1"`. The inner dictionary stores the power flow results at that time step:
 `"bus_results"` for bus data and `"flow_results"` key for AC line data.
 (There's also 3rd key, `"lcc_results"`, for HVDC lines, but this sytem 
-contains no such components, so the matching dataframe will be emtpy.) Inspect `"bus_results"`:
+contains no such components, so the matching dataframe will be empty.) Inspect `"bus_results"`:
 
 ```@repl basic_tutorial
 dc_results["1"]["bus_results"]
@@ -78,25 +76,20 @@ care about line flows, though we don't have that option implemented here.) Creat
 solver:
 
 ```@repl basic_tutorial
-pf_ptdf = PTDFPowerFlow()
+pf_ptdf = PTDFDCPowerFlow()
 ```
-<!-- pf_ptdf = PTDFDCPowerFlow()  -->
 
 As before, solve the power flow with [`solve_power_flow`](@ref):
 
 ```@repl basic_tutorial
-dc_results = solve_power_flow(pf_ptdf, sys)
+ptdf_results = solve_power_flow(pf_ptdf, sys)
 ```
-
-<!-- dc_results = solve_power_flow(pf_ptdf, sys, FlowReporting.ARC_FLOWS)  -->
 
 Look at the bus results:
 
 ```@repl basic_tutorial
 ptdf_results["1"]["bus_results"]
 ```
-
-<!-- dc_results["1"]["bus_results"]  -->
 
 The results match `DCPowerFlow`, as they should: the two are mathematically equivalent. 
 For very large systems where forming the full PTDF matrix would be too expensive, 
@@ -114,10 +107,8 @@ pf_ac = ACPowerFlow()
 Solve the power flow:
 
 ```@repl basic_tutorial
-solve_power_flow(pf_ac, sys)
+ac_results = solve_power_flow(pf_ac, sys)
 ```
-
-<!-- ac_results = solve_power_flow(pf_ac, sys)  -->
 
 AC results are returned as a flat `Dict{String, DataFrame}`, with the same keys as 
 before: `"bus_results"`, `"flow_results"` (AC lines), and `"lcc_results"` (HVDC lines). 
@@ -138,10 +129,44 @@ ac_results["flow_results"]
 `Q_from_to` and `Q_to_from` now show reactive power flows, and `P_from_to` differs from
 `P_to_from` due to losses.
 
+## Comparing Results
+
+The DC and AC active power flows will differ slightly because AC power flow accounts for
+resistive losses. Compare the `P_from_to` column across all three methods:
+
+```@repl basic_tutorial
+dc_results["1"]["flow_results"][!, [:flow_name, :P_from_to]]
+```
+
+```@repl basic_tutorial
+ptdf_results["1"]["flow_results"][!, [:flow_name, :P_from_to]]
+```
+
+```@repl basic_tutorial
+ac_results["flow_results"][!, [:flow_name, :P_from_to]]
+```
+
+DC and PTDF-DC are identical (they are mathematically equivalent). AC values differ
+because the Newton-Raphson solver finds the physically exact solution including losses.
+
 ## When AC Power Flow Fails
 
-Unlike DC power flow, AC power flow is iterative and not guaranteed to converge. Systems
-with high impedance lines, poor initial voltage profiles, or insufficient reactive power
-support can cause the solver to fail. When this happens, `solve_power_flow` returns
-`missing`: you'll also see a logged error. If you encounter convergence failures, consider
- using a more robust solver such as [`TrustRegionACPowerFlow`](@ref) or [`RobustHomotopyPowerFlow`](@ref).
+AC power flow is iterative and not guaranteed to converge. If it fails, `solve_power_flow`
+returns `missing` and logs an error. Switch to a more robust solver and retry:
+
+```@repl basic_tutorial
+pf_tr = TrustRegionACPowerFlow()
+tr_results = solve_power_flow(pf_tr, sys)
+```
+
+If the Trust Region solver also fails, [`RobustHomotopyPowerFlow`](@ref) is the most
+robust option and can find solutions for systems that standard Newton methods cannot.
+
+## Next Steps
+
+- **How-tos**: See the how-to guides for writing results to PSS/e format, running
+  multi-period power flows, and working with HVDC systems.
+- **Reference**: Browse the [API reference](@ref "Public API") for all available solver
+  types and their keyword arguments.
+- **Explanation**: Read the explanation docs to understand when to choose each solver and
+  how the algorithms work.
