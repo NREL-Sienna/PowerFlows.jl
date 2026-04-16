@@ -240,8 +240,8 @@ function test_generic_hvdc_on_big_system(pf_type::Type{<:PF.PowerFlowEvaluationM
     for fieldname in (:bus_angles, :bus_magnitude)
         @test all(
             abs.(
-                getfield(data_original, fieldname) .-
-                getfield(data_modified, fieldname)
+                getproperty(data_original, fieldname) .-
+                getproperty(data_modified, fieldname)
             ) .< TIGHT_TOLERANCE,
         )
     end
@@ -251,8 +251,8 @@ function test_generic_hvdc_on_big_system(pf_type::Type{<:PF.PowerFlowEvaluationM
         for (original_arc_ind, arc) in enumerate(PF.get_arc_axis(data_original))
             modified_arc_ind = PF.get_arc_lookup(data_modified)[arc]
             @test isapprox(
-                getfield(data_original, fieldname)[original_arc_ind],
-                getfield(data_modified, fieldname)[modified_arc_ind],
+                getproperty(data_original, fieldname)[original_arc_ind],
+                getproperty(data_modified, fieldname)[modified_arc_ind],
                 atol = TIGHT_TOLERANCE,
             )
         end
