@@ -696,7 +696,7 @@ function _finalize_power_flow(
         end
         return true
     end
-    @error("The $solver_name solver failed to converge.")
+    @error("The $solver_name solver failed to converge after $i iterations.")
     return false
 end
 
