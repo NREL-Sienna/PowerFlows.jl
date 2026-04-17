@@ -7,6 +7,9 @@ links = InterLinks(
     "PowerNetworkMatrices" => "https://nrel-sienna.github.io/PowerNetworkMatrices.jl/stable/",
 )
 
+include(joinpath(@__DIR__, "make_tutorials.jl"))
+make_tutorials()
+
 pages = OrderedDict(
     "Welcome Page" => "index.md",
     "How-to-Guides" => "how-tos/stub.md",
