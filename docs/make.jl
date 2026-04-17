@@ -28,10 +28,13 @@ pages = OrderedDict(
 
 makedocs(;
     modules = [PowerFlows],
-    format = Documenter.HTML(; mathengine = Documenter.MathJax()),
-    plugins = [links],
+    format = Documenter.HTML(;
+        prettyurls = haskey(ENV, "GITHUB_ACTIONS"),
+        mathengine = Documenter.MathJax(),
+    ),
     sitename = "PowerFlows.jl",
     pages = Any[p for p in pages],
+    plugins = [links],
 )
 
 deploydocs(;
