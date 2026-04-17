@@ -14,7 +14,7 @@ pages = OrderedDict(
     "Welcome Page" => "index.md",
     "How-to-Guides" => "how-tos/stub.md",
     "Tutorials" => Any[
-        "Solving a Power Flow" => "tutorials/solving-a-power-flow.md",
+        "Solving a Power Flow" => "tutorials/generated_solving_a_power_flow.md",
     ],
     "Explanation" => "explanation/stub.md",
     "Reference" => Any[
