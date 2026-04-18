@@ -16,13 +16,14 @@ pages = OrderedDict(
     "Tutorials" => Any[
         "Solving a Power Flow" => "tutorials/generated_solving_a_power_flow.md",
     ],
-    "Explanation" => "explanation/stub.md",
+    "Explanation" => Any[
+        "LCC Model Implementation" => "explanation/lcc_model.md",
+    ],
     "Reference" => Any[
-        "Code Base Developer Guide" => "reference/developers/developer.md",
-        "LCC Model Implementation" => "reference/developers/lcc_model.md",
         "Public API Reference" => "reference/api/public.md",
         "Internal API Reference - Core" => "reference/api/internal.md",
         "Internal API Reference - Solvers & Utilities" => "reference/api/internal_solvers.md",
+        "Code Base Developer Guide" => "reference/developers/developer.md",
     ],
 )
 
