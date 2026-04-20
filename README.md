@@ -14,7 +14,7 @@ During development the API will change
 
 ## Development
 
-Contributions to the development and enahancement of PowerFlows is welcome. Please see [CONTRIBUTING.md](https://github.com/Sienna-Platform/PowerFlows.jl/blob/master/CONTRIBUTING.md) for code contribution guidelines.
+Contributions to the development and enhancement of PowerFlows is welcome. Please see [CONTRIBUTING.md](https://github.com/Sienna-Platform/PowerFlows.jl/blob/master/CONTRIBUTING.md) for code contribution guidelines.
 
 ## License
 
