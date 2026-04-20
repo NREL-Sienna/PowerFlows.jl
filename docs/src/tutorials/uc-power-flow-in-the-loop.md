@@ -53,7 +53,7 @@ disable_logging(Logging.Error)
 Build a test system. We use the 5-bus Matpower DA system, a small synthetic system:
 
 ```@repl uc_inloop
-sys = build_system(PSISystems, "5_bus_matpower_DA")
+sys = build_system(PSISystems, "5_bus_matpower_DA"; skip_serialization = true)
 ```
 
 ## Configuring the Power Flow Solver
@@ -100,12 +100,10 @@ set_device_model!(template_uc, TapTransformer, StaticBranchUnbounded)
 set_device_model!(template_uc, MonitoredLine, StaticBranch)
 ```
 
-`use_slacks = true` allows the UC to remain feasible even if the AC power flow cannot
-fully match the dispatch — the slack variables absorb any mismatch rather than causing
-the solve to fail. This is the recommended setting
-where small mismatches between the simplified PTDF-based UC network model and the full AC
-power flow are expected. In production workflows where you want the simulation to fail
-loudly if the AC power flow cannot match the committed dispatch, set `use_slacks = false`.
+`use_slacks = true` allows the simulation to remain feasible when there is a small
+mismatch between the PTDF-based UC network model and the full AC power flow. Set
+`use_slacks = false` in production workflows where you want the simulation to fail loudly
+if the AC power flow cannot match the committed dispatch.
 
 ## Building and Executing the Simulation
 
@@ -121,7 +119,6 @@ models = SimulationModels(;
             sys;
             name = "UC",
             optimizer = optimizer,
-            system_to_file = false,
             store_variable_names = true,
         ),
     ],
@@ -143,7 +140,7 @@ sim = Simulation(;
     simulation_folder = joinpath("outputs", "simulation"),
 )
 
-build!(sim; console_level = Logging.Error, serialize = false)
+build!(sim; console_level = Logging.Error)
 ```
 
 Execute the simulation. After each UC interval solves, [`PowerSimulations.jl`](https://nrel-sienna.github.io/PowerSimulations.jl/stable/) calls
@@ -173,7 +170,7 @@ uc_results = get_decision_problem_results(results, "UC")
 Check which generators were committed (on/off) at each interval:
 
 ```@repl uc_inloop
-show(read_realized_variable(uc_results, "OnVariable__ThermalStandard"), allrows = true)
+show(read_realized_variables(uc_results, ["OnVariable__ThermalStandard"])["OnVariable__ThermalStandard"], allrows = true)
 ```
 
 Each row is a timestep and each column is a generator. A value of `1.0` means the unit was
@@ -190,7 +187,7 @@ realistic dispatch scenarios.
 Read the active power output of each committed generator across the 6 intervals:
 
 ```@repl uc_inloop
-read_realized_variable(uc_results, "ActivePowerVariable__ThermalStandard")
+read_realized_variables(uc_results, ["ActivePowerVariable__ThermalStandard"])["ActivePowerVariable__ThermalStandard"]
 ```
 
 Each value is the active power output of a generator in megawatts (MW) for that interval.
@@ -208,7 +205,7 @@ the full network — any mismatch was absorbed by the slack variables configured
 See which generators started up at each interval:
 
 ```@repl uc_inloop
-show(read_realized_variable(uc_results, "StartVariable__ThermalStandard"), allrows = true)
+show(read_realized_variables(uc_results, ["StartVariable__ThermalStandard"])["StartVariable__ThermalStandard"], allrows = true)
 ```
 
 A value of `1` indicates the unit started up at that timestep. Cross-referencing this
@@ -228,4 +225,25 @@ generators are committed from the start and stay on throughout, so all values wi
 
 Because `power_flow_evaluation` was set, the AC power flow ran at each interval and its
 solution was stored in `sys`. The PSS/e `.raw` files for each solved interval are written
-to the `outputs/psse/` directory, one file per interval.
+to the `outputs/psse/` directory, one file per interval. Verify the files were created:
+
+```@repl uc_inloop
+readdir(joinpath("outputs", "psse"))
+```
+
+You should see one `.raw` file per simulated step.
+
+## Next Steps
+
+Now that you have a working power flow-in-the-loop simulation, you can:
+
+- **Swap the power flow method** — replace `ACPowerFlow()` with
+  `ACPowerFlow{NewtonRaphsonACPowerFlow}()` or `ACPowerFlow{TrustRegionACPowerFlow}()` to
+  control the underlying solver. See [Solving a Power Flow](@ref) for method details.
+- **Use a larger system** — replace `"5_bus_matpower_DA"` with any `PSISystems` case
+  (e.g. `"RTS_GMLC_DA_sys"`) to test on a more realistic network.
+- **Omit the PSS/e exporter** — remove the `exporter` argument from `ACPowerFlow()` if
+  you don't need `.raw` output files.
+- **Post-process results** — read branch flows and bus voltages written back into `sys`
+  after each interval using `get_components` on `ACBranch` and `ACBus`. See the
+  [Validating a UC Dispatch with Multi-Period Power Flow](@ref) tutorial for an example.
