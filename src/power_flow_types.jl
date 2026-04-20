@@ -325,7 +325,7 @@ Factor Matrix.
 
 This is a replacement for the [`PTDFDCPowerFlow`](@ref) for large grids,
 where creating and storing the full PTDF matrix would be infeasible or slow. See the
-[PowerNetworkMatrices.jl docs](https://nrel-sienna.github.io/PowerNetworkMatrices.jl/stable/) for details.
+[PowerNetworkMatrices.jl docs](https://sienna-platform.github.io/PowerNetworkMatrices.jl/stable/) for details.
 
 # Arguments
 - `exporter::Union{Nothing, PowerFlowEvaluationModel}`: An optional exporter for the power flow results.

@@ -15,7 +15,7 @@ using Logging
 disable_logging(Logging.Warn)
 ```
 
-Create a [`System`](@extref PowerSystems.System) from [PowerSystemCaseBuilder.jl](https://github.com/NREL-Sienna/PowerSystemCaseBuilder.jl):
+Create a [`System`](@extref PowerSystems.System) from [PowerSystemCaseBuilder.jl](https://github.com/Sienna-Platform/PowerSystemCaseBuilder.jl):
 
 ```@repl basic_tutorial
 sys = build_system(MatpowerTestSystems, "matpower_case5_sys")

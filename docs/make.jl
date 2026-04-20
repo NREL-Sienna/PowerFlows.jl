@@ -3,8 +3,8 @@ using DocumenterInterLinks
 
 links = InterLinks(
     "DocumenterInterLinks" => "http://juliadocs.org/DocumenterInterLinks.jl/stable/",
-    "PowerSystems" => "https://nrel-sienna.github.io/PowerSystems.jl/stable/",
-    "PowerNetworkMatrices" => "https://nrel-sienna.github.io/PowerNetworkMatrices.jl/stable/",
+    "PowerSystems" => "https://sienna-platform.github.io/PowerSystems.jl/stable/",
+    "PowerNetworkMatrices" => "https://sienna-platform.github.io/PowerNetworkMatrices.jl/stable/",
 )
 
 pages = OrderedDict(
@@ -32,7 +32,7 @@ makedocs(;
 )
 
 deploydocs(;
-    repo = "github.com/NREL-Sienna/PowerFlows.jl.git",
+    repo = "github.com/Sienna-Platform/PowerFlows.jl.git",
     target = "build",
     branch = "gh-pages",
     devbranch = "main",
