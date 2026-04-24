@@ -75,6 +75,17 @@ function homotopy_x0(data::ACPowerFlowData, time_step::Int)
 end
 
 function HomotopyHessian(data::ACPowerFlowData, time_step::Int)
+    n_lccs = length(data.lcc.bus_indices)
+    if n_lccs > 0
+        throw(
+            ArgumentError(
+                "RobustHomotopyPowerFlow does not support systems with " *
+                "LCC HVDC lines (found $n_lccs). LCCs add state variables " *
+                "to the Jacobian that the homotopy Hessian formulation " *
+                "does not account for. Use a different AC power flow method.",
+            ),
+        )
+    end
     pfResidual = ACPowerFlowResidual(data, time_step)
     J = ACPowerFlowJacobian(data,
         pfResidual.bus_slack_participation_factors,

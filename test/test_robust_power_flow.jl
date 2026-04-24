@@ -14,6 +14,12 @@
     @test isapprox(data_nr.bus_magnitude, data_hom.bus_magnitude; atol = 1e-6)
 end
 
+@testset "RobustHomotopy rejects systems with LCCs" begin
+    sys, _ = simple_lcc_system()
+    pf_hom = ACPowerFlow{PF.RobustHomotopyPowerFlow}()
+    @test_throws ArgumentError solve_power_flow(pf_hom, sys)
+end
+
 @testset "test robust homotopy power flow with headroom-proportional slack" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     sys2 = deepcopy(sys)
