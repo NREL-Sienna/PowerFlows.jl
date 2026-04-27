@@ -98,7 +98,7 @@ const PSSE_V35_HEADERS = Dict{String, String}(
     "Fixed Shunt Data" => "@!   I,'ID',STATUS,  GL,        BL",
     "Generator Data" => "@!   I,'ID',      PG,        QG,        QT,        QB,     VS,    IREG,NREG,     MBASE,     ZR,         ZX,         RT,         XT,     GTAP,STAT, RMPCT,      PT,        PB,BASLOD,O1,    F1,  O2,    F2,  O3,    F3,  O4,    F4,WMOD, WPF",
     "Non-Transformer Branch Data" => "@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,
-      RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
+@!      RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
     "Switching Device Data" => "@!   I,     J,'CKT',          X,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12, STAT,NSTAT,  MET,STYPE,'NAME'",
     "Transformer Data" => """
 @!   I,     J,     K,'CKT',CW,CZ,CM,     MAG1,        MAG2,NMETR,               'N A M E',               STAT,O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4,     'VECGRP', ZCOD
@@ -913,6 +913,37 @@ function _get_cw_cz_cm_defaults(transformer::PSY.Transformer2W)
     if windv1 isa Number && windv2 isa Number &&
        isapprox(windv1, from_base_voltage) &&
        isapprox(windv2, to_base_voltage)
+        return (2, 2, 1)
+    end
+
+    return (PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT)
+end
+
+function _get_cw_cz_cm_defaults(transformer::PSY.Transformer3W)
+    primary_base_voltage =
+        PSY.get_base_voltage(PSY.get_from(PSY.get_primary_star_arc(transformer)))
+    secondary_base_voltage =
+        PSY.get_base_voltage(PSY.get_from(PSY.get_secondary_star_arc(transformer)))
+    tertiary_base_voltage =
+        PSY.get_base_voltage(PSY.get_from(PSY.get_tertiary_star_arc(transformer)))
+
+    windv1 =
+        get_ext_key_or_default(transformer, "WINDV1", PSY.get_primary_turns_ratio(transformer))
+    windv2 = get_ext_key_or_default(
+        transformer,
+        "WINDV2",
+        PSY.get_secondary_turns_ratio(transformer),
+    )
+    windv3 = get_ext_key_or_default(
+        transformer,
+        "WINDV3",
+        PSY.get_tertiary_turns_ratio(transformer),
+    )
+
+    if windv1 isa Number && windv2 isa Number && windv3 isa Number &&
+       isapprox(windv1, primary_base_voltage) &&
+       isapprox(windv2, secondary_base_voltage) &&
+       isapprox(windv3, tertiary_base_voltage)
         return (2, 2, 1)
     end
 
