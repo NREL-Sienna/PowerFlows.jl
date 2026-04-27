@@ -813,9 +813,10 @@ function _write_2w_transformer_record1!(
     NAME::String,
     STAT::Int,
 )
-    CW = get_ext_key_or_default(transformer, "CW")
-    CZ = get_ext_key_or_default(transformer, "CZ")
-    CM = get_ext_key_or_default(transformer, "CM")
+    default_CW, default_CZ, default_CM = _get_cw_cz_cm_defaults(transformer)
+    CW = get_ext_key_or_default(transformer, "CW", default_CW)
+    CZ = get_ext_key_or_default(transformer, "CZ", default_CZ)
+    CM = get_ext_key_or_default(transformer, "CM", default_CM)
     mag1_default, mag2_default = _get_mag_defaults(transformer)
     MAG1 = get_ext_key_or_default(transformer, "MAG1", mag1_default)
     MAG2 = get_ext_key_or_default(transformer, "MAG2", mag2_default)
@@ -893,6 +894,35 @@ end
 _get_2w_cod1(transformer::PSY.TwoWindingTransformer) =
     get_ext_key_or_default(transformer, "COD1")
 
+_get_windv1_default(transformer::PSY.TapTransformer) = PSY.get_tap(transformer)
+_get_windv1_default(transformer::PSY.TwoWindingTransformer) =
+    PSY.get_base_voltage_primary(transformer)
+
+_get_windv2_default(::PSY.TapTransformer) = 1.0
+_get_windv2_default(transformer::PSY.TwoWindingTransformer) =
+    PSY.get_base_voltage_secondary(transformer)
+
+function _get_cw_cz_cm_defaults(transformer::PSY.Transformer2W)
+    from_base_voltage = PSY.get_base_voltage(PSY.get_from(PSY.get_arc(transformer)))
+    to_base_voltage = PSY.get_base_voltage(PSY.get_to(PSY.get_arc(transformer)))
+    windv1 =
+        get_ext_key_or_default(transformer, "WINDV1", _get_windv1_default(transformer))
+    windv2 =
+        get_ext_key_or_default(transformer, "WINDV2", _get_windv2_default(transformer))
+
+    if windv1 isa Number && windv2 isa Number &&
+       isapprox(windv1, from_base_voltage) &&
+       isapprox(windv2, to_base_voltage)
+        return (2, 2, 1)
+    end
+
+    return (PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT)
+end
+_get_cw_cz_cm_defaults(::PSY.TwoWindingTransformer) =
+    (PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT)
+_get_cw_cz_cm_defaults(::PSY.ThreeWindingTransformer) =
+    (PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT)
+
 """Write the third record line (winding 1 data) for a 2-winding transformer."""
 function _write_2w_transformer_record3_winding1!(
     io::IO,
@@ -902,7 +932,7 @@ function _write_2w_transformer_record3_winding1!(
     WINDV1 = get_ext_key_or_default(
         transformer,
         "WINDV1",
-        PSY.get_base_voltage_primary(transformer),
+        _get_windv1_default(transformer),
     )
     NOMV1 = get_ext_key_or_default(
         transformer,
@@ -987,7 +1017,7 @@ function _write_2w_transformer_record4_winding2!(
     WINDV2 = get_ext_key_or_default(
         transformer,
         "WINDV2",
-        PSY.get_base_voltage_secondary(transformer),
+        _get_windv2_default(transformer),
     )
     NOMV2 = get_ext_key_or_default(
         transformer,
