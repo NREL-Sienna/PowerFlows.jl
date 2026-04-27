@@ -97,7 +97,8 @@ const PSSE_V35_HEADERS = Dict{String, String}(
     "Load Data" => "@!   I,'ID',STAT,AREA,ZONE,      PL,        QL,        IP,        IQ,        YP,        YQ, OWNER,SCALE,INTRPT,  DGENP,     DGENQ,DGENF,'  LOAD TYPE '",
     "Fixed Shunt Data" => "@!   I,'ID',STATUS,  GL,        BL",
     "Generator Data" => "@!   I,'ID',      PG,        QG,        QT,        QB,     VS,    IREG,NREG,     MBASE,     ZR,         ZX,         RT,         XT,     GTAP,STAT, RMPCT,      PT,        PB,BASLOD,O1,    F1,  O2,    F2,  O3,    F3,  O4,    F4,WMOD, WPF",
-    "Non-Transformer Branch Data" => "@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
+    "Non-Transformer Branch Data" => "@!   I,     J,'CKT',      R,           X,       B,                   'N A M E'                 ,  RATE1,  RATE2,  RATE3,  RATE4,
+      RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12,   GI,      BI,      GJ,      BJ,STAT,MET, LEN,  O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4",
     "Switching Device Data" => "@!   I,     J,'CKT',          X,  RATE1,  RATE2,  RATE3,  RATE4,  RATE5,  RATE6,  RATE7,  RATE8,  RATE9, RATE10, RATE11, RATE12, STAT,NSTAT,  MET,STYPE,'NAME'",
     "Transformer Data" => """
 @!   I,     J,     K,'CKT',CW,CZ,CM,     MAG1,        MAG2,NMETR,               'N A M E',               STAT,O1,  F1,    O2,  F2,    O3,  F3,    O4,  F4,     'VECGRP', ZCOD
@@ -916,7 +917,8 @@ function _write_2w_transformer_record3_winding1!(
     RMI1 = get_ext_key_or_default(transformer, "RMI1")
     VMA1 = get_ext_key_or_default(transformer, "VMA1")
     VMI1 = get_ext_key_or_default(transformer, "VMI1")
-    NTP1 = get_ext_key_or_default(transformer, "NTP1")
+    # Set to default/actual value to integer, since by default is getting exported as float, causing an error when loaded into PSSE
+    NTP1 = _permissive_parse_int(get_ext_key_or_default(transformer, "NTP1"))
     NOD1 = get_ext_key_or_default(transformer, "NOD1")
     CONT1 = get_ext_key_or_default(transformer, "CONT1")
 
@@ -927,11 +929,12 @@ function _write_2w_transformer_record3_winding1!(
     CNXA1 = get_ext_key_or_default(transformer, "CNXA1")
 
     if exporter.psse_version == :v35
+        # Using 0.0 as default for for rating exporter, since PSSEv35 does not allow blank values
         RATA1, RATB1, RATC1 =
             with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-                _value_or_default(PSY.get_rating(transformer), PSSE_DEFAULT),
-                _value_or_default(PSY.get_rating_b(transformer), PSSE_DEFAULT),
-                _value_or_default(PSY.get_rating_c(transformer), PSSE_DEFAULT)
+                _value_or_default(PSY.get_rating(transformer), 0.0),
+                _value_or_default(PSY.get_rating_b(transformer), 0.0),
+                _value_or_default(PSY.get_rating_c(transformer), 0.0)
             end
 
         rates_1 = [
@@ -940,7 +943,7 @@ function _write_2w_transformer_record3_winding1!(
             get_ext_key_or_default(transformer, "RATE13", RATC1),
         ]
         for i in 4:12
-            push!(rates_1, get_ext_key_or_default(transformer, "RATE1$i"))
+            push!(rates_1, get_ext_key_or_default(transformer, "RATE1$i", 0.0))
         end
 
         @fastprintdelim_unroll(io, false, WINDV1, NOMV1, ANG1)
@@ -1072,7 +1075,8 @@ function _collect_3w_winding_data(
         RMI = get_ext_key_or_default(transformer, "RMI$prefix")
         VMA = get_ext_key_or_default(transformer, "VMA$prefix")
         VMI = get_ext_key_or_default(transformer, "VMI$prefix")
-        NTP = get_ext_key_or_default(transformer, "NTP$prefix")
+        # Set to default/actual value to integer, since by default is getting exported as float, causing an error when loaded into PSSE
+        NTP = _permissive_parse_int(get_ext_key_or_default(transformer, "NTP$prefix"))
         TAB = 0
         supp_attr = PSY.get_supplemental_attributes(transformer)
         for icd_tr in supp_attr
@@ -1717,11 +1721,19 @@ end
 
 """Calculate the STAT field for a 3-winding transformer based on per-winding availability."""
 function _calculate_3w_transformer_stat(transformer::PSY.ThreeWindingTransformer)
-    if PSY.get_available_primary(transformer) == false
+    primary = PSY.get_available_primary(transformer)
+    secondary = PSY.get_available_secondary(transformer)
+    tertiary = PSY.get_available_tertiary(transformer)
+    # The STAT value is determined based on the availability of the windings
+    if !primary && !secondary && !tertiary
+        return 0
+    elseif (!primary && !secondary) || (!primary && !tertiary) || (!secondary && !tertiary)
+        return 0
+    elseif !primary
         return 4
-    elseif PSY.get_available_secondary(transformer) == false
+    elseif !secondary
         return 2
-    elseif PSY.get_available_tertiary(transformer) == false
+    elseif !tertiary
         return 3
     else
         return PSY.get_available(transformer) ? 1 : 0
@@ -1763,14 +1775,15 @@ function _write_regular_branch_record!(
 
     if exporter.psse_version == :v35
         NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
-        rates = [RATEA, RATEB, RATEC]
-        for i in 4:12
-            push!(rates, get_ext_key_or_default(branch, "RATE$i"))
-        end
+        # Using 0.0 as default for for rating exporter, since PSSEv35 does not allow blank values
         @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B, NAME)
-        for rate in rates
-            fastprintdelim(io, rate)
+        fastprintdelim(io, RATEA)
+        fastprintdelim(io, RATEB)
+        fastprintdelim(io, RATEC)
+        for i in 4:12
+            fastprintdelim(io, get_ext_key_or_default(branch, "RATE$i", 0.0))
         end
+
         @fastprintdelim_unroll(io, false, GI, BI, GJ, BJ, ST, MET, LEN)
         fastprintln_psse_default_ownership(io)
     else
@@ -1860,8 +1873,9 @@ function _write_tap_transformer_as_branch_record!(
     if exporter.psse_version == :v35
         NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
         rates = [RATEA, RATEB, RATEC]
+        # Using 0.0 as default for for rating exporter, since PSSEv35 does not allow blank values
         for i in 4:12
-            push!(rates, get_ext_key_or_default(branch, "RATE$i"))
+            push!(rates, get_ext_key_or_default(branch, "RATE$i", 0.0))
         end
         @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B, NAME)
         for rate in rates
@@ -2025,8 +2039,9 @@ function write_to_buffers!(
         RATE1 = RATE1 >= INFINITE_BOUND ? 0.0 : RATE1 / PSY.get_base_power(exporter.system)
 
         rates = [RATE1]
+        # Using 0.0 as default for for rating exporter, since PSSEv35 does not allow blank values
         for i in 2:12
-            push!(rates, get_ext_key_or_default(branch, "RATE$i"))
+            push!(rates, get_ext_key_or_default(branch, "RATE$i", 0.0))
         end
 
         STAT = PSY.get_available(branch) ? 1 : 0
