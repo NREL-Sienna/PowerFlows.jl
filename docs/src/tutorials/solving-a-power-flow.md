@@ -1,11 +1,26 @@
 # Solving a Power Flow
 
+To get started, ensure you have followed the [installation instructions](@ref "Installation"). Start Julia from the command line if you haven't already.
+
 In this tutorial, you'll solve power flows on a 5-bus test system using three different
 solvers and compare their results.
 
 ## Building a System
 To get started, load the needed packages. We're using a standard test system and want to 
 keep output clean, so we adjust the logging settings to filter out a few precautionary warnings.
+
+!!! tip "Activate the project environment first"
+    If you are following this tutorial from within the cloned PowerFlows.jl repository,
+    activate the local project environment before loading packages so that Julia uses the
+    local version rather than any globally-installed version:
+    ```julia
+    import Pkg
+    Pkg.activate(".")
+    Pkg.instantiate()  # first time only: downloads packages listed in Manifest.toml
+    ```
+    `Pkg.instantiate()` is only needed the first time you activate the project (or after
+    pulling changes that update `Manifest.toml`). It is safe to skip on subsequent sessions.
+    If you installed PowerFlows.jl via `Pkg.add`, you can skip both steps.
 
 ```@repl basic_tutorial
 using PowerSystemCaseBuilder
@@ -20,6 +35,12 @@ Create a [`System`](@extref PowerSystems.System) from [PowerSystemCaseBuilder.jl
 ```@repl basic_tutorial
 sys = build_system(MatpowerTestSystems, "matpower_case5_sys")
 ```
+
+!!! warning "Run the setup blocks first"
+
+    If any `using` statement in the setup block failed because a package was not yet
+    installed, install it with `Pkg.add("PackageName")` and then **re-run the entire
+    setup block** — simply installing a package by typing 'using'  does not load it into the current session.
 
 ## DC Power Flow
 
@@ -40,7 +61,7 @@ The result is a `Dict{String, Dict{String, DataFrame}}`. The outer key is the ti
 name: `"1"`. The inner dictionary stores the power flow results at that time step:
 `"bus_results"` for bus data and `"flow_results"` key for AC line data.
 (There's also 3rd key, `"lcc_results"`, for HVDC lines, but this sytem 
-contains no such components, so the matching dataframe will be emtpy.) Inspect `"bus_results"`:
+contains no such components, so the matching dataframe will be empty.) Inspect `"bus_results"`:
 
 ```@repl basic_tutorial
 dc_results["1"]["bus_results"]
@@ -53,7 +74,9 @@ This is expected for DC power flow, which assumes flat voltage magnitudes and ig
 dc_results["1"]["flow_results"]
 ```
 
-Likewise, `Q_from_to` and `Q_to_from` (reactive power flow on the line) are zero, for all lines.
+Likewise, `Q_from_to` and `Q_to_from` (reactive power flow on the line) are zero for all lines.
+`P_losses` will be non-zero for resistive branches — PowerFlows.jl computes a first-order
+loss estimate as $R \cdot P^2$ even in DC power flow. Purely inductive branches will show zero losses.
 
 ## PTDF DC Power Flow
 
@@ -64,13 +87,13 @@ care about line flows, though we don't have that option implemented here.) Creat
 solver:
 
 ```@repl basic_tutorial
-pf_ptdf = PTDFPowerFlow()
+pf_ptdf = PTDFDCPowerFlow()
 ```
 
 As before, solve the power flow with [`solve_power_flow`](@ref):
 
 ```@repl basic_tutorial
-dc_results = solve_power_flow(pf_ptdf, sys)
+ptdf_results = solve_power_flow(pf_ptdf, sys)
 ```
 
 Look at the bus results:
@@ -95,12 +118,12 @@ pf_ac = ACPowerFlow()
 Solve the power flow:
 
 ```@repl basic_tutorial
-solve_power_flow(pf_ac, sys)
+ac_results = solve_power_flow(pf_ac, sys)
 ```
 
 AC results are returned as a flat `Dict{String, DataFrame}`, with the same keys as 
 before: `"bus_results"`, `"flow_results"` (AC lines), and `"lcc_results"` (HVDC lines). 
-(We don't support multi-period AC power flows yet.) Look at the bus results:
+(Sienna does not support multi-period AC power flows yet.) Look at the bus results:
 
 ```@repl basic_tutorial
 ac_results["bus_results"]
@@ -117,10 +140,31 @@ ac_results["flow_results"]
 `Q_from_to` and `Q_to_from` now show reactive power flows, and `P_from_to` differs from
 `P_to_from` due to losses.
 
-## When AC Power Flow Fails
+## Comparing Results
 
-Unlike DC power flow, AC power flow is iterative and not guaranteed to converge. Systems
-with high impedance lines, poor initial voltage profiles, or insufficient reactive power
-support can cause the solver to fail. When this happens, `solve_power_flow` returns
-`missing`: you'll also see a logged error. If you encounter convergence failures, consider
- using a more robust solver such as [`TrustRegionACPowerFlow`](@ref) or [`RobustHomotopyPowerFlow`](@ref).
+The DC and AC active power flows will differ slightly because AC power flow accounts for
+resistive losses. Compare the `P_from_to` column across all three methods:
+
+```@repl basic_tutorial
+dc_results["1"]["flow_results"][!, [:flow_name, :P_from_to]]
+```
+
+```@repl basic_tutorial
+ptdf_results["1"]["flow_results"][!, [:flow_name, :P_from_to]]
+```
+
+```@repl basic_tutorial
+ac_results["flow_results"][!, [:flow_name, :P_from_to]]
+```
+
+DC and PTDF-DC are identical (they are mathematically equivalent). AC values differ
+because the Newton-Raphson solver finds the physically exact solution including losses.
+
+## Next Steps
+
+- **How-tos**: See the how-to guides for writing results to PSS/e format, running
+  multi-period power flows, and working with HVDC systems.
+- **Reference**: Browse the [API reference](@ref "Public API") for all available solver
+  types and their keyword arguments.
+- **Explanation**: Read the explanation docs to understand when to choose each solver and
+  how the algorithms work.
