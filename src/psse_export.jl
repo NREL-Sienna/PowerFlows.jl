@@ -927,8 +927,11 @@ function _get_cw_cz_cm_defaults(transformer::PSY.Transformer3W)
     tertiary_base_voltage =
         PSY.get_base_voltage(PSY.get_from(PSY.get_tertiary_star_arc(transformer)))
 
-    windv1 =
-        get_ext_key_or_default(transformer, "WINDV1", PSY.get_primary_turns_ratio(transformer))
+    windv1 = get_ext_key_or_default(
+        transformer,
+        "WINDV1",
+        PSY.get_primary_turns_ratio(transformer),
+    )
     windv2 = get_ext_key_or_default(
         transformer,
         "WINDV2",
@@ -1891,69 +1894,16 @@ function _write_discrete_branch_record!(
     fastprintln_psse_default_ownership(io)
 end
 
-"""Write a TapTransformer with UNDEFINED control objective as a non-transformer branch record."""
-function _write_tap_transformer_as_branch_record!(
-    io::IO,
-    exporter::PSSEExporter,
-    I::Int,
-    J::Int,
-    CKT::String,
-    branch::PSY.ACBranch;
-    B_override::Union{Float64, Nothing} = nothing,
-    RATEB_override::Union{Float64, Nothing} = nothing,
-    RATEC_override::Union{Float64, Nothing} = nothing,
-)
-    ST = PSY.get_available(branch) ? 1 : 0
-    MET = get_ext_key_or_default(branch, "MET")
-    LEN = get_ext_key_or_default(branch, "LEN")
-    R = PSY.get_r(branch)
-    X = PSY.get_x(branch)
-    B = isnothing(B_override) ? 0.0 : B_override
-    GI = get_ext_key_or_default(branch, "GI")
-    BI = get_ext_key_or_default(branch, "BI")
-    GJ = get_ext_key_or_default(branch, "GJ")
-    BJ = get_ext_key_or_default(branch, "BJ")
-
-    RATEA, RATEB, RATEC =
-        with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
-            _value_or_default(PSY.get_rating(branch), PSSE_DEFAULT),
-            if isnothing(RATEB_override)
-                _value_or_default(PSY.get_rating_b(branch), PSSE_DEFAULT)
-            else
-                RATEB_override
-            end,
-            if isnothing(RATEC_override)
-                _value_or_default(PSY.get_rating_c(branch), PSSE_DEFAULT)
-            else
-                RATEC_override
-            end
-        end
-    (RATEA, RATEB, RATEC) =
-        (_fix_3w_transformer_rating(x) for x in (RATEA, RATEB, RATEC))
-
-    if exporter.psse_version == :v35
-        NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
-        rates = [RATEA, RATEB, RATEC]
-        # Using 0.0 as default for for rating exporter, since PSSEv35 does not allow blank values
-        for i in 4:12
-            push!(rates, get_ext_key_or_default(branch, "RATE$i", 0.0))
-        end
-        @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B, NAME)
-        for rate in rates
-            fastprintdelim(io, rate)
-        end
-        @fastprintdelim_unroll(io, false, GI, BI, GJ, BJ, ST, MET, LEN)
-        fastprintln_psse_default_ownership(io)
-    else
-        @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B,
-            RATEA, RATEB, RATEC,
-            GI, BI, GJ, BJ, ST, MET, LEN)
-        fastprintln_psse_default_ownership(io)
-    end
-end
-
 _is_discrete_controlled(::PSY.DiscreteControlledACBranch) = true
 _is_discrete_controlled(::PSY.ACBranch) = false
+
+function _export_tap_transformer_as_branch(transformer::PSY.TapTransformer)
+    control_obj = PSY.get_control_objective(transformer)
+    return (
+        control_obj ==
+        PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+    ) && isapprox(PSY.get_tap(transformer), 1.0)
+end
 
 """
 WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Non-Transformer Branch Data
@@ -1973,9 +1923,7 @@ function write_to_buffers!(
 
         transformer_as_branches = Tuple{PSY.ACBranch, Tuple{Int, Int}}[]
         for transformer in PSY.get_components(PSY.TapTransformer, exporter.system)
-            control_obj = PSY.get_control_objective(transformer)
-            if control_obj ==
-               PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+            if _export_tap_transformer_as_branch(transformer)
                 bus_nums = branch_to_bus_numbers(transformer)
                 push!(transformer_as_branches, (transformer, bus_nums))
             end
@@ -2271,12 +2219,11 @@ function _load_transformer_components_and_mappings(exporter::PSSEExporter)
             collect(PSY.get_components(PSY.TwoWindingTransformer, exporter.system));
             by = branch_to_bus_numbers,
         )
-        # Filter out TapTransformers with UNDEFINED control objective
+        # TapTransformers with UNDEFINED control objective and unity tap are exported as branches.
+        # Keep all others in transformer export.
         filtered_transformers = filter(transformers) do transformer
             if transformer isa PSY.TapTransformer
-                control_obj = PSY.get_control_objective(transformer)
-                return control_obj !=
-                       PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
+                return !_export_tap_transformer_as_branch(transformer)
             end
             return true
         end
