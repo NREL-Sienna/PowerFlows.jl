@@ -335,17 +335,26 @@ function add_image_links(nb::Dict, outputfile_base::AbstractString)
         contains(text, "If image is not available when viewing in a Jupyter notebook") &&
             continue
         suffix = "\n\n" * msg * "\n"
-        # Use a single non-overlapping regex to match image-containing fragments:
-        # - <p...>...<img...>...</p> (Literate raw HTML paragraphs)
-        # - ```@raw html ... ``` blocks
-        # - Markdown images ![...](...)
-        # - standalone <img> tags (only if not already matched by <p> wrapper)
-        # Define readable sub-patterns for each of the above cases.
+        # If the cell has any of the image shapes below, we append one "view online" note.
+        # We build one alternation pattern from sub-patterns (each line is one case).
+        #
+        # HTML paragraph wrapping an <img> (Literate often emits <p>…<img>…</p>).
+        #   <p[^>]*>     — opening <p> and attributes
+        #   [\s\S]*?     — any chars, non-greedy, up to the first <img
+        #   <img…</p>   — from <img through closing </p>
         p_with_img_pattern = r"<p[^>]*>[\s\S]*?<img[\s\S]*?</p>"
+        # Documenter @raw html chunk that Literate inlines in the notebook (backticks removed in output).
+        #   ```@raw html  — start marker
+        #   [\s\S]*?     — block body, non-greedy
+        #   ```          — end fence
         raw_html_block_pattern = r"```@raw html[\s\S]*?```"
+        # Standard markdown image: ![alt text](url)
+        #   !\[…\]  — alt in brackets;  \(…\)  — path in parens
         markdown_image_pattern = r"!\[[^\]]*\]\([^\)]*\)"
+        # A bare <img ...> not already covered by the <p>…<img>…</p> case above.
+        #   <img   — tag start;  [^>]*?  — attributes;  /?>  — self-closing or >
         standalone_img_pattern = r"<img[^>]*?/?>"
-        # Combine them into one non-overlapping regex to keep behaviour identical.
+        # Union of the four cases: (?: A | B | C | D )
         image_fragment_pattern = Regex(
             "(?:" *
             p_with_img_pattern.pattern * "|" *
