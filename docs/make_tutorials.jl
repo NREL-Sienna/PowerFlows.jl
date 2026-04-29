@@ -341,7 +341,7 @@ function make_tutorials()
     if isdir("docs/src/tutorials")
         tutorial_files =
             filter(
-                x -> occursin(".jl", x) && !startswith(x, "_"),
+                x -> endswith(x, ".jl") && !startswith(x, "_"),
                 readdir("docs/src/tutorials"),
             )
         if !isempty(tutorial_files)
