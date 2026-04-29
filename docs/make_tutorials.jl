@@ -76,7 +76,12 @@ function _compute_docs_base_url()
         return "$base/$dev_suffix"
     end
 
-    # Default to stable (also covers tagged versions where content is shared)
+    # Tagged/versioned builds (e.g. "v0.9", "v1.2.3")
+    if !isempty(current_version) && current_version != "stable"
+        return "$base/$current_version"
+    end
+
+    # Default to stable
     return "$base/stable"
 end
 
