@@ -162,9 +162,11 @@ end
 # Function to add download links to generated markdown
 function add_download_links(content, jl_file, ipynb_file)
     # Add download links at the top of the file after the first heading
+    script_link = "$_DOCS_BASE_URL/tutorials/$(jl_file)"
+    notebook_link = "$_DOCS_BASE_URL/tutorials/$(ipynb_file)"
     download_section = """
 
-*To follow along, you can download this tutorial as a [Julia script (.jl)]($(jl_file)) or [Jupyter notebook (.ipynb)]($(ipynb_file)).*
+*To follow along, you can download this tutorial as a [Julia script (.jl)]($(script_link)) or [Jupyter notebook (.ipynb)]($(notebook_link)).*
 
 """
     # Insert after the first heading (which should be the title)
