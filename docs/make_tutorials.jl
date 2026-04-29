@@ -291,7 +291,6 @@ function add_image_links(nb::Dict, outputfile_base::AbstractString)
         contains(text, "If image is not available when viewing in a Jupyter notebook") &&
             continue
         suffix = "\n\n" * msg * "\n"
-        append_after = m -> string(m) * suffix
         # Use a single non-overlapping regex to match image-containing fragments:
         # - <p...>...<img...>...</p> (Literate raw HTML paragraphs)
         # - ```@raw html ... ``` blocks
@@ -310,11 +309,9 @@ function add_image_links(nb::Dict, outputfile_base::AbstractString)
             markdown_image_pattern.pattern * "|" *
             standalone_img_pattern.pattern * ")",
         )
-        text = replace(
-            text,
-            image_fragment_pattern =>
-                append_after,
-        )
+        if occursin(image_fragment_pattern, text)
+            text *= suffix
+        end
         # Convert back to notebook source array (lines, last without trailing \n if non-empty)
         lines = split(text, "\n"; keepempty = true)
         new_source = String[]
