@@ -353,7 +353,6 @@ function make_tutorials()
                     else
                         false
                     end
-                execute && include(infile_path)
 
                 outputfile = string("generated_", replace("$file", ".jl" => ""))
 
