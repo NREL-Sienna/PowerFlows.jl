@@ -35,7 +35,13 @@ function Base.show(io::IO, mime::MIME"text/html", df::DataFrame)
         limit_printing = true)
 end
 
-# Function to clean up old generated files
+# Remove previously generated tutorial artifacts so a docs build only reflects
+# current source tutorials.
+#
+# Input:
+# - dir: tutorial output directory that can contain generated_*.md/ipynb.
+# Output:
+# - Deletes matching files in-place and logs each deletion.
 function clean_old_generated_files(dir::String)
     if !isdir(dir)
         @warn "Directory does not exist: $dir"
@@ -57,9 +63,16 @@ end
 # Literate post-processing functions for tutorial generation
 #########################################################
 
-# Compute base URL for the docs site based on Documenter's deploy context.
-# This ensures that links generated in notebooks point to the correct
-# location for stable, dev, and preview builds.
+# Compute docs base URL from Documenter deploy context.
+#
+# Behavior:
+# - previews/PR123 -> .../previews/PR123
+# - dev (or custom DOCUMENTER_DEVURL) -> .../dev
+# - tagged versions like v0.9 -> .../v0.9
+# - fallback -> .../stable
+#
+# This keeps generated download/view-online links correct across preview, dev,
+# tagged, and stable deployments.
 function _compute_docs_base_url()
     base = "https://nrel-sienna.github.io/PowerFlows.jl"
 
@@ -87,7 +100,16 @@ end
 
 const _DOCS_BASE_URL = _compute_docs_base_url()
 
-# postprocess function to insert md
+# Replace APPEND_MARKDOWN("path/to/file.md") placeholders with file contents.
+#
+# Sample input:
+#   "Before\nAPPEND_MARKDOWN(\"docs/src/tutorials/_snippet.md\")\nAfter"
+# Sample output:
+#   "Before\n<contents of _snippet.md>\nAfter"
+#
+# Notes:
+# - Uses a non-greedy-safe capture (`[^\"]*`) so multiple placeholders can be
+#   replaced independently.
 function insert_md(content)
     pattern = r"APPEND_MARKDOWN\(\"([^\"]*)\"\)"
     if occursin(pattern, content)
@@ -158,7 +180,16 @@ function preprocess_admonitions_for_notebook(str::AbstractString)
     return join(out, '\n')
 end
 
-# Function to add download links to generated markdown
+# Inject a short "download tutorial files" sentence after the first markdown
+# heading in generated tutorial pages.
+#
+# Sample input:
+#   "# Title\nBody..."
+# Sample output (conceptual):
+#   "# Title\n\n*To follow along... [Julia script](.../tutorial.jl)...*\n\nBody..."
+#
+# Notes:
+# - Links are emitted as absolute docs URLs to remain valid with prettyurls.
 function add_download_links(content, jl_file, ipynb_file)
     # Add download links at the top of the file after the first heading
     script_link = "$_DOCS_BASE_URL/tutorials/$(jl_file)"
@@ -178,7 +209,12 @@ function add_download_links(content, jl_file, ipynb_file)
     return content
 end
 
-# Function to add Pkg.status() to notebook within the first markdown cell
+# Insert a setup preface and captured `Pkg.status()` into the first markdown
+# cell of a generated notebook, immediately after the first heading.
+#
+# Sample effect:
+# - First markdown cell gains a "Set up" blockquote and an embedded code block
+#   containing package versions from the docs build environment.
 function add_pkg_status_to_notebook(nb::Dict)
     cells = get(nb, "cells", [])
     if isempty(cells)
@@ -277,6 +313,10 @@ end
 # Add italicized "view online" comment after each image from ```@raw html ... ``` (or
 # the raw HTML / markdown form Literate writes). Used as a postprocess in Literate.notebook.
 # Literate strips the backtick wrapper and outputs raw HTML; we match that multi-line block.
+# Sample effect:
+# - If a markdown cell contains one or more image fragments, append exactly one
+#   "view online" fallback note at the end of that cell.
+# - If the note already exists in the cell, no change is applied.
 function add_image_links(nb::Dict, outputfile_base::AbstractString)
     tutorial_url = "$_DOCS_BASE_URL/tutorials/$(outputfile_base)/"
     msg = "_If image is not available when viewing in a Jupyter notebook, view the tutorial online [here]($tutorial_url)._"
@@ -332,8 +372,12 @@ end
 # Process tutorials with Literate
 #########################################################
 
-# Markdown files are postprocessed to add download links for the Julia script and Jupyter notebook
-# Jupyter notebooks are postprocessed to add image links and pkg.status()
+# Generate tutorial markdown + notebook artifacts from literate .jl sources.
+#
+# Pipeline:
+# 1) discover tutorial .jl files (excluding helper files starting with "_")
+# 2) generate Documenter-flavored markdown with injected download links
+# 3) generate notebook with admonition conversion, setup preface, and image note
 function make_tutorials()
     tutorials_dir = abspath(joinpath(@__DIR__, "src", "tutorials"))
     # Exclude helper scripts that start with "_"
