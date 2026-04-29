@@ -89,10 +89,9 @@ const _DOCS_BASE_URL = _compute_docs_base_url()
 
 # postprocess function to insert md
 function insert_md(content)
-    m = match(r"APPEND_MARKDOWN\(\"(.*)\"\)", content)
-    if !isnothing(m)
-        md_content = read(m.captures[1], String)
-        content = replace(content, r"APPEND_MARKDOWN\(\"(.*)\"\)" => md_content)
+    pattern = r"APPEND_MARKDOWN\(\"([^\"]*)\"\)"
+    if occursin(pattern, content)
+        content = replace(content, pattern => m -> read(m.captures[1], String))
     end
     return content
 end
