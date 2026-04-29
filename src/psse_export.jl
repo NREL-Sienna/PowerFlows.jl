@@ -993,7 +993,7 @@ function _write_2w_transformer_record3_winding1!(
     CNXA1 = get_ext_key_or_default(transformer, "CNXA1")
 
     if exporter.psse_version == :v35
-        # Using 0.0 as default for for rating exporter, since PSSEv35 does not allow blank values
+        # Using 0.0 as default for rating exporter, since PSSEv35 does not allow blank values
         RATA1, RATB1, RATC1 =
             with_units_base(exporter.system, PSY.UnitSystem.NATURAL_UNITS) do
                 _value_or_default(PSY.get_rating(transformer), 0.0),
@@ -1839,7 +1839,7 @@ function _write_regular_branch_record!(
 
     if exporter.psse_version == :v35
         NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
-        # Using 0.0 as default for for rating exporter, since PSSEv35 does not allow blank values
+        # Using 0.0 as default for rating exporter, since PSSEv35 does not allow blank values
         @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B, NAME)
         fastprintdelim(io, RATEA)
         fastprintdelim(io, RATEB)
@@ -2048,7 +2048,7 @@ function write_to_buffers!(
         RATE1 = RATE1 >= INFINITE_BOUND ? 0.0 : RATE1 / PSY.get_base_power(exporter.system)
 
         rates = [RATE1]
-        # Using 0.0 as default for for rating exporter, since PSSEv35 does not allow blank values
+        # Using 0.0 as default for rating exporter, since PSSEv35 does not allow blank values
         for i in 2:12
             push!(rates, get_ext_key_or_default(branch, "RATE$i", 0.0))
         end
