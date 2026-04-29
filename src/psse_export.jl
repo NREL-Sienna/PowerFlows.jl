@@ -1789,9 +1789,7 @@ function _calculate_3w_transformer_stat(transformer::PSY.ThreeWindingTransformer
     secondary = PSY.get_available_secondary(transformer)
     tertiary = PSY.get_available_tertiary(transformer)
     # The STAT value is determined based on the availability of the windings
-    if !primary && !secondary && !tertiary
-        return 0
-    elseif (!primary && !secondary) || (!primary && !tertiary) || (!secondary && !tertiary)
+    if (!primary && !secondary) || (!primary && !tertiary) || (!secondary && !tertiary)
         return 0
     elseif !primary
         return 4
