@@ -3,36 +3,41 @@ using Literate
 using DataFrames
 using PrettyTables
 
-# Override show for DataFrames to limit output size during doc builds
-# This ensures large DataFrames are truncated when displayed as expression results in @example blocks
-# Explicit show() calls in tutorials with their own arguments are NOT affected (they use their own kwargs)
-# We override both text/plain and text/html since Documenter may use either
-# 
-# Strategy: Call PrettyTables.pretty_table directly with explicit row/column limits.
-# This bypasses DataFrames' default display logic and gives us full control.
-
-function Base.show(io::IO, mime::MIME"text/plain", df::DataFrame)
-    # Call PrettyTables directly with row/column limits
-    # This ensures only 10 rows are shown regardless of DataFrame size
-    PrettyTables.pretty_table(io, df;
-        backend = :text,
-        maximum_number_of_rows = 10,
-        maximum_number_of_columns = 80,
-        show_omitted_cell_summary = true,
-        compact_printing = false,
-        limit_printing = true)
+# Limit DataFrame rendering during docs generation to avoid huge literal outputs.
+# Notes:
+# - Environment-variable approaches tested (`DATAFRAMES_ROWS`, `DATAFRAMES_COLUMNS`,
+#   `LINES`, `COLUMNS`) did not constrain DataFrames output in this pipeline.
+# - We keep a docs-local Base.show override as a fallback and accept `kwargs...`
+#   so explicit show(...; kwargs) calls do not error on unsupported keywords.
+function _env_int(name::String, default::Int)
+    parsed = tryparse(Int, get(ENV, name, string(default)))
+    return something(parsed, default)
 end
 
-function Base.show(io::IO, mime::MIME"text/html", df::DataFrame)
-    # For HTML output (which Documenter prefers for large outputs)
-    # Use PrettyTables HTML backend with explicit row/column limits
+const _DF_MAX_ROWS = _env_int("SIENNA_DOCS_DF_MAX_ROWS", 10)
+const _DF_MAX_COLS = _env_int("SIENNA_DOCS_DF_MAX_COLS", 80)
+
+function Base.show(io::IO, mime::MIME"text/plain", df::DataFrame; kwargs...)
+    # Keep docs output bounded while allowing explicit caller kwargs.
     PrettyTables.pretty_table(io, df;
-        backend = :html,
-        maximum_number_of_rows = 10,
-        maximum_number_of_columns = 80,
+        backend = :text,
+        maximum_number_of_rows = _DF_MAX_ROWS,
+        maximum_number_of_columns = _DF_MAX_COLS,
         show_omitted_cell_summary = true,
         compact_printing = false,
-        limit_printing = true)
+        limit_printing = true,
+        kwargs...)
+end
+
+function Base.show(io::IO, mime::MIME"text/html", df::DataFrame; kwargs...)
+    PrettyTables.pretty_table(io, df;
+        backend = :html,
+        maximum_number_of_rows = _DF_MAX_ROWS,
+        maximum_number_of_columns = _DF_MAX_COLS,
+        show_omitted_cell_summary = true,
+        compact_printing = false,
+        limit_printing = true,
+        kwargs...)
 end
 
 # Remove previously generated tutorial artifacts so a docs build only reflects
