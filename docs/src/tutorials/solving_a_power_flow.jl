@@ -13,7 +13,7 @@ using Logging
 
 disable_logging(Logging.Warn)
 
-# Create a [`System`](@extref PowerSystems.System) from [PowerSystemCaseBuilder.jl](https://github.com/NREL-Sienna/PowerSystemCaseBuilder.jl):
+# Create a [`System`](@extref PowerSystems.System) from [PowerSystemCaseBuilder.jl](https://github.com/sienna-platform/PowerSystemCaseBuilder.jl):
 
 sys = build_system(MatpowerTestSystems, "matpower_case5_sys")
 

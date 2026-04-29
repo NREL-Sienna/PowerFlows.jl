@@ -79,7 +79,7 @@ end
 # This keeps generated download/view-online links correct across preview, dev,
 # tagged, and stable deployments.
 function _compute_docs_base_url()
-    base = "https://nrel-sienna.github.io/PowerFlows.jl"
+    base = "https://sienna-platform.github.io/PowerFlows.jl"
 
     current_version = get(ENV, "DOCUMENTER_CURRENT_VERSION", "")
 
