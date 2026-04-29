@@ -335,21 +335,22 @@ end
 # Markdown files are postprocessed to add download links for the Julia script and Jupyter notebook
 # Jupyter notebooks are postprocessed to add image links and pkg.status()
 function make_tutorials()
+    tutorials_dir = abspath(joinpath(@__DIR__, "src", "tutorials"))
     # Exclude helper scripts that start with "_"
-    if isdir("docs/src/tutorials")
+    if isdir(tutorials_dir)
         tutorial_files =
             filter(
                 x -> endswith(x, ".jl") && !startswith(x, "_"),
-                readdir("docs/src/tutorials"),
+                readdir(tutorials_dir),
             )
         if !isempty(tutorial_files)
             # Clean up old generated tutorial files
-            tutorial_outputdir = joinpath(pwd(), "docs", "src", "tutorials")
+            tutorial_outputdir = tutorials_dir
             clean_old_generated_files(tutorial_outputdir)
 
             for file in tutorial_files
                 @show file
-                infile_path = joinpath(pwd(), "docs", "src", "tutorials", file)
+                infile_path = joinpath(tutorials_dir, file)
                 execute =
                     if occursin("EXECUTE = TRUE", uppercase(readline(infile_path)))
                         true
