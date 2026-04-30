@@ -105,6 +105,26 @@ end
 
 const _DOCS_BASE_URL = _compute_docs_base_url()
 
+"""
+Choose how tutorial download links are written in generated markdown.
+
+- **Absolute** (under `_DOCS_BASE_URL/tutorials/`): CI / Documenter context (`GITHUB_ACTIONS` or
+  non-empty `DOCUMENTER_CURRENT_VERSION`) so previews, `dev`, and versioned URLs match
+  `_compute_docs_base_url()`.
+- **Relative** (bare filenames): local/offline builds; files sit next to `generated_*.md`
+  under `docs/src/tutorials/`.
+
+Override: `SIENNA_DOCS_DOWNLOAD_LINKS`=`absolute` or `relative`.
+"""
+function _downloads_use_absolute_urls()
+    o = get(ENV, "SIENNA_DOCS_DOWNLOAD_LINKS", "")
+    o == "absolute" && return true
+    o == "relative" && return false
+    haskey(ENV, "GITHUB_ACTIONS") && return true
+    !isempty(get(ENV, "DOCUMENTER_CURRENT_VERSION", "")) && return true
+    return false
+end
+
 # Replace APPEND_MARKDOWN("path/to/file.md") placeholders with file contents.
 #
 # Sample input:
@@ -193,12 +213,15 @@ end
 # Sample output (conceptual):
 #   "# Title\n\n*To follow along... [Julia script](.../tutorial.jl)...*\n\nBody..."
 #
-# Notes:
-# - Links are emitted as absolute docs URLs to remain valid with prettyurls.
+# Download links:
+# - **Deployed / CI**: absolute URLs under `_DOCS_BASE_URL` when `_downloads_use_absolute_urls()` is true.
+# - **Local**: bare filenames (siblings of `generated_*.md` in `docs/src/tutorials/`).
 function add_download_links(content, jl_file, ipynb_file)
-    # Add download links at the top of the file after the first heading
-    script_link = "$_DOCS_BASE_URL/tutorials/$(jl_file)"
-    notebook_link = "$_DOCS_BASE_URL/tutorials/$(ipynb_file)"
+    script_link, notebook_link = if _downloads_use_absolute_urls()
+        ("$_DOCS_BASE_URL/tutorials/$(jl_file)", "$_DOCS_BASE_URL/tutorials/$(ipynb_file)")
+    else
+        (jl_file, ipynb_file)
+    end
     download_section = """
 
 *To follow along, you can download this tutorial as a [Julia script (.jl)]($(script_link)) or [Jupyter notebook (.ipynb)]($(notebook_link)).*
