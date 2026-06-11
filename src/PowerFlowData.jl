@@ -541,7 +541,6 @@ function make_and_initialize_power_flow_data(
     arc_bus_incidence::Union{SparseMatrixCSC{Int8, Int}, Nothing} = nothing,
     controlled_devices::Union{Nothing, ControlledDeviceSet} = nothing,
 ) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
-    check_unit_setting(sys)
     if isnothing(controlled_devices) && get_control_discrete_devices(pf)
         @warn "control_discrete_devices=true, but no controlled_devices were supplied \
             to make_and_initialize_power_flow_data — discrete device control will NOT \
