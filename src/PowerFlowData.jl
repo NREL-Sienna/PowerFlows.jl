@@ -162,9 +162,14 @@ struct PowerFlowData{
     # AC Jacobian and a `solver_cache` entry can both be live in one solve (FastDecoupled handing
     # off to NR), so they must not contend. Lazily populated; see `_get_or_build_jacobian_structure`.
     ac_jacobian_structure_cache::Base.RefValue{Union{Nothing, ACJacobianStructureCache}}
-    # Persisted NR/TR symbolic-factorization cache (a `PolarNRCache`, defined in
-    # `power_flow_method.jl`); its own slot so it never contends with a DC/FD `solver_cache`.
-    polar_nr_cache::Base.RefValue{Union{Nothing, SolverCache}}
+    # Persistent polar NR/TR reuse cache (a `PolarNRCache`, defined in `power_flow_method.jl`).
+    # Holds the residual, Jacobian, linear-solver cache (with its symbolic factorization), and
+    # state-vector buffers so the Q-limit retry loop and the multi-period time-step loop skip
+    # reconstructing these structure-invariant objects on every `_newton_power_flow` call. Its own
+    # slot so it never contends with a DC/FD `solver_cache`. Typed as the `AbstractNRCache` forward
+    # supertype because the concrete `PolarNRCache` cannot be referenced here (construction cycle
+    # through `ACPowerFlowResidual`).
+    polar_nr_cache::Base.RefValue{Union{Nothing, AbstractNRCache}}
 end
 
 # aliases for specific type parameter combinations.
@@ -431,7 +436,7 @@ function PowerFlowData(
         Base.RefValue{Union{Nothing, SolverCache}}(nothing), # solver_cache (lazily populated)
         controlled_devices,
         Base.RefValue{Union{Nothing, ACJacobianStructureCache}}(nothing), # ac_jacobian_structure_cache
-        Base.RefValue{Union{Nothing, SolverCache}}(nothing), # polar_nr_cache (lazily populated)
+        Base.RefValue{Union{Nothing, AbstractNRCache}}(nothing), # polar_nr_cache (lazily populated)
     )
 end
 
