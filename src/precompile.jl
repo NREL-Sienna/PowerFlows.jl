@@ -139,17 +139,34 @@ PrecompileTools.@setup_workload begin
     end
     PrecompileTools.@compile_workload begin
         Logging.with_logger(Logging.NullLogger()) do
+            # Precompilation does not need converged power flows: two capped iterations
+            # exercise the same iteration machinery (step, refinement, Jacobian refresh,
+            # and the non-convergence writeback), so the iterative solves below run with
+            # `maxIterations = 2`. The one exception is the one-shot NR call, which stays
+            # uncapped because `write_results` only executes on a converged solve (the
+            # fixture converges in a handful of iterations, so the cost is the same).
+
             # Core AC path on the POM-consumed (PSI-stable) surface: explicit
-            # PowerFlowData construction + in-place solve.
+            # PowerFlowData construction + in-place polar NR solve.
             pf = ACPowerFlow()
             data = PowerFlowData(pf, sys)
-            solve_power_flow!(data)
-            # A second in-place solve compiles the PolarNRCache refresh/reuse path (the
-            # repeated-evaluation and multi-period hot path).
-            solve_power_flow!(data)
-            # One-shot public API, including the DataFrames results path.
+            solve_power_flow!(data; maxIterations = 2)
+            # The capped run ends non-converged, which NaN-overwrites the state
+            # (OVERWRITE_NON_CONVERGED); reset before reuse so the second solve — which
+            # compiles the PolarNRCache refresh/reuse path, the repeated-evaluation and
+            # multi-period hot path — factors real numbers, not NaNs.
+            clear_injection_data!(data)
+            solve_power_flow!(data; maxIterations = 2)
+            # One-shot public API, including the DataFrames results path (converged).
             solve_power_flow(pf, sys)
-            # DC paths: ABA direct solve and PTDF.
+            # Trust-region solver: compiles the TR driver (dogleg step, trust-region
+            # update) and the TR-typed PowerFlowData/solve chain.
+            pf_tr = ACPowerFlow{TrustRegionACPowerFlow}()
+            data_tr = PowerFlowData(pf_tr, sys)
+            solve_power_flow!(data_tr; maxIterations = 2)
+            clear_injection_data!(data_tr)
+            solve_power_flow!(data_tr; maxIterations = 2)
+            # DC paths: ABA direct solve and PTDF (direct factorizations, no iteration).
             solve_power_flow(DCPowerFlow(), sys)
             solve_power_flow(PTDFDCPowerFlow(), sys)
         end
