@@ -16,10 +16,9 @@
 #     using PrecompileTools, Preferences
 #     Preferences.set_preferences!(PowerFlows, "precompile_workload" => false; force = true)
 
-"""Build the minimal in-memory system the precompilation workload solves: 4 buses covering
-the REF/PV/PQ bus-type partitions, a `Source` and a `ThermalStandard` injector, two
-`PowerLoad`s, a ZIP `StandardLoad`, and four `Line`s forming a mesh. Exposed as a plain
-function so the test suite can exercise the exact workload inputs."""
+# Minimal in-memory system the workload solves: 4 buses covering the REF/PV/PQ bus-type
+# partitions, a Source and a ThermalStandard injector, two PowerLoads, a ZIP StandardLoad,
+# and four Lines forming a mesh.
 function _precompilation_workload_system()
     sys = PSY.System(100.0; time_series_in_memory = true)
     bus_types = (
@@ -139,36 +138,59 @@ PrecompileTools.@setup_workload begin
     end
     PrecompileTools.@compile_workload begin
         Logging.with_logger(Logging.NullLogger()) do
-            # Precompilation does not need converged power flows: two capped iterations
-            # exercise the same iteration machinery (step, refinement, Jacobian refresh,
-            # and the non-convergence writeback), so the iterative solves below run with
-            # `maxIterations = 2`. The one exception is the one-shot NR call, which stays
-            # uncapped because `write_results` only executes on a converged solve (the
-            # fixture converges in a handful of iterations, so the cost is the same).
+            # First-call latency is dominated by the one-shot public entry
+            # `solve_power_flow(pf, sys)` (setup + solve-to-convergence + DataFrames
+            # results), so every solver we care about gets that call. NR and TR — the
+            # coupled solvers POM drives through the in-place PSI-stable surface — ALSO get
+            # the `solve_power_flow!` path, capped at two iterations: enough to compile the
+            # step/refinement/Jacobian-refresh machinery, the OVERWRITE_NON_CONVERGED
+            # writeback, and (after a reset, so it factors real numbers not NaNs) the
+            # PolarNRCache refresh/reuse hot path used across Q-limit retries and time steps.
 
-            # Core AC path on the POM-consumed (PSI-stable) surface: explicit
-            # PowerFlowData construction + in-place polar NR solve.
+            # Polar Newton-Raphson — the default, by far the most common solver.
             pf = ACPowerFlow()
             data = PowerFlowData(pf, sys)
             solve_power_flow!(data; maxIterations = 2)
-            # The capped run ends non-converged, which NaN-overwrites the state
-            # (OVERWRITE_NON_CONVERGED); reset before reuse so the second solve — which
-            # compiles the PolarNRCache refresh/reuse path, the repeated-evaluation and
-            # multi-period hot path — factors real numbers, not NaNs.
             clear_injection_data!(data)
             solve_power_flow!(data; maxIterations = 2)
-            # One-shot public API, including the DataFrames results path (converged).
             solve_power_flow(pf, sys)
-            # Trust-region solver: compiles the TR driver (dogleg step, trust-region
-            # update) and the TR-typed PowerFlowData/solve chain.
+
+            # Trust region — POM's robust fallback. Same two entries as NR.
             pf_tr = ACPowerFlow{TrustRegionACPowerFlow}()
             data_tr = PowerFlowData(pf_tr, sys)
             solve_power_flow!(data_tr; maxIterations = 2)
             clear_injection_data!(data_tr)
             solve_power_flow!(data_tr; maxIterations = 2)
-            # DC paths: ABA direct solve and PTDF (direct factorizations, no iteration).
-            solve_power_flow(DCPowerFlow(), sys)
-            solve_power_flow(PTDFDCPowerFlow(), sys)
+            solve_power_flow(pf_tr, sys)
+
+            # Fast-decoupled — the variant axis (two distinct hot paths): FDDecoupled/XB, the
+            # bare polar default (B′/B″ half-iterations), and FDFixedJacobian (frozen full
+            # Jacobian). The one-shot converged solve warms the public entry AND, by running
+            # to convergence, both the factor-once FastDecoupledCache build and its
+            # per-iteration reuse. The FDSchemeBX permutation is left out on purpose: rarely
+            # used, and its separate assembly path would add build cost for little gain.
+            for fd_solver in (FastDecoupledACPowerFlow, FastDecoupledFixed)
+                solve_power_flow(ACPowerFlow{fd_solver}(), sys)
+            end
+
+            # Rectangular current-injection formulation (Da Costa), Newton-Raphson. Its
+            # residual/Jacobian/setup kernels are rectangular-specific — separate compiled
+            # code from polar — so a capped 2-iteration in-place solve is what warms them.
+            pf_rect = ACRectangularPowerFlow{NewtonRaphsonACPowerFlow}()
+            data_rect = PowerFlowData(pf_rect, sys)
+            solve_power_flow!(data_rect; maxIterations = 2)
+
+            # DC ABA direct solve (non-iterative, so no maxIterations and no NaN-writeback
+            # reset). Two in-place solves on the same data warm the DCSolverCache build AND
+            # its reuse branch — the multi-period / PCM-loop hot path that reuses the cached
+            # factorization; the one-shot then warms the DC DataFrames results path. PTDF is
+            # excluded on purpose — uncommon, and its factorization would add build cost
+            # without meaningfully lowering first-call latency.
+            dc = DCPowerFlow()
+            data_dc = PowerFlowData(dc, sys)
+            solve_power_flow!(data_dc)
+            solve_power_flow!(data_dc)
+            solve_power_flow(dc, sys)
         end
     end
 end

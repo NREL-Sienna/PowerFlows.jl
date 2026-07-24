@@ -141,14 +141,3 @@ Pages = [
     "psi_utils.jl",
 ]
 ```
-
-## Precompilation Workload
-
-```@autodocs
-Modules = [PowerFlows]
-Public = false
-Private = true
-Pages = [
-    "precompile.jl",
-]
-```
