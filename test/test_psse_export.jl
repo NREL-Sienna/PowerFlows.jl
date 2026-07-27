@@ -823,4 +823,32 @@ end
           OrderedDict("2.0" => 2, "1.0" => 1)
 end
 
+@testset "PSSE export: non-ImpedanceCorrectionData supplemental attribute on transformer (issue #418)" begin
+    sys = load_test_system("pti_case16_complete_sys")
+
+    tap_transformers = collect(PSY.get_components(PSY.TapTransformer, sys))
+    @test !isempty(tap_transformers)
+    isempty(tap_transformers) && return
+    transformer = first(tap_transformers)
+
+    ffo = PSY.FixedForcedOutage(; outage_status = 1.0)
+    @test_throws MethodError PSY.get_table_number(ffo)
+
+    # Attach the non-impedance supplemental attribute and verify PSSE export succeeds.
+    PSY.add_supplemental_attribute!(sys, transformer, ffo)
+    @test any(
+        a -> a isa PSY.FixedForcedOutage,
+        PSY.get_supplemental_attributes(transformer),
+    )
+
+    export_location = joinpath(test_psse_export_dir, "v33", "export_non_icd_supp_attr")
+    exporter = PSSEExporter(sys, :v33, export_location; overwrite = true)
+    # Must not throw MethodError: no method matching get_table_number(::FixedForcedOutage)
+    @test (write_export(exporter, "regression"; overwrite = true); true)
+
+    raw_path, md_path = get_psse_export_paths(joinpath(export_location, "regression"))
+    @test isfile(raw_path)
+    @test isfile(md_path)
+end
+
 # # TODO add tests for unit system agnosticism
