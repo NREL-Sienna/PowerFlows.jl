@@ -1019,7 +1019,8 @@ function _write_2w_transformer_record3_winding1!(
     CONT1 = get_ext_key_or_default(transformer, "CONT1")
 
     supp_attr = PSY.get_supplemental_attributes(transformer)
-    TAB1 = !isempty(supp_attr) ? PSY.get_table_number(supp_attr[1]) : 0
+    icd_idx = findfirst(attr -> attr isa PSY.ImpedanceCorrectionData, supp_attr)
+    TAB1 = icd_idx === nothing ? 0 : PSY.get_table_number(supp_attr[icd_idx])
     CR1 = get_ext_key_or_default(transformer, "CR1")
     CX1 = get_ext_key_or_default(transformer, "CX1")
     CNXA1 = get_ext_key_or_default(transformer, "CNXA1")
@@ -1176,8 +1177,9 @@ function _collect_3w_winding_data(
         TAB = 0
         supp_attr = PSY.get_supplemental_attributes(transformer)
         for icd_tr in supp_attr
-            if PSY.get_transformer_winding(icd_tr) == category
-                TAB = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
+            if icd_tr isa PSY.ImpedanceCorrectionData &&
+               PSY.get_transformer_winding(icd_tr) == category
+                TAB = PSY.get_table_number(icd_tr)
             end
         end
         CR = get_ext_key_or_default(transformer, "CR$prefix")
