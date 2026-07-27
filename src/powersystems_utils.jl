@@ -90,22 +90,24 @@ function set_power_flow!(br::PSY.TwoTerminalLCCLine, flow::Complex)
     return
 end
 
-function set_power_flow!(winding::PNM.ThreeWindingTransformerWinding, flow::Complex)
-    (trf, num) = (PNM.get_transformer(winding), PNM.get_winding_number(winding))
-    if num == 1
-        PSY.set_active_power_flow_primary!(trf, real(flow) * PSY.SU)
-        PSY.set_reactive_power_flow_primary!(trf, imag(flow) * PSY.SU)
-    elseif num == 2
-        PSY.set_active_power_flow_secondary!(trf, real(flow) * PSY.SU)
-        PSY.set_reactive_power_flow_secondary!(trf, imag(flow) * PSY.SU)
-    elseif num == 3
-        PSY.set_active_power_flow_tertiary!(trf, real(flow) * PSY.SU)
-        PSY.set_reactive_power_flow_tertiary!(trf, imag(flow) * PSY.SU)
-    else
-        error("Invalid winding number: $num")
-    end
+# Both transformer families store their flows on a `PSY.TransformerCircuit`; only the way to
+# reach the circuit differs.
+function _set_circuit_power_flow!(circuit::PSY.TransformerCircuit, flow::Complex)
+    PSY.set_active_power_flow!(circuit, real(flow) * PSY.SU)
+    PSY.set_reactive_power_flow!(circuit, imag(flow) * PSY.SU)
     return
 end
+
+set_power_flow!(br::PSY.TwoWindingTransformer, flow::Complex) =
+    _set_circuit_power_flow!(PSY.get_circuit(br), flow)
+
+set_power_flow!(winding::PNM.ThreeWindingTransformerCircuit, flow::Complex) =
+    _set_circuit_power_flow!(_winding_circuit(winding), flow)
+
+# The wrapper's winding number indexes the parent's circuit tuple; flows, availability and the
+# series parameters all live on that circuit.
+_winding_circuit(winding::PNM.ThreeWindingTransformerCircuit) =
+    PSY.get_circuits(PNM.get_transformer(winding))[PNM.get_winding_number(winding)]
 
 function set_voltage!(bus::PSY.ACBus, V::Complex)
     PSY.set_magnitude!(bus, abs(V))

@@ -213,7 +213,7 @@ function _set_state_variables_at_bus!(
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.PV})
-    # When bustype == PV PSY.ACACBus, state variables are Reactive Power Generated and Voltage Angle
+    # When bustype == PV, state variables are Reactive Power Generated and Voltage Angle
     # We still update both P and Q values in case the PV bus participates in distributed slack
     P_net[ix] = P_net_set[ix] + P_slack
     Q_net[ix] = StateVector[2 * ix - 1]

@@ -76,22 +76,61 @@ _resolve_bus_ix(
     n::Int,
 ) = get(bus_lookup, get(reverse_bus_search_map, n, n), nothing)
 
-"""Tap-control metadata for one `TapTransformer`, read from its first-class PSY fields.
-`get_tap_limits` is already in tap-ratio units (the PSS/E parser scales RMI1/RMA1 by WINDV2);
+_regulates_voltage(circuit::PSY.TransformerCircuit) =
+    PSY.get_control_objective(circuit) == PSY.TransformerControlObjective.VOLTAGE
+
+"""
+Voltage-regulating tap changers in the system, one candidate per controlling circuit.
+
+The control objective lives on `PSY.TransformerCircuit`, so a regulating tap can sit on
+either arity — a three-winding transformer may regulate on one circuit while the other two
+are fixed. Phase-shifting objectives (the active-power ones) are excluded by construction:
+they are a different control law, handled as an angle rather than a ratio.
+"""
+function _voltage_controlled_tap_candidates(sys)
+    candidates =
+        Tuple{String, PSY.ACTransmission, PSY.TransformerCircuit, String, Int}[]
+    for tx in PSY.get_available_components(PSY.TwoWindingTransformer, sys)
+        circuit = PSY.get_circuit(tx)
+        _regulates_voltage(circuit) || continue
+        name = PSY.get_name(tx)
+        push!(candidates, (name, tx, circuit, name, 1))
+    end
+    for tx in PSY.get_available_components(PSY.ThreeWindingTransformer, sys)
+        for (i, circuit) in enumerate(PSY.get_circuits(tx))
+            PSY.get_available(circuit) || continue
+            _regulates_voltage(circuit) || continue
+            winding = PNM.ThreeWindingTransformerCircuit(tx, i)
+            push!(
+                candidates,
+                (PNM.get_name(winding), winding, circuit, PSY.get_name(tx), i),
+            )
+        end
+    end
+    return candidates
+end
+
+"""Tap-control metadata for one regulating `PSY.TransformerCircuit`, of either arity.
+`control_limits` is already in tap-ratio units (the PSS/E parser scales RMI1/RMA1 by WINDV2);
 `get_regulated_bus_number` is 0 for local (to-bus) control."""
-function _tap_metadata(tx, to_bus::Int)
-    lims = PSY.get_tap_limits(tx)
-    reg = PSY.get_regulated_bus_number(tx)
+function _tap_metadata(circuit::PSY.TransformerCircuit, to_bus::Int)
+    lims = PSY.get_control_limits(circuit)
+    reg = PSY.get_regulated_bus_number(circuit)
     cbus = to_bus
     if !iszero(reg)
         cbus = reg
     end
+    # The tap is held anywhere inside the VMA/VMI band and regulates toward its midpoint on
+    # an excursion — the same posture as a switched shunt's VSWLO/VSWHI.
+    vlims = PSY.get_controlled_quantity_limits(circuit)
     return (
         cbus = cbus,
         pmin = lims.min,
         pmax = lims.max,
-        ntp = PSY.get_number_of_tap_positions(tx),
-        vset = PSY.get_voltage_setpoint(tx),
+        ntp = PSY.get_number_of_tap_positions(circuit),
+        vset = (vlims.min + vlims.max) / 2,
+        vlo = vlims.min,
+        vhi = vlims.max,
     )
 end
 
@@ -152,14 +191,12 @@ function build_controlled_device_set(
     n_time_steps::Int = 1,
 )
     taps = ControlledTap[]
-    for tx in PSY.get_available_components(PSY.TapTransformer, sys)
-        PSY.get_control_objective(tx) == PSY.TransformerControlObjective.VOLTAGE ||
-            continue
-        name = PSY.get_name(tx)
-        arc = PSY.get_arc(tx)
+    for (name, branch, circuit, device_name, circuit_index) in
+        _voltage_controlled_tap_candidates(sys)
+        arc = PSY.get_arc(circuit)
         fb = PSY.get_number(PSY.get_from(arc))
         tb = PSY.get_number(PSY.get_to(arc))
-        md = _tap_metadata(tx, tb)
+        md = _tap_metadata(circuit, tb)
         fix = _resolve_bus_ix(bus_lookup, reverse_bus_search_map, fb)
         tix = _resolve_bus_ix(bus_lookup, reverse_bus_search_map, tb)
         cix = _resolve_bus_ix(bus_lookup, reverse_bus_search_map, md.cbus)
@@ -184,8 +221,11 @@ function build_controlled_device_set(
         end
         _validate_tap(name, md.pmin, md.pmax, md.ntp) || continue
         _validate_vset("ControlledTap", name, md.vset) || continue
-        yt = 1.0 / (PSY.get_r(tx) + PSY.get_x(tx) * im)
-        tap0 = PSY.get_tap(tx)
+        # PNM owns the π-model, including the r == x == 0 floor that a hand-built
+        # `1/(r + jx)` would miss (a jumper under tap control would yield `Inf`).
+        adm = PNM.branch_admittance(branch)
+        yt = complex(adm.g, adm.b)
+        tap0 = adm.tap
         if !(md.pmin - BOUNDS_TOLERANCE <= tap0 <= md.pmax + BOUNDS_TOLERANCE)
             @warn "ControlledTap \"$name\": initial tap ratio $tap0 lies \
                 outside the tap-ratio band [$(md.pmin), $(md.pmax)]; leaving the tap \
@@ -200,8 +240,10 @@ function build_controlled_device_set(
                 tix,
                 cix,
                 md.vset,
+                md.vlo,
+                md.vhi,
                 yt,
-                PSY.get_α(tx),   # −(π/6)·winding_group_number: PNM stamps t = p·e^{iα}
+                adm.shift,  # PNM stamps t = p·e^{iα}
                 md.pmin,
                 md.pmax,
                 collect(range(md.pmin, md.pmax; length = md.ntp)),
@@ -209,6 +251,8 @@ function build_controlled_device_set(
                 tap0,   # initial (reporting)
                 tap0,   # synced (arc-admittance rows reflect this tap)
                 tap0,   # current
+                device_name,
+                circuit_index,
             ),
         )
     end

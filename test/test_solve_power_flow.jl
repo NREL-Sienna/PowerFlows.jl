@@ -390,9 +390,11 @@ end
         "matpower_ACTIVSg10k_sys";
         force_build = false,
     )
-    @assert !isempty(get_components(PhaseShiftingTransformer, sys)) "System should have " *
-                                                                    "phase shifting transformers: " *
-                                                                    "change `force_build` to `true` in the test."
+    @assert any(
+        t -> !iszero(PSY.get_α(PSY.get_circuit(t))),
+        get_components(TwoWindingTransformer, sys),
+    ) "System should have phase shifting transformers: " *
+      "change `force_build` to `true` in the test."
     pf_tr = ACPowerFlow{TrustRegionACPowerFlow}(;
         correct_bustypes = true,
         solver_settings = Dict{Symbol, Any}(:maxIterations => 200, :factor => 0.1),
@@ -602,46 +604,39 @@ end
     @test isapprox(data.bus_reactive_power_injections[2, 1], 0.0, atol = 1e-12, rtol = 0)
 end
 
-@testset "Test phase shift in transformers" for Transformer in
-                                                (PSY.Transformer2W, PSY.TapTransformer)
+@testset "Test phase shift in transformers" begin
     sys = System(100.0)
     b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
     b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 110, 1.1, 0.0)
 
     _add_simple_source!(sys, b1, 0.0, 0.0)
 
-    parameters = Dict(
-        :name => "Transformer",
-        :available => true,
-        :active_power_flow => 0.0,
-        :reactive_power_flow => 0.0,
-        :arc => Arc(b1, b2),
-        :r => 0.01,
-        :x => 0.05,
-        :primary_shunt => 0.0,
-        :winding_group_number => 1,  # 30 degrees in radians
-        :rating => 1.0,
-        :base_power => 100.0,
-        :base_voltage_primary => 230,
-        :base_voltage_secondary => 110,
-    )
-
-    Transformer == PSY.Transformer2W || (parameters[:tap] = 1.0)
-
-    t = Transformer(;
-        parameters...,
+    t = PSY.TwoWindingTransformer(;
+        name = "Transformer",
+        circuit = PSY.TransformerCircuit(;
+            available = true,
+            arc = Arc(b1, b2),
+            r = 0.01,
+            x = 0.05,
+            tap = 1.0,
+            α = deg2rad(30),
+            rating = 1.0,
+            base_power = 100.0,
+            base_voltage_primary = 230,
+            base_voltage_secondary = 110,
+        ),
     )
     add_component!(sys, t)
 
     pf = ACPowerFlow(; correct_bustypes = true)
     data = PowerFlowData(pf, sys)
     solve_power_flow!(data)
-    # Check that the phase shift is correctly applied
+    # Check that the phase shift is correctly applied. With t = tap * exp(im * α) on the
+    # from side (PNM's `_pi_to_ybus` convention) and no injection at bus 2, KCL forces
+    # V2 = V1 / t, so angle(V2) = angle(V1) - α.
     a1 = data.bus_angles[1, 1]
     a2 = data.bus_angles[2, 1]
-    # TODO for some reason this is off by a negative sign.
-    # @test isapprox(a2, a1 - deg2rad(30); atol = 1e-6, rtol = 0)
-    @test isapprox(-a2, a1 - deg2rad(30); atol = 1e-6, rtol = 0)
+    @test isapprox(a2, a1 - deg2rad(30); atol = 1e-6, rtol = 0)
 end
 
 @testset "Test SwitchedAdmittance" begin

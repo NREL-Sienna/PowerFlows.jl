@@ -101,6 +101,19 @@ multiperiod solve produces one setting per time step, so there is no single valu
 write back without silently discarding all but the last-processed step. Per-time-step
 results remain available via [`get_controlled_device_results`](@ref).
 """
+# Re-resolve a tap's circuit in `system` by name, rather than holding a reference, so the
+# write lands in the caller's system even when it is not the one enrollment read. The tap may
+# sit on either arity, and `PSY.get_circuits` covers both (a 2W returns a 1-tuple).
+function _resolve_tap_circuit(system::PSY.System, d::ControlledTap)
+    tx = PSY.get_component(PSY.ACTransmission, system, d.device_name)
+    isnothing(tx) && return nothing
+    circuits = PSY.get_circuits(tx)
+    if d.circuit_index > length(circuits)
+        return nothing
+    end
+    return circuits[d.circuit_index]
+end
+
 function write_device_settings!(system::PSY.System, data)
     set = get_controlled_devices(data)
     isnothing(set) && return
@@ -111,13 +124,14 @@ function write_device_settings!(system::PSY.System, data)
         return
     end
     for d in set.taps
-        tx = PSY.get_component(PSY.TapTransformer, system, d.name)
-        if isnothing(tx)
-            @warn "write_device_settings!: TapTransformer \"$(d.name)\" not found in the \
-                system; its solved tap ratio $(d.current) was NOT written back."
+        circuit = _resolve_tap_circuit(system, d)
+        if isnothing(circuit)
+            @warn "write_device_settings!: transformer \"$(d.device_name)\" not found in \
+                the system; the solved tap ratio $(d.current) for \"$(d.name)\" was NOT \
+                written back."
             continue
         end
-        PSY.set_tap!(tx, d.current)
+        PSY.set_tap!(circuit, d.current)
     end
     for d in set.shunts
         sa = PSY.get_component(PSY.SwitchedAdmittance, system, d.name)

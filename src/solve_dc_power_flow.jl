@@ -534,12 +534,10 @@ function solve_and_store_power_flow!(
     linear_solver::Union{Nothing, AbstractString} = nothing,
     max_iterations::Int = DEFAULT_NR_MAX_ITER,
 )
-    with_units_base(system, PSY.UnitSystem.SYSTEM_BASE) do
-        data = PowerFlowData(pf, system)
-        solve_power_flow!(data; linear_solver)
-        write_power_flow_solution!(system, pf, data, max_iterations)
-        @info("DC PowerFlow solve stored in the system.")
-    end
+    data = PowerFlowData(pf, system)
+    solve_power_flow!(data; linear_solver)
+    write_power_flow_solution!(system, pf, data, max_iterations)
+    @info("DC PowerFlow solve stored in the system.")
     return true
 end
 

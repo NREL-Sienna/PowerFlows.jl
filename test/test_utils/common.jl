@@ -1,4 +1,8 @@
 const SYSTEM_REIMPORT_COMPARISON_TOLERANCE = 1e-10
+# PSS/E RAW numerics round-trip through Float32 (see `better_float_to_buf` in psse_export.jl),
+# so a re-imported value can differ from the original by up to ~1 Float32 ULP (relative
+# eps(Float32) ≈ 1.2e-7). This relative tolerance absorbs that with margin.
+const SYSTEM_REIMPORT_RELATIVE_TOLERANCE = 1e-6
 const POWERFLOW_COMPARISON_TOLERANCE = 3e-4  # TODO refine -- most comparisons can be made much tighter
 
 power_flow_match_fn(
@@ -501,7 +505,7 @@ function prepare_ts_data!(data::PowerFlowData, time_steps::Int64 = 24)
     return
 end
 
-"""Build a minimal 3-bus system with one `TapTransformer` (VOLTAGE control) and one
+"""Build a minimal 3-bus system with one `TwoWindingTransformer` (VOLTAGE control) and one
 `SwitchedAdmittance` for testing `build_controlled_device_set`."""
 function _make_tap_shunt_system()
     sys = System(100.0)
@@ -514,19 +518,19 @@ function _make_tap_shunt_system()
     # Line between buses 1 and 3 so the network is connected.
     _add_simple_line!(sys, b1, b3, 1e-2, 1e-2, 0.0)
     tap_arc = Arc(; from = b1, to = b2)
-    tx = TapTransformer(;
+    tx = TwoWindingTransformer(;
         name = "tap_1_2",
-        available = true,
-        active_power_flow = 0.0,
-        reactive_power_flow = 0.0,
-        arc = tap_arc,
-        r = 0.01,
-        x = 0.10,
-        primary_shunt = 0.0 + 0.0im,
-        tap = 1.0,
-        rating = 1.0,
-        base_power = 100.0,
-        control_objective = PSY.TransformerControlObjective.VOLTAGE,
+        circuit = TransformerCircuit(;
+            available = true,
+            arc = tap_arc,
+            r = 0.01,
+            x = 0.10,
+            tap = 1.0,
+            rating = 1.0,
+            base_power = 100.0,
+            control_objective = PSY.TransformerControlObjective.VOLTAGE,
+            controlled_quantity_limits = (min = 1.0, max = 1.0),
+        ),
     )
     add_component!(sys, tx)
     sa = SwitchedAdmittance(;
@@ -544,7 +548,7 @@ function _make_tap_shunt_system()
     return sys
 end
 
-"""Build a 3-bus system with one `TapTransformer` (VOLTAGE control) and one
+"""Build a 3-bus system with one `TwoWindingTransformer` (VOLTAGE control) and one
 `SwitchedAdmittance`, designed so the AC base case converges cleanly.
 
 Bus 2 carries a significant load (0.5 pu on 100 MVA base) through a low-impedance
@@ -590,19 +594,19 @@ function _make_solvable_tap_shunt_system()
     # Bus 3 connected to REF bus; decoupled from bus 2.
     _add_simple_line!(sys, b1, b3, 1e-2, 1e-2, 0.0)
     tap_arc = Arc(; from = b1, to = b2)
-    tx = TapTransformer(;
+    tx = TwoWindingTransformer(;
         name = "tap_1_2",
-        available = true,
-        active_power_flow = 0.0,
-        reactive_power_flow = 0.0,
-        arc = tap_arc,
-        r = 0.01,
-        x = 0.10,
-        primary_shunt = 0.0 + 0.0im,
-        tap = 1.0,
-        rating = 1.0,
-        base_power = 100.0,
-        control_objective = PSY.TransformerControlObjective.VOLTAGE,
+        circuit = TransformerCircuit(;
+            available = true,
+            arc = tap_arc,
+            r = 0.01,
+            x = 0.10,
+            tap = 1.0,
+            rating = 1.0,
+            base_power = 100.0,
+            control_objective = PSY.TransformerControlObjective.VOLTAGE,
+            controlled_quantity_limits = (min = 1.0, max = 1.0),
+        ),
     )
     add_component!(sys, tx)
     sa = SwitchedAdmittance(;
@@ -797,7 +801,7 @@ function _make_multiperiod_qlimit_shunt_system()
     b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.0, 0.0)
     _add_simple_source!(sys, b1, 0.0, 0.0)
     gen = _add_simple_thermal_standard!(sys, b2, 0.1, 0.0)
-    set_reactive_power_limits!(gen, (min = -0.02, max = 0.02))
+    set_reactive_power_limits!(gen, (min = -0.02 * PSY.SU, max = 0.02 * PSY.SU))
     _add_simple_line!(sys, b1, b2, 0.01, 0.10, 0.0)
     _add_simple_line!(sys, b2, b3, 0.01, 0.10, 0.0)
     _add_mp_load!(sys, b3, 0.2, 0.3)
@@ -848,7 +852,7 @@ function _set_multiperiod_facts_loads!(data, n::Int)
     return _set_multiperiod_loads!(data, n, _facts_step_q_scale)
 end
 
-"""Build a 2-bus system (REF—PQ) with one voltage-controlling `TapTransformer` regulating
+"""Build a 2-bus system (REF—PQ) with one voltage-controlling `TwoWindingTransformer` regulating
 the PQ bus, for multiperiod discrete-control tests (reset-to-baseline tap design). Mirrors
 `_make_solvable_tap_shunt_system`'s impedance (r=0.01, x=0.10) and base load (0.5+j0.25) so
 the tap has full authority over bus 2; the explicit control fields (`tap_limits`,
@@ -862,23 +866,22 @@ function _make_multiperiod_tap_system()
     _add_simple_source!(sys, b1, 0.0, 0.0)
     _add_mp_load!(sys, b2, 0.5, 0.25)
     tap_arc = Arc(; from = b1, to = b2)
-    tx = TapTransformer(;
+    tx = TwoWindingTransformer(;
         name = "tap_1_2",
-        available = true,
-        active_power_flow = 0.0,
-        reactive_power_flow = 0.0,
-        arc = tap_arc,
-        r = 0.01,
-        x = 0.10,
-        primary_shunt = 0.0 + 0.0im,
-        tap = 1.0,
-        rating = 1.0,
-        base_power = 100.0,
-        tap_limits = (min = 0.85, max = 1.15),
-        number_of_tap_positions = 31,
-        regulated_bus_number = 2,
-        voltage_setpoint = 1.0,
-        control_objective = PSY.TransformerControlObjective.VOLTAGE,
+        circuit = TransformerCircuit(;
+            available = true,
+            arc = tap_arc,
+            r = 0.01,
+            x = 0.10,
+            tap = 1.0,
+            rating = 1.0,
+            base_power = 100.0,
+            control_limits = (min = 0.85, max = 1.15),
+            number_of_tap_positions = 31,
+            regulated_bus_number = 2,
+            controlled_quantity_limits = (min = 1.0, max = 1.0),
+            control_objective = PSY.TransformerControlObjective.VOLTAGE,
+        ),
     )
     add_component!(sys, tx)
     return sys
@@ -938,7 +941,7 @@ function _make_shunt_snap_system()
     return sys
 end
 
-"""Build a 3-bus system with one voltage-controlling `TapTransformer` whose controllability is set
+"""Build a 3-bus system with one voltage-controlling `TwoWindingTransformer` whose controllability is set
 through the FIRST-CLASS PSY fields (`tap_limits`, `number_of_tap_positions`, `regulated_bus_number`,
 `voltage_setpoint`) — no `ext` scrape — to exercise the post-#1684 builder path. The tap (b1→b2)
 remotely regulates b3."""
@@ -949,23 +952,22 @@ function _make_field_controlled_tap_system()
     b3 = _add_simple_bus!(sys, 3, ACBusTypes.PQ, 230, 1.0, 0.0)
     _add_simple_source!(sys, b1, 0.0, 0.0)
     _add_simple_line!(sys, b2, b3, 1e-2, 1e-2, 0.0)
-    tx = TapTransformer(;
+    tx = TwoWindingTransformer(;
         name = "tap_1_2",
-        available = true,
-        active_power_flow = 0.0,
-        reactive_power_flow = 0.0,
-        arc = Arc(; from = b1, to = b2),
-        r = 0.01,
-        x = 0.10,
-        primary_shunt = 0.0 + 0.0im,
-        tap = 1.0,
-        rating = 1.0,
-        base_power = 100.0,
-        tap_limits = (min = 0.85, max = 1.15),
-        number_of_tap_positions = 17,
-        regulated_bus_number = 3,
-        voltage_setpoint = 1.02,
-        control_objective = PSY.TransformerControlObjective.VOLTAGE,
+        circuit = TransformerCircuit(;
+            available = true,
+            arc = Arc(; from = b1, to = b2),
+            r = 0.01,
+            x = 0.10,
+            tap = 1.0,
+            rating = 1.0,
+            base_power = 100.0,
+            control_limits = (min = 0.85, max = 1.15),
+            number_of_tap_positions = 17,
+            regulated_bus_number = 3,
+            controlled_quantity_limits = (min = 1.02, max = 1.02),
+            control_objective = PSY.TransformerControlObjective.VOLTAGE,
+        ),
     )
     add_component!(sys, tx)
     return sys
@@ -976,10 +978,9 @@ scaled by `load_scale`. Used for testing reactive power control logic: switched 
 FACTS device adjustment."""
 function _make_ieee14_scaled_load_system(load_scale::Float64 = 1.4)
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    set_units_base_system!(sys, "SYSTEM_BASE")
     for load in get_components(PowerLoad, sys)
-        set_active_power!(load, get_active_power(load) * load_scale)
-        set_reactive_power!(load, get_reactive_power(load) * load_scale)
+        set_active_power!(load, get_active_power(load, PSY.SU) * load_scale * PSY.SU)
+        set_reactive_power!(load, get_reactive_power(load, PSY.SU) * load_scale * PSY.SU)
     end
     return sys
 end
@@ -1040,7 +1041,7 @@ function _add_switched_shunt!(
     return sa
 end
 
-"""Build a 4-bus system where the TapTransformer's FROM bus is the controlled bus,
+"""Build a 4-bus system where the transformer's FROM bus is the controlled bus,
 exercising the from-side control orientation (the plant-sign probe must measure the
 opposite dV/dp sign to the usual to-side wiring).
 
@@ -1062,20 +1063,20 @@ function _make_primary_controlled_tap_system()
     # Bus 4 connected to REF (keeps network connected after b3 has only the tap).
     _add_simple_line!(sys, b1, b4, 1e-2, 1e-2, 0.0)
     tap_arc = Arc(; from = b2, to = b3)
-    tx = TapTransformer(;
+    tx = TwoWindingTransformer(;
         name = "tap_2_3",
-        available = true,
-        active_power_flow = 0.0,
-        reactive_power_flow = 0.0,
-        arc = tap_arc,
-        r = 0.01,
-        x = 0.10,
-        primary_shunt = 0.0 + 0.0im,
-        tap = 1.0,
-        rating = 1.0,
-        base_power = 100.0,
-        control_objective = PSY.TransformerControlObjective.VOLTAGE,
-        regulated_bus_number = 2,  # controlled bus = bus 2 (FROM) → primary
+        circuit = TransformerCircuit(;
+            available = true,
+            arc = tap_arc,
+            r = 0.01,
+            x = 0.10,
+            tap = 1.0,
+            rating = 1.0,
+            base_power = 100.0,
+            control_objective = PSY.TransformerControlObjective.VOLTAGE,
+            controlled_quantity_limits = (min = 1.0, max = 1.0),
+            regulated_bus_number = 2,  # controlled bus = bus 2 (FROM) → primary
+        ),
     )
     add_component!(sys, tx)
     return sys
@@ -1202,6 +1203,11 @@ end
 # Orientation is significant and must match: a VSC/HVDC line's from/to terminals carry distinct
 # controls, so an Arc oriented to->from must NOT be reused (it would swap the converter terminals).
 # A correctly-oriented parallel Arc is created instead; sharing only applies to a same-oriented branch.
+"""Where a branch's stored power flow lives: transformer flows sit on the
+`PSY.TransformerCircuit`; every other branch holds its own."""
+flow_holder(br::PSY.ACBranch) = br
+flow_holder(br::PSY.TwoWindingTransformer) = PSY.get_circuit(br)
+
 function _get_or_make_arc(sys, from_bus, to_bus)
     existing = PSY.get_components(
         a -> PSY.get_from(a) === from_bus && PSY.get_to(a) === to_bus,
@@ -1214,24 +1220,24 @@ function _get_or_make_arc(sys, from_bus, to_bus)
     return arc
 end
 
-# Add a voltage-controlling TapTransformer between two existing AC buses (mirrors the
-# TapTransformer block in `_make_tap_shunt_system`), for fixtures that need a controlled
+# Add a voltage-controlling transformer between two existing AC buses (mirrors the
+# transformer block in `_make_tap_shunt_system`), for fixtures that need a controlled
 # device layered on top of an otherwise-fixed system (e.g. a VSC system).
 function _add_control_tap!(sys, from_bus, to_bus; name = "tap_ctrl")
     tap_arc = _get_or_make_arc(sys, from_bus, to_bus)
-    tx = PSY.TapTransformer(;
+    tx = PSY.TwoWindingTransformer(;
         name = name,
-        available = true,
-        active_power_flow = 0.0,
-        reactive_power_flow = 0.0,
-        arc = tap_arc,
-        r = 0.01,
-        x = 0.10,
-        primary_shunt = 0.0 + 0.0im,
-        tap = 1.0,
-        rating = 1.0,
-        base_power = 100.0,
-        control_objective = PSY.TransformerControlObjective.VOLTAGE,
+        circuit = PSY.TransformerCircuit(;
+            available = true,
+            arc = tap_arc,
+            r = 0.01,
+            x = 0.10,
+            tap = 1.0,
+            rating = 1.0,
+            base_power = 100.0,
+            control_objective = PSY.TransformerControlObjective.VOLTAGE,
+            controlled_quantity_limits = (min = 1.0, max = 1.0),
+        ),
     )
     PSY.add_component!(sys, tx)
     return tx
@@ -1256,7 +1262,6 @@ function _build_vsc_pq_system(;
     vsc_kwargs...,
 )
     sys = deepcopy(PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false))
-    set_system_base && PSY.set_units_base_system!(sys, "SYSTEM_BASE")
     pq = sort!(
         collect(
             PSY.get_components(
@@ -1300,7 +1305,6 @@ end
 # `active_power = 0.0`.
 function _build_mtdc_system()
     sys = deepcopy(PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false))
-    PSY.set_units_base_system!(sys, "SYSTEM_BASE")
     pq = sort!(
         collect(
             PSY.get_components(

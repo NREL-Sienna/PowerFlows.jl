@@ -532,7 +532,7 @@ Compute per-segment branch flow entries from arc-level data and endpoint voltage
 Dispatches on the arc entry type (direct, 3WT, parallel, series).
 """
 function _compute_segment_flows(
-    arc_entry::Union{PSY.ACTransmission, PNM.ThreeWindingTransformerWinding},
+    arc_entry::Union{PSY.ACTransmission, PNM.ThreeWindingTransformerCircuit},
     data::ACPowerFlowData,
     arc::Tuple{Int, Int},
     time_step::Int,
@@ -644,9 +644,9 @@ function _write_vsc_line_solution!(
         arc = (get(rmap, from_number, from_number), get(rmap, to_number, to_number))
         vsc = popfirst!(arc_to_lines[arc])
         # from→to link flow = AC power drawn at the from terminal: −p_c_from
-        PSY.set_active_power_flow!(vsc, -dcn.p_c[cf, time_step])
-        PSY.set_reactive_power_from!(vsc, dcn.q_c[cf, time_step])
-        PSY.set_reactive_power_to!(vsc, dcn.q_c[ct, time_step])
+        PSY.set_active_power_flow!(vsc, -dcn.p_c[cf, time_step] * PSY.SU)
+        PSY.set_reactive_power_from!(vsc, dcn.q_c[cf, time_step] * PSY.SU)
+        PSY.set_reactive_power_to!(vsc, dcn.q_c[ct, time_step] * PSY.SU)
         Vm_from = data.bus_magnitude[dcn.converter_ac_bus_ix[cf], time_step]
         Vdc_from = dcn.node_vdc[nf, time_step]
         # the from converter injects −P_dc/V_dc into the line; dc_current is positive from→to
@@ -681,7 +681,7 @@ function _write_interconnecting_converter_solution!(
         c = popfirst!(key_to_convs[key])
         Vm = data.bus_magnitude[dcn.converter_ac_bus_ix[c], time_step]
         # active_power is DC-side: positive = drawn from the DC bus into AC (P_dc = p_c + losses)
-        PSY.set_active_power!(ic, _vsc_pdc(dcn, c, Vm, time_step))
+        PSY.set_active_power!(ic, _vsc_pdc(dcn, c, Vm, time_step) * PSY.SU)
     end
     return
 end
@@ -771,10 +771,9 @@ function write_power_flow_solution!(
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     arc_lookup = get_arc_lookup(data)
 
-    # Set flows for direct branches and 3WT windings.
+    # Set flows for direct branches, which include each 3WT circuit on its star-point arc.
     # Assert that voltage-recomputed flows match pre-computed arc-level flows.
-    for (arc, branch) in
-        merge(PNM.get_direct_branch_map(nrd), PNM.get_transformer3W_map(nrd))
+    for (arc, branch) in PNM.get_direct_branch_map(nrd)
         flow_entries = _compute_segment_flows(branch, data, arc, time_step)
         @assert length(flow_entries) == 1
         flow_entry = flow_entries[1]
@@ -857,7 +856,6 @@ function write_power_flow_solution!(
     max_iterations::Int,
     time_step::Int = 1,
 )
-    check_unit_setting(sys)
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     temp_bus_map = Dict{Int, String}(
         PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
@@ -1396,21 +1394,21 @@ function _post_process_flows(
     arc_angle_diff::Vector{Float64};
     time_step::Int = 1,
 )
-    nrd = data.power_network_matrix.network_reduction_data
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     arc_lookup = get_arc_lookup(data)
+    # The direct maps carry each 3WT circuit on its star-point arc, so there is no separate
+    # three-winding map to count or iterate.
     n_branches =
-        length(keys(nrd.reverse_direct_branch_map)) +
-        length(keys(nrd.reverse_parallel_branch_map)) +
-        length(keys(nrd.reverse_series_branch_map)) +
-        length(keys(nrd.reverse_transformer3W_map))
+        length(keys(PNM.get_reverse_direct_branch_map(nrd))) +
+        length(keys(PNM.get_reverse_parallel_branch_map(nrd))) +
+        length(keys(PNM.get_reverse_series_branch_map(nrd)))
     result = BranchFlowResults(n_branches)
     # PERF: type instability.
     # if unrolled, inner call could be resolved at compile time in many cases.
     for map in [
-        nrd.direct_branch_map,
-        nrd.parallel_branch_map,
-        nrd.series_branch_map,
-        nrd.transformer3W_map,
+        PNM.get_direct_branch_map(nrd),
+        PNM.get_parallel_branch_map(nrd),
+        PNM.get_series_branch_map(nrd),
     ]
         for (arc, entry) in map
             ix_arc = arc_lookup[arc]
@@ -1505,7 +1503,7 @@ function _distribute_arc_flows(
 end
 
 function _distribute_arc_flows(
-    arc_entry::PNM.ThreeWindingTransformerWinding,
+    arc_entry::PNM.ThreeWindingTransformerCircuit,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
@@ -1662,7 +1660,7 @@ function write_results(
     ### non time-dependent variables
 
     buses = _get_buses(data)
-    if length(PSY.get_components(PSY.Transformer3W, sys)) > 0
+    if length(PSY.get_components(PSY.ThreeWindingTransformer, sys)) > 0
         @info "3-winding transformers included in the results export: bus-to-star flows " *
               "reported with names like 'TransformerName-primary', " *
               "'TransformerName-secondary', and 'TransformerName-tertiary'."
@@ -1739,7 +1737,7 @@ function write_results(
     # NOTE: this may be different than get_bus_numbers(sys) if there's a network reduction!
     bus_numbers = PNM.get_bus_axis(data.power_network_matrix)
 
-    if length(PSY.get_components(PSY.Transformer3W, sys)) > 0
+    if length(PSY.get_components(PSY.ThreeWindingTransformer, sys)) > 0
         @info "3-winding transformers included in the results export: bus-to-star flows " *
               "reported with names like 'TransformerName-primary', " *
               "'TransformerName-secondary', and 'TransformerName-tertiary'."

@@ -12,6 +12,8 @@ mutable struct ControlledTap <: AbstractBranchControl
     to_ix::Int
     controlled_ix::Int
     vset::Float64
+    vset_lo::Float64                 # VMI/VMA deadband: held anywhere inside
+    vset_hi::Float64
     yt::ComplexF64                   # 1/(r+jx)
     alpha::Float64                   # winding-group phase shift (PSY.get_α)
     p_min::Float64
@@ -21,6 +23,11 @@ mutable struct ControlledTap <: AbstractBranchControl
     initial::Float64                 # enrollment-time tap (reporting)
     synced::Float64                  # tap reflected in the arc-admittance rows
     current::Float64
+    # Write-back address. A regulating tap lives on a `PSY.TransformerCircuit`, and under psy6
+    # that circuit may belong to either arity, so `name` alone (which is suffixed per circuit
+    # for a 3W) cannot resolve it. `PSY.get_circuits(parent)[circuit_index]` can, for both.
+    device_name::String
+    circuit_index::Int
 end
 
 """Voltage-controlling switched shunt, snapped onto the PSS/E cumulative
@@ -269,11 +276,13 @@ control_setpoint(d::AbstractControlledDevice) = voltage_setpoint(d)
 stamp_control!(d::AbstractControlledDevice, args...) =
     error("implicit embedding not implemented for $(typeof(d))")
 
-# PSS/E deadband semantics: a switched shunt is held while the controlled voltage is
-# anywhere INSIDE [VSWLO, VSWHI]; only excursions outside the band trigger switching.
-# Other device families carry a point setpoint (no parsed band) and always regulate.
+# PSS/E deadband semantics: the device is held while the controlled voltage is anywhere INSIDE
+# its band — [VSWLO, VSWHI] for a switched shunt, [VMI, VMA] (the circuit's
+# `controlled_quantity_limits`) for a tap changer; only excursions outside trigger a move.
+# Families with a point setpoint and no parsed band always regulate.
 _in_deadband(::AbstractControlledDevice, ::Float64) = false
 _in_deadband(d::ControlledSwitchedShunt, y::Float64) = d.vset_lo <= y <= d.vset_hi
+_in_deadband(d::ControlledTap, y::Float64) = d.vset_lo <= y <= d.vset_hi
 
 function _nz_index(A::SparseArrays.SparseMatrixCSC, row::Int, col::Int)
     @inbounds for k in SparseArrays.nzrange(A, col)

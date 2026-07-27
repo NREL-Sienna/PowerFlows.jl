@@ -275,7 +275,7 @@ end
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     # Introduce a deliberate imbalance by scaling one load up.
     load = first(get_components(PSY.PowerLoad, sys))
-    set_active_power!(load, 2.0 * get_active_power(load))
+    set_active_power!(load, 2.0 * get_active_power(load, PSY.SU) * PSY.SU)
 
     for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
         results =

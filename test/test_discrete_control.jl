@@ -16,18 +16,21 @@ function build_ieee14_facts_system(;
     stress::Float64 = 1.0,
     shunt9_off::Bool = false,
 )
-    sys = System(IEEE14_FACTS_RAW; runchecks = false)
+    sys = make_system(PFP.PowerModelsData(IEEE14_FACTS_RAW); runchecks = false)
     if !isone(stress)
         for load in get_components(StandardLoad, sys)
-            set_constant_active_power!(load, get_constant_active_power(load) * stress)
+            set_constant_active_power!(
+                load, get_constant_active_power(load, PSY.SU) * stress * PSY.SU)
             set_constant_reactive_power!(
-                load, get_constant_reactive_power(load) * stress)
-            set_impedance_active_power!(load, get_impedance_active_power(load) * stress)
+                load, get_constant_reactive_power(load, PSY.SU) * stress * PSY.SU)
+            set_impedance_active_power!(
+                load, get_impedance_active_power(load, PSY.SU) * stress * PSY.SU)
             set_impedance_reactive_power!(
-                load, get_impedance_reactive_power(load) * stress)
-            set_current_active_power!(load, get_current_active_power(load) * stress)
+                load, get_impedance_reactive_power(load, PSY.SU) * stress * PSY.SU)
+            set_current_active_power!(
+                load, get_current_active_power(load, PSY.SU) * stress * PSY.SU)
             set_current_reactive_power!(
-                load, get_current_reactive_power(load) * stress)
+                load, get_current_reactive_power(load, PSY.SU) * stress * PSY.SU)
         end
     end
     if shunt9_off
@@ -177,8 +180,8 @@ end
     # A remote controlled-bus number that does not exist in the network must
     # de-enroll the device with a warning, not abort PowerFlowData construction.
     sys = _make_tap_shunt_system()
-    tx = first(PSY.get_components(PSY.TapTransformer, sys))
-    PSY.set_regulated_bus_number!(tx, 99)   # no bus 99
+    tx = first(PSY.get_components(PSY.TwoWindingTransformer, sys))
+    PSY.set_regulated_bus_number!(PSY.get_circuit(tx), 99)   # no bus 99
     data = PowerFlowData(ACPolarPowerFlow(), sys)
     set = @test_logs (:warn, r"controlled bus 99") match_mode = :any (
         PowerFlows.build_controlled_device_set(
@@ -189,14 +192,15 @@ end
 end
 
 @testset "discrete control: tap reads first-class control fields" begin
-    # The builder reads regulated_bus_number (controlled bus), tap_limits (ratio band),
-    # number_of_tap_positions, and voltage_setpoint directly off the PSY component.
+    # The builder reads regulated_bus_number (controlled bus), control_limits (ratio band),
+    # number_of_tap_positions, and controlled_quantity_limits (VMI/VMA) off the PSY circuit.
     sys = _make_tap_shunt_system()
-    tx = first(PSY.get_components(PSY.TapTransformer, sys))
-    PSY.set_regulated_bus_number!(tx, 3)
-    PSY.set_tap_limits!(tx, (min = 0.88, max = 1.12))
-    PSY.set_number_of_tap_positions!(tx, 25)
-    PSY.set_voltage_setpoint!(tx, 1.03)
+    tx = first(PSY.get_components(PSY.TwoWindingTransformer, sys))
+    PSY.set_regulated_bus_number!(PSY.get_circuit(tx), 3)
+    PSY.set_control_limits!(PSY.get_circuit(tx), (min = 0.88, max = 1.12))
+    PSY.set_number_of_tap_positions!(PSY.get_circuit(tx), 25)
+    # A degenerate band pins the regulation target to a single voltage.
+    PSY.set_controlled_quantity_limits!(PSY.get_circuit(tx), (min = 1.03, max = 1.03))
     data = PowerFlowData(ACPolarPowerFlow(), sys)
     bl = PF.get_bus_lookup(data)
     set = PowerFlows.build_controlled_device_set(
@@ -208,6 +212,8 @@ end
     @test t.p_max ≈ 1.12
     @test length(t.levels) == 25
     @test t.vset ≈ 1.03
+    @test t.vset_lo ≈ 1.03
+    @test t.vset_hi ≈ 1.03
 end
 
 @testset "discrete control: implausible vset locks the device" begin
@@ -318,17 +324,18 @@ end
 
 @testset "tap ratio band comes from tap_limits" begin
     sys = _make_tap_shunt_system()
-    tx = first(PSY.get_components(PSY.TapTransformer, sys))
-    PSY.set_tap_limits!(tx, (min = 0.9, max = 1.1))
-    md = PowerFlows._tap_metadata(tx, 2)
+    tx = first(PSY.get_components(PSY.TwoWindingTransformer, sys))
+    circuit = PSY.get_circuit(tx)
+    PSY.set_control_limits!(circuit, (min = 0.9, max = 1.1))
+    md = PowerFlows._tap_metadata(circuit, 2)
     @test md.pmin ≈ 0.9
     @test md.pmax ≈ 1.1
 end
 
 @testset "out-of-band initial tap ratio de-enrolls with a warning" begin
     sys = _make_tap_shunt_system()
-    tx = first(PSY.get_components(PSY.TapTransformer, sys))
-    PSY.set_tap!(tx, 1.5)   # far outside any [0.9, 1.1]-class band
+    tx = first(PSY.get_components(PSY.TwoWindingTransformer, sys))
+    PSY.set_tap!(PSY.get_circuit(tx), 1.5)   # far outside any [0.9, 1.1]-class band
     pf = ACPolarPowerFlow{NewtonRaphsonACPowerFlow}(; control_discrete_devices = true)
     data =
         @test_logs (:warn, r"outside the tap-ratio band") match_mode = :any PowerFlowData(
@@ -357,12 +364,12 @@ end
     # from the measured plant sensitivity, for both signs of dV/dp.
     S = 100.0
     δ = 0.02
-    tap = PowerFlows.ControlledTap("tp", 1, 2, 2, 1.0,
+    tap = PowerFlows.ControlledTap("tp", 1, 2, 2, 1.0, 1.0, 1.0,
         1.0 / (0.01 + 0.1im), 0.0, 0.9, 1.1,
-        collect(range(0.9, 1.1; length = 33)), (1, 2, 3, 4), 1.0, 1.0, 1.0)
-    remote = PowerFlows.ControlledTap("ts", 1, 2, 1, 1.0,
+        collect(range(0.9, 1.1; length = 33)), (1, 2, 3, 4), 1.0, 1.0, 1.0, "tp", 1)
+    remote = PowerFlows.ControlledTap("ts", 1, 2, 1, 1.0, 1.0, 1.0,
         1.0 / (0.01 + 0.1im), 0.0, 0.9, 1.1,
-        collect(range(0.9, 1.1; length = 33)), (1, 2, 3, 4), 1.0, 1.0, 1.0)
+        collect(range(0.9, 1.1; length = 33)), (1, 2, 3, 4), 1.0, 1.0, 1.0, "ts", 1)
     shunt = PowerFlows.ControlledSwitchedShunt("sh", 3, 3, 1.0, 0.95, 1.05, 0.0, 0.0,
         [4], [0.05], 0.0, 0.2, zeros(Int, 1), false, 0.0, 0.0, false)
     for d in (tap, remote, shunt)
@@ -382,9 +389,9 @@ end
     # m = 1 + ω·(g'−1) with g' ≤ 0 and |g'| ≤ gbound = 0.25|hi-lo|·S·|dVdp|, so
     # m ≥ 0 iff ω·(1+gbound) ≤ 1. (A negative slope is what previously made the
     # iterate alternate every step and tripped the oscillation-freeze detector.)
-    d = PowerFlows.ControlledTap("t", 1, 2, 2, 1.0, 1.0 / (0.01 + 0.1im),
+    d = PowerFlows.ControlledTap("t", 1, 2, 2, 1.0, 1.0, 1.0, 1.0 / (0.01 + 0.1im),
         0.0, 0.9, 1.1, collect(range(0.9, 1.1; length = 33)),
-        (1, 2, 3, 4), 1.0, 1.0, 1.0)
+        (1, 2, 3, 4), 1.0, 1.0, 1.0, "t", 1)
     lo, hi = PowerFlows.parameter_limits(d)
     for S in (1.0e2, 1.0e3, 5.0e3), dVdp in (-5.0, -1.0, -0.1, 0.1, 1.0, 5.0)
         ω = PowerFlows._relaxation(d, S, dVdp)
@@ -426,9 +433,9 @@ end
 end
 
 @testset "discrete control: snap" begin
-    d = PowerFlows.ControlledTap("t", 1, 2, 2, 1.0, 1.0 + 0im,
+    d = PowerFlows.ControlledTap("t", 1, 2, 2, 1.0, 1.0, 1.0, 1.0 + 0im,
         0.0, 0.9, 1.1, collect(range(0.9, 1.1; length = 5)),
-        (1, 2, 3, 4), 1.0, 1.0, 1.0)  # levels: 0.9,0.95,1.0,1.05,1.1
+        (1, 2, 3, 4), 1.0, 1.0, 1.0, "t", 1)  # levels: 0.9,0.95,1.0,1.05,1.1
     @test PowerFlows.snap_to_discrete(d, 1.03) == 1.05
     @test PowerFlows.snap_to_discrete(d, 1.20) == 1.1   # clamp
     block_dB_sh_snap = [0.05]
@@ -505,8 +512,8 @@ end
     after = copy(A)
 
     # Rebuild reference: mutate sys, build fresh data2.
-    txs = collect(PSY.get_components(PSY.TapTransformer, sys))
-    PSY.set_tap!(txs[1], newtap)
+    txs = collect(PSY.get_components(PSY.TwoWindingTransformer, sys))
+    PSY.set_tap!(PSY.get_circuit(txs[1]), newtap)
     data2 = PowerFlowData(ACPolarPowerFlow(), sys)
     A2 = data2.power_network_matrix.data
     @test after ≈ A2
@@ -516,7 +523,7 @@ end
     # required to preserve the parallel branch's contribution.
     @testset "discrete control: in-place Ybus == rebuild (parallel branch)" begin
         sys2 = _make_tap_shunt_system()
-        txs2 = collect(PSY.get_components(PSY.TapTransformer, sys2))
+        txs2 = collect(PSY.get_components(PSY.TwoWindingTransformer, sys2))
         arc2 = PSY.get_arc(txs2[1])
         from_bus = PSY.get_from(arc2)
         to_bus = PSY.get_to(arc2)
@@ -533,7 +540,7 @@ end
         PowerFlows.apply_parameter!(d2, data2, newtap2, 1)
         after2 = copy(ybus2.data)
         # Rebuild reference.
-        PSY.set_tap!(txs2[1], newtap2)
+        PSY.set_tap!(PSY.get_circuit(txs2[1]), newtap2)
         data2r = PowerFlowData(ACPolarPowerFlow(), sys2)
         @test after2 ≈ data2r.power_network_matrix.data
     end
@@ -615,7 +622,6 @@ end
     # Verify that _ac_power_flow with no controlled devices routes through
     # _solve_with_q_limits! unchanged (pure code-motion regression check).
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
     pf = ACPolarPowerFlow()
     data1 = PowerFlowData(pf, sys)
     data2 = PowerFlowData(pf, sys)
@@ -836,8 +842,8 @@ end
     PowerFlows.apply_parameter!(d, data, newtap, 1)
     PowerFlows._sync_arc_admittances!(data, set)
     # Rebuild reference at the new tap.
-    txs = collect(PSY.get_components(PSY.TapTransformer, sys))
-    PSY.set_tap!(txs[1], newtap)
+    txs = collect(PSY.get_components(PSY.TwoWindingTransformer, sys))
+    PSY.set_tap!(PSY.get_circuit(txs[1]), newtap)
     data2 = PowerFlowData(ACPolarPowerFlow(), sys)
     @test data.power_network_matrix.arc_admittance_from_to.data ≈
           data2.power_network_matrix.arc_admittance_from_to.data
@@ -862,8 +868,8 @@ end
     sh = data.controlled_devices.shunts[1]
     # Rebuild: same system with the tap fixed at the solved position and the shunt's
     # solved susceptance as a fixed admittance baseline.
-    txs = collect(PSY.get_components(PSY.TapTransformer, sys))
-    PSY.set_tap!(txs[1], t.current)
+    txs = collect(PSY.get_components(PSY.TwoWindingTransformer, sys))
+    PSY.set_tap!(PSY.get_circuit(txs[1]), t.current)
     # data_ref is built WITHOUT control_discrete_devices, so the VOLTAGE objective is
     # inert: this is a plain solve of the snapped network.
     sas = collect(PSY.get_components(PSY.SwitchedAdmittance, sys))
@@ -919,11 +925,14 @@ end
     @test PowerFlows._in_deadband(sh, 0.96)
     @test !PowerFlows._in_deadband(sh, 0.94)
     @test !PowerFlows._in_deadband(sh, 1.06)
-    # Taps carry a point setpoint: never in a deadband.
-    tap = PowerFlows.ControlledTap("t", 1, 2, 2, 1.0, 1.0 + 0im,
+    # Taps carry a VMI/VMA band and are held anywhere inside it.
+    tap = PowerFlows.ControlledTap("t", 1, 2, 2, 1.0, 0.98, 1.02, 1.0 + 0im,
         0.0, 0.9, 1.1, collect(range(0.9, 1.1; length = 5)),
-        (1, 2, 3, 4), 1.0, 1.0, 1.0)
-    @test !PowerFlows._in_deadband(tap, 1.0)
+        (1, 2, 3, 4), 1.0, 1.0, 1.0, "t", 1)
+    @test PowerFlows._in_deadband(tap, 1.0)
+    @test PowerFlows._in_deadband(tap, 0.99)
+    @test !PowerFlows._in_deadband(tap, 0.97)
+    @test !PowerFlows._in_deadband(tap, 1.03)
     # Scale-aware settle tolerance: wide-range devices get a relative floor.
     @test PowerFlows._param_tol(tap) ≈
           max(PowerFlows.CONTROL_PARAM_TOL, PowerFlows.CONTROL_PARAM_RTOL * 0.2)
@@ -958,16 +967,16 @@ end
     # asserts they match the stored moved-device flows). Write-back is therefore automatic
     # when controls are active.
     sys = _make_solvable_tap_shunt_system()
-    tx0 = first(PSY.get_components(PSY.TapTransformer, sys))
-    tap_before = PSY.get_tap(tx0)
+    tx0 = first(PSY.get_components(PSY.TwoWindingTransformer, sys))
+    tap_before = PSY.get_tap(PSY.get_circuit(tx0))
     levels =
         PowerFlowData(
             ACPolarPowerFlow(; control_discrete_devices = true), sys,
         ).controlled_devices.taps[1].levels
     pf = ACPolarPowerFlow(; control_discrete_devices = true)
     @test solve_and_store_power_flow!(pf, sys)
-    @test PSY.get_tap(tx0) != tap_before   # the fixture regulates away from tap = 1.0
-    @test PSY.get_tap(tx0) in levels       # the written tap is a valid discrete level
+    @test PSY.get_tap(PSY.get_circuit(tx0)) != tap_before   # the fixture regulates away from tap = 1.0
+    @test PSY.get_tap(PSY.get_circuit(tx0)) in levels       # the written tap is a valid discrete level
 end
 
 @testset "write-back round-trips the API shunt convention" begin
@@ -1107,12 +1116,11 @@ end
             _add_simple_line!(sys, ref, bs, 1e-2, 1e-2, 0.0)
             add_component!(
                 sys,
-                TapTransformer(; name = "t$k", available = true,
-                    active_power_flow = 0.0, reactive_power_flow = 0.0,
-                    arc = Arc(; from = ref, to = bl), r = 0.01, x = 0.10,
-                    primary_shunt = 0.0 + 0.0im, tap = 1.0, rating = 1.0,
-                    base_power = 100.0,
-                    control_objective = PSY.TransformerControlObjective.VOLTAGE),
+                TwoWindingTransformer(; name = "t$k",
+                    circuit = TransformerCircuit(; available = true,
+                        arc = Arc(; from = ref, to = bl), r = 0.01, x = 0.10,
+                        tap = 1.0, rating = 1.0, base_power = 100.0,
+                        control_objective = PSY.TransformerControlObjective.VOLTAGE)),
             )
             add_component!(
                 sys,

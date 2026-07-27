@@ -734,7 +734,7 @@ end
     # droop terminal's DCSET is the scheduled active-power demand (MW, to side receives -P_flow)
     @test isapprox(
         PF._vsc_export_dcset(vsc, :to, base),
-        -PSY.get_active_power_flow(vsc) * base;
+        -PSY.get_active_power_flow(vsc, PSY.SU) * base;
         atol = 1.0,
     )
 end
@@ -745,7 +745,6 @@ end
 # `false` gives them distinct AC buses but the same DC node dc2 (a valid parallel-on-DC topology).
 function _build_parallel_ic_system(; shared_ac::Bool = true)
     sys = deepcopy(PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false))
-    PSY.set_units_base_system!(sys, "SYSTEM_BASE")
     pq = sort!(
         collect(
             PSY.get_components(

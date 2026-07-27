@@ -363,17 +363,19 @@ function _lower_vsc_lines!(b::_DCNetworkBuilder, lines, bus_lookup, reverse_bus_
             b, from_ix, from_number, nf,
             PSY.get_dc_control_from(line), PSY.get_ac_control_from(line),
             PSY.get_dc_voltage_droop_from(line), PSY.get_converter_loss_from(line),
-            PSY.get_rating_from(line), PSY.get_active_power_limits_from(line),
-            PSY.get_reactive_power_limits_from(line), PSY.get_dc_setpoint_from(line),
-            PSY.get_ac_setpoint_from(line), PSY.get_reactive_power_from(line),
+            PSY.get_rating_from(line, PSY.SU),
+            PSY.get_active_power_limits_from(line, PSY.SU),
+            PSY.get_reactive_power_limits_from(line, PSY.SU),
+            PSY.get_dc_setpoint_from(line),
+            PSY.get_ac_setpoint_from(line), PSY.get_reactive_power_from(line, PSY.SU),
         )
         _push_converter!(
             b, to_ix, to_number, nt,
             PSY.get_dc_control_to(line), PSY.get_ac_control_to(line),
             PSY.get_dc_voltage_droop_to(line), PSY.get_converter_loss_to(line),
-            PSY.get_rating_to(line), PSY.get_active_power_limits_to(line),
-            PSY.get_reactive_power_limits_to(line), PSY.get_dc_setpoint_to(line),
-            PSY.get_ac_setpoint_to(line), PSY.get_reactive_power_to(line),
+            PSY.get_rating_to(line, PSY.SU), PSY.get_active_power_limits_to(line, PSY.SU),
+            PSY.get_reactive_power_limits_to(line, PSY.SU), PSY.get_dc_setpoint_to(line),
+            PSY.get_ac_setpoint_to(line), PSY.get_reactive_power_to(line, PSY.SU),
         )
         push!(b.branch_from, nf)
         push!(b.branch_to, nt)
@@ -400,8 +402,8 @@ function _lower_mtdc!(
             b, ac_ix, bus_number, node,
             PSY.get_dc_control(ic), PSY.get_ac_control(ic),
             PSY.get_dc_voltage_droop(ic), PSY.get_loss_function(ic),
-            PSY.get_rating(ic), PSY.get_active_power_limits(ic),
-            PSY.get_reactive_power_limits(ic), PSY.get_dc_setpoint(ic),
+            PSY.get_rating(ic, PSY.SU), PSY.get_active_power_limits(ic, PSY.SU),
+            PSY.get_reactive_power_limits(ic, PSY.SU), PSY.get_dc_setpoint(ic),
             PSY.get_ac_setpoint(ic), 0.0,
         )
     end

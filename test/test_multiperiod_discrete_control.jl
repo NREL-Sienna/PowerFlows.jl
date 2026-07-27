@@ -45,7 +45,6 @@ end
     # makes Bus8's PV gen violate its Q limit; every identical step must reproduce the switch.
     time_steps = 3
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
     pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
         check_reactive_power_limits = true, correct_bustypes = true,
         time_steps = time_steps)
@@ -56,7 +55,6 @@ end
 
     # Independent single-ts reference (its only column has correct bounds).
     sys_ref = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    set_units_base_system!(sys_ref, UnitSystem.SYSTEM_BASE)
     pf_ref = ACPowerFlow{NewtonRaphsonACPowerFlow}(;
         check_reactive_power_limits = true, correct_bustypes = true)
     data_ref = PowerFlowData(pf_ref, sys_ref)
