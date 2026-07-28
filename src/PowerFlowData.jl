@@ -82,6 +82,12 @@ the respective type of power flow evaluations.
         "(b, t)" matrix containing the net power injections from all HVDC lines at each bus.
         b: number of buses, t: number of time period. Only contains HVDCs handled as
         separate injection/withdrawal pairs: LCCs and generic for DC, or just generic for AC.
+- `bus_phase_shift_injections::Vector{Float64}`:
+        length-`b` vector of DC phase-shifter injections (`+b·α` at the from bus, `−b·α`
+        at the to bus of each shifted arc); time-invariant, zero on α-free systems.
+- `arc_phase_shift_flow_offsets::Vector{Float64}`:
+        length-`n_arcs` vector of `b_eq·α_eq` per arc, subtracted from the DC flow;
+        time-invariant, zero for non-shifted arcs.
 - `time_step_map::Dict{Int, S}`:
         dictionary mapping the number of the time periods (corresponding to the
         column number of the previously mentioned matrices) and their names.
@@ -123,6 +129,13 @@ struct PowerFlowData{
     arc_angle_differences::Matrix{Float64}
     generic_hvdc_flows::Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}
     bus_hvdc_net_power::Matrix{Float64}
+    # DC phase-shifter terms (time-invariant: α is a stored circuit angle, not a per-step
+    # control variable). `+b·α` at the from bus / `−b·α` at the to bus of each shifted arc;
+    # zero on α-free systems. See `_populate_phase_shift_terms!`.
+    bus_phase_shift_injections::Vector{Float64}
+    # `b_eq·α_eq` per arc, subtracted from the DC flow (`f = b·Δθ − b·α`); zero for
+    # non-shifted arcs.
+    arc_phase_shift_flow_offsets::Vector{Float64}
     time_step_map::Dict{Int, String}
     power_network_matrix::M
     aux_network_matrix::N
@@ -229,6 +242,8 @@ get_bus_reactive_power_constant_impedance_withdrawals(pfd::PowerFlowData) =
     pfd.bus_reactive_power_constant_impedance_withdrawals
 get_bus_reactive_power_bounds(pfd::PowerFlowData) = pfd.bus_reactive_power_bounds
 get_bus_hvdc_net_power(pfd::PowerFlowData) = pfd.bus_hvdc_net_power
+get_bus_phase_shift_injections(pfd::PowerFlowData) = pfd.bus_phase_shift_injections
+get_arc_phase_shift_flow_offsets(pfd::PowerFlowData) = pfd.arc_phase_shift_flow_offsets
 get_generic_hvdc_flows(pfd::PowerFlowData) = pfd.generic_hvdc_flows
 get_bus_slack_participation_factors(pfd::PowerFlowData) =
     pfd.bus_slack_participation_factors
@@ -420,6 +435,8 @@ function PowerFlowData(
         zeros(n_arcs, n_time_steps), # arc_angle_differences
         Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}(), # generic_hvdc_flows
         zeros(n_buses, n_time_steps), # bus_hvdc_net_power
+        zeros(n_buses), # bus_phase_shift_injections
+        zeros(n_arcs), # arc_phase_shift_flow_offsets
         time_step_map,
         power_network_matrix,
         aux_network_matrix,

@@ -169,6 +169,9 @@ function initialize_power_flow_data!(
         reverse_bus_search_map,
         removed_buses,
     )
+    # DC phase-shifters, DC only: precompute the per-arc flow offsets and paired bus
+    # injections from stored circuit α.
+    _populate_phase_shift_terms!(data)
     # ZIP Loads, DC only: convert constant current and impedance components to constant
     # powers via assuming V = 1.0 p.u.
     handle_zip_loads!(data, pf)

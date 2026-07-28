@@ -138,8 +138,8 @@ end
     pf = PTDFDCPowerFlow(; time_steps = 1)
     data = PF.PowerFlowData(pf, sys)
     PF.solve_power_flow!(data)
-    loss_p, injections = _summation_dc_loss_factors(sys, data)
-    calculated_loss = PF.dc_loss_factors(data, injections)
+    loss_p, _ = _summation_dc_loss_factors(sys, data)
+    calculated_loss = PF.dc_loss_factors(data)
     @test isapprox(calculated_loss[:, 1], loss_p; atol = 1e-10)
 end
 
@@ -148,8 +148,8 @@ end
     pf = vPTDFDCPowerFlow(; time_steps = 1)
     data = PF.PowerFlowData(pf, sys)
     PF.solve_power_flow!(data)
-    loss_p, injections = _summation_dc_loss_factors(sys, data)
-    calculated_loss = PF.dc_loss_factors(data, injections)
+    loss_p, _ = _summation_dc_loss_factors(sys, data)
+    calculated_loss = PF.dc_loss_factors(data)
     @test isapprox(calculated_loss[:, 1], loss_p; atol = 1e-10)
 end
 
@@ -165,9 +165,7 @@ end
     @test size(data_lf.loss_factors) == (n_buses, 1)
 
     # Compare against manual call to dc_loss_factors
-    injections = data_lf.bus_active_power_injections .- data_lf.bus_active_power_withdrawals
-    injections .+= data_lf.bus_hvdc_net_power
-    manual_lf = PF.dc_loss_factors(data_lf, injections)
+    manual_lf = PF.dc_loss_factors(data_lf)
     @test isapprox(data_lf.loss_factors, manual_lf; atol = 1e-10)
 
     # Default (calculate_loss_factors = false) should leave loss_factors as nothing

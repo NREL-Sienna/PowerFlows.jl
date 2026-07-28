@@ -1449,8 +1449,10 @@ function _branch_flow_entries(
     ::Int,
 )
     ix_arc = arc_lookup[arc]
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     return _distribute_arc_flows(
         entry,
+        nrd,
         arc_P_from_to[ix_arc],
         arc_Q_from_to[ix_arc],
         arc_P_to_from[ix_arc],
@@ -1480,6 +1482,7 @@ Returns a `Vector{BranchFlowEntry}`, analogous to `_compute_segment_flows` for A
 Uses the precomputed `arc_P_losses` (e.g. from lossy DC `P_ft + P_tf`) directly."""
 function _distribute_arc_flows(
     arc_entry::PSY.ACTransmission,
+    ::PNM.NetworkReductionData,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
@@ -1504,6 +1507,7 @@ end
 
 function _distribute_arc_flows(
     arc_entry::PNM.ThreeWindingTransformerCircuit,
+    ::PNM.NetworkReductionData,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
@@ -1526,8 +1530,12 @@ function _distribute_arc_flows(
     ]
 end
 
+# Per-member DC flow = susceptance-ratio split (`m`) + circulating component `c` (zero on
+# non-shifted groups). `c` is per unit at system base, matching `P_from_to`/`P_to_from` at
+# this point in the pipeline (MW scaling happens later in `_allocate_results_data`).
 function _distribute_arc_flows(
     arc_entry::PNM.AbstractBranchesParallel,
+    nrd::PNM.NetworkReductionData,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
@@ -1537,9 +1545,10 @@ function _distribute_arc_flows(
     entries = BranchFlowEntry[]
     for br in arc_entry
         arc_tuple = PNM.get_arc_tuple(br)
-        m = PNM.compute_parallel_multiplier(arc_entry, PNM.get_name(br))
-        P_ft = P_from_to * m
-        P_tf = P_to_from * m
+        m = PNM.compute_parallel_multiplier(arc_entry, br)
+        c = PNM.compute_parallel_circulating_flow(arc_entry, nrd, br)
+        P_ft = P_from_to * m + c
+        P_tf = P_to_from * m - c
         push!(
             entries,
             BranchFlowEntry((
@@ -1560,6 +1569,7 @@ end
 
 function _distribute_arc_flows(
     arc_entry::PNM.BranchesSeries,
+    nrd::PNM.NetworkReductionData,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
@@ -1572,6 +1582,7 @@ function _distribute_arc_flows(
         m = arc_entry.segment_orientations[segment_ix] == :ToFrom ? -1.0 : 1.0
         for entry in _distribute_arc_flows(
             segment,
+            nrd,
             P_from_to * m,
             Q_from_to * m,
             P_to_from * m,

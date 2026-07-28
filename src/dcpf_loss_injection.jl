@@ -99,3 +99,28 @@ function _populate_loss_injections!(data::ABAPowerFlowData, sys::PSY.System)
     end
     return
 end
+
+"""
+    _populate_phase_shift_terms!(data)
+
+Precompute the DC phase-shifter terms: per-arc flow offsets `b_eq·α_eq` and the paired bus
+injections (`+b·α` at from, `−b·α` at to). Zero on α-free systems. Computed once at data
+construction from the stored circuit angles — mutating a circuit's α afterwards requires
+rebuilding the `PowerFlowData` (same staleness contract as the cached arc resistances).
+"""
+function _populate_phase_shift_terms!(
+    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
+)
+    nrd = get_network_reduction_data(data)
+    bus_lookup = get_bus_lookup(data)
+    for (ix, arc) in enumerate(get_arc_axis(data))
+        injection = PNM.arc_dc_shift_injection(nrd, arc)
+        iszero(injection) && continue
+        data.arc_phase_shift_flow_offsets[ix] = injection
+        data.bus_phase_shift_injections[bus_lookup[arc[1]]] += injection
+        data.bus_phase_shift_injections[bus_lookup[arc[2]]] -= injection
+    end
+    return
+end
+
+_populate_phase_shift_terms!(::PowerFlowData) = nothing
