@@ -216,3 +216,21 @@ end
     @test !all(iszero, data.loss_factors)
     @test isapprox(data.loss_factors, lf_ref; atol = 1e-10)
 end
+
+@testset "DC loss factors reuse the cached arc resistances across solves" begin
+    sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
+    for pf in (
+        PTDFDCPowerFlow(; calculate_loss_factors = true),
+        vPTDFDCPowerFlow(; calculate_loss_factors = true),
+    )
+        data = PF.PowerFlowData(pf, sys)
+        PF.solve_power_flow!(data)
+        first_pass = copy(data.loss_factors)
+        PF.solve_power_flow!(data)
+        @test data.loss_factors ≈ first_pass
+        # The two-argument form is what the solve path uses; the convenience form must agree.
+        Rs = PF._get_arc_resistances(data)
+        @test PF.dc_loss_factors(data, Rs) ≈ PF.dc_loss_factors(data)
+        @test eltype(Rs) === Float64
+    end
+end

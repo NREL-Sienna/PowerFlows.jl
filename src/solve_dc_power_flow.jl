@@ -159,7 +159,7 @@ function _run_ptdf_solve!(
     data.converged .= true
     _adjust_dc_slack_injections!(data, power_injections)
     if get_calculate_loss_factors(data)
-        data.loss_factors .= dc_loss_factors(data)
+        data.loss_factors .= dc_loss_factors(data, scratch.rs)
     end
     return
 end
@@ -196,7 +196,7 @@ function _run_vptdf_solve!(
     data.converged .= true
     _adjust_dc_slack_injections!(data, power_injections)
     if get_calculate_loss_factors(data)
-        data.loss_factors .= dc_loss_factors(data)
+        data.loss_factors .= dc_loss_factors(data, scratch.rs)
     end
     return
 end
@@ -576,23 +576,25 @@ where `f = data.arc_active_power_flow_from_to` is the α-corrected solved flow (
 
 # Arguments
 - `data::Union{PTDFPowerFlowData, vPTDFPowerFlowData}`: solved power flow data containing
-  the PTDF matrix, network reduction data for looking up branch resistances, and the
-  solved arc flows.
+  the PTDF matrix and the solved arc flows.
+- `Rs::Vector{Float64}`: per-arc equivalent resistances, in `get_arc_axis(data)` order. The
+  solve path passes `scratch.rs`, which [`_make_dc_scratch`](@ref) builds once per network
+  matrix; recomputing it here would re-derive every reduced arc's equivalent on every solve.
+  The one-argument form computes it via [`_get_arc_resistances`](@ref) for callers outside a
+  solve.
 
 # Returns
 - `Matrix{Float64}`: loss factor matrix of size `(num_buses, num_timesteps)`, where each
   entry `[i, t]` is the marginal change in total system losses per unit injection at bus `i`
   in time step `t`.
 """
-function dc_loss_factors(data::PTDFPowerFlowData)
-    Rs = _get_arc_resistances(data)
+function dc_loss_factors(data::PTDFPowerFlowData, Rs::Vector{Float64})
     ptdf_t = data.power_network_matrix.data
     # Right-associated to avoid forming a dense buses×buses intermediate.
     return 2 .* (ptdf_t * (Rs .* data.arc_active_power_flow_from_to))
 end
 
-function dc_loss_factors(data::vPTDFPowerFlowData)
-    Rs = _get_arc_resistances(data)
+function dc_loss_factors(data::vPTDFPowerFlowData, Rs::Vector{Float64})
     ptdf = data.power_network_matrix
     arc_ax = get_arc_axis(data)
     n_buses = length(get_bus_axis(data))
@@ -613,3 +615,9 @@ function dc_loss_factors(data::vPTDFPowerFlowData)
     end
     return result
 end
+
+# Convenience form for callers without a solve scratch in hand (tests, ad-hoc queries). The
+# solve path passes `scratch.rs`, which is built once per network matrix — calling this inside a
+# solve would re-sweep every arc's equivalent on every solve.
+dc_loss_factors(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
+    dc_loss_factors(data, _get_arc_resistances(data))
