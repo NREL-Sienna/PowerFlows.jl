@@ -62,7 +62,12 @@ function _compute_bus_active_power_range!(
             continue
         bus = PSY.get_bus(source)
         PSY.get_number(bus) in removed_buses && continue
-        PSY.get_bustype(bus) ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
+        # Raw PSY bustype, so SLACK must be listed explicitly: it normalizes to PV
+        # (`_normalize_slack_bustype`) and an area slack is exactly the bus whose headroom
+        # matters most. A SLACK bus that normalizes to PQ instead gets its range filtered
+        # out downstream by `_build_bus_slack_participation_factors`.
+        PSY.get_bustype(bus) ∈
+        (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV, PSY.ACBusTypes.SLACK) || continue
         limits = get_active_power_limits_for_power_flow(source)
         range_k = limits.max - PSY.get_active_power(source)
         range_k <= 0.0 && continue
@@ -251,6 +256,60 @@ end
 _considers_bustype(::AbstractACPowerFlow{<:ACPowerFlowSolverType}, ::PSY.ACBusTypes) = true
 _considers_bustype(::AbstractDCPowerFlow, bt::PSY.ACBusTypes) = (bt == PSY.ACBusTypes.REF)
 
+"""Voltage regulation is irrelevant to DC power flow, so the PQ demotion in
+`_normalize_slack_bustype` warns only for AC evaluation models; DC demotes silently."""
+function _warn_slack_demoted_to_pq(
+    ::AbstractACPowerFlow{<:ACPowerFlowSolverType},
+    bus_name::String,
+)
+    @warn(
+        "SLACK-designated bus $bus_name has no in-service voltage-regulating " *
+        "component; treating as PQ — it cannot serve as an area slack.",
+        maxlog = PF_MAX_LOG,
+    )
+    return
+end
+_warn_slack_demoted_to_pq(::AbstractDCPowerFlow, ::String) = nothing
+
+"""SLACK marks a bus for area-interchange redistribution (PSS/E ISW), not a formulation
+bus type; normalize it at ingestion like PV/REF: PV if the bus has an in-service
+voltage-regulating source, else PQ (DC demotes silently — see `_warn_slack_demoted_to_pq`).
+A SLACK bus that normalizes to PQ cannot serve as an area slack; the area-interchange
+enrollment guard then de-enrolls its area."""
+function _normalize_slack_bustype(
+    pf::PowerFlowEvaluationModel,
+    bt::PSY.ACBusTypes,
+    bus_no::Int,
+    bus_name::String,
+    possible_PV::Set{Int},
+)
+    if bt != PSY.ACBusTypes.SLACK
+        return bt
+    end
+    if bus_no in possible_PV
+        return PSY.ACBusTypes.PV
+    end
+    _warn_slack_demoted_to_pq(pf, bus_name)
+    return PSY.ACBusTypes.PQ
+end
+
+"""Whether a solved bus type should be written back onto the `PSY.ACBus`.
+
+`data.bus_type` holds the NORMALIZED type, so a SLACK bus legitimately solves as PV
+(`_normalize_slack_bustype`). Writing that back would erase the ISW designation, and
+`_area_slack_buses` reads it from the bus, so the area would silently de-enroll from
+interchange control on the next `PowerFlowData` build. A SLACK→PQ demotion is still
+written back: it mirrors the PV→PQ Q-limit flip and is already warned about."""
+function _bustype_write_back_needed(
+    bus_bt::PSY.ACBusTypes,
+    solved_bt::PSY.ACBusTypes,
+)
+    if bus_bt == PSY.ACBusTypes.SLACK && solved_bt == PSY.ACBusTypes.PV
+        return false
+    end
+    return bus_bt != solved_bt
+end
+
 function _initialize_bus_data!(
     pf::PowerFlowEvaluationModel,
     bus_type::Vector{PSY.ACBusTypes},
@@ -283,6 +342,7 @@ function _initialize_bus_data!(
         bus_no = PSY.get_number(bus)
         bus_name = PSY.get_name(bus)
         temp_bus_map[bus_no] = bus_name
+        bt = _normalize_slack_bustype(pf, bt, bus_no, bus_name, possible_PV)
         if bus_no in subnetwork_keys && bus_no != main_ref_bus
             bt = PSY.ACBusTypes.REF
             @warn("Island detected, containing $(summary(bus)).", maxlog = PF_MAX_LOG)

@@ -12,6 +12,7 @@ and can be called as a function at the same time. Calling the instance as a func
 - `diag_elements::MVector{4, Float64}`: Temporary storage for diagonal elements during Jacobian update.
 - `bus_slack_participation_factors::SparseVector{Float64, Int}`: Normalized per-bus slack participation factors for the current time step (from the `ACPowerFlowResidual`). Used for the distributed slack Jacobian entries.
 - `subnetworks::Dict{Int64, Vector{Int64}}`: Subnetwork mapping from REF bus to bus list (from the `ACPowerFlowResidual`). Used for the distributed slack Jacobian entries.
+- `independent_ref::Set{Int}`: Multi-swing REF bus indices, from `_multi_swing_ref_indices`. Computed once at construction because the Q-limit loop only flips PV↔PQ, never REF.
 """
 struct ACPowerFlowJacobian
     data::ACPowerFlowData
@@ -19,6 +20,7 @@ struct ACPowerFlowJacobian
     diag_elements::MVector{4, Float64}  # Temporary storage for diagonal elements during Jacobian update
     bus_slack_participation_factors::SparseVector{Float64, Int}
     subnetworks::Dict{Int64, Vector{Int64}}
+    independent_ref::Set{Int}
     bus_active_constant_I::Vector{Float64}
     bus_reactive_constant_I::Vector{Float64}
     bus_active_constant_Z::Vector{Float64}
@@ -44,7 +46,7 @@ J(time_step)  # Updates the Jacobian matrix Jv
 """
 function (J::ACPowerFlowJacobian)(time_step::Int64)
     _update_jacobian_matrix_values!(J.Jv, J.data, time_step, J.diag_elements,
-        J.bus_slack_participation_factors, J.subnetworks,
+        J.bus_slack_participation_factors, J.subnetworks, J.independent_ref,
         J.bus_active_constant_I, J.bus_reactive_constant_I,
         J.bus_active_constant_Z, J.bus_reactive_constant_Z)
     return
@@ -76,7 +78,7 @@ function (J::ACPowerFlowJacobian)(
     time_step::Int64,
 )
     _update_jacobian_matrix_values!(J.Jv, J.data, time_step, J.diag_elements,
-        J.bus_slack_participation_factors, J.subnetworks,
+        J.bus_slack_participation_factors, J.subnetworks, J.independent_ref,
         J.bus_active_constant_I, J.bus_reactive_constant_I,
         J.bus_active_constant_Z, J.bus_reactive_constant_Z)
     copyto!(Jv, J.Jv)
@@ -108,14 +110,14 @@ J.Jv  # Access the Jacobian matrix stored internally in J.
 # Memoize the expensive Jacobian sparse-structure build (~3.2 MB on 2000 buses) so it is built
 # once and reused across the Q-limit inner loop and repeated PCM solves. The structure is
 # invariant under the PV→PQ flips that drive the Q-limit loop (colptr/rowval verified byte-identical
-# across a flip); the cache key is the network-matrix identity + slack nonzero pattern, so a
-# distributed-slack participant drop correctly rebuilds. Returns a full `copy` so each
-# `ACPowerFlowJacobian` owns a fresh mutable buffer, or `nothing` to signal a rebuild. Lives in its
-# own `data.ac_jacobian_structure_cache` field ([`ACJacobianStructureCache`](@ref)) so it never
-# collides with the FastDecoupled/DC caches in `data.solver_cache[]`.
-_reuse_ac_jac_structure(::Nothing, matrix, nzind) = nothing
-_reuse_ac_jac_structure(e::ACJacobianStructureCache, matrix, nzind) =
-    if e.matrix === matrix && e.nzind == nzind
+# across a flip); the cache key is the network-matrix identity + slack nonzero pattern + area
+# interchange data, so a distributed-slack participant drop correctly rebuilds. Returns a full `copy`
+# so each `ACPowerFlowJacobian` owns a fresh mutable buffer, or `nothing` to signal a rebuild. Lives
+# in its own `data.ac_jacobian_structure_cache` field ([`ACJacobianStructureCache`](@ref)) so it
+# never collides with the FastDecoupled/DC caches in `data.solver_cache[]`.
+_reuse_ac_jac_structure(::Nothing, matrix, nzind, area_data) = nothing
+_reuse_ac_jac_structure(e::ACJacobianStructureCache, matrix, nzind, area_data) =
+    if e.matrix === matrix && e.nzind == nzind && e.area_data === area_data
         copy(e.structure)
     else
         nothing
@@ -129,12 +131,17 @@ function _get_or_build_jacobian_structure(
 )
     nzind = SparseArrays.nonzeroinds(slack_factors)
     reused = _reuse_ac_jac_structure(
-        data.ac_jacobian_structure_cache[], data.power_network_matrix, nzind)
+        data.ac_jacobian_structure_cache[], data.power_network_matrix, nzind,
+        data.area_interchange)
     isnothing(reused) || return reused
     Jv0 = _create_jacobian_matrix_structure(data, slack_factors, subnetworks, time_step)
-    # Cache a pristine copy; `Jv0` is about to be mutated by the Newton loop.
+    # Cache a pristine copy; `Jv0` is about to be mutated by the Newton loop. `area_data`
+    # is stored by IDENTITY (not copied) — a rebuilt `PowerFlowData` gets a fresh
+    # `AreaInterchangeData`, forcing a rebuild; a Q-limit flip keeps the same object, so
+    # reuse still works.
     data.ac_jacobian_structure_cache[] =
-        ACJacobianStructureCache(data.power_network_matrix, copy(nzind), copy(Jv0))
+        ACJacobianStructureCache(
+            data.power_network_matrix, copy(nzind), copy(Jv0), data.area_interchange)
     return Jv0
 end
 
@@ -154,6 +161,7 @@ function ACPowerFlowJacobian(
         MVector{4, Float64}(undef),
         residual.bus_slack_participation_factors,
         residual.subnetworks,
+        _multi_swing_ref_indices(residual.data.bus_type, residual.subnetworks, time_step),
         residual.bus_active_constant_I,
         residual.bus_reactive_constant_I,
         residual.bus_active_constant_Z,
@@ -487,6 +495,7 @@ function _create_jacobian_matrix_structure(
 
     _create_jacobian_matrix_structure_lcc(data, rows, columns, values, num_buses)
     _create_jacobian_matrix_structure_vsc(data, rows, columns, values, num_buses)
+    _create_jacobian_matrix_structure_area(data, rows, columns, values)
     Jv0 = SparseArrays.sparse(rows, columns, values)
     return Jv0
 end
@@ -825,6 +834,22 @@ function _set_entries_for_lcc(data::ACPowerFlowData,
     return
 end
 
+"""Bus indices of REF buses sharing an island with another REF (multi-swing). Each
+self-balances its own P-slot (`∂F_P/∂x[2i−1] = −1`) instead of the distributed island
+scalar; single-swing islands are excluded and keep the distributed-slack path."""
+function _multi_swing_ref_indices(
+    bus_type::AbstractMatrix{PSY.ACBusTypes},
+    subnetworks::Dict{Int64, Vector{Int64}},
+    time_step::Int64,
+)
+    independent = Set{Int}()
+    for subnetwork_buses in values(subnetworks)
+        refs = filter(ix -> bus_type[ix, time_step] == PSY.ACBusTypes.REF, subnetwork_buses)
+        length(refs) > 1 && union!(independent, refs)
+    end
+    return independent
+end
+
 """Used to update Jv based on the bus voltages, angles, etc. in data."""
 function _update_jacobian_matrix_values!(
     Jv::SparseArrays.SparseMatrixCSC{Float64, J_INDEX_TYPE},
@@ -833,6 +858,7 @@ function _update_jacobian_matrix_values!(
     diag_elements::MVector{4, Float64},
     bus_slack_participation_factors::SparseVector{Float64, Int},
     subnetworks::Dict{Int64, Vector{Int64}},
+    independent_ref::Set{Int},
     bus_active_constant_I::Vector{Float64},
     bus_reactive_constant_I::Vector{Float64},
     bus_active_constant_Z::Vector{Float64},
@@ -922,7 +948,13 @@ function _update_jacobian_matrix_values!(
             Jv[row_from_p, col_from_va] = diag_elements[1]  # ∂P∂θ_from
             Jv[row_from_q, col_from_va] = diag_elements[2]  # ∂Q∂θ_from
         elseif data.bus_type[bus_from, time_step] == PSY.ACBusTypes.REF
-            Jv[row_from_p, col_from_vm] = -bus_slack_participation_factors[bus_from]
+            if bus_from in independent_ref
+                # Multi-swing island: this swing self-balances at its own P-slot, so
+                # ∂F_P/∂x[2i−1] = −1 (not the distributed −c_ref).
+                Jv[row_from_p, col_from_vm] = -1.0
+            else
+                Jv[row_from_p, col_from_vm] = -bus_slack_participation_factors[bus_from]
+            end
             Jv[row_from_q, col_from_va] = -1.0
         end
     end
@@ -931,6 +963,10 @@ function _update_jacobian_matrix_values!(
     # REF bus), the active power residual depends on the REF bus state variable
     # x[2*ref-1] through the slack distribution: ∂F_P_k/∂x[2*ref-1] = -c_k.
     for (ref_bus, subnetwork_buses) in subnetworks
+        # Multi-swing island: each swing self-balances at its own P-slot (handled in the
+        # per-bus diagonal fill above); there is no single distributed scalar to couple, so
+        # skip the cross-terms entirely.
+        ref_bus in independent_ref && continue
         col_ref = 2 * ref_bus - 1
         for bus_k in subnetwork_buses
             bus_k == ref_bus && continue
@@ -942,6 +978,7 @@ function _update_jacobian_matrix_values!(
 
     _set_entries_for_lcc(data, Jv, num_buses, time_step)
     _set_entries_for_vsc(data, Jv, num_buses, time_step)
+    _set_entries_for_area(data, Jv, time_step)
     return
 end
 

@@ -718,7 +718,7 @@ function write_power_flow_solution!(
             bus = PSY.get_component(PSY.ACBus, sys, bus_name)
             ix = bus_lookup[bus_number]
             bustype = data.bus_type[ix, time_step] # may not be the same as bus.bustype!
-            if bustype != PSY.get_bustype(bus)
+            if _bustype_write_back_needed(PSY.get_bustype(bus), bustype)
                 @warn "Changing system bus type at bus $(PSY.get_name(bus)) to match " *
                       "power flow bus type." maxlog = PF_MAX_LOG
                 PSY.set_bustype!(bus, bustype)
@@ -878,7 +878,7 @@ function write_power_flow_solution!(
         bus = PSY.get_component(PSY.ACBus, sys, bus_name)
         ix = bus_lookup[bus_number]
         bustype = data.bus_type[ix, time_step]
-        if bustype != PSY.get_bustype(bus)
+        if _bustype_write_back_needed(PSY.get_bustype(bus), bustype)
             @warn "Changing system bus type at bus $(PSY.get_name(bus)) to match " *
                   "power flow bus type." maxlog = PF_MAX_LOG
             PSY.set_bustype!(bus, bustype)
@@ -1001,6 +1001,107 @@ empty_mtdc_line_results() = DataFrames.DataFrame(;
     dc_current = Float64[],
     P_losses = Float64[],
 )
+
+empty_area_interchange_results() = DataFrames.DataFrame(;
+    area = String[],
+    ni_solved = Float64[],
+    pdes = Float64[],
+    delta_p = Float64[],
+    schedule_status = Symbol[],
+    beyond_limits = Bool[],
+)
+
+"""
+    _area_beyond_limits(sys, bus, p_bus_effective) -> Bool
+
+Whether `p_bus_effective` (pu, the solved slack-bus injection) exceeds the in-service
+machines' `active_power_limits` at `bus` — flag only, never clamp. A slack bus with no
+in-service source returns `false` rather than throwing on an empty `sum`.
+
+`p_bus_effective` is NOT `bus_active_power_injections` directly. `_setpq` refreshes that
+field on every residual call, so it already carries this bus's distributed-slack share
+(`slack_scalar * c_k`) — but deliberately NOT `ΔP_a`, which the residual applies straight
+to `F` to stay exactly-once across a PV->PQ flip. The caller must therefore add the area's
+converged `ΔP_a`, and only that, to get the machine's full solved output.
+"""
+function _area_beyond_limits(
+    sys::PSY.System,
+    bus::PSY.ACBus,
+    p_bus_effective::Float64,
+)
+    devices =
+        collect(
+            PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys),
+        )
+    isempty(devices) && return false
+    limits = get_active_power_limits_for_power_flow.(devices)
+    p_max = sum(l.max for l in limits)
+    p_min = sum(l.min for l in limits)
+    return !(p_min - BOUNDS_TOLERANCE <= p_bus_effective <= p_max + BOUNDS_TOLERANCE)
+end
+
+"""
+    area_interchange_results_dataframe(sys, data, time_step) -> DataFrame
+
+Per-controlled-area results row: net interchange achieved vs. targeted, the converged
+`ΔP_a`, whether the schedule was `:enforced` or `:relaxed` by the greedy relax loop, and
+whether the slack bus's TOTAL solved output (distributed-slack share + `ΔP_a`) fits its
+machines' limits. One row per area enrolled at construction (`pristine_areas`); relaxed
+rows report `delta_p = 0.0`. `ni_solved` is recomputed from the tie-flow kernels against
+the pristine AC and DC tie lists (`_area_net_interchange`), not trusted off a stale
+residual row, so it is correct for a relaxed area too; `ni_solved - pdes` is that area's
+infeasibility certificate. An enforced row's `delta_p` reads `pristine_delta_p` (never the
+WORKING `aid.delta_p`, which reflects whatever time step last relaxed on this `data`).
+Powers in MW.
+"""
+function area_interchange_results_dataframe(
+    sys::PSY.System,
+    data::ACPowerFlowData,
+    time_step::Int,
+)
+    aid = data.area_interchange
+    isempty(aid.pristine_areas) && return empty_area_interchange_results()
+
+    sys_basepower = PSY.get_base_power(sys)
+    relaxed_names =
+        Set(r.name for r in get(aid.relaxed, time_step, RelaxedAreaRecord[]))
+    bus_axis = PNM.get_bus_axis(data.power_network_matrix)
+    bus_of_number = Dict{Int, PSY.ACBus}(
+        PSY.get_number(b) => b for b in PSY.get_components(PSY.ACBus, sys)
+    )
+
+    df = empty_area_interchange_results()
+    for area in aid.pristine_areas
+        ni_solved = _area_net_interchange(
+            aid.pristine_ties, aid.pristine_dc_ties, area.tail_ix, data, time_step,
+        )
+        schedule_status = :enforced
+        delta_p_pu = 0.0
+        if area.name in relaxed_names
+            schedule_status = :relaxed
+        else
+            delta_p_pu = aid.pristine_delta_p[area.tail_ix, time_step]
+        end
+        bus = bus_of_number[bus_axis[area.slack_bus_ix]]
+        # The field already includes this bus's distributed-slack share; `delta_p_pu` is the
+        # only missing term (0.0 for a relaxed area). See `_area_beyond_limits`'s docstring.
+        p_bus_effective =
+            data.bus_active_power_injections[area.slack_bus_ix, time_step] + delta_p_pu
+        beyond_limits = _area_beyond_limits(sys, bus, p_bus_effective)
+        push!(
+            df,
+            (
+                area = area.name,
+                ni_solved = sys_basepower * ni_solved,
+                pdes = sys_basepower * area.pdes,
+                delta_p = sys_basepower * delta_p_pu,
+                schedule_status = schedule_status,
+                beyond_limits = beyond_limits,
+            ),
+        )
+    end
+    return df
+end
 
 # Point-to-point `TwoTerminalVSCLine` results, one row per line. Mirrors the dcn→component mapping
 # in `_write_vsc_line_solution!`: a line is the DC branch joining its two point-to-point nodes.
@@ -1347,6 +1448,7 @@ function _allocate_results_data(
         "vsc_results" => empty_vsc_results(),
         "mtdc_results" => empty_mtdc_results(),
         "mtdc_line_results" => empty_mtdc_line_results(),
+        "area_interchange_results" => empty_area_interchange_results(),
     )
 end
 
@@ -1782,6 +1884,8 @@ function write_results(
         time_step,
     )
     _add_vsc_results!(results, sys, data, PSY.get_base_power(sys), time_step)
+    results["area_interchange_results"] =
+        area_interchange_results_dataframe(sys, data, time_step)
     return results
 end
 
