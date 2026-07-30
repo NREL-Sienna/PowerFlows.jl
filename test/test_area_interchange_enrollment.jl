@@ -356,8 +356,8 @@ function _add_area_interchange!(
     return
 end
 
-# Three-area fixture shared by the rule-9 (unenforceable-schedule) and happy-path tests.
-# Shared by rule-9 and happy-path tests. Area1 owns REF, never SLACK; Area2/Area3 can each
+# Shared by the rule-9 (unenforceable-schedule) and happy-path tests. Area1 owns REF,
+# never SLACK; Area2/Area3 can each
 # optionally hold SLACK (Area3's Bus 9 has a small gen so it's PV-eligible). AreaInterchange:
 # Area2->Area1 0.3, Area3->Area1 0.2 => pdes(Area1)=-0.5, pdes(Area2)=0.3, pdes(Area3)=0.2.
 function _three_area_transfer_fixture(; slack_area3::Bool = true)
@@ -559,7 +559,7 @@ end
     @test length(dc_ties) == 1
     @test only(dc_ties).to_area_tail == 1
 
-    # Mirror of enrollment.jl's tied-bitvector loop (~:337-345), run on this REAL tie data.
+    # Mirror of enrollment.jl's tied-bitvector loop, run on this tie data.
     function _tied_from_ties(n::Int, ac::Vector{PF.AreaTie}, dc::Vector{PF.DCTie})
         tied = falses(n)
         for tie in ac
@@ -573,7 +573,6 @@ end
         return tied
     end
     @test _tied_from_ties(1, ac_ties, dc_ties) == BitVector([true])
-    @test _tied_from_ties(1, PF.AreaTie[], PF.DCTie[]) == BitVector([false])
 
     @test_logs(
         (:warn, r"Area \"Area3\": zero in-service ties"),

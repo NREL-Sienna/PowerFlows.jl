@@ -40,8 +40,8 @@ function _tie_metered_active_power_partials(
 end
 
 # Structural slot for one non-REF tie endpoint bus at area row `row`: BOTH state columns
-# (`2b-1`, `2b`), stamped unconditionally so the pattern is Q-limit-flip-invariant (mirrors the
-# bus-block convention, `ac_power_flow_jacobian.jl` ~:228-261) — numeric fill only writes the
+# (`2b-1`, `2b`), stamped unconditionally so the pattern is Q-limit-flip-invariant (mirrors
+# `_create_jacobian_matrix_structure`'s bus-block convention) — numeric fill only writes the
 # column(s) valid for the endpoint's CURRENT bus type. A REF endpoint's `(2b-1, 2b)` slots hold
 # (P_gen, Q_gen), not (Vm, θ); `P_m` doesn't depend on those (Vm/θ at REF are fixed parameters,
 # not state), so no structural entry is stamped there at all — this is bus-type-invariant since
@@ -68,7 +68,6 @@ PV<->PQ Q-limit flip of that bus — the row position never depends on bus type)
 endpoint bus of every tie incident to area a, via `_push_area_row_endpoint_cols!`. A tie with
 BOTH endpoints controlled (different areas) contributes to TWO area rows. `∂r_a/∂ΔP_a` is
 structurally ABSENT (zero diagonal border — KLU's full pivoting handles it; do not stamp).
-Zero work when no area is controlled.
 """
 function _create_jacobian_matrix_structure_area(
     data::ACPowerFlowData,
@@ -190,14 +189,9 @@ function _accumulate_area_row!(
     return
 end
 
-# --- DC-tie (LCC/VSC) cross-derivatives into the area-interchange rows ---
-# DC analogue of the AC-tie `_tie_metered_active_power_partials`/`_accumulate_area_row!` pair:
-# a DC tie's metered converter active power (`_dc_tie_metered_active_power`, area_residual.jl)
-# enters `NI_a` with the SAME ± tail routing as an AC tie, so its Jacobian entry is
-# `±∂P_conv/∂(DC state)` at the metered converter's state columns. LCC: `∂P/∂(Vm, tap, α)` at
-# the metered terminal (the three `lcc_utils.jl` kernels); VSC: `∂P_conv/∂P_c = −1`.
+# DC-tie (LCC/VSC) cross-derivatives into the area-interchange rows, same ± tail routing as
+# an AC tie. LCC: `∂P/∂(Vm, tap, α)` at the metered terminal; VSC: `∂P_conv/∂P_c = −1`.
 
-# Reduced-network AC bus index of a DC tie's metered terminal.
 function _dc_tie_metered_bus_ix(tie::DCTie)
     if tie.metered_from
         return tie.from_bus_ix
@@ -216,7 +210,6 @@ function _lcc_dc_tie_cols(tie::DCTie, num_buses::Int)
     return (vm_col, offset_lcc + 2, offset_lcc + 4)
 end
 
-# P_c state column for a VSC tie's metered converter.
 function _vsc_dc_tie_col(tie::DCTie, num_buses::Int, num_lcc::Int)
     if tie.metered_from
         conv = tie.from_conv_ix
@@ -353,13 +346,10 @@ function _accumulate_area_dc_row!(
 end
 
 """
-Fill the area-interchange tail Jacobian entries (polar) — spec §2's bordered block. Called
-each iteration after the bus, LCC, and VSC entries. Column ΔP_a is the constant `-1.0` at each
-area's slack-bus P-mismatch row (rewritten every call, matching the LCC angle-clamp-row
-convention — `ac_power_flow_jacobian.jl`'s `_set_entries_for_lcc`). Row r_a is filled by a
-zero-then-accumulate two-pass sweep over every tie (`_zero_area_row_endpoint_cols!` then
-`_accumulate_area_row!`) since a boundary bus of degree > 1 feeds the same area row from
-multiple ties. Zero work when no area is controlled.
+Fill the area-interchange tail Jacobian entries (polar). Column ΔP_a is the constant `-1.0`
+at each area's slack-bus P-mismatch row. Row r_a is filled by a zero-then-accumulate two-pass
+sweep over every tie, since a boundary bus of degree > 1 feeds the same area row from
+multiple ties.
 """
 function _set_entries_for_area(
     data::ACPowerFlowData,

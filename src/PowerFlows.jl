@@ -62,9 +62,9 @@ import Dates
 import LineSearches: BackTracking
 
 include("definitions.jl")
-# `AreaInterchangeData` is needed by `power_flow_types.jl`'s `ACJacobianStructureCache`
-# cache-key field, so this include moves ahead of the rest of the `area_interchange/`
-# family (which still needs `powersystems_utils.jl`/PowerFlowData.jl and stays below).
+# `AreaInterchangeData` must be defined before `power_flow_types.jl` references it in
+# `ACJacobianStructureCache`; the rest of the `area_interchange/` family has its own
+# later dependencies (LCC/VSC/discrete-control types, PowerFlowData).
 include("area_interchange/area_types.jl")
 include("branch_flow_results.jl")
 include("psi_utils.jl")

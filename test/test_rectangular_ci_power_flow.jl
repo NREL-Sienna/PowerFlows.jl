@@ -346,9 +346,9 @@ end
     @test all(isfinite, J.Jv.nzval)
 end
 
-# Synthetic two-swing island (CEII: built in code, not parsed). Mirrors
-# test_jacobian.jl's polar `_two_swing_system()`; duplicated locally since
-# the rect and mixed-CPB multi-swing work is split across disjoint test files.
+# Synthetic two-swing island, built in code. Mirrors test_jacobian.jl's polar
+# `_two_swing_system()`; duplicated locally since the rect and mixed-CPB
+# multi-swing work is split across disjoint test files.
 function _rect_two_swing_system()
     sys = System(100.0)
     b1 = _add_simple_bus!(sys, 1, PSY.ACBusTypes.REF, 230, 1.06, 0.0)

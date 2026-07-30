@@ -1,4 +1,4 @@
-# PSY >= 5.13 stopped coercing `ACBusTypes.SLACK` to REF in the `ACBus` constructor, so a
+# PSY 5.12.1 stopped coercing `ACBusTypes.SLACK` to REF in the `ACBus` constructor, so a
 # SLACK designation (PSS/E area-interchange ISW bus) now reaches PowerFlows intact. These
 # tests pin the three places that read the RAW `PSY.get_bustype` and so had to learn about it.
 

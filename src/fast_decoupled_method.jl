@@ -936,26 +936,28 @@ end
 #   ΔP_a_step = S \ g              (dense n_areas solve, negligible — n_areas is small)
 #   Δθ = u − W·ΔP_a_step
 #
-# `C` column a is the constant `−1.0` at area a's slack-bus pvpq row (the same `−1.0` the
-# Jacobian border stamps at `F[2·slack−1]`, `_set_entries_for_area`). `Dᵀ` row a is `∂r_a/∂θ`
+# `C` column a is `−1/V_slack` at area a's slack-bus pvpq row: the exact-Jacobian border
+# coupling is the constant `−1.0` at row `2·slack−1` (`_set_entries_for_area`), but the
+# row-scaled B′ space (rp = Rv_P/Vm) divides that row — and its coupling — by V_slack (see
+# the W-column comment in `_fd_area_substep!`). `Dᵀ` row a is `∂r_a/∂θ`
 # — the θ-part only of `_tie_metered_active_power_partials` at every tie endpoint incident to
 # area a, same `±σ` sign convention as `_accumulate_area_row!` (metered side `+1`, other side
 # `−1`); the |V| part is dropped (the FD approximation — the RESIDUAL `r_a` used to build `g`
 # is still the exact kernel, so the interchange target is met exactly at convergence; only the
 # STEP direction is FD-approximate). Both `[Δθ; ΔP_a_step]` are Newton STEPS under this
-# codebase's solve-then-negate convention (`_fd_decoupled_power_flow`'s file-header comment),
-# so BOTH are subtracted from the current state, mirroring the P half-step's `θ -= Δθ`.
+# codebase's solve-then-negate convention (the sign-convention banner above the half-step
+# helpers), so BOTH are subtracted from the current state, mirroring the P half-step's `θ -= Δθ`.
 # =====================================================================================
 
 """
     _fd_area_substep!(sv, cache, residual, data, time_step)
 
-Bordered-Schur area-interchange correction for the polar `:decoupled` loop (see the file-header
+Bordered-Schur area-interchange correction for the polar `:decoupled` loop (see the banner
 comment above for the full math): recompute the P-θ RHS `rp` at the CURRENT state (post half-
 steps / LCC-VSC substep — NOT the stale `rp` from the earlier P half-step, since Vm/θ have moved
 since then), solve the bordered system by Schur complement against the fixed `cache.fd.bp_cache`,
 update `θ` and the `ΔP_a` tail, then re-sync explicit rows and re-evaluate the residual (mirrors
-`_fd_lcc_substep!`/`_fd_vsc_substep!`'s contract exactly). Zero work when no area is controlled.
+`_fd_lcc_substep!`/`_fd_vsc_substep!`'s contract exactly).
 """
 function _fd_area_substep!(
     sv::StateVectorCache,

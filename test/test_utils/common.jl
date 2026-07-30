@@ -1600,8 +1600,7 @@ function _comprehensive_area_dc_fixture(; lcc_metered_end::String = "from")
 
     # LCC bus10<->bus11: angle limits retuned off _add_simple_lcc!'s defaults (rectifier min
     # 15deg, inverter min 20deg). _write_lcc_tail! pins alpha_r/alpha_i to the CONFIGURED
-    # .min angle unconditionally (verified via parameter sweep) -- no off-clamp point exists
-    # to tune into.
+    # .min angle unconditionally -- no off-clamp point exists to tune into.
     lcc = _add_simple_lcc!(sys, b10, b11, 0.05, 0.05, 0.08)
     PSY.set_rectifier_delay_angle_limits!(lcc, (min = deg2rad(15.0), max = π / 2))
     PSY.set_inverter_extinction_angle_limits!(lcc, (min = deg2rad(20.0), max = π / 2))

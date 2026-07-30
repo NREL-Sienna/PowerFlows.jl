@@ -8,17 +8,10 @@
 
 Read `tie`'s corridor admittances from the aggregate Y-bus 2×2 block through
 `tie.nz_offsets` (never cached — a controlled tap mutates `ybus_nzval` in place, so this must
-be re-read every evaluation). Off-diagonal reads (`o[2]`/`o[3]`) are the corridor's own
-mutual admittance already (only corridor members contribute there) and are used as-is. The
-DIAGONAL reads (`o[1]`/`o[4]`) are NOT the corridor's own self-admittance: a nodal Y-bus
-diagonal sums every branch/shunt incident at that bus. `tie.diag_pollution` is the
-enrollment-time-cached `(ybus_diag − Σ_corridor_members y11/y22)` correction subtracted here
-to recover the corridor's own self-term — see `AreaTie`'s docstring for the derivation.
-
-Shared, concrete (`NTuple{8, Float64}`), non-allocating so both the residual kernel
-(`_tie_metered_active_power`) and the Jacobian partials
-(`_tie_metered_active_power_partials`, `area_jacobian.jl`) always differentiate the exact
-same values — the corrected DIAGONAL read must never be duplicated between the two.
+be re-read every evaluation). The DIAGONAL reads (`o[1]`/`o[4]`) subtract the cached
+`tie.diag_pollution` correction to recover the corridor's own self-term — see `AreaTie`'s
+docstring for the derivation. One shared read so the residual kernel and the Jacobian
+partials always differentiate identical values.
 """
 function _tie_admittances(
     tie::AreaTie,
@@ -68,8 +61,7 @@ Active power flowing out of `tie`'s METERED end over the DC link — the DC-line
 `_tie_metered_active_power`. For an LCC the metered terminal's `_lcc_ac_active_powers` value
 is already "power into the DC link" signed (rectifier `from` `> 0`, inverter `to` `< 0`), so
 it is returned as-is. For a VSC the converter's `P_c` state is bus-injection signed (into the
-AC bus), so power leaving the area is its negation. Dispatch is on `tie.kind` by equality (see
-`DCTie`), never `isa`.
+AC bus), so power leaving the area is its negation.
 """
 function _dc_tie_metered_active_power(
     data::ACPowerFlowData,
@@ -97,14 +89,10 @@ end
     _set_area_tail_residuals!(F, x, data, area_off, time_step)
 
 Write the area-interchange residual rows `F[area_off + a] = NI_a - PDES_a` for every
-enrolled controlled area. Accumulates each tie's metered active power into
-`data.area_interchange.ni_scratch` (pre-allocated, zeroed here — no per-iteration
-allocation): the metered side's controlled area (if any) gets `+P_m`, the other side's
-(if controlled) gets `-P_m` (spec §2 sign convention); an uncontrolled side
-(`iszero(tail)`) is skipped. `x` is accepted for interface parity with the other tail
-writers (`_set_lcc_tail_residuals!`, `_set_vsc_tail_residuals!`); the polar formulation
-reads the current iterate off `data.bus_magnitude`/`data.bus_angles`, already updated
-in place earlier in `_update_residual_values!`.
+enrolled controlled area. Sign convention: the metered side's controlled area (if any)
+gets `+P_m`, the other side's (if controlled) gets `-P_m`. `x` is unused: the polar
+formulation reads the current iterate off `data.bus_magnitude`/`data.bus_angles`,
+already updated in place earlier in `_update_residual_values!`.
 """
 function _set_area_tail_residuals!(
     F::Vector{Float64},
@@ -154,22 +142,16 @@ function _set_area_tail_residuals!(
     return
 end
 
-# ---------------------------------------------------------------------------
-# Greedy relax loop mechanism. The loop control
-# flow itself lives at the driver seam (`solve_ac_power_flow.jl`'s
-# `_ac_power_flow_with_area_relax!`); this section supplies the pure field-surgery and
-# NI-recomputation primitives it calls.
-# ---------------------------------------------------------------------------
+# Greedy relax loop primitives; the loop control flow lives at the driver seam
+# (`_ac_power_flow_with_area_relax!` in `solve_ac_power_flow.jl`).
 
 """
     _area_residual_gaps(data, time_step) -> Vector{Float64}
 
-`r_a = NI_a - PDES_a` for every CURRENTLY enrolled (working) controlled area, evaluated at
-`data`'s current bus state (`data.bus_magnitude`/`data.bus_angles` for `time_step`) — the
-SAME kernel `_set_area_tail_residuals!` uses inside the Newton residual, run here directly
-against a scratch vector sized to just the area tail (offset `0`) so it can be called
-standalone after a solve returns, converged or not. `x` is unused by the polar kernel (see
-`_set_area_tail_residuals!`'s docstring), so an empty placeholder is passed.
+`r_a = NI_a - PDES_a` for every CURRENTLY enrolled (working) controlled area — the SAME
+kernel `_set_area_tail_residuals!` uses inside the Newton residual, run against a scratch
+vector sized to just the area tail (offset `0`) so it can be called standalone after a
+solve returns, converged or not.
 """
 function _area_residual_gaps(data::ACPowerFlowData, time_step::Int)
     n = n_controlled_areas(data)
@@ -235,19 +217,16 @@ end
     _ensure_pristine_area_set!(data, time_step)
 
 Reset the WORKING `areas`/`ties`/`dc_ties`/`ni_scratch`/`delta_p` to the full PRISTINE
-enrollment before a time step's own (potential) greedy relax loop runs, undoing any
-de-enrollment a PREVIOUS time step made on this same `data` object (relax decisions are
-per time step, never permanent). A no-op — no cache churn — when the working
-set already matches the pristine count (the common case: no relax has ever happened on this
-`data`).
+enrollment before a time step's greedy relax loop runs — relax decisions are per time
+step, never permanent.
 
 Explicitly invalidates the Jacobian-structure and NR symbolic-factorization caches
-(`data.ac_jacobian_structure_cache`/`data.polar_nr_cache`): both are keyed on
-`data.area_interchange`/`data.power_network_matrix` IDENTITY, never on its CONTENTS, so a
-tail-size change made by mutating the SAME `AreaInterchangeData` object in place — the only
-option, since `PowerFlowData` is immutable and `data.area_interchange` itself can't be
-reassigned (see `initialize_power_flow_data.jl`) — would otherwise be invisible to the
-identity check and silently reuse a wrong-sized cached structure/factorization.
+(`data.ac_jacobian_structure_cache`/`data.polar_nr_cache`): neither cache key sees a
+tail-size change made by mutating the SAME `AreaInterchangeData` object in place (the
+structure cache holds `area_data` by IDENTITY; the NR cache keys only on the network
+matrix, slack pattern, and backend type), so without this reset a wrong-sized cached
+structure/factorization would be silently reused. In-place mutation is the only option:
+`PowerFlowData` is immutable, so `data.area_interchange` itself can't be reassigned.
 """
 function _ensure_pristine_area_set!(data::ACPowerFlowData, time_step::Int)
     aid = data.area_interchange
@@ -297,12 +276,9 @@ rebuilt at the new (smaller) size with each survivor's row carried over from its
 `tail_ix`, for every time step column (so OTHER time steps' already-converged mirrors are
 not corrupted by a de-enrollment that only THIS time step's relax loop decided on).
 
-Mutates `data.area_interchange`'s FIELDS in place (`PowerFlowData` is immutable, so the
-field itself can't be reassigned — see `initialize_power_flow_data.jl`) and explicitly
-invalidates the Jacobian-structure/NR-factorization caches for the identity-vs-contents
-reason documented on `_ensure_pristine_area_set!`. Returns the dropped `ControlledArea`
-(its ORIGINAL `pdes` survives on it, unaffected by the renumbering) for the caller to
-report/record.
+Invalidates the Jacobian-structure/NR-factorization caches for the reason documented on
+`_ensure_pristine_area_set!`. The dropped `ControlledArea`'s ORIGINAL `pdes` survives on
+it, unaffected by the renumbering.
 """
 function _deenroll_area!(data::ACPowerFlowData, drop_tail_ix::Int)
     aid = data.area_interchange
@@ -358,9 +334,7 @@ end
 Solve-end diagnostic: `@warn` for any CURRENTLY enrolled (working) area
 whose achieved NI still misses its target by more than `data.area_interchange.tolerance`
 after a converged solve. Defensive — the area residual row is driven to ~0 by the same
-Newton tolerance as every other row, so this should not normally fire — as opposed to the
-PRIMARY infeasibility signal, which is the greedy relax loop's own per-de-enrollment
-`@error` (`_ac_power_flow_with_area_relax!` in `solve_ac_power_flow.jl`).
+Newton tolerance as every other row, so this should not normally fire.
 """
 function _warn_area_violations(data::ACPowerFlowData, time_step::Int)
     aid = data.area_interchange

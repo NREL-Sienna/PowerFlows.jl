@@ -464,31 +464,6 @@ function _find_subnetworks_for_reference_buses(
 end
 
 """
-    _reject_multi_swing_islands(subnetworks, bus_type, formulation)
-
-Throw if any island has more than one swing (REF) bus. Guards formulations without
-independent-per-swing slack support (currently only RobustHomotopy) so they fail loudly
-instead of solving a mis-specified problem.
-"""
-function _reject_multi_swing_islands(
-    subnetworks::Dict{Int, Vector{Int}},
-    bus_type::AbstractVector{PSY.ACBusTypes},
-    formulation::String,
-)
-    for subnetwork_buses in values(subnetworks)
-        n_ref = count(ix -> bus_type[ix] == PSY.ACBusTypes.REF, subnetwork_buses)
-        n_ref > 1 && throw(
-            ArgumentError(
-                "$formulation does not support multiple swing (REF) buses in one island " *
-                "($n_ref found); use the polar Newton-Raphson / Trust-Region / Fast-Decoupled " *
-                "formulation for multi-swing systems.",
-            ),
-        )
-    end
-    return
-end
-
-"""
     _build_bus_slack_participation_factors(data, bus_type, subnetworks, time_step)
 
 Collect the per-bus generator-slack-participation factors (REF and PV buses

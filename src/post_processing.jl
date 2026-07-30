@@ -1045,13 +1045,14 @@ end
 
 Per-controlled-area results row: net interchange achieved vs. targeted, the converged
 `ΔP_a`, whether the schedule was `:enforced` or `:relaxed` by the greedy relax loop, and
-whether `ΔP_a` fits the slack bus's headroom. One row per area enrolled at construction
-(`pristine_areas`); relaxed rows report `delta_p = 0.0`. `ni_solved` is recomputed from
-the tie-flow kernels against the pristine AC and DC tie lists (`_area_net_interchange`),
-not trusted off a stale residual row, so it is correct for a relaxed area too;
-`ni_solved - pdes` is that area's infeasibility certificate. An enforced row's `delta_p`
-reads `pristine_delta_p` (never the WORKING `aid.delta_p`, which reflects whatever time
-step last relaxed on this `data`). Powers in MW/MVAr.
+whether the slack bus's TOTAL solved output (distributed-slack share + `ΔP_a`) fits its
+machines' limits. One row per area enrolled at construction (`pristine_areas`); relaxed
+rows report `delta_p = 0.0`. `ni_solved` is recomputed from the tie-flow kernels against
+the pristine AC and DC tie lists (`_area_net_interchange`), not trusted off a stale
+residual row, so it is correct for a relaxed area too; `ni_solved - pdes` is that area's
+infeasibility certificate. An enforced row's `delta_p` reads `pristine_delta_p` (never the
+WORKING `aid.delta_p`, which reflects whatever time step last relaxed on this `data`).
+Powers in MW.
 """
 function area_interchange_results_dataframe(
     sys::PSY.System,

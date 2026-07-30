@@ -302,7 +302,7 @@ end
     @test PF.n_controlled_areas(data) == 2
 end
 
-# Task 7: `ACJacobianStructureCache`'s key now includes `area_data` BY IDENTITY (spec §5.4).
+# `ACJacobianStructureCache`'s key includes `area_data` BY IDENTITY.
 # A Q-limit flip / repeated solve on the SAME `PowerFlowData` keeps the same
 # `AreaInterchangeData` object, so the structure is built once and reused; a freshly
 # constructed `PowerFlowData` enrolls a NEW `AreaInterchangeData` object even against the
@@ -581,7 +581,7 @@ end
     @test cache.bp_factor_count == 1
 
     # Regression: a pure-AC FD solve (no controlled areas) is unaffected by the area-border
-    # scratch/substep — mirrors the WP5b factor-once pattern in test_fast_decoupled.jl.
+    # scratch/substep — mirrors the factor-once pattern in test_fast_decoupled.jl.
     sys_ac = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     pf_ac = ACPolarPowerFlow{FastDecoupledACPowerFlow{PF.FDDecoupled, PF.FDSchemeXB}}()
     data_ac = PowerFlowData(pf_ac, sys_ac)
@@ -621,13 +621,10 @@ end
         @test isapprox(ni[area.tail_ix], area.pdes; atol = 1e-6)
     end
 
-    # Fix wave 8b, Finding 2: prove guard 6 (slack-absorption weight cap, `w_a > 0.9`
-    # de-enrolls the area) did NOT fire for either enrolled area -- both areas being
-    # enrolled (`n_controlled_areas == 2`, already checked above) is necessary but not
-    # sufficient, since an area could be de-enrolled for an UNRELATED reason while a
-    # comment merely asserts guard 6 specifically stayed quiet. Recompute each enrolled
-    # area's raw `w_a` the same way guard 6 does (`_area_slack_candidate` in
-    # `enrollment.jl`) and assert it explicitly.
+    # Assert each enrolled area's raw `w_a` stays under guard 6's slack-absorption cap
+    # (`w_a > 0.9` de-enrolls), recomputed the same way `_area_slack_candidate` in
+    # `enrollment.jl` does -- `n_controlled_areas == 2` alone can't tell WHICH guard
+    # stayed quiet.
     bus_lookup = PF.get_bus_lookup(data)
     nrd = PF.get_network_reduction_data(data)
     reverse_bus_search_map = PNM.get_reverse_bus_search_map(nrd)
@@ -991,14 +988,13 @@ end
     @test PF.n_controlled_areas(data) == 2
 
     # atol = 1e-5, not the file-standard 1e-6: this fixture's ComplexF32 Y-bus rounding
-    # floor (see the Task 8 header note) lands at ~1.1e-6 for the weak tie, just above it.
+    # floor lands at ~1.1e-6 for the weak tie, just above it.
     ni = _oracle_ni_by_tail(sys, data, data.area_interchange.ties, 2)
     for area in data.area_interchange.areas
         @test isapprox(ni[area.tail_ix], area.pdes; atol = 1e-5)
     end
 
-    # The area dataframe must build without error and show BOTH areas :enforced for ts=2 --
-    # this is exactly the KeyError path Finding 1's guard fix makes unreachable.
+    # The area dataframe must build without error and show BOTH areas :enforced for ts=2.
     df2 = PF.area_interchange_results_dataframe(sys, data, 2)
     @test nrow(df2) == 2
     @test all(==(:enforced), df2.schedule_status)
@@ -1007,27 +1003,19 @@ end
     end
 end
 
-# Fix wave 11b, Finding 1 (CRITICAL): `area_interchange_results_dataframe` used to build
-# `working_tail_of` from the GLOBAL working `aid.areas`/`aid.delta_p` -- state that
-# `_deenroll_area!` mutates permanently for `data`'s lifetime, not scoped to the time step
-# that triggered the relax. A LATER time step's relax therefore corrupts a read-back of an
-# EARLIER, cleanly-enforced time step's row: `working_tail_of` no longer contains the name of
-# whatever area a later relax dropped, so the `:enforced` branch's
-# `aid.delta_p[working_tail_of[name], time_step]` throws `KeyError`. RED (pre-fix, verified
-# against the code before this fix): querying ts=1 (which enforced BOTH areas cleanly) after
-# simulating a ts=2 relax raises `KeyError("Area2")`. GREEN (post-fix): the `:enforced` branch
-# reads `aid.pristine_delta_p[area.tail_ix, time_step]` -- the persistent, PRISTINE-tail_ix,
-# per-time-step mirror `_sync_pristine_delta_p!` maintains -- so ts=1's row is immune to
-# whatever ts=2 did to the working set.
+# Regression: `area_interchange_results_dataframe` must read an :enforced row from
+# `aid.pristine_delta_p[area.tail_ix, time_step]` (the persistent per-time-step mirror
+# `_sync_pristine_delta_p!` maintains), never from the GLOBAL working `aid.areas`/`aid.delta_p`
+# that `_deenroll_area!` mutates for `data`'s whole lifetime -- otherwise a LATER time step's
+# relax corrupts the read-back of an EARLIER, cleanly-enforced step (KeyError on the dropped
+# area's name).
 #
-# The relax itself is driven directly through the same internal primitives
+# The relax is driven directly through the same internal primitives
 # `_ac_power_flow_with_area_relax!` uses (`_deenroll_area!`, `relaxed`, `_sync_pristine_delta_p!`)
 # rather than through a genuinely-infeasible schedule: `ControlledArea.pdes` and the network
 # topology are fixed for `data`'s whole lifetime, so a schedule infeasible enough to force a
 # real relax at ts=2 would be equally infeasible at ts=1, defeating the "ts=1 solves clean"
-# premise this regression needs. Driving the exact mutating seam directly is deterministic and
-# targets precisely the read-back bug, mirroring the existing multi-period tests' idiom of
-# calling `_ac_power_flow_with_area_relax!` (and friends) directly to reach a specific seam.
+# premise this regression needs.
 @testset "area interchange multi-period results read-back is immune to a later time step's relax" begin
     sys = _three_area_transfer_fixture(; slack_area3 = true)
     pf = ACPolarPowerFlow{NewtonRaphsonACPowerFlow}(;
@@ -1490,9 +1478,9 @@ end
     data = PowerFlowData(pf_lm, sys)
     @test PF.n_controlled_areas(data) == 2
 
-    # Regression, solver-agnostic: `_describe_residual_entry` used to assume every residual
-    # row past the bus block belonged to the LCC tail, throwing `BoundsError` whenever
-    # ‖F‖∞ landed on an area-interchange row. Fixed by adding an area-tail branch.
+    # Regression, solver-agnostic: `_describe_residual_entry` must handle area-interchange
+    # rows past the bus block, not assume they belong to the LCC tail (BoundsError whenever
+    # ‖F‖∞ landed on an area-interchange row).
     tl = Test.TestLogger(; min_level = Logging.Info)
     converged = Logging.with_logger(tl) do
         solve_power_flow!(data)
@@ -1846,17 +1834,19 @@ end
     ac_tail_pairs = sort([(t.from_area_tail, t.to_area_tail) for t in ac_ties])
     @test ac_tail_pairs == [(0, 1), (0, 1), (1, 0), (1, 2)]
 
-    # A DC tie's in-area terminal coinciding with that area's own slack bus can't
-    # double-count: `_lcc_dc_ties`/`_vsc_dc_ties` are driven purely by `bus_area_map`, never
-    # by `ControlledArea.slack_bus_ix`.
+    # Precondition for the slack-coincidence scenario (a tie terminating at an area's own
+    # slack bus): `_lcc_dc_ties`/`_vsc_dc_ties` are driven purely by `bus_area_map`, never
+    # by `ControlledArea.slack_bus_ix`; the NI-oracle tests cover no-double-counting.
     area2_slack_ix = only(
         a.slack_bus_ix for a in data_on.area_interchange.areas if a.name == "Area2")
-    @test ac_ties[1].to_bus_ix == area2_slack_ix
-    @test ac_ties[1].to_area_tail == 1
+    # Select by endpoint, never by position: tie order follows PSY component iteration and
+    # is not guaranteed (which is why the tail pairs above are sorted before comparison).
+    slack_terminating = filter(t -> t.to_bus_ix == area2_slack_ix, ac_ties)
+    @test !isempty(slack_terminating)
+    @test all(t -> t.to_area_tail == 1, slack_terminating)
 
     # Interior DC link (same-area both terminals) contributes NO tie. Force both terminals
-    # into the SAME tail via a synthetic `bus_area_map` rather than a second fixture (user
-    # directive: one fixture).
+    # into the SAME tail via a synthetic `bus_area_map` rather than a second fixture.
     removed_buses = PNM.get_removed_buses(nrd)
     same_area_map = Dict(lcc_from_ix => 1, lcc_to_ix => 1, vsc_from_ix => 1, vsc_to_ix => 1)
     @test isempty(PF._lcc_dc_ties(sys, data_on.lcc, removed_buses, same_area_map))
@@ -1957,8 +1947,7 @@ end
         end
 
         # Non-vacuity: the DC ties actually move a tracked area's NI, so the equality below
-        # genuinely exercises the new DC-tie residual term (RED without it: F omits the term
-        # while the oracle includes it).
+        # genuinely exercises the DC-tie residual term.
         @test maximum(abs, dc_only) > 1e-6
 
         for area in data.area_interchange.areas
@@ -2424,8 +2413,8 @@ end
 
     for area in data.area_interchange.pristine_areas
         # Non-vacuity: every controlled area in this fixture borders a DC tie, so the report
-        # can never pass vacuously -- if it changes to be false the fixture, not the test, is
-        # wrong (RED without the fix: `ni_solved` is off from the oracle by exactly this).
+        # can never pass vacuously -- if this stops holding the fixture, not the test, is
+        # wrong.
         @test abs(dc_only[area.tail_ix]) > 1e-3
         row = only(filter(:area => ==(area.name), df))
         @test isapprox(row.ni_solved, sys_basepower * ni[area.tail_ix]; atol = 1e-5)

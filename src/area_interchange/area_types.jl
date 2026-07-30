@@ -23,7 +23,7 @@ An AC branch whose endpoints straddle a controlled-area boundary (or touch one).
 
 # Fields
 - `from_bus_ix::Int`, `to_bus_ix::Int`: reduced-network bus indices.
-- `nz_offsets::NTuple{4, Int}`: Ybus `nzval` offsets `Y11,Y12,Y21,Y22` (`ControlledTap` device).
+- `nz_offsets::NTuple{4, Int}`: Ybus `nzval` offsets `Y11,Y12,Y21,Y22`.
 - `metered_from::Bool`: metered end is the `from` bus.
 - `from_area_tail::Int`: `tail_ix` of the controlled area owning the `from` bus; `0` = uncontrolled.
 - `to_area_tail::Int`: `tail_ix` of the controlled area owning the `to` bus; `0` = uncontrolled.
@@ -49,25 +49,19 @@ end
 
 """Which converter model backs a [`DCTie`](@ref). `Int8`-backed, mirroring `VSCControlMode`
 (`vsc_parameters.jl`): use-site code dispatches on it by equality (`tie.kind == DC_TIE_LCC`),
-never `isa`/`<:`, keeping `DCTie` a single concrete struct (`Vector{DCTie}` stays
-homogeneously typed, unlike an abstract small-type-hierarchy alternative)."""
+never `isa`/`<:`, keeping `DCTie` a single concrete struct."""
 @enum DCTieKind::Int8 DC_TIE_LCC = 1 DC_TIE_VSC = 2
 
 """
 A converter whose AC bus sits in one controlled area while its DC counterpart terminal sits
-in another — the DC-line analogue of `AreaTie`. Structurally mirrors `AreaTie`
-(`from_bus_ix`/`to_bus_ix`/`metered_from`/`from_area_tail`/`to_area_tail`) but carries
-converter identity instead of a Y-bus block: a DC converter's AC-side active-power injection
-(from `lcc_utils.jl`'s `P_lcc_from`/`P_lcc_to`, or a VSC converter's `P_c` tail state) is what
-enters `NI_a`, not a branch flow read off Ybus. Kept as its
-OWN type rather than an `AreaTie` overload because `nz_offsets`/`diag_pollution` are
-Ybus-block concepts with no DC-converter meaning.
+in another — the DC-line analogue of `AreaTie`, carrying converter identity instead of a
+Y-bus block: a DC converter's AC-side active-power injection (from `_lcc_ac_active_powers`,
+or a VSC converter's `P_c` tail state) is what enters `NI_a`, not a branch flow read off Ybus.
 
 Scope: `PSY.TwoTerminalLCCLine` and point-to-point `PSY.TwoTerminalVSCLine` only.
 `PSY.InterconnectingConverter` (multi-terminal DC) is NOT enumerated — pairing a converter
 with "the" other-area counterpart terminal is ambiguous on an N-terminal DC subnet (unlike a
-point-to-point line's unambiguous from/to) and needs its own union-find-style traversal; a
-documented gap, mirroring how series-GNE is deferred (see `docs/src/explanation/area_interchange.md`).
+point-to-point line's unambiguous from/to) and needs its own union-find-style traversal.
 
 # Fields
 - `kind::DCTieKind`: `DC_TIE_LCC` or `DC_TIE_VSC`.
@@ -135,33 +129,21 @@ Always present on [`PowerFlowData`](@ref) — empty vectors when control is off,
   `length(areas)`, reused every residual evaluation by `_set_area_tail_residuals!` (see
   `area_residual.jl`) to avoid a per-iteration allocation on the hot path.
 - `delta_p::Matrix{Float64}`: per-area, per-time-step `ΔP_a` mirror, sized
-  `(length(areas), n_time_steps)` — mirrors `DCNetwork.p_c`/`q_c`/`node_vdc`. Unlike
-  `ni_scratch` this is NOT reset every call — the ΔP<->P-balance coupling pass in
-  `_update_residual_values!` writes `delta_p[tail_ix, time_step] = x[area_off + tail_ix]`
-  on every residual evaluation (mirrors the LCC tap / `_read_vsc_state!` tail write-back),
-  so it always holds the last-evaluated ΔP_a for that time step. `update_state!` reads it
-  back, column-indexed by `time_step`, to seed a warm re-solve's `x0` — without this mirror
-  there is nowhere to recover a converged ΔP_a from between two top-level
-  `solve_power_flow!` calls on the same `data` (see
-  `state_indexing_helpers.jl`/`calculate_x0`). The per-time-step column keeps a multi-period
-  `data`'s time steps from contaminating each other's warm start.
+  `(length(areas), n_time_steps)`. Unlike `ni_scratch` this is NOT reset every call —
+  `_update_residual_values!` writes the last-evaluated `ΔP_a` into it on every residual
+  evaluation, and `update_state!` reads it back to seed a warm re-solve's `x0`; the
+  per-time-step column keeps a multi-period `data`'s warm starts independent.
 - `pristine_areas::Vector{ControlledArea}`, `pristine_ties::Vector{AreaTie}`,
-  `pristine_dc_ties::Vector{DCTie}`: the FULL enrolled set exactly as originally built by
-  `build_area_interchange_data`, kept forever alongside the (possibly shrunk) working fields
-  above. Greedy relax de-enrolls areas from the WORKING set
-  only, for the REST of the CURRENT time step's attempts; these pristine copies are never
-  mutated, so `_ensure_pristine_area_set!` (`area_residual.jl`) can reset the working set back
-  to full enrollment before the NEXT time step's own attempt — relax decisions are per time
-  step, never permanent for `data`'s lifetime. Also the only source left for computing a
-  relaxed area's achieved (floating) net interchange for the results table, since its tail is
-  translated to `0` (uncontrolled) out of the WORKING `ties` the moment it is de-enrolled.
+  `pristine_dc_ties::Vector{DCTie}`: the FULL enrolled set as originally built by
+  `build_area_interchange_data`, never mutated. Greedy relax shrinks only the WORKING set,
+  for the rest of the CURRENT time step's attempts; `_ensure_pristine_area_set!` resets the
+  working set from these before the next time step. Also the only source for a relaxed
+  area's achieved net interchange in the results table, since its tail is translated to `0`
+  out of the WORKING `ties` the moment it is de-enrolled.
 - `pristine_delta_p::Matrix{Float64}`: persistent, PRISTINE-`tail_ix`-indexed mirror of
-  `delta_p`, sized `(length(pristine_areas), n_time_steps)`. Unlike the working `delta_p`
-  (renumbered/shrunk by a de-enrollment), this one's row layout never changes, so it
-  survives across time steps regardless of which areas a PREVIOUS time step relaxed.
-  `_ensure_pristine_area_set!` reseeds a freshly-reset working `delta_p` from it;
-  `_sync_pristine_delta_p!` writes the working mirror back into it once a time step's
-  solve converges.
+  `delta_p` — its row layout never changes under de-enrollment renumbering, so it survives
+  across time steps. `_ensure_pristine_area_set!` reseeds the working `delta_p` from it;
+  `_sync_pristine_delta_p!` writes back into it once a time step's solve converges.
 - `relaxed::Dict{Int, Vector{RelaxedAreaRecord}}`: per-time-step record of areas relaxed
   away that time step (absent/empty = none), keyed by `time_step` so a multi-period
   `data`'s relax decisions stay independent.
@@ -180,7 +162,6 @@ mutable struct AreaInterchangeData
     relaxed::Dict{Int, Vector{RelaxedAreaRecord}}
 end
 
-"""Number of controlled areas enrolled in `aid`."""
 n_controlled_areas(aid::AreaInterchangeData) = length(aid.areas)
 
 """Length of the area-interchange state/residual tail: one `ΔP_a` per enrolled area."""

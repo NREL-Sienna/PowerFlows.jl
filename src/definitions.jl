@@ -163,8 +163,8 @@ const ITypes = SparseArrays.CHOLMOD.ITypes
 # force arc names to be unique when reporting power flow results.
 const FORCE_UNIQUE_NAMES = true
 
-# SLACK is intentionally absent: `_normalize_slack_bustype` resolves it to PV/PQ (or
-# throws) at ingestion, so a KeyError here means a SLACK bus leaked past normalization.
+# SLACK is intentionally absent: `_normalize_slack_bustype` resolves it to PV/PQ at
+# ingestion, so a KeyError here means a SLACK bus leaked past normalization.
 const BUS_TYPE_PRIORITIES = Dict{PSY.ACBusTypes, Int}(
     PSY.ACBusTypes.REF => 3,
     PSY.ACBusTypes.PV => 2,

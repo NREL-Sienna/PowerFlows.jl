@@ -146,10 +146,9 @@ function _area_slack_candidate(
 end
 
 # Guard 5: `tied[i]` is whether candidate `candidate_names[i]` was referenced by >=1
-# provisional tie. Factored out of `build_area_interchange_data` so it is directly
-# unit-testable against a fabricated `tied` — a real "zero in-service ties" area is, by
-# construction, topologically disconnected from the rest of the network, which the
-# REF-per-island invariant (`_bus_island_map`) rejects before this guard would ever run.
+# provisional tie. A real "zero in-service ties" area is, by construction, topologically
+# disconnected from the rest of the network, which the REF-per-island invariant
+# (`_bus_island_map`) rejects before this guard would ever run.
 function _warn_zero_tie_areas(candidate_names::Vector{String}, tied::BitVector)
     for (i, name) in enumerate(candidate_names)
         tied[i] && continue

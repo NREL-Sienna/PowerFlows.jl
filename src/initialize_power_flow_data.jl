@@ -197,8 +197,6 @@ function initialize_power_flow_data!(
         append!(data.area_interchange.dc_ties, aid.dc_ties)
         append!(data.area_interchange.ni_scratch, aid.ni_scratch)
         data.area_interchange.delta_p = aid.delta_p
-        # The PRISTINE copies are the full enrollment, never mutated once set here —
-        # see `AreaInterchangeData`'s docstring.
         append!(data.area_interchange.pristine_areas, aid.pristine_areas)
         append!(data.area_interchange.pristine_ties, aid.pristine_ties)
         append!(data.area_interchange.pristine_dc_ties, aid.pristine_dc_ties)
