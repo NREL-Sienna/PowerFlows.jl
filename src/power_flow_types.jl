@@ -23,10 +23,21 @@ abstract type AbstractACPowerFlow{S <: ACPowerFlowSolverType} <: PowerFlowEvalua
 
 """An abstract supertype for the persistent per-solve caches stored in
 `PowerFlowData.solver_cache[]`. Concrete subtypes ([`DCSolverCache`](@ref) for the DC/PTDF path,
-`FastDecoupledCache` for the polar fast-decoupled solver) are type-disjoint, so the slot's
-type discriminates which path populated it — no sentinel tag is needed and a cross-use is a plain
+`FastDecoupledCache` for the polar fast-decoupled solver) are type-disjoint, so the slot's type
+discriminates which path populated it — no sentinel tag is needed and a cross-use is a plain
 `MethodError` rather than a silent reuse."""
 abstract type SolverCache end
+
+"""Memoized AC-Jacobian sparse structure, stored in its OWN `PowerFlowData` field (not the shared
+`solver_cache` slot): the NR/TR AC Jacobian and a [`SolverCache`](@ref) can both be live in one
+solve — e.g. a FastDecoupled solve that hands off to NR uses a `FastDecoupledCache` *and* this
+structure — so the two must not contend for a single slot. Cache key is the network-matrix
+identity + slack nonzero pattern (`nzind`); see `_get_or_build_jacobian_structure`."""
+struct ACJacobianStructureCache
+    matrix::PNM.AC_Ybus_Matrix
+    nzind::Vector{Int}
+    structure::SparseMatrixCSC{Float64, J_INDEX_TYPE}
+end
 
 # Centralized so the multi-line warning text can't drift between the two
 # formulation constructors.
@@ -70,6 +81,30 @@ function _reject_fd_decoupled_on_nonpolar(
                 "(classic B′/B″ half-iterations) is polar-only. Use " *
                 "FastDecoupledACPowerFlow{FDFixedJacobian, …} on this formulation, or run " *
                 "FDDecoupled on ACPolarPowerFlow.",
+            ),
+        )
+    end
+    return
+end
+
+# Discrete device control is validated only for NR/TR inner solvers (FD reuses stale B′/B″
+# after tap moves; LM/GD/Homotopy are unvalidated). All device families support multiple
+# time steps: shunts/FACTS via the per-ts state store, taps via the reset-to-baseline Y-bus
+# design (see `ControlledDeviceSet`/`load_device_state!`). Centralized so the three
+# formulation constructors cannot drift. NR/TR types are defined later in this file —
+# references resolve at call time.
+function _validate_discrete_control_settings(
+    control_discrete_devices::Bool,
+    ::Type{ACSolver},
+) where {ACSolver <: ACPowerFlowSolverType}
+    control_discrete_devices || return
+    if !(ACSolver <: Union{NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow})
+        throw(
+            ArgumentError(
+                "control_discrete_devices=true requires a NewtonRaphsonACPowerFlow or " *
+                "TrustRegionACPowerFlow solver; got $(ACSolver). Other solvers are not " *
+                "validated as continuation inner solvers (FastDecoupled would reuse " *
+                "stale B′/B″ factorizations after tap moves).",
             ),
         )
     end
@@ -253,6 +288,8 @@ with the specified solver type.
 - `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
 - `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
     Default is `false`.
+- `control_discrete_devices::Bool`: Whether to run discrete device control (tap changers, switched
+    shunts) via λ-continuation. Default is `false`.
 - `solver_settings::Dict{Symbol, Any}`: Additional keyword arguments to pass to the solver.
     Default is an empty dictionary.
 """
@@ -275,6 +312,7 @@ struct ACPolarPowerFlow{ACSolver <: ACPowerFlowSolverType} <: AbstractACPowerFlo
     time_steps::Int
     time_step_names::Vector{String}
     correct_bustypes::Bool
+    control_discrete_devices::Bool
     solver_settings::Dict{Symbol, Any}
 end
 
@@ -330,6 +368,7 @@ function ACPolarPowerFlow{ACSolver}(;
     time_steps::Int = 1,
     time_step_names::Vector{String} = String[],
     correct_bustypes::Bool = false,
+    control_discrete_devices::Bool = false,
     solver_settings::AbstractDict = Dict{Symbol, Any}(),
 ) where {ACSolver <: ACPowerFlowSolverType}
     settings = Dict{Symbol, Any}(solver_settings)
@@ -341,6 +380,7 @@ function ACPolarPowerFlow{ACSolver}(;
         generator_slack_participation_factors,
         time_steps,
     )
+    _validate_discrete_control_settings(control_discrete_devices, ACSolver)
     return ACPolarPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,
@@ -356,6 +396,7 @@ function ACPolarPowerFlow{ACSolver}(;
         time_steps,
         time_step_names,
         correct_bustypes,
+        control_discrete_devices,
         settings,
     )
 end
@@ -392,6 +433,9 @@ get_calculate_voltage_stability_factors(pf::ACPolarPowerFlow) =
 get_log_solver_diagnostics(::PowerFlowEvaluationModel) = false
 get_log_solver_diagnostics(pf::AbstractACPowerFlow) = pf.log_solver_diagnostics
 
+get_control_discrete_devices(pf::AbstractACPowerFlow) = pf.control_discrete_devices
+get_control_discrete_devices(::PowerFlowEvaluationModel) = false
+
 """
     ACRectangularPowerFlow{ACSolver}(; kwargs...) where {ACSolver <: ACPowerFlowSolverType}
     ACRectangularPowerFlow(; kwargs...)
@@ -426,6 +470,8 @@ polar state layout and have no current-injection equivalent.
 - `time_steps::Int`: Default `1`.
 - `time_step_names::Vector{String}`: Default empty.
 - `correct_bustypes::Bool`: Default `false`.
+- `control_discrete_devices::Bool`: Whether to run discrete device control via λ-continuation.
+    Default `false`.
 - `solver_settings::Dict{Symbol, Any}`: Default empty.
 """
 struct ACRectangularPowerFlow{ACSolver <: ACPowerFlowSolverType} <:
@@ -445,6 +491,7 @@ struct ACRectangularPowerFlow{ACSolver <: ACPowerFlowSolverType} <:
     time_steps::Int
     time_step_names::Vector{String}
     correct_bustypes::Bool
+    control_discrete_devices::Bool
     solver_settings::Dict{Symbol, Any}
 end
 
@@ -464,6 +511,7 @@ function ACRectangularPowerFlow{ACSolver}(;
     time_steps::Int = 1,
     time_step_names::Vector{String} = String[],
     correct_bustypes::Bool = false,
+    control_discrete_devices::Bool = false,
     solver_settings::Dict{Symbol, Any} = Dict{Symbol, Any}(),
 ) where {ACSolver <: ACPowerFlowSolverType}
     if ACSolver <: Union{
@@ -486,6 +534,7 @@ function ACRectangularPowerFlow{ACSolver}(;
         generator_slack_participation_factors,
         time_steps,
     )
+    _validate_discrete_control_settings(control_discrete_devices, ACSolver)
     return ACRectangularPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,
@@ -498,6 +547,7 @@ function ACRectangularPowerFlow{ACSolver}(;
         time_steps,
         time_step_names,
         correct_bustypes,
+        control_discrete_devices,
         solver_settings,
     )
 end
@@ -539,6 +589,8 @@ polar state layout and have no mixed current-power equivalent.
 - `time_steps::Int`: Default `1`.
 - `time_step_names::Vector{String}`: Default empty.
 - `correct_bustypes::Bool`: Default `false`.
+- `control_discrete_devices::Bool`: Whether to run discrete device control via λ-continuation.
+    Default `false`.
 - `solver_settings::Dict{Symbol, Any}`: Default empty.
 """
 struct ACMixedPowerFlow{ACSolver <: ACPowerFlowSolverType} <:
@@ -558,6 +610,7 @@ struct ACMixedPowerFlow{ACSolver <: ACPowerFlowSolverType} <:
     time_steps::Int
     time_step_names::Vector{String}
     correct_bustypes::Bool
+    control_discrete_devices::Bool
     solver_settings::Dict{Symbol, Any}
 end
 
@@ -577,6 +630,7 @@ function ACMixedPowerFlow{ACSolver}(;
     time_steps::Int = 1,
     time_step_names::Vector{String} = String[],
     correct_bustypes::Bool = false,
+    control_discrete_devices::Bool = false,
     solver_settings::Dict{Symbol, Any} = Dict{Symbol, Any}(),
 ) where {ACSolver <: ACPowerFlowSolverType}
     if ACSolver <: Union{
@@ -600,6 +654,7 @@ function ACMixedPowerFlow{ACSolver}(;
         generator_slack_participation_factors,
         time_steps,
     )
+    _validate_discrete_control_settings(control_discrete_devices, ACSolver)
     return ACMixedPowerFlow{ACSolver}(
         check_reactive_power_limits,
         exporter,
@@ -612,6 +667,7 @@ function ACMixedPowerFlow{ACSolver}(;
         time_steps,
         time_step_names,
         correct_bustypes,
+        control_discrete_devices,
         solver_settings,
     )
 end
@@ -624,7 +680,10 @@ Subtypes: [`DCPowerFlow`](@ref), [`PTDFDCPowerFlow`](@ref), and [`vPTDFDCPowerFl
 abstract type AbstractDCPowerFlow <: PowerFlowEvaluationModel end
 
 # only make sense for AC power flows, but convenient to have for code reuse reasons.
-get_slack_participation_factors(::AbstractDCPowerFlow) = nothing
+get_slack_participation_factors(pf::AbstractDCPowerFlow) =
+    pf.generator_slack_participation_factors
+get_distribute_slack_proportional_to_headroom(pf::AbstractDCPowerFlow) =
+    pf.distribute_slack_proportional_to_headroom
 get_calculate_loss_factors(::AbstractDCPowerFlow) = false
 get_calculate_voltage_stability_factors(::AbstractDCPowerFlow) = false
 
@@ -665,14 +724,60 @@ or section 4 of the [MATPOWER docs](https://matpower.org/docs/MATPOWER-manual-4.
     then `P_from_to + P_to_from` (exact real-power balance). When `false` (default),
     flows are computed from the lossless `BA·θ` formula (symmetric), and losses are
     approximated as `R·P²`.
+- `generator_slack_participation_factors`: An optional parameter that specifies the participation
+    factors for generator slack in the power flow solution. Same semantics as [`ACPolarPowerFlow`](@ref).
+    Default is `nothing`.
+- `distribute_slack_proportional_to_headroom::Bool`: Whether to distribute the slack proportional to
+    generator headroom. Default is `false`.
+- `skip_redistribution::Bool`: Whether to skip slack redistribution. Default is `false`.
 """
-@kwdef struct DCPowerFlow <: AbstractDCPowerFlow
-    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
-    network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[]
-    time_steps::Int = 1
-    time_step_names::Vector{String} = String[]
-    correct_bustypes::Bool = false
-    lossy_flows::Bool = false
+struct DCPowerFlow <: AbstractDCPowerFlow
+    exporter::Union{Nothing, PowerFlowEvaluationModel}
+    generator_slack_participation_factors::Union{
+        Nothing,
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
+    }
+    distribute_slack_proportional_to_headroom::Bool
+    skip_redistribution::Bool
+    network_reductions::Vector{PNM.NetworkReduction}
+    time_steps::Int
+    time_step_names::Vector{String}
+    correct_bustypes::Bool
+    lossy_flows::Bool
+end
+
+function DCPowerFlow(;
+    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
+    generator_slack_participation_factors::Union{
+        Nothing,
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
+    } = nothing,
+    distribute_slack_proportional_to_headroom::Bool = false,
+    skip_redistribution::Bool = false,
+    network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[],
+    time_steps::Int = 1,
+    time_step_names::Vector{String} = String[],
+    correct_bustypes::Bool = false,
+    lossy_flows::Bool = false,
+)
+    _validate_slack_distribution_settings(
+        distribute_slack_proportional_to_headroom,
+        generator_slack_participation_factors,
+        time_steps,
+    )
+    return DCPowerFlow(
+        exporter,
+        generator_slack_participation_factors,
+        distribute_slack_proportional_to_headroom,
+        skip_redistribution,
+        network_reductions,
+        time_steps,
+        time_step_names,
+        correct_bustypes,
+        lossy_flows,
+    )
 end
 
 """
@@ -700,14 +805,60 @@ for details.
 - `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
 - `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
     Default is `false`.
+- `generator_slack_participation_factors`: An optional parameter that specifies the participation
+    factors for generator slack in the power flow solution. Same semantics as [`ACPolarPowerFlow`](@ref).
+    Default is `nothing`.
+- `distribute_slack_proportional_to_headroom::Bool`: Whether to distribute the slack proportional to
+    generator headroom. Default is `false`.
+- `skip_redistribution::Bool`: Whether to skip slack redistribution. Default is `false`.
 """
-@kwdef struct PTDFDCPowerFlow <: AbstractDCPowerFlow
-    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
-    calculate_loss_factors::Bool = false
-    network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[]
-    time_steps::Int = 1
-    time_step_names::Vector{String} = String[]
-    correct_bustypes::Bool = false
+struct PTDFDCPowerFlow <: AbstractDCPowerFlow
+    exporter::Union{Nothing, PowerFlowEvaluationModel}
+    calculate_loss_factors::Bool
+    generator_slack_participation_factors::Union{
+        Nothing,
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
+    }
+    distribute_slack_proportional_to_headroom::Bool
+    skip_redistribution::Bool
+    network_reductions::Vector{PNM.NetworkReduction}
+    time_steps::Int
+    time_step_names::Vector{String}
+    correct_bustypes::Bool
+end
+
+function PTDFDCPowerFlow(;
+    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
+    calculate_loss_factors::Bool = false,
+    generator_slack_participation_factors::Union{
+        Nothing,
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
+    } = nothing,
+    distribute_slack_proportional_to_headroom::Bool = false,
+    skip_redistribution::Bool = false,
+    network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[],
+    time_steps::Int = 1,
+    time_step_names::Vector{String} = String[],
+    correct_bustypes::Bool = false,
+)
+    _validate_slack_distribution_settings(
+        distribute_slack_proportional_to_headroom,
+        generator_slack_participation_factors,
+        time_steps,
+    )
+    return PTDFDCPowerFlow(
+        exporter,
+        calculate_loss_factors,
+        generator_slack_participation_factors,
+        distribute_slack_proportional_to_headroom,
+        skip_redistribution,
+        network_reductions,
+        time_steps,
+        time_step_names,
+        correct_bustypes,
+    )
 end
 
 """
@@ -733,14 +884,60 @@ where creating and storing the full PTDF matrix would be infeasible or slow. See
 - `time_step_names::Vector{String}`: Names for each time step. Default is an empty vector.
 - `correct_bustypes::Bool`: Whether to automatically correct bus types based on available generation.
     Default is `false`.
+- `generator_slack_participation_factors`: An optional parameter that specifies the participation
+    factors for generator slack in the power flow solution. Same semantics as [`ACPolarPowerFlow`](@ref).
+    Default is `nothing`.
+- `distribute_slack_proportional_to_headroom::Bool`: Whether to distribute the slack proportional to
+    generator headroom. Default is `false`.
+- `skip_redistribution::Bool`: Whether to skip slack redistribution. Default is `false`.
 """
-@kwdef struct vPTDFDCPowerFlow <: AbstractDCPowerFlow
-    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing
-    calculate_loss_factors::Bool = false
-    network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[]
-    time_steps::Int = 1
-    time_step_names::Vector{String} = String[]
-    correct_bustypes::Bool = false
+struct vPTDFDCPowerFlow <: AbstractDCPowerFlow
+    exporter::Union{Nothing, PowerFlowEvaluationModel}
+    calculate_loss_factors::Bool
+    generator_slack_participation_factors::Union{
+        Nothing,
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
+    }
+    distribute_slack_proportional_to_headroom::Bool
+    skip_redistribution::Bool
+    network_reductions::Vector{PNM.NetworkReduction}
+    time_steps::Int
+    time_step_names::Vector{String}
+    correct_bustypes::Bool
+end
+
+function vPTDFDCPowerFlow(;
+    exporter::Union{Nothing, PowerFlowEvaluationModel} = nothing,
+    calculate_loss_factors::Bool = false,
+    generator_slack_participation_factors::Union{
+        Nothing,
+        Dict{Tuple{DataType, String}, Float64},
+        Vector{Dict{Tuple{DataType, String}, Float64}},
+    } = nothing,
+    distribute_slack_proportional_to_headroom::Bool = false,
+    skip_redistribution::Bool = false,
+    network_reductions::Vector{PNM.NetworkReduction} = PNM.NetworkReduction[],
+    time_steps::Int = 1,
+    time_step_names::Vector{String} = String[],
+    correct_bustypes::Bool = false,
+)
+    _validate_slack_distribution_settings(
+        distribute_slack_proportional_to_headroom,
+        generator_slack_participation_factors,
+        time_steps,
+    )
+    return vPTDFDCPowerFlow(
+        exporter,
+        calculate_loss_factors,
+        generator_slack_participation_factors,
+        distribute_slack_proportional_to_headroom,
+        skip_redistribution,
+        network_reductions,
+        time_steps,
+        time_step_names,
+        correct_bustypes,
+    )
 end
 
 get_calculate_loss_factors(pf::PTDFDCPowerFlow) = pf.calculate_loss_factors

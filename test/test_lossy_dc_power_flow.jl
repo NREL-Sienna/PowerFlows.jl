@@ -10,8 +10,14 @@
         sys,
         PF.FlowReporting.ARC_FLOWS,
     )
-    @test isapprox(default_result["1"]["flow_results"].P_from_to,
-        explicit_false["1"]["flow_results"].P_from_to; atol = 1e-9)
+    # Tight isapprox rather than exact `==`: the default and explicit-false
+    # paths are numerically equivalent but the sparse linear-algebra backend
+    # is not bit-deterministic across solves (~1e-13 noise).
+    @test isapprox(
+        default_result["1"]["flow_results"].P_from_to,
+        explicit_false["1"]["flow_results"].P_from_to;
+        atol = TIGHT_TOLERANCE,
+    )
 end
 
 @testset "Lossy DCLF: lossy_flows=true gives different and asymmetric flows" begin
@@ -47,14 +53,14 @@ end
 
     # Without lossy_flows: arc admittance fields should be nothing.
     data_no_loss = PowerFlowData(DCPowerFlow(; correct_bustypes = true), sys)
-    @test data_no_loss.arc_lossy_admittance_from_to === nothing
-    @test data_no_loss.arc_lossy_admittance_to_from === nothing
+    @test isnothing(data_no_loss.arc_lossy_admittance_from_to)
+    @test isnothing(data_no_loss.arc_lossy_admittance_to_from)
 
     # With lossy_flows: arc admittance fields should be set.
     data_lossy =
         PowerFlowData(DCPowerFlow(; correct_bustypes = true, lossy_flows = true), sys)
-    @test data_lossy.arc_lossy_admittance_from_to !== nothing
-    @test data_lossy.arc_lossy_admittance_to_from !== nothing
+    @test !isnothing(data_lossy.arc_lossy_admittance_from_to)
+    @test !isnothing(data_lossy.arc_lossy_admittance_to_from)
 end
 
 @testset "Lossy DCLF: multi-period" begin
@@ -85,9 +91,9 @@ end
 @testset "Lossy DCLF: AC and PTDF data have no lossy admittances" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
     ac_data = PowerFlowData(ACPowerFlow(; correct_bustypes = true), sys)
-    @test ac_data.arc_lossy_admittance_from_to === nothing
+    @test isnothing(ac_data.arc_lossy_admittance_from_to)
     ptdf_data = PowerFlowData(PTDFDCPowerFlow(; correct_bustypes = true), sys)
-    @test ptdf_data.arc_lossy_admittance_from_to === nothing
+    @test isnothing(ptdf_data.arc_lossy_admittance_from_to)
 end
 
 function _build_arc_flow_map(data::PowerFlowData, sys::PSY.System)

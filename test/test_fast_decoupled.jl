@@ -328,13 +328,11 @@ end
 
 @testset "FastDecoupled WP2: :fixed_jacobian ACTIVSg2000 (refreeze allowed)" begin
     sys_nr = PSB.build_system(PSB.MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
-    PSY.set_units_base_system!(sys_nr, "SYSTEM_BASE")
     pf_nr = ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = true)
     data_nr = PowerFlowData(pf_nr, sys_nr)
     solve_power_flow!(data_nr)
 
     sys_fd = PSB.build_system(PSB.MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
-    PSY.set_units_base_system!(sys_fd, "SYSTEM_BASE")
     pf_fd = ACPowerFlow{_fd_solver(:fixed_jacobian)}(;
         correct_bustypes = true)
     data_fd = PowerFlowData(pf_fd, sys_fd)
@@ -483,7 +481,7 @@ end
 # STEP 1 — phase-shifter gate. Closes the one WP1 coverage gap before the :decoupled loop
 # relies on B′: c_sys14 / WECC240 have NO phase shifters, so the phase-retention path
 # (|τ|=1 in B′ but phase shift retained) is otherwise untested. Build a small
-# system WITH a PhaseShiftingTransformer (constructed directly via PowerSystems) plus a
+# system WITH a phase-shifting transformer (constructed directly via PowerSystems) plus a
 # FixedAdmittance shunt, and assert:
 #   (a) restamp(_recover_arc_params) ≈ original Ybus within ComplexF32 noise,
 #   (b) B′ is ASYMMETRIC (phase shifter retained) while B″ is SYMMETRIC (phase dropped).
@@ -500,20 +498,20 @@ function _phase_shifter_system()
     _add_simple_line!(sys, b1, b2, 0.01, 0.10, 0.02)
     _add_simple_line!(sys, b1, b3, 0.01, 0.12, 0.02)
     # A phase-shifting transformer between b2 and b3 (nonzero α ⇒ asymmetric B′).
-    pst = PSY.PhaseShiftingTransformer(;
+    pst = PSY.TwoWindingTransformer(;
         name = "pst_2_3",
-        available = true,
-        active_power_flow = 0.0,
-        reactive_power_flow = 0.0,
-        arc = PSY.Arc(; from = b2, to = b3),
-        r = 0.005,
-        x = 0.08,
-        primary_shunt = 0.0,
-        tap = 1.0,
-        α = 0.15,           # nonzero phase shift
-        rating = 2.0,
-        base_power = 100.0,
-        phase_angle_limits = (min = -0.7, max = 0.7),
+        circuit = PSY.TransformerCircuit(;
+            available = true,
+            arc = PSY.Arc(; from = b2, to = b3),
+            r = 0.005,
+            x = 0.08,
+            tap = 1.0,
+            α = 0.15,           # nonzero phase shift
+            rating = 2.0,
+            base_power = 100.0,
+            # Phase-angle bounds (rad) live in the circuit's control band.
+            control_limits = (min = -0.7, max = 0.7),
+        ),
     )
     add_component!(sys, pst)
     # A fixed-admittance shunt at b3 so the per-bus shunt-residual path is exercised too.
@@ -779,7 +777,6 @@ end
 @testset "FastDecoupled WP5: Q-limit PV→PQ parity (T5)" begin
     _build_sys14_qlim() = (
         let s = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-            set_units_base_system!(s, UnitSystem.SYSTEM_BASE)
             s
         end
     )
@@ -1209,7 +1206,6 @@ end
     # exactly ONCE across all outer-loop re-invocations. The PQ set DOES change (Bus8 enters
     # PQ), so B″ is factored once per distinct PQ signature (the pre- and post-switch sets).
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
     pf_fd = ACPowerFlow{_fd_solver(:decoupled)}(;
         check_reactive_power_limits = true,
         correct_bustypes = true)
@@ -1231,7 +1227,6 @@ end
     # hits its reactive limit in some steps but not others, so the PQ set — and thus the B″
     # signature — varies across the horizon. Exercises the cache's multi-signature path end-to-end.
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
-    set_units_base_system!(sys, UnitSystem.SYSTEM_BASE)
     time_steps = 24
 
     pf_fd = ACPowerFlow{_fd_solver(:decoupled)}(;
@@ -1306,7 +1301,6 @@ end
     # The factor-once cache means a warm second solve does ZERO refactorizations; the inner
     # half-step buffer fills + solves reuse preallocated cache buffers.
     sys = PSB.build_system(PSB.MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
-    PSY.set_units_base_system!(sys, "SYSTEM_BASE")
     pf = ACPowerFlow{_fd_solver(:decoupled)}(;
         correct_bustypes = true)
     data = PowerFlowData(pf, sys)
@@ -1376,7 +1370,6 @@ end
     # ONLY for a handoff or loss/voltage-stability factors. With neither, the driver must skip the
     # full sparse-Jacobian allocation + evaluation entirely — a per-solve, per-time-step saving.
     sys = PSB.build_system(PSB.MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
-    PSY.set_units_base_system!(sys, "SYSTEM_BASE")
 
     # (a) Direct isolation: the residual/x0-only initializer the :decoupled driver uses must NOT
     # allocate the Jacobian, so it allocates strictly less than the full initializer — by at least
@@ -1511,14 +1504,12 @@ end
 
     @testset "ACTIVSg2000 :decoupled NR-parity" begin
         sys_nr = PSB.build_system(PSB.MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
-        PSY.set_units_base_system!(sys_nr, "SYSTEM_BASE")
         data_nr =
             PowerFlowData(ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = true),
                 sys_nr)
         solve_power_flow!(data_nr)
 
         sys_fd = PSB.build_system(PSB.MatpowerTestSystems, "matpower_ACTIVSg2000_sys")
-        PSY.set_units_base_system!(sys_fd, "SYSTEM_BASE")
         pf_fd = ACPowerFlow{_fd_solver(:decoupled)}(;
             correct_bustypes = true)
         data_fd = PowerFlowData(pf_fd, sys_fd)

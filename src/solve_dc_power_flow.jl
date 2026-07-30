@@ -62,18 +62,49 @@ function _get_or_build_solver_cache!(
     return cache, scratch
 end
 
-# Per-solve scratch buffers + network-fixed precomputes; built once with the cache. The signed
-# arc-bus incidence is built once at `PowerFlowData` construction via `PNM.IncidenceMatrix` and
-# reused here.
+# Per-solve scratch + network-fixed precomputes, built once with the cache. Parametrized
+# on the arc-bus-incidence type `A` so `arc_bus_incidence` is concrete after the
+# function-barrier dispatch, keeping the `mul!` SpMV statically dispatched (a plain
+# NamedTuple left the field `Union{SparseMatrixCSC,Nothing}` → per-solve dynamic dispatch).
+struct DCSolveScratch{A}
+    power_injections::Matrix{Float64}
+    p_inj::Matrix{Float64}
+    rs::Vector{Float64}
+    arc_bus_incidence::A
+    # Resolved non-ref bus rows. `get_valid_ix` returns `Not(ref)`, which re-materializes
+    # a fresh index vector (~16 KB/call on 2000 buses) on every gather/scatter; store once.
+    valid_ix::Vector{Int}
+    # Pre-computed from/to bus indices for arc angle differences (avoids per-call allocation)
+    fb_ix::Vector{Int}
+    tb_ix::Vector{Int}
+end
+
+"""
+    _make_dc_scratch(data::PowerFlowData) -> DCSolveScratch
+
+Build the `DCSolveScratch` a DC solve reuses across time steps: the injection work
+buffers, plus the topology-fixed precomputes (non-reference bus rows, per-arc from/to bus
+indices, per-arc equivalent resistances, and the arc-bus incidence). Built once per network
+matrix because everything but the work buffers depends only on the topology, not on the
+injections that change between steps.
+"""
 function _make_dc_scratch(data::PowerFlowData)
-    valid_ix = get_valid_ix(data)
-    # InvertedIndex has no `length`; size via a view.
-    p_inj_dims = size(view(data.bus_active_power_injections, valid_ix, :))
-    return (
-        power_injections = similar(data.bus_active_power_injections),
-        p_inj = Matrix{Float64}(undef, p_inj_dims),
-        rs = _get_arc_resistances(data),
-        arc_bus_incidence = data.arc_bus_incidence,
+    n_buses = size(data.bus_active_power_injections, 1)
+    valid_ix = collect(1:n_buses)[get_valid_ix(data)]  # resolve Not(ref) → Vector{Int}
+    n_ts = size(data.bus_active_power_injections, 2)
+    # Pre-compute from/to bus indices for arc angle differences
+    arcs = get_arc_axis(data)
+    bus_lookup = get_bus_lookup(data)
+    fb_ix = [bus_lookup[bus_no] for bus_no in first.(arcs)]
+    tb_ix = [bus_lookup[bus_no] for bus_no in last.(arcs)]
+    return DCSolveScratch(
+        similar(data.bus_active_power_injections),
+        Matrix{Float64}(undef, length(valid_ix), n_ts),
+        _get_arc_resistances(data),
+        data.arc_bus_incidence,
+        valid_ix,
+        fb_ix,
+        tb_ix,
     )
 end
 
@@ -106,11 +137,232 @@ function _shift_angles_to_stored_reference!(
     end
 end
 
+# Function barriers: `scratch`/`cache` come out of a `Ref{Any}`, so these typed workers
+# let Julia specialize the body on concrete types — one dynamic dispatch at the boundary.
+function _run_ptdf_solve!(
+    data::PTDFPowerFlowData,
+    solver_cache::PFLinearSolverCache,
+    scratch::DCSolveScratch,
+)
+    power_injections = scratch.power_injections
+    @. power_injections =
+        data.bus_active_power_injections - data.bus_active_power_withdrawals
+    power_injections .+= data.bus_hvdc_net_power
+    power_injections .+= data.bus_phase_shift_injections
+    mul!(
+        data.arc_active_power_flow_from_to,
+        transpose(data.power_network_matrix.data),
+        power_injections,
+    )
+    data.arc_active_power_flow_from_to .-= data.arc_phase_shift_flow_offsets
+    @. data.arc_active_power_flow_to_from = -data.arc_active_power_flow_from_to
+    # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
+    valid_ix = scratch.valid_ix
+    p_inj = scratch.p_inj
+    @views p_inj .= power_injections[valid_ix, :]
+    solve!(solver_cache, p_inj)
+    @views data.bus_angles[valid_ix, :] .= p_inj
+    _shift_angles_to_stored_reference!(data)
+    mul!(data.arc_angle_differences, scratch.arc_bus_incidence, data.bus_angles)
+    @. data.arc_active_power_losses = scratch.rs * data.arc_active_power_flow_from_to^2
+    data.converged .= true
+    _adjust_dc_slack_injections!(data, power_injections)
+    if get_calculate_loss_factors(data)
+        data.loss_factors .= dc_loss_factors(data, scratch.rs)
+    end
+    return
+end
+
+function _run_vptdf_solve!(
+    data::vPTDFPowerFlowData,
+    solver_cache::PFLinearSolverCache,
+    scratch::DCSolveScratch,
+)
+    power_injections = scratch.power_injections
+    @. power_injections =
+        data.bus_active_power_injections - data.bus_active_power_withdrawals
+    power_injections .+= data.bus_hvdc_net_power
+    power_injections .+= data.bus_phase_shift_injections
+    # Use in-place multiply to avoid per-solve allocation
+    my_mul_mt!(
+        data.arc_active_power_flow_from_to,
+        data.power_network_matrix,
+        power_injections,
+    )
+    data.arc_active_power_flow_from_to .-= data.arc_phase_shift_flow_offsets
+    @. data.arc_active_power_flow_to_from = -data.arc_active_power_flow_from_to
+    # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
+    valid_ix = scratch.valid_ix
+    p_inj = scratch.p_inj
+    @views p_inj .= power_injections[valid_ix, :]
+    solve!(solver_cache, p_inj)
+    @views data.bus_angles[valid_ix, :] .= p_inj
+    _shift_angles_to_stored_reference!(data)
+    # Use pre-cached fb_ix/tb_ix to avoid per-call allocation
+    @views data.arc_angle_differences .=
+        data.bus_angles[scratch.fb_ix, :] .- data.bus_angles[scratch.tb_ix, :]
+    @. data.arc_active_power_losses = scratch.rs * data.arc_active_power_flow_from_to^2
+    data.converged .= true
+    _adjust_dc_slack_injections!(data, power_injections)
+    if get_calculate_loss_factors(data)
+        data.loss_factors .= dc_loss_factors(data, scratch.rs)
+    end
+    return
+end
+
+function _run_aba_solve!(
+    data::ABAPowerFlowData,
+    solver_cache::PFLinearSolverCache,
+    scratch::DCSolveScratch,
+)
+    power_injections = scratch.power_injections
+    @. power_injections =
+        data.bus_active_power_injections - data.bus_active_power_withdrawals
+    power_injections .+= data.bus_hvdc_net_power
+    power_injections .+= data.bus_phase_shift_injections
+    valid_ix = scratch.valid_ix
+    p_inj = scratch.p_inj
+    @views p_inj .= power_injections[valid_ix, :]
+    solve!(solver_cache, p_inj)
+    @views data.bus_angles[valid_ix, :] .= p_inj
+    _shift_angles_to_stored_reference!(data)
+
+    if !isnothing(data.arc_lossy_admittance_from_to)
+        # DC assumption: all bus voltage magnitudes are 1.0 p.u., so V = e^(jθ).
+        V = @. exp(1im * data.bus_angles)
+        # Explicit dots (not `@.`) because the RHS embeds a matrix-vector product
+        # (`admittance * V`), which `@.` would wrongly broadcast as element-wise.
+        Sft = V[scratch.fb_ix, :] .* conj.(data.arc_lossy_admittance_from_to * V)
+        Stf = V[scratch.tb_ix, :] .* conj.(data.arc_lossy_admittance_to_from * V)
+        @. data.arc_active_power_flow_from_to = real(Sft)
+        @. data.arc_active_power_flow_to_from = real(Stf)
+        @. data.arc_active_power_losses =
+            data.arc_active_power_flow_from_to + data.arc_active_power_flow_to_from
+    else
+        mul!(
+            data.arc_active_power_flow_from_to,
+            transpose(data.aux_network_matrix.data),
+            data.bus_angles,
+        )
+        data.arc_active_power_flow_from_to .-= data.arc_phase_shift_flow_offsets
+        @. data.arc_active_power_flow_to_from = -data.arc_active_power_flow_from_to
+        @. data.arc_active_power_losses =
+            scratch.rs * data.arc_active_power_flow_from_to^2
+    end
+    # Δθ = A·θ via cached signed incidence, replacing the per-call fb_ix/tb_ix rebuild
+    # in `_compute_arc_angle_differences_from_data!` (~0.38 MB/call).
+    mul!(data.arc_angle_differences, scratch.arc_bus_incidence, data.bus_angles)
+    data.converged .= true
+    _adjust_dc_slack_injections!(data, power_injections)
+    return
+end
+
+"""
+    _distribute_dc_slack!(data)
+
+Distribute each subnetwork's active-power imbalance across its participating
+buses (including the reference bus) in proportion to `bus_slack_participation_factors`,
+writing the result into `bus_active_power_injections`. No-op unless the user configured
+distributed slack (explicit factors or headroom mode), detected via a
+non-empty `computed_generator_slack_participation_factors`.
+"""
+function _distribute_dc_slack!(
+    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
+)
+    isempty(get_computed_gspf(data)) && return
+    bus_lookup = get_bus_lookup(data)
+    spf = data.bus_slack_participation_factors
+    n_time_steps = size(data.bus_active_power_injections, 2)
+    for (ref_bus, ax) in subnetwork_axes(data)
+        rows = [bus_lookup[ref_bus]]
+        append!(rows, [bus_lookup[bus_number] for bus_number in first(ax)])
+        for t in 1:n_time_steps
+            sum_factor = 0.0
+            for r in rows
+                f = spf[r, t]
+                if f < 0.0
+                    throw(
+                        ArgumentError(
+                            "slack_participation_factors cannot be negative",
+                        ),
+                    )
+                end
+                sum_factor += f
+            end
+            if iszero(sum_factor)
+                throw(
+                    ArgumentError(
+                        "sum of slack_participation_factors per subnetwork cannot be zero",
+                    ),
+                )
+            end
+            imbalance = 0.0
+            for r in rows
+                imbalance +=
+                    data.bus_active_power_injections[r, t] -
+                    data.bus_active_power_withdrawals[r, t] +
+                    data.bus_hvdc_net_power[r, t]
+            end
+            for r in rows
+                f = spf[r, t]
+                iszero(f) && continue
+                data.bus_active_power_injections[r, t] -= imbalance * f / sum_factor
+            end
+        end
+    end
+    return
+end
+
+"""
+    _adjust_dc_slack_injections!(
+        data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
+        power_injections::Matrix{Float64},
+    )
+
+After a DC power-flow solve, the reference bus of each subnetwork is excluded from the
+linear system and its injection is left at the original generator setpoint. This
+function closes the active-power balance per subnetwork by subtracting the total
+subnetwork imbalance from the reference-bus injection. The imbalance is computed from
+`bus_active_power_injections - bus_active_power_withdrawals + bus_hvdc_net_power` over
+all buses in the subnetwork (including the reference bus). The optional
+`power_injections` matrix is updated in lockstep so that downstream optional
+post-processing, such as DC loss factors, uses the balanced injection vector.
+"""
+function _adjust_dc_slack_injections!(
+    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
+    power_injections::Matrix{Float64},
+)
+    bus_lookup = get_bus_lookup(data)
+    n_time_steps = size(data.bus_active_power_injections, 2)
+    for (ref_bus, ax) in subnetwork_axes(data)
+        ref_row = bus_lookup[ref_bus]
+        subnetwork_buses = first(ax)
+        for t in 1:n_time_steps
+            imbalance = 0.0
+            for bus in subnetwork_buses
+                row = bus_lookup[bus]
+                imbalance +=
+                    data.bus_active_power_injections[row, t] -
+                    data.bus_active_power_withdrawals[row, t] +
+                    data.bus_hvdc_net_power[row, t]
+            end
+            # Include the reference bus itself so the imbalance is the total subnetwork
+            # imbalance; subtracting it from the reference-bus injection closes the balance.
+            imbalance +=
+                data.bus_active_power_injections[ref_row, t] -
+                data.bus_active_power_withdrawals[ref_row, t] +
+                data.bus_hvdc_net_power[ref_row, t]
+            data.bus_active_power_injections[ref_row, t] -= imbalance
+            power_injections[ref_row, t] -= imbalance
+        end
+    end
+    return
+end
+
 """
     solve_power_flow!(data::PTDFPowerFlowData)
-
 Evaluates the PTDF power flow and writes the result to the fields of the
-[`PTDFPowerFlowData`](@ref) structure (a type alias of [`PowerFlowData`](@ref)).
+[`PTDFPowerFlowData`](@ref) structure.
 
 This function modifies the following fields of `data`, setting them to the computed values:
 - `data.bus_angles`: the bus angles for each bus in the system.
@@ -123,32 +375,11 @@ function solve_power_flow!(
     data::PTDFPowerFlowData;
     linear_solver::Union{Nothing, AbstractString} = nothing,
 )
+    _distribute_dc_slack!(data)
     backend = resolve_linear_solver_backend(linear_solver)
     solver_cache, scratch =
         _get_or_build_solver_cache!(data, backend, data.aux_network_matrix.data)
-    power_injections = scratch.power_injections
-    @. power_injections =
-        data.bus_active_power_injections - data.bus_active_power_withdrawals
-    power_injections .+= data.bus_hvdc_net_power
-    mul!(
-        data.arc_active_power_flow_from_to,
-        transpose(data.power_network_matrix.data),
-        power_injections,
-    )
-    @. data.arc_active_power_flow_to_from = -data.arc_active_power_flow_from_to
-    # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
-    valid_ix = get_valid_ix(data)
-    p_inj = scratch.p_inj
-    @views p_inj .= power_injections[valid_ix, :]
-    solve!(solver_cache, p_inj)
-    @views data.bus_angles[valid_ix, :] .= p_inj
-    _shift_angles_to_stored_reference!(data)
-    mul!(data.arc_angle_differences, scratch.arc_bus_incidence, data.bus_angles)
-    @. data.arc_active_power_losses = scratch.rs * data.arc_active_power_flow_from_to^2
-    data.converged .= true
-    if get_calculate_loss_factors(data)
-        data.loss_factors .= dc_loss_factors(data, power_injections)
-    end
+    _run_ptdf_solve!(data, solver_cache, scratch)
     return
 end
 
@@ -170,28 +401,11 @@ function solve_power_flow!(
     data::vPTDFPowerFlowData;
     linear_solver::Union{Nothing, AbstractString} = nothing,
 )
+    _distribute_dc_slack!(data)
     backend = resolve_linear_solver_backend(linear_solver)
-    solver_cache, _ =
+    solver_cache, scratch =
         _get_or_build_solver_cache!(data, backend, data.aux_network_matrix.data)
-    power_injections =
-        @. data.bus_active_power_injections - data.bus_active_power_withdrawals
-    power_injections .+= data.bus_hvdc_net_power
-    data.arc_active_power_flow_from_to .=
-        my_mul_mt(data.power_network_matrix, power_injections)
-    @. data.arc_active_power_flow_to_from = -data.arc_active_power_flow_from_to
-    # HVDC flows stored separately and already calculated: see initialize_power_flow_data!
-    valid_ix = get_valid_ix(data)
-    p_inj = power_injections[valid_ix, :]
-    solve!(solver_cache, p_inj)
-    data.bus_angles[valid_ix, :] .= p_inj
-    _shift_angles_to_stored_reference!(data)
-    _compute_arc_angle_differences_from_data!(data)
-    Rs = _get_arc_resistances(data)
-    @. data.arc_active_power_losses = Rs * data.arc_active_power_flow_from_to^2
-    data.converged .= true
-    if get_calculate_loss_factors(data)
-        data.loss_factors .= dc_loss_factors(data, power_injections)
-    end
+    _run_vptdf_solve!(data, solver_cache, scratch)
     return
 end
 
@@ -227,54 +441,11 @@ function solve_power_flow!(
     data::ABAPowerFlowData;
     linear_solver::Union{Nothing, AbstractString} = nothing,
 )
+    _distribute_dc_slack!(data)
     backend = resolve_linear_solver_backend(linear_solver)
     solver_cache, scratch =
         _get_or_build_solver_cache!(data, backend, data.power_network_matrix.data)
-
-    # Reuse preallocated buffers from the cache scratch so a PCM-loop solve allocates
-    # nothing on the common (lossless) DC path beyond the bus-angle writeback view.
-    power_injections = scratch.power_injections
-    @. power_injections =
-        data.bus_active_power_injections - data.bus_active_power_withdrawals
-    power_injections .+= data.bus_hvdc_net_power
-    valid_ix = get_valid_ix(data)
-    p_inj = scratch.p_inj
-    @views p_inj .= power_injections[valid_ix, :]
-    solve!(solver_cache, p_inj)
-    @views data.bus_angles[valid_ix, :] .= p_inj
-    _shift_angles_to_stored_reference!(data)
-
-    if !isnothing(data.arc_lossy_admittance_from_to)
-        # DC assumption: all bus voltage magnitudes are 1.0 p.u., so V = e^(jθ).
-        V = @. exp(1im * data.bus_angles)
-        arcs = get_arc_axis(data)
-        bus_lookup = get_bus_lookup(data)
-        fb_ix = [bus_lookup[first(arc)] for arc in arcs]
-        tb_ix = [bus_lookup[last(arc)] for arc in arcs]
-        # Explicit dots (not `@.`) because the RHS embeds a matrix-vector product
-        # (`admittance * V`), which `@.` would wrongly broadcast as element-wise.
-        Sft = V[fb_ix, :] .* conj.(data.arc_lossy_admittance_from_to * V)
-        Stf = V[tb_ix, :] .* conj.(data.arc_lossy_admittance_to_from * V)
-        @. data.arc_active_power_flow_from_to = real(Sft)
-        @. data.arc_active_power_flow_to_from = real(Stf)
-        # True losses come directly from the admittance calculation.
-        @. data.arc_active_power_losses =
-            data.arc_active_power_flow_from_to + data.arc_active_power_flow_to_from
-    else
-        mul!(
-            data.arc_active_power_flow_from_to,
-            transpose(data.aux_network_matrix.data),
-            data.bus_angles,
-        )
-        @. data.arc_active_power_flow_to_from = -data.arc_active_power_flow_from_to
-        @. data.arc_active_power_losses =
-            scratch.rs * data.arc_active_power_flow_from_to^2
-    end
-    # Δθ = A·θ as a single sparse SpMV using the cached signed incidence — replaces
-    # the per-call rebuild of fb_ix/tb_ix index vectors in
-    # `_compute_arc_angle_differences_from_data!` (~0.38 MB/call).
-    mul!(data.arc_angle_differences, scratch.arc_bus_incidence, data.bus_angles)
-    data.converged .= true
+    _run_aba_solve!(data, solver_cache, scratch)
     return
 end
 
@@ -365,69 +536,85 @@ function solve_power_flow(
 end
 
 """
+    solve_and_store_power_flow!(pf::AbstractDCPowerFlow, system; kwargs...)
+
+Solve the DC power flow for `pf` and store the solution back into `system`:
+bus angles, unit voltage magnitudes, and redistributed active generation at
+the slack/participating buses. Returns `true` (DC always converges). Only the
+first time step is written back.
+"""
+function solve_and_store_power_flow!(
+    pf::AbstractDCPowerFlow,
+    system::PSY.System;
+    linear_solver::Union{Nothing, AbstractString} = nothing,
+    max_iterations::Int = DEFAULT_NR_MAX_ITER,
+)
+    data = PowerFlowData(pf, system)
+    solve_power_flow!(data; linear_solver)
+    write_power_flow_solution!(system, pf, data, max_iterations)
+    @info("DC PowerFlow solve stored in the system.")
+    return true
+end
+
+"""
     _get_arc_resistances(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}) -> Vector{Float64}
 
-Look up the equivalent resistance of each arc from the network reduction data.
-Delegates to [`_get_arc_branch_params`](@ref) and returns only the resistance vector.
+Look up the equivalent resistance of each arc from the network reduction data via
+`PNM.arc_dc_resistance`, which is total on lossy shifted parallel groups (unlike
+[`_get_arc_branch_params`](@ref)'s single-π extraction, which throws on them).
 """
 function _get_arc_resistances(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
 )
-    rs, _, _, _ = _get_arc_branch_params(data)
-    return rs
+    nrd = get_network_reduction_data(data)
+    return [PNM.arc_dc_resistance(nrd, arc) for arc in get_arc_axis(data)]
 end
 
 """
     dc_loss_factors(
         data::Union{PTDFPowerFlowData, vPTDFPowerFlowData},
-        P::Matrix{Float64},
     ) -> Matrix{Float64}
 
 Compute the gradient of total system active power losses with respect to
-bus injections using the DC power flow approximation:
+bus injections using the DC power flow approximation, from the actual solved arc flows:
 
-    ∂Loss/∂P = 2 · PTDFᵀ · diag(R) · PTDF · P
+    ∂Loss/∂P = 2 · PTDFᵀ · diag(R) · f
 
-This is equivalent to the per-element form:
-
-    ∂Loss/∂Pᵢ = Σₖ 2·Rₖ·PTDFₖᵢ·Σⱼ PTDFₖⱼ·Pⱼ
+where `f = data.arc_active_power_flow_from_to` is the α-corrected solved flow (equal to
+`PTDF·P` only on α-free systems).
 
 # Arguments
 - `data::Union{PTDFPowerFlowData, vPTDFPowerFlowData}`: solved power flow data containing
-  the PTDF matrix and network reduction data for looking up branch resistances.
-- `P::Matrix{Float64}`: bus injection matrix of size `(num_buses, num_timesteps)`.
+  the PTDF matrix and the solved arc flows.
+- `Rs::Vector{Float64}`: per-arc equivalent resistances, in `get_arc_axis(data)` order. The
+  solve path passes `scratch.rs`, which [`_make_dc_scratch`](@ref) builds once per network
+  matrix; recomputing it here would re-derive every reduced arc's equivalent on every solve.
+  The one-argument form computes it via [`_get_arc_resistances`](@ref) for callers outside a
+  solve.
 
 # Returns
 - `Matrix{Float64}`: loss factor matrix of size `(num_buses, num_timesteps)`, where each
   entry `[i, t]` is the marginal change in total system losses per unit injection at bus `i`
   in time step `t`.
 """
-function dc_loss_factors(
-    data::PTDFPowerFlowData,
-    P::Matrix{Float64},
-)
-    Rs = _get_arc_resistances(data)
+function dc_loss_factors(data::PTDFPowerFlowData, Rs::Vector{Float64})
     ptdf_t = data.power_network_matrix.data
     # Right-associated to avoid forming a dense buses×buses intermediate.
-    return 2 .* (ptdf_t * (Rs .* (ptdf_t' * P)))
+    return 2 .* (ptdf_t * (Rs .* data.arc_active_power_flow_from_to))
 end
 
-function dc_loss_factors(
-    data::vPTDFPowerFlowData,
-    P::Matrix{Float64},
-)
-    Rs = _get_arc_resistances(data)
+function dc_loss_factors(data::vPTDFPowerFlowData, Rs::Vector{Float64})
     ptdf = data.power_network_matrix
     arc_ax = get_arc_axis(data)
-    n_buses = size(P, 1)
-    n_ts = size(P, 2)
+    n_buses = length(get_bus_axis(data))
+    n_ts = size(data.arc_active_power_flow_from_to, 2)
     result = zeros(n_buses, n_ts)
     flows_k = Vector{Float64}(undef, n_ts)
-    # Single pass: fetch each PTDF row once, compute flows vectorized, then accumulate.
+    # Single pass: fetch each PTDF row once, read the already-solved flow, then accumulate.
     for (k, arc) in enumerate(arc_ax)
         row_k = ptdf[arc, :]
         r_k = Rs[k]
-        mul!(flows_k, P', row_k)
+        flows_k .= data.arc_active_power_flow_from_to[k, :]
         for t in 1:n_ts
             @inbounds w = 2.0 * r_k * flows_k[t]
             @inbounds @simd for j in 1:n_buses
@@ -437,3 +624,9 @@ function dc_loss_factors(
     end
     return result
 end
+
+# Convenience form for callers without a solve scratch in hand (tests, ad-hoc queries). The
+# solve path passes `scratch.rs`, which is built once per network matrix — calling this inside a
+# solve would re-sweep every arc's equivalent on every solve.
+dc_loss_factors(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData}) =
+    dc_loss_factors(data, _get_arc_resistances(data))

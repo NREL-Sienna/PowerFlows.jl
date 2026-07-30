@@ -82,6 +82,12 @@ the respective type of power flow evaluations.
         "(b, t)" matrix containing the net power injections from all HVDC lines at each bus.
         b: number of buses, t: number of time period. Only contains HVDCs handled as
         separate injection/withdrawal pairs: LCCs and generic for DC, or just generic for AC.
+- `bus_phase_shift_injections::Vector{Float64}`:
+        length-`b` vector of DC phase-shifter injections (`+b·α` at the from bus, `−b·α`
+        at the to bus of each shifted arc); time-invariant, zero on α-free systems.
+- `arc_phase_shift_flow_offsets::Vector{Float64}`:
+        length-`n_arcs` vector of `b_eq·α_eq` per arc, subtracted from the DC flow;
+        time-invariant, zero for non-shifted arcs.
 - `time_step_map::Dict{Int, S}`:
         dictionary mapping the number of the time periods (corresponding to the
         column number of the previously mentioned matrices) and their names.
@@ -123,6 +129,13 @@ struct PowerFlowData{
     arc_angle_differences::Matrix{Float64}
     generic_hvdc_flows::Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}
     bus_hvdc_net_power::Matrix{Float64}
+    # DC phase-shifter terms (time-invariant: α is a stored circuit angle, not a per-step
+    # control variable). `+b·α` at the from bus / `−b·α` at the to bus of each shifted arc;
+    # zero on α-free systems. See `_populate_phase_shift_terms!`.
+    bus_phase_shift_injections::Vector{Float64}
+    # `b_eq·α_eq` per arc, subtracted from the DC flow (`f = b·Δθ − b·α`); zero for
+    # non-shifted arcs.
+    arc_phase_shift_flow_offsets::Vector{Float64}
     time_step_map::Dict{Int, String}
     power_network_matrix::M
     aux_network_matrix::N
@@ -135,21 +148,40 @@ struct PowerFlowData{
     voltage_stability_factors::Union{Matrix{Float64}, Nothing}
     arc_active_power_losses::Union{Matrix{Float64}, Nothing}
     lcc::LCCParameters
+    # All PSY DC components (point-to-point VSC, multi-terminal DC) lowered into one DC network and
+    # solved jointly with the AC buses. Held behind a `Ref` (like `solver_cache`) so the immutable
+    # struct can receive the fully-built network after the system is scanned in
+    # `initialize_DCNetwork!`. Empty `DCNetwork()` for systems with no DC components.
+    dc_network::Base.RefValue{DCNetwork}
     arc_lossy_admittance_from_to::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing}
     arc_lossy_admittance_to_from::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing}
-    # Persistent per-solve cache, lazily populated in place on the first `solve_power_flow!`
-    # (the `Base.Ref` avoids reconstructing `data`). Holds a [`SolverCache`](@ref): the DC/PTDF
-    # path stores a [`DCSolverCache`](@ref); the polar fast-decoupled solver stores a
-    # `FastDecoupledCache`. The two subtypes are type-disjoint, so the slot's type discriminates
-    # which path populated it (a cross-use is a loud `MethodError`, not a silent mis-read).
+    # Persistent solver cache, reused across repeated solves on the same data (e.g. a PCM loop:
+    # fixed network, changing injections) so factorizations are computed once and solve buffers
+    # are not reallocated. Lazily populated in place on the first solve (the `Base.Ref` avoids
+    # reconstructing `data`). Holds a [`SolverCache`](@ref) — an abstract supertype forward-declared
+    # in `power_flow_types.jl` so the field type resolves before the concrete subtypes are defined.
+    # Two TYPE-DISJOINT subtypes share this one slot:
+    #   * DC path (`ABA`/PTDF data): a [`DCSolverCache`](@ref) holding the factored network matrix +
+    #     backend (the invalidation key — rebuild when either changes, see
+    #     `_get_or_build_solver_cache!`), the `PFLinearSolverCache`, and the per-solve scratch.
+    #   * AC path, FastDecoupled solver (`ACPowerFlowData`): a `FastDecoupledCache` holding the
+    #     factored B′ (once per data/scheme/backend) and per-PQ-set factored B″ submatrices
+    #     (see `_get_or_build_fd_cache!`).
+    # Each getter dispatches on the cached subtype, so an empty slot or a cross-use fails loudly
+    # (a `MethodError`) instead of being silently mis-read — no sentinel tag needed.
     solver_cache::Base.RefValue{Union{Nothing, SolverCache}}
-    # Persistent polar NR/TR reuse cache (a `PolarNRCache`, or `nothing`). Holds the residual,
-    # Jacobian, linear-solver cache (with its symbolic factorization), and state-vector buffers so
-    # the Q-limit retry loop and the multi-period time-step loop skip reconstructing these
-    # structure-invariant objects on every `_newton_power_flow` call. Typed as the
-    # `AbstractNRCache` forward supertype because the concrete `PolarNRCache` cannot be referenced
-    # here (construction cycle through `ACPowerFlowResidual`); the consumer's `isa PolarNRCache`
-    # check narrows it.
+    controlled_devices::Union{Nothing, ControlledDeviceSet}
+    # Memoized NR/TR AC-Jacobian sparse structure. Its OWN slot (not `solver_cache`) because the
+    # AC Jacobian and a `solver_cache` entry can both be live in one solve (FastDecoupled handing
+    # off to NR), so they must not contend. Lazily populated; see `_get_or_build_jacobian_structure`.
+    ac_jacobian_structure_cache::Base.RefValue{Union{Nothing, ACJacobianStructureCache}}
+    # Persistent polar NR/TR reuse cache (a `PolarNRCache`, defined in `power_flow_method.jl`).
+    # Holds the residual, Jacobian, linear-solver cache (with its symbolic factorization), and
+    # state-vector buffers so the Q-limit retry loop and the multi-period time-step loop skip
+    # reconstructing these structure-invariant objects on every `_newton_power_flow` call. Its own
+    # slot so it never contends with a DC/FD `solver_cache`. Typed as the `AbstractNRCache` forward
+    # supertype because the concrete `PolarNRCache` cannot be referenced here (construction cycle
+    # through `ACPowerFlowResidual`).
     polar_nr_cache::Base.RefValue{Union{Nothing, AbstractNRCache}}
 end
 
@@ -209,6 +241,10 @@ get_bus_reactive_power_constant_current_withdrawals(pfd::PowerFlowData) =
 get_bus_reactive_power_constant_impedance_withdrawals(pfd::PowerFlowData) =
     pfd.bus_reactive_power_constant_impedance_withdrawals
 get_bus_reactive_power_bounds(pfd::PowerFlowData) = pfd.bus_reactive_power_bounds
+get_bus_hvdc_net_power(pfd::PowerFlowData) = pfd.bus_hvdc_net_power
+get_bus_phase_shift_injections(pfd::PowerFlowData) = pfd.bus_phase_shift_injections
+get_arc_phase_shift_flow_offsets(pfd::PowerFlowData) = pfd.arc_phase_shift_flow_offsets
+get_generic_hvdc_flows(pfd::PowerFlowData) = pfd.generic_hvdc_flows
 get_bus_slack_participation_factors(pfd::PowerFlowData) =
     pfd.bus_slack_participation_factors
 get_bus_type(pfd::PowerFlowData) = pfd.bus_type
@@ -232,6 +268,7 @@ get_converged(pfd::PowerFlowData) = pfd.converged
 get_loss_factors(pfd::PowerFlowData) = pfd.loss_factors
 get_voltage_stability_factors(pfd::PowerFlowData) = pfd.voltage_stability_factors
 get_arc_active_power_losses(pfd::PowerFlowData) = pfd.arc_active_power_losses
+get_controlled_devices(pfd::PowerFlowData) = pfd.controlled_devices
 
 # Field getter for expanded slack participation factors (one dict per time step)
 # Named "computed" to distinguish from the user-supplied pf.generator_slack_participation_factors
@@ -273,6 +310,7 @@ get_lcc_rectifier_min_thyristor_angle(pfd::PowerFlowData) =
 get_lcc_inverter_min_thyristor_angle(pfd::PowerFlowData) =
     pfd.lcc.inverter.min_thyristor_angle
 get_lcc_i_dc(pfd::PowerFlowData) = pfd.lcc.i_dc
+get_dc_network(pfd::PowerFlowData) = pfd.dc_network[]
 # pseudo getter.
 get_lcc_count(data::PowerFlowData) = length(data.lcc.rectifier.bus)
 
@@ -350,6 +388,7 @@ function PowerFlowData(
     arc_lossy_admittance_from_to::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing} = nothing,
     arc_lossy_admittance_to_from::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing} = nothing,
     arc_bus_incidence::Union{SparseMatrixCSC{Int8, Int}, Nothing} = nothing,
+    controlled_devices::Union{Nothing, ControlledDeviceSet} = nothing,
 ) where {
     T <: PowerFlowEvaluationModel,
     M <: PNM.PowerNetworkMatrix,
@@ -396,6 +435,8 @@ function PowerFlowData(
         zeros(n_arcs, n_time_steps), # arc_angle_differences
         Dict{Tuple{Int, Int}, Tuple{Float64, Float64}}(), # generic_hvdc_flows
         zeros(n_buses, n_time_steps), # bus_hvdc_net_power
+        zeros(n_buses), # bus_phase_shift_injections
+        zeros(n_arcs), # arc_phase_shift_flow_offsets
         time_step_map,
         power_network_matrix,
         aux_network_matrix,
@@ -406,10 +447,13 @@ function PowerFlowData(
         calculate_voltage_stability_factors ? zeros(n_buses, n_time_steps) : nothing, # voltage_stability_factors
         _make_arc_active_power_losses(pf, n_arcs, n_time_steps), # arc_active_power_losses
         lcc_parameters,
+        Base.RefValue{DCNetwork}(DCNetwork()), # dc_network (built in initialize_DCNetwork!)
         arc_lossy_admittance_from_to,
         arc_lossy_admittance_to_from,
-        Base.RefValue{Union{Nothing, SolverCache}}(nothing), # lazily populated
-        Base.RefValue{Union{Nothing, AbstractNRCache}}(nothing), # lazily populated
+        Base.RefValue{Union{Nothing, SolverCache}}(nothing), # solver_cache (lazily populated)
+        controlled_devices,
+        Base.RefValue{Union{Nothing, ACJacobianStructureCache}}(nothing), # ac_jacobian_structure_cache
+        Base.RefValue{Union{Nothing, AbstractNRCache}}(nothing), # polar_nr_cache (lazily populated)
     )
 end
 
@@ -472,7 +516,7 @@ end
 # on; the default of `true` is only safe for DC power flow.
 _assert_ac_reduction_supported(::PNM.NetworkReduction) = nothing
 function _assert_ac_reduction_supported(nr::PNM.DegreeTwoReduction)
-    PNM.get_reduce_reactive_power_injectors(nr) || return nothing
+    PNM.get_reduce_reactive_power_injectors(nr) || return
     throw(
         IS.ConflictingInputsError(
             "DegreeTwoReduction with `reduce_reactive_power_injectors = true` is not \
@@ -517,7 +561,14 @@ function make_and_initialize_power_flow_data(
     arc_lossy_admittance_from_to::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing} = nothing,
     arc_lossy_admittance_to_from::Union{SparseMatrixCSC{YBUS_ELTYPE, Int}, Nothing} = nothing,
     arc_bus_incidence::Union{SparseMatrixCSC{Int8, Int}, Nothing} = nothing,
+    controlled_devices::Union{Nothing, ControlledDeviceSet} = nothing,
 ) where {M <: PNM.PowerNetworkMatrix, N <: Union{PNM.PowerNetworkMatrix, Nothing}}
+    if isnothing(controlled_devices) && get_control_discrete_devices(pf)
+        @warn "control_discrete_devices=true, but no controlled_devices were supplied \
+            to make_and_initialize_power_flow_data — discrete device control will NOT \
+            run. Construct via PowerFlowData(pf, sys), or pass a ControlledDeviceSet \
+            built with build_controlled_device_set." maxlog = 1
+    end
     removed_buses =
         PNM.get_removed_buses(PNM.get_network_reduction_data(power_network_matrix))
     lcc_filter =
@@ -534,6 +585,7 @@ function make_and_initialize_power_flow_data(
         arc_lossy_admittance_from_to = arc_lossy_admittance_from_to,
         arc_lossy_admittance_to_from = arc_lossy_admittance_to_from,
         arc_bus_incidence = arc_bus_incidence,
+        controlled_devices = controlled_devices,
     )
     @assert length(data.lcc.setpoint_at_rectifier) == n_lccs
     initialize_power_flow_data!(data, pf, sys; correct_bustypes = get_correct_bustypes(pf))
@@ -571,6 +623,42 @@ function _route_zero_impedance_reduction(reductions::Vector{PNM.NetworkReduction
     return others, reductions[idx]
 end
 
+# Build the controlled-device set for a solve, or `nothing` when discrete control is off or the
+# system has no enrollable devices. LCC HVDC is rejected: the continuation's rollback does not yet
+# cover the per-time-step LCC state. Taps support time_steps>1 via reset-to-baseline
+# (`load_device_state!` resets the shared Y-bus to `d.initial` before each step).
+function _build_controlled_devices(
+    pf::AbstractACPowerFlow,
+    sys::PSY.System,
+    power_network_matrix,
+)
+    if !get_control_discrete_devices(pf)
+        return nothing
+    end
+    if !isempty(PSY.get_available_components(PSY.TwoTerminalLCCLine, sys))
+        throw(
+            ArgumentError(
+                "control_discrete_devices=true is not supported on systems with " *
+                "LCC HVDC lines: the continuation's rollback does not yet cover " *
+                "the per-time-step LCC state.",
+            ),
+        )
+    end
+    n_time_steps = get_time_steps(pf)
+    nrd = PNM.get_network_reduction_data(power_network_matrix)
+    set = build_controlled_device_set(
+        sys,
+        PNM.get_bus_lookup(power_network_matrix),
+        power_network_matrix;
+        reverse_bus_search_map = PNM.get_reverse_bus_search_map(nrd),
+        n_time_steps = n_time_steps,
+    )
+    if isempty(set)
+        return nothing
+    end
+    return set
+end
+
 """
     PowerFlowData(
         pf::AbstractACPowerFlow{<:ACPowerFlowSolverType},
@@ -604,9 +692,14 @@ function PowerFlowData(
     network_reduction_message(network_reductions, pf)
     reductions, zero_impedance_reduction =
         _route_zero_impedance_reduction(network_reductions)
+    # Converter AC terminals are ALWAYS irreducible — independent of `model_dc_network`. Reducing a
+    # VSC/IC bus away would lose the converter (silently drop it from the joint model, or mishandle
+    # its injection when DC modeling is off), so the protection must not depend on the solve mode.
+    irreducible_buses = _dc_converter_ac_buses(sys)
     power_network_matrix = PNM.Ybus(
         sys;
         network_reductions = reductions,
+        irreducible_buses = irreducible_buses,
         make_arc_admittance_matrices = true,
         include_constant_impedance_loads = false,
         zero_impedance_reduction = zero_impedance_reduction,
@@ -620,12 +713,15 @@ function PowerFlowData(
         aux_network_matrix = nothing
     end
 
+    controlled_devices = _build_controlled_devices(pf, sys, power_network_matrix)
+
     return make_and_initialize_power_flow_data(
         pf,
         sys,
         power_network_matrix,
         aux_network_matrix;
         neighbors = neighbors,
+        controlled_devices = controlled_devices,
     )
 end
 
@@ -664,6 +760,7 @@ function PowerFlowData(
     ybus = PNM.Ybus(
         sys;
         network_reductions = reductions,
+        irreducible_buses = _dc_converter_ac_buses(sys),
         make_arc_admittance_matrices = pf.lossy_flows,
         zero_impedance_reduction = zero_impedance_reduction,
     )
@@ -734,6 +831,7 @@ function PowerFlowData(
     # get the network matrices
     ybus = PNM.Ybus(sys;
         network_reductions = reductions,
+        irreducible_buses = _dc_converter_ac_buses(sys),
         zero_impedance_reduction = zero_impedance_reduction)
     power_network_matrix = PNM.PTDF(ybus)
     aux_network_matrix = PNM.ABA_Matrix(ybus; factorize = true)
@@ -787,6 +885,7 @@ function PowerFlowData(
     # get the network matrices
     ybus = PNM.Ybus(sys;
         network_reductions = reductions,
+        irreducible_buses = _dc_converter_ac_buses(sys),
         zero_impedance_reduction = zero_impedance_reduction)
     power_network_matrix = PNM.VirtualPTDF(ybus) # evaluates an empty virtual PTDF
     aux_network_matrix = PNM.ABA_Matrix(ybus; factorize = true)
@@ -817,21 +916,21 @@ function _compute_arc_angle_differences_from_data!(
     return
 end
 
-"""Compute arc angle differences using precomputed from/to bus index vectors
-over specified time steps. Used by the AC solver where `fb_ix`/`tb_ix` are
-already available from the branch flow calculation."""
+"""Compute one time step's arc angle differences using precomputed from/to bus index
+vectors. Used by the AC solver where `fb_ix`/`tb_ix` are already available from the
+branch flow calculation."""
 function _compute_arc_angle_differences_from_indices!(
     data::PowerFlowData{T, M, N},
     fb_ix::Vector{Int},
     tb_ix::Vector{Int},
-    time_steps::Vector{Int},
+    time_step::Int,
 ) where {
     T <: PowerFlowEvaluationModel,
     M <: PNM.PowerNetworkMatrix,
     N <: Union{PNM.PowerNetworkMatrix, Nothing},
 }
-    @views data.arc_angle_differences[:, time_steps] .=
-        data.bus_angles[fb_ix, time_steps] .- data.bus_angles[tb_ix, time_steps]
+    @views data.arc_angle_differences[:, time_step] .=
+        data.bus_angles[fb_ix, time_step] .- data.bus_angles[tb_ix, time_step]
     return
 end
 

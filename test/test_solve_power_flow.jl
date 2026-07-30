@@ -1,3 +1,9 @@
+# Two identical solve calls must agree, but exact Float64 equality is fragile: the solve
+# pipeline carries run-to-run FP-accumulation nondeterminism (~1e-13), so compare stored
+# floats with a tolerance and everything else exactly.
+_solved_value_matches(a::AbstractFloat, b::AbstractFloat) = isapprox(a, b; atol = 1e-9)
+_solved_value_matches(a, b) = isequal(a, b)
+
 @testset "AC Power Flow 14-Bus testing" begin
     result_14 = [
         2.3255081760423684
@@ -50,8 +56,7 @@
     # Test that passing check_reactive_power_limits=false is the default and violates limits
     solved2 = deepcopy(sys)
     @test solve_and_store_power_flow!(pf, solved2)
-    # TODO (PSY6): change IS.compare_values to use isapprox for floating point values.
-    @test_skip IS.compare_values(solved1, solved2)
+    @test IS.compare_values(_solved_value_matches, solved1, solved2)
     @test get_reactive_power(get_component(ThermalStandard, solved2, "Bus8"), PSY.SU) >
           get_reactive_power_limits(
         get_component(ThermalStandard, solved2, "Bus8"),
@@ -385,9 +390,11 @@ end
         "matpower_ACTIVSg10k_sys";
         force_build = false,
     )
-    @assert !isempty(get_components(PhaseShiftingTransformer, sys)) "System should have " *
-                                                                    "phase shifting transformers: " *
-                                                                    "change `force_build` to `true` in the test."
+    @assert any(
+        t -> !iszero(PSY.get_α(PSY.get_circuit(t))),
+        get_components(TwoWindingTransformer, sys),
+    ) "System should have phase shifting transformers: " *
+      "change `force_build` to `true` in the test."
     pf_tr = ACPowerFlow{TrustRegionACPowerFlow}(;
         correct_bustypes = true,
         solver_settings = Dict{Symbol, Any}(:maxIterations => 200, :factor => 0.1),
@@ -597,46 +604,39 @@ end
     @test isapprox(data.bus_reactive_power_injections[2, 1], 0.0, atol = 1e-12, rtol = 0)
 end
 
-@testset "Test phase shift in transformers" for Transformer in
-                                                (PSY.Transformer2W, PSY.TapTransformer)
+@testset "Test phase shift in transformers" begin
     sys = System(100.0)
     b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.1, 0.0)
     b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 110, 1.1, 0.0)
 
     _add_simple_source!(sys, b1, 0.0, 0.0)
 
-    parameters = Dict(
-        :name => "Transformer",
-        :available => true,
-        :active_power_flow => 0.0,
-        :reactive_power_flow => 0.0,
-        :arc => Arc(b1, b2),
-        :r => 0.01,
-        :x => 0.05,
-        :primary_shunt => 0.0,
-        :winding_group_number => 1,  # 30 degrees in radians
-        :rating => 1.0,
-        :base_power => 100.0,
-        :base_voltage_primary => 230,
-        :base_voltage_secondary => 110,
-    )
-
-    Transformer == PSY.Transformer2W || (parameters[:tap] = 1.0)
-
-    t = Transformer(;
-        parameters...,
+    t = PSY.TwoWindingTransformer(;
+        name = "Transformer",
+        circuit = PSY.TransformerCircuit(;
+            available = true,
+            arc = Arc(b1, b2),
+            r = 0.01,
+            x = 0.05,
+            tap = 1.0,
+            α = deg2rad(30),
+            rating = 1.0,
+            base_power = 100.0,
+            base_voltage_primary = 230,
+            base_voltage_secondary = 110,
+        ),
     )
     add_component!(sys, t)
 
     pf = ACPowerFlow(; correct_bustypes = true)
     data = PowerFlowData(pf, sys)
     solve_power_flow!(data)
-    # Check that the phase shift is correctly applied
+    # Check that the phase shift is correctly applied. With t = tap * exp(im * α) on the
+    # from side (PNM's `_pi_to_ybus` convention) and no injection at bus 2, KCL forces
+    # V2 = V1 / t, so angle(V2) = angle(V1) - α.
     a1 = data.bus_angles[1, 1]
     a2 = data.bus_angles[2, 1]
-    # TODO for some reason this is off by a negative sign.
-    # @test isapprox(a2, a1 - deg2rad(30); atol = 1e-6, rtol = 0)
-    @test isapprox(-a2, a1 - deg2rad(30); atol = 1e-6, rtol = 0)
+    @test isapprox(a2, a1 - deg2rad(30); atol = 1e-6, rtol = 0)
 end
 
 @testset "Test SwitchedAdmittance" begin
@@ -731,8 +731,6 @@ end
 end
 
 function test_lcc_ac_solver(ACSolver)
-    # Skip the solvers that do not support LCCs
-    ACSolver ∈ (RobustHomotopyPowerFlow,) && return
     sys, lcc = simple_lcc_system()
     # FastDecoupled :decoupled (the polar default) cannot span the LCC state variables; use its
     # :fixed_jacobian variant, which freezes the full Jacobian (LCC rows included). Dedicated FD
@@ -781,6 +779,31 @@ function test_lcc_ac_solver(ACSolver)
 
     @test get_active_power_flow(lcc, PSY.SU) ==
           data.lcc.arc_active_power_flow_from_to[1, 1]
+
+    # The reverse-flow (p_set = -25) and zero-flow (p_set = 0) sub-cases
+    # are skipped for RobustHomotopyPowerFlow.
+    #
+    # Reverse flow: after `solve_and_store_power_flow!` writes converged
+    # tap settings back to the PSY component, the next PowerFlowData
+    # inherits those taps. Starting RH from the previous solve's
+    # converged-but-now-stale taps with the residual reoriented
+    # (setpoint_at_rectifier flipped to false) puts the homotopy in a
+    # narrow basin that the second-order method can't navigate within
+    # the default iteration budget. NR/TR/LM solve directly from those
+    # same starting taps without trouble.
+    #
+    # Zero flow (p_set = 0): I_dc → 0 collapses the LCC's contribution
+    # to the Jacobian — the (tap_r, tap_i) columns of J go to zero
+    # (clamped to ~1e-9). NR/TR/LM handle this fine because their direct
+    # square solve gives δ_tap = 0 trivially when the corresponding J
+    # column is zero. RH's Hessian-based step (`J^T J` plus the
+    # modified-Cholesky regularization) cannot: the (tap, tap) Hessian
+    # diagonal collapses to ~1e-18, the regularized inverse produces
+    # huge spurious δ_tap, and the line search shrinks the whole step
+    # to ε. Both are fundamental degeneracies / conditioning
+    # limitations in the I_dc → 0 or stale-initial-state regimes, not
+    # bugs in the LCC Hessian assembly.
+    ACSolver === RobustHomotopyPowerFlow && return
 
     PSY.set_transfer_setpoint!(lcc, -25.0)
     data = PowerFlowData(pf, sys)

@@ -5,7 +5,6 @@ A struct to keep track of the residuals in the Newton-Raphson AC power flow calc
 
 # Fields
 - `data::ACPowerFlowData`: The grid model data.
-- `Rf!::Function`: A function that updates the residuals based on the latest values stored in the grid at the given iteration.
 - `Rv::Vector{Float64}`: A vector of the values of the residuals.
 - `P_net::Vector{Float64}`: A vector of net active power injections.
 - `Q_net::Vector{Float64}`: A vector of net reactive power injections.
@@ -17,7 +16,6 @@ A struct to keep track of the residuals in the Newton-Raphson AC power flow calc
 """
 struct ACPowerFlowResidual
     data::ACPowerFlowData
-    Rf!::Function
     Rv::Vector{Float64}
     P_net::Vector{Float64}
     Q_net::Vector{Float64}
@@ -85,8 +83,8 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
 
     return ACPowerFlowResidual(
         data,
-        _update_residual_values!,
-        Vector{Float64}(undef, 2 * n_buses + 4 * n_lccs),
+        Vector{Float64}(undef,
+            2 * n_buses + 4 * n_lccs + vsc_tail_length(get_dc_network(data))),
         P_net,
         Q_net,
         P_net_set,
@@ -121,7 +119,7 @@ function (Residual::ACPowerFlowResidual)(
     x::Vector{Float64},
     time_step::Int64,
 )
-    Residual.Rf!(
+    _update_residual_values!(
         Residual.Rv,
         x,
         Residual.P_net,
@@ -155,7 +153,7 @@ Calling the `ACPowerFlowResidual` will also update the values of P, Q, V, Θ in 
 - `time_step::Int64`: The current time step.
 """
 function (Residual::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
-    Residual.Rf!(
+    _update_residual_values!(
         Residual.Rv,
         x,
         Residual.P_net,
@@ -215,7 +213,7 @@ function _set_state_variables_at_bus!(
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.PV})
-    # When bustype == PV PSY.ACACBus, state variables are Reactive Power Generated and Voltage Angle
+    # When bustype == PV, state variables are Reactive Power Generated and Voltage Angle
     # We still update both P and Q values in case the PV bus participates in distributed slack
     P_net[ix] = P_net_set[ix] + P_slack
     Q_net[ix] = StateVector[2 * ix - 1]
@@ -294,6 +292,9 @@ function _update_residual_values!(
     # update P_net, Q_net, data.bus_angles, data.bus_magnitude based on X
     Yb = data.power_network_matrix.data
     num_lcc = size(data.lcc.p_set, 1)
+    n_buses_total = first(size(data.bus_type))
+    dcn = get_dc_network(data)
+    vsc_off = 2 * n_buses_total + 4 * num_lcc
     bus_types = view(data.bus_type, :, time_step)
 
     for (ref_bus, subnetwork_buses) in subnetworks
@@ -334,11 +335,17 @@ function _update_residual_values!(
     end
 
     if num_lcc > 0
-        data.lcc.rectifier.tap[:, time_step] = x[(end - 4 * num_lcc + 1):4:end]
-        data.lcc.inverter.tap[:, time_step] = x[(end - 4 * num_lcc + 2):4:end]
-        data.lcc.rectifier.thyristor_angle[:, time_step] = x[(end - 4 * num_lcc + 3):4:end]
-        data.lcc.inverter.thyristor_angle[:, time_step] = x[(end - 4 * num_lcc + 4):4:end]
+        lcc_end = vsc_off
+        data.lcc.rectifier.tap[:, time_step] = x[(lcc_end - 4 * num_lcc + 1):4:lcc_end]
+        data.lcc.inverter.tap[:, time_step] = x[(lcc_end - 4 * num_lcc + 2):4:lcc_end]
+        data.lcc.rectifier.thyristor_angle[:, time_step] =
+            x[(lcc_end - 4 * num_lcc + 3):4:lcc_end]
+        data.lcc.inverter.thyristor_angle[:, time_step] =
+            x[(lcc_end - 4 * num_lcc + 4):4:lcc_end]
         _update_ybus_lcc!(data, time_step)
+    end
+    if has_dc_network(dcn)
+        _read_vsc_state!(dcn, x, vsc_off, time_step)
     end
 
     # compute active, reactive power balances using the just updated values.
@@ -392,7 +399,11 @@ function _update_residual_values!(
     end
 
     if num_lcc > 0
-        _set_lcc_tail_residuals!(F, data, length(F) - 4 * num_lcc, time_step)
+        _set_lcc_tail_residuals!(F, data, vsc_off - 4 * num_lcc, time_step)
+    end
+    if has_dc_network(dcn)
+        _apply_vsc_bus_injections_polar!(F, dcn, time_step)
+        _set_vsc_tail_residuals!(F, dcn, Vm, vsc_off, time_step)
     end
     return
 end

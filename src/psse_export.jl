@@ -1,5 +1,21 @@
 const PSSE_DEFAULT = ""  # Used below in cases where we want to insert an empty field to signify the PSSE default
 const PSSE_INFINITY = 9999.0
+
+# PSS/E spec defaults for generator machine data PSY does not model (source impedance,
+# step-up transformer, remote regulation, wind mode). v33 accepts a blank field and the
+# reader substitutes these; v35 does not allow blanks, so the v35 record writes them
+# explicitly. Values mirror the reader's own default table — do not diverge from it.
+const PSSE_GEN_DEFAULT_IREG = 0
+const PSSE_GEN_DEFAULT_NREG = 0
+const PSSE_GEN_DEFAULT_ZR = 0.0
+const PSSE_GEN_DEFAULT_ZX = 1.0
+const PSSE_GEN_DEFAULT_RT = 0.0
+const PSSE_GEN_DEFAULT_XT = 0.0
+const PSSE_GEN_DEFAULT_GTAP = 1.0
+const PSSE_GEN_DEFAULT_RMPCT = 100.0
+const PSSE_GEN_DEFAULT_BASLOD = 0
+const PSSE_GEN_DEFAULT_WMOD = 0
+const PSSE_GEN_DEFAULT_WPF = 1.0
 const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.PQ => 1,
     PSY.ACBusTypes.PV => 2,
@@ -15,45 +31,18 @@ const DISCRETE_BRANCH_MAP = Dict(
 
 # Winding categories to map IC data to the transformer windings
 const WINDING_CATEGORIES = [
-    (PSY.WindingCategory.PRIMARY_WINDING, "1"),
-    (PSY.WindingCategory.SECONDARY_WINDING, "2"),
-    (PSY.WindingCategory.TERTIARY_WINDING, "3"),
+    PSY.WindingCategory.PRIMARY_WINDING,
+    PSY.WindingCategory.SECONDARY_WINDING,
+    PSY.WindingCategory.TERTIARY_WINDING,
 ]
 
-# Accessor functions for each winding category
-const WINDING_ACCESSORS = Dict(
-    PSY.WindingCategory.PRIMARY_WINDING => (
-        get_base_voltage = PSY.get_base_voltage_primary,
-        get_turns_ratio = PSY.get_primary_turns_ratio,
-        get_angle = PSY.get_α_primary,
-        get_rating = PSY.get_rating_primary,
-        get_group_number = PSY.get_primary_group_number,
-    ),
-    PSY.WindingCategory.SECONDARY_WINDING => (
-        get_base_voltage = PSY.get_base_voltage_secondary,
-        get_turns_ratio = PSY.get_secondary_turns_ratio,
-        get_angle = PSY.get_α_secondary,
-        get_rating = PSY.get_rating_secondary,
-        get_group_number = PSY.get_secondary_group_number,
-    ),
-    PSY.WindingCategory.TERTIARY_WINDING => (
-        get_base_voltage = PSY.get_base_voltage_tertiary,
-        get_turns_ratio = PSY.get_tertiary_turns_ratio,
-        get_angle = PSY.get_α_tertiary,
-        get_rating = PSY.get_rating_tertiary,
-        get_group_number = PSY.get_tertiary_group_number,
-    ),
-)
-
-# Winding categories representing different types of transformer windings
-const WINDING_GROUP_NUMBER_TO_DEGREES = Dict(
-    -99 => PSSE_DEFAULT,   # UNDEFINED, export as default
-    0 => 0,              # GROUP_0: 0 Degrees
-    1 => -30,            # GROUP_1: -30 Degrees
-    5 => -150,           # GROUP_5: -150 Degrees
-    6 => 180,            # GROUP_6: 180 Degrees
-    7 => 150,            # GROUP_7: 150 Degrees
-    11 => 30,             # GROUP_11: 30 Degrees
+# Circuit selector per winding category. Every per-winding quantity (base voltage, turns ratio,
+# α, rating, winding group) lives on the winding's `PSY.TransformerCircuit`, so the category
+# only has to pick which circuit to read.
+const WINDING_CIRCUITS = Dict(
+    PSY.WindingCategory.PRIMARY_WINDING => PSY.get_primary_circuit,
+    PSY.WindingCategory.SECONDARY_WINDING => PSY.get_secondary_circuit,
+    PSY.WindingCategory.TERTIARY_WINDING => PSY.get_tertiary_circuit,
 )
 
 # Each of the groups in the PSS/E v33 standard
@@ -303,6 +292,11 @@ Update the `PSSEExporter` with new `data`.
     [`PowerSystems.System`](@extref) with which the exporter was constructed.
 """
 function update_exporter!(exporter::PSSEExporter, data::PowerFlowData)
+    if !isnothing(get_controlled_devices(data))
+        # exporter.system is a deepcopy: applying the solved device settings here keeps
+        # the exported case self-consistent without touching the user's system.
+        write_device_settings!(exporter.system, data)
+    end
     # NOTE this relies on exporter.system being a deepcopy of the original system so we're not changing that one here
     update_system!(exporter.system, data)
 end
@@ -363,8 +357,11 @@ function better_float_to_buf(buf::_FloatToBufSupportedTypes, n::Float64)
     # with the underlying Memory with minimal modification, which would be nice because
     # other than this, better_float_to_buf is completely allocation free.
     data_array = get_data_array(buf)
-    new_pos = Base.Ryu.writeshortest(data_array, buf.ptr, n, false, false, true, -1,
-        UInt8('e'), false, UInt8('.'), true, false)
+    # RAW numerics are read into Fortran single precision, so write the shortest string
+    # that round-trips as Float32 (typed=false avoids the "f0" suffix Ryu appends for Float32).
+    new_pos =
+        Base.Ryu.writeshortest(data_array, buf.ptr, Float32(n), false, false, true, -1,
+            UInt8('e'), false, UInt8('.'), false, false)
     buf.ptr = new_pos
     buf.size = new_pos - 1
     return
@@ -462,20 +459,16 @@ convert_empty_stringvec = Base.Fix1(convert_empty, Vector{String})
 # PERF could be improved by appending to the buffer rather than doing string interpolation, seems unnecessary
 _psse_quote_string(s::String) = "'$s'"
 
-# Rounds a value up to 4 decimals, to avoid large approximations in file
-_psse_round_val(val::String) = val
-_psse_round_val(val::Number) = round(val; digits = 4)
-
 branch_to_bus_numbers(branch::PSY.Branch) =
     PSY.get_number.((PSY.get_from_bus(branch), PSY.get_to_bus(branch)))::Tuple{Int, Int}
 
 function branch_to_bus_numbers(
     branch::PSY.ThreeWindingTransformer,
 )
-    p = PSY.get_number(PSY.get_from(PSY.get_primary_star_arc(branch)))
-    s = PSY.get_number(PSY.get_from(PSY.get_secondary_star_arc(branch)))
-    t = PSY.get_number(PSY.get_from(PSY.get_tertiary_star_arc(branch)))
-    return (p, s, t)
+    # Each circuit's arc runs terminal bus -> star bus, so the terminal is the `from` bus.
+    return PSY.get_number.(
+        PSY.get_from.(PSY.get_arc.(PSY.get_circuits(branch))),
+    )::Tuple{Int, Int, Int}
 end
 
 "Throw a `NotImplementedError` if the `psse_version` is not supported"
@@ -616,18 +609,6 @@ function _is_valid_psse_name(name::String)
     (length(name) <= 12) || (return false)
     (length(name) >= 1) && (first(name) == '-') && (return false)
     return true  # Does the allowance for special characters cover *any* special characters?
-end
-
-function get_ext_key_or_default(
-    component::PSY.Component,
-    key::String,
-    default = PSSE_DEFAULT,
-)
-    ext = PSY.get_ext(component)
-    if isnothing(ext)
-        return default
-    end
-    return get(ext, key, default)
 end
 
 # WRITTEN TO SPEC: PSS/E 33.3 POM 5.2.1 Bus Data
@@ -823,11 +804,6 @@ serialize_component_ids(id_mapping::Dict{Tuple{Tuple{Int64, Int64}, String}, Str
 # Helper functions for Transformer Data export
 # ============================================================================
 
-_get_mag_defaults(t::PSY.ThreeWindingTransformer) =
-    (PSY.get_g(t, PSY.SU), PSY.get_b(t, PSY.SU))
-_get_mag_defaults(t::PSY.TwoWindingTransformer) =
-    (real(PSY.get_primary_shunt(t, PSY.SU)), imag(PSY.get_primary_shunt(t, PSY.SU)))
-
 """Write the first record line for a 2-winding transformer."""
 function _write_2w_transformer_record1!(
     io::IO,
@@ -840,16 +816,15 @@ function _write_2w_transformer_record1!(
     NAME::String,
     STAT::Int,
 )
-    default_CW, default_CZ, default_CM = _get_cw_cz_cm_defaults(transformer)
-    CW = get_ext_key_or_default(transformer, "CW", default_CW)
-    CZ = get_ext_key_or_default(transformer, "CZ", default_CZ)
-    CM = get_ext_key_or_default(transformer, "CM", default_CM)
-    mag1_default, mag2_default = _get_mag_defaults(transformer)
-    MAG1 = get_ext_key_or_default(transformer, "MAG1", mag1_default)
-    MAG2 = get_ext_key_or_default(transformer, "MAG2", mag2_default)
-    NMETR = get_ext_key_or_default(transformer, "NMETR")
-    VECGRP = _psse_quote_string(get_ext_key_or_default(transformer, "VECGRP"))
-    ZCOD = get_ext_key_or_default(transformer, "ZCOD")
+    # WINDV* is the circuit's pu turns ratio, so CW = 1; R/X and the magnetizing shunt are
+    # written in system base, which is what CZ/CM default to when left blank.
+    CW = 1
+    CZ = PSSE_DEFAULT
+    CM = PSSE_DEFAULT
+    MAG1, MAG2 = reim(PSY.get_magnetizing_shunt(transformer, PSY.SU))
+    NMETR = PSSE_DEFAULT
+    VECGRP = _psse_quote_string(PSSE_DEFAULT)
+    ZCOD = PSSE_DEFAULT
 
     if exporter.psse_version == :v35
         @fastprintdelim_unroll(io, false, I, J, K, CKT, CW, CZ, CM,
@@ -869,169 +844,90 @@ function _write_2w_transformer_record2!(
     io::IO,
     transformer::PSY.TwoWindingTransformer,
 )
-    SBASE1_2 = get_ext_key_or_default(
-        transformer,
-        "SBASE1-2",
-        PSY.get_base_power(transformer, PSY.NU),
-    )
-    R1_2 = Float64(get_ext_key_or_default(
-        transformer,
-        "R1-2",
-        PSY.get_r(transformer, PSY.SU))
-    )
-    X1_2 = get_ext_key_or_default(
-        transformer,
-        "X1-2",
-        PSY.get_x(transformer, PSY.SU),
-    )
+    SBASE1_2 = PSY.get_base_power(transformer, PSY.NU)
+    R1_2 = PSY.get_r(transformer, PSY.SU)
+    X1_2 = PSY.get_x(transformer, PSY.SU)
     @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2)
 end
 
-_get_2w_ang1(t::PSY.PhaseShiftingTransformer) = rad2deg(PSY.get_α(t))
-_get_2w_ang1(t::Union{PSY.Transformer2W, PSY.TapTransformer}) =
-    get(
-        WINDING_GROUP_NUMBER_TO_DEGREES,
-        PSY.get_winding_group_number(t).value,
-        PSSE_DEFAULT,
-    )
-_get_2w_ang1(::PSY.TwoWindingTransformer) = 0.0
+# ANG1 for one circuit: α is the sole source of phase shift for the solve, so it is the sole
+# source for export too. Shared by the two- and three-winding paths, which differ only in
+# which circuit they read.
+function _circuit_ang(circuit::PSY.TransformerCircuit)
+    return rad2deg(PSY.get_α(circuit))
+end
 
-_resolve_cod1_val(
-    cod1_val::PSY.TransformerControlObjectiveModule.TransformerControlObjective,
-    transformer,
-) =
-    if cod1_val ==
-       PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
-        get_ext_key_or_default(transformer, "COD1")
-    else
-        cod1_val.value
+# COD/MODSW are PSS/E control codes and the control enums' values are exactly those codes.
+# UNDEFINED is not a code PSS/E accepts, so an uncontrolled device writes a blank field.
+function _psse_enum_code(value, undefined)
+    if value == undefined
+        return PSSE_DEFAULT
     end
-_resolve_cod1_val(cod1_val, _) = cod1_val
+    return value.value
+end
 
-function _get_2w_cod1(
-    transformer::Union{PSY.TapTransformer, PSY.PhaseShiftingTransformer},
+const _PSSE_PHASE_SHIFT_OBJECTIVES = (
+    PSY.TransformerControlObjective.ACTIVE_POWER_FLOW,
+    PSY.TransformerControlObjective.ACTIVE_POWER_FLOW_DISABLED,
+    PSY.TransformerControlObjective.ASYMMETRIC_ACTIVE_POWER_FLOW,
+    PSY.TransformerControlObjective.ASYMMETRIC_ACTIVE_POWER_FLOW_DISABLED,
 )
-    cod1_val = get_ext_key_or_default(
-        transformer,
-        "COD1",
-        PSY.get_control_objective(transformer),
-    )
-    return _resolve_cod1_val(cod1_val, transformer)
-end
-_get_2w_cod1(transformer::PSY.TwoWindingTransformer) =
-    get_ext_key_or_default(transformer, "COD1")
 
-_get_windv1_default(transformer::PSY.TapTransformer) = PSY.get_tap(transformer)
-_get_windv1_default(transformer::PSY.TwoWindingTransformer) =
-    PSY.get_base_voltage_primary(transformer)
-
-_get_windv2_default(::PSY.TapTransformer) = 1.0
-_get_windv2_default(transformer::PSY.TwoWindingTransformer) =
-    PSY.get_base_voltage_secondary(transformer)
-
-function _get_cw_cz_cm_defaults(transformer::PSY.Transformer2W)
-    from_base_voltage = PSY.get_base_voltage(PSY.get_from(PSY.get_arc(transformer)))
-    to_base_voltage = PSY.get_base_voltage(PSY.get_to(PSY.get_arc(transformer)))
-    windv1 =
-        get_ext_key_or_default(transformer, "WINDV1", _get_windv1_default(transformer))
-    windv2 =
-        get_ext_key_or_default(transformer, "WINDV2", _get_windv2_default(transformer))
-
-    if windv1 isa Number && windv2 isa Number &&
-       isapprox(windv1, from_base_voltage) &&
-       isapprox(windv2, to_base_voltage)
-        return (2, 2, 1)
+# `control_limits` (RMA/RMI) is documented as radians for the four phase-shift control
+# objectives, degrees on the PSS/E side. Not `PSY.is_phase_shifting` — that predicate is
+# also true for α ≠ 0 with a voltage objective, which would wrongly convert tap-ratio bounds.
+function _circuit_control_limits_degrees(circuit::PSY.TransformerCircuit)
+    control_limits = PSY.get_control_limits(circuit)
+    objective = PSY.get_control_objective(circuit)
+    if objective in _PSSE_PHASE_SHIFT_OBJECTIVES
+        return (
+            min = rad2deg(control_limits.min),
+            max = rad2deg(control_limits.max),
+        )
     end
-
-    return (PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT)
+    return control_limits
 end
-
-function _get_cw_cz_cm_defaults(transformer::PSY.Transformer3W)
-    primary_base_voltage =
-        PSY.get_base_voltage(PSY.get_from(PSY.get_primary_star_arc(transformer)))
-    secondary_base_voltage =
-        PSY.get_base_voltage(PSY.get_from(PSY.get_secondary_star_arc(transformer)))
-    tertiary_base_voltage =
-        PSY.get_base_voltage(PSY.get_from(PSY.get_tertiary_star_arc(transformer)))
-
-    windv1 = get_ext_key_or_default(
-        transformer,
-        "WINDV1",
-        PSY.get_primary_turns_ratio(transformer),
-    )
-    windv2 = get_ext_key_or_default(
-        transformer,
-        "WINDV2",
-        PSY.get_secondary_turns_ratio(transformer),
-    )
-    windv3 = get_ext_key_or_default(
-        transformer,
-        "WINDV3",
-        PSY.get_tertiary_turns_ratio(transformer),
-    )
-
-    if windv1 isa Number && windv2 isa Number && windv3 isa Number &&
-       isapprox(windv1, primary_base_voltage) &&
-       isapprox(windv2, secondary_base_voltage) &&
-       isapprox(windv3, tertiary_base_voltage)
-        return (2, 2, 1)
-    end
-
-    return (PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT)
-end
-_get_cw_cz_cm_defaults(::PSY.TwoWindingTransformer) =
-    (PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT)
-_get_cw_cz_cm_defaults(::PSY.ThreeWindingTransformer) =
-    (PSSE_DEFAULT, PSSE_DEFAULT, PSSE_DEFAULT)
-
 """Write the third record line (winding 1 data) for a 2-winding transformer."""
 function _write_2w_transformer_record3_winding1!(
     io::IO,
     exporter::PSSEExporter,
     transformer::PSY.TwoWindingTransformer,
 )
-    WINDV1 = get_ext_key_or_default(
-        transformer,
-        "WINDV1",
-        _get_windv1_default(transformer),
-    )
-    NOMV1 = get_ext_key_or_default(
-        transformer,
-        "NOMV1",
-        PSY.get_base_voltage_primary(transformer),
+    circuit = PSY.get_circuit(transformer)
+    WINDV1 = PSY.get_tap(circuit)
+    NOMV1 = _value_or_default(PSY.get_base_voltage_primary(circuit), PSSE_DEFAULT)
+
+    ANG1 = _circuit_ang(circuit)
+    COD1 = _psse_enum_code(
+        PSY.get_control_objective(circuit),
+        PSY.TransformerControlObjective.UNDEFINED,
     )
 
-    ANG1 = _get_2w_ang1(transformer)
-    COD1 = _get_2w_cod1(transformer)
-
-    RMA1 = get_ext_key_or_default(transformer, "RMA1")
-    RMI1 = get_ext_key_or_default(transformer, "RMI1")
-    VMA1 = get_ext_key_or_default(transformer, "VMA1")
-    VMI1 = get_ext_key_or_default(transformer, "VMI1")
-    # Set to default/actual value to integer, since by default is getting exported as float, causing an error when loaded into PSSE
-    NTP1 = _permissive_parse_int(get_ext_key_or_default(transformer, "NTP1"))
-    NOD1 = get_ext_key_or_default(transformer, "NOD1")
-    CONT1 = get_ext_key_or_default(transformer, "CONT1")
+    control_limits = _circuit_control_limits_degrees(circuit)
+    RMA1 = control_limits.max
+    RMI1 = control_limits.min
+    controlled_quantity_limits = PSY.get_controlled_quantity_limits(circuit)
+    VMA1 = controlled_quantity_limits.max
+    VMI1 = controlled_quantity_limits.min
+    NTP1 = PSY.get_number_of_tap_positions(circuit)
+    NOD1 = PSSE_DEFAULT
+    CONT1 = PSY.get_regulated_bus_number(circuit)
 
     supp_attr = PSY.get_supplemental_attributes(transformer)
     TAB1 = !isempty(supp_attr) ? PSY.get_table_number(supp_attr[1]) : 0
-    CR1 = get_ext_key_or_default(transformer, "CR1")
-    CX1 = get_ext_key_or_default(transformer, "CX1")
-    CNXA1 = get_ext_key_or_default(transformer, "CNXA1")
+    CR1 = PSSE_DEFAULT
+    CX1 = PSSE_DEFAULT
+    CNXA1 = PSSE_DEFAULT
 
     if exporter.psse_version == :v35
         # Using 0.0 as default for rating exporter, since PSSEv35 does not allow blank values
-        RATA1 = _value_or_default(PSY.get_rating(transformer, PSY.NU), 0.0)
-        RATB1 = _value_or_default(PSY.get_rating_b(transformer, PSY.NU), 0.0)
-        RATC1 = _value_or_default(PSY.get_rating_c(transformer, PSY.NU), 0.0)
+        RATA1 = _value_or_default(PSY.get_rating(circuit, PSY.NU), 0.0)
+        RATB1 = _value_or_default(PSY.get_rating_b(circuit, PSY.NU), 0.0)
+        RATC1 = _value_or_default(PSY.get_rating_c(circuit, PSY.NU), 0.0)
 
-        rates_1 = [
-            get_ext_key_or_default(transformer, "RATE11", RATA1),
-            get_ext_key_or_default(transformer, "RATE12", RATB1),
-            get_ext_key_or_default(transformer, "RATE13", RATC1),
-        ]
-        for i in 4:12
-            push!(rates_1, get_ext_key_or_default(transformer, "RATE1$i", 0.0))
+        rates_1 = [RATA1, RATB1, RATC1]
+        for _ in 4:12
+            push!(rates_1, 0.0)
         end
 
         @fastprintdelim_unroll(io, false, WINDV1, NOMV1, ANG1)
@@ -1055,9 +951,9 @@ function _write_2w_transformer_record3_winding1!(
             CNXA1
         )
     else
-        RATA1 = _value_or_default(PSY.get_rating(transformer, PSY.NU), PSSE_DEFAULT)
-        RATB1 = _value_or_default(PSY.get_rating_b(transformer, PSY.NU), PSSE_DEFAULT)
-        RATC1 = _value_or_default(PSY.get_rating_c(transformer, PSY.NU), PSSE_DEFAULT)
+        RATA1 = _value_or_default(PSY.get_rating(circuit, PSY.NU), PSSE_DEFAULT)
+        RATB1 = _value_or_default(PSY.get_rating_b(circuit, PSY.NU), PSSE_DEFAULT)
+        RATC1 = _value_or_default(PSY.get_rating_c(circuit, PSY.NU), PSSE_DEFAULT)
         @fastprintdelim_unroll(io, true, WINDV1, NOMV1, ANG1, RATA1,
             RATB1, RATC1, COD1, CONT1, RMA1, RMI1,
             VMA1, VMI1, NTP1, TAB1, CR1, CX1, CNXA1)
@@ -1069,15 +965,11 @@ function _write_2w_transformer_record4_winding2!(
     io::IO,
     transformer::PSY.TwoWindingTransformer,
 )
-    WINDV2 = get_ext_key_or_default(
-        transformer,
-        "WINDV2",
-        _get_windv2_default(transformer),
-    )
-    NOMV2 = get_ext_key_or_default(
-        transformer,
-        "NOMV2",
-        PSY.get_base_voltage_secondary(transformer),
+    # The circuit's tap is the winding-1 ratio, so winding 2 is always at unity.
+    WINDV2 = 1.0
+    NOMV2 = _value_or_default(
+        PSY.get_base_voltage_secondary(PSY.get_circuit(transformer)),
+        PSSE_DEFAULT,
     )
     @fastprintdelim_unroll(io, true, WINDV2, NOMV2)
 end
@@ -1087,30 +979,23 @@ function _write_3w_transformer_record2!(
     io::IO,
     transformer::PSY.ThreeWindingTransformer,
 )
-    R1_2 = Float64(
-        get_ext_key_or_default(transformer, "R1-2", PSY.get_r_12(transformer, PSY.SU)),
-    )
-    X1_2 = get_ext_key_or_default(transformer, "X1-2", PSY.get_x_12(transformer, PSY.SU))
-    SBASE1_2 = PSY.get_base_power_12(transformer, PSY.NU)
-    R2_3 = get_ext_key_or_default(transformer, "R2-3", PSY.get_r_23(transformer, PSY.SU))
-    X2_3 = get_ext_key_or_default(transformer, "X2-3", PSY.get_x_23(transformer, PSY.SU))
-    SBAS2_3 = PSY.get_base_power_23(transformer, PSY.NU)
-    R3_1 = get_ext_key_or_default(transformer, "R3-1", PSY.get_r_13(transformer, PSY.SU))
-    X3_1 = get_ext_key_or_default(transformer, "X3-1", PSY.get_x_13(transformer, PSY.SU))
-    SBAS3_1 = PSY.get_base_power_13(transformer, PSY.NU)
-    VMSTAR = get_ext_key_or_default(transformer, "VMSTAR")
-    ANSTAR = get_ext_key_or_default(transformer, "ANSTAR")
+    R1_2 = PSY.get_r_12(transformer, PSY.SU)
+    X1_2 = PSY.get_x_12(transformer, PSY.SU)
+    SBASE1_2 = PSY.get_base_power_12(transformer)
+    R2_3 = PSY.get_r_23(transformer, PSY.SU)
+    X2_3 = PSY.get_x_23(transformer, PSY.SU)
+    SBAS2_3 = PSY.get_base_power_23(transformer)
+    R3_1 = PSY.get_r_31(transformer, PSY.SU)
+    X3_1 = PSY.get_x_31(transformer, PSY.SU)
+    SBAS3_1 = PSY.get_base_power_31(transformer)
+    star_bus = PSY.get_star_bus(transformer)
+    VMSTAR = PSY.get_magnitude(star_bus)
+    ANSTAR = rad2deg(PSY.get_angle(star_bus))
 
     @fastprintdelim_unroll(io, true, R1_2, X1_2, SBASE1_2, R2_3,
         X2_3, SBAS2_3, R3_1, X3_1, SBAS3_1, VMSTAR, ANSTAR
     )
 end
-
-_get_3w_ang(acc, t::PSY.PhaseShiftingTransformer3W) =
-    _psse_round_val(rad2deg(acc.get_angle(t)))
-_get_3w_ang(acc, t::PSY.Transformer3W) =
-    get(WINDING_GROUP_NUMBER_TO_DEGREES, acc.get_group_number(t).value, PSSE_DEFAULT)
-_get_3w_ang(_, ::PSY.ThreeWindingTransformer) = 0.0
 
 """Collect winding data for a 3-winding transformer."""
 function _collect_3w_winding_data(
@@ -1118,50 +1003,43 @@ function _collect_3w_winding_data(
     transformer::PSY.ThreeWindingTransformer,
 )
     winding_data = Tuple[]
-    for (category, prefix) in WINDING_CATEGORIES
-        acc = WINDING_ACCESSORS[category]
-        NOMV = get_ext_key_or_default(
-            transformer,
-            "NOMV$prefix",
-            acc.get_base_voltage(transformer),
-        )
-        WINDV = get_ext_key_or_default(
-            transformer,
-            "WINDV$prefix",
-            acc.get_turns_ratio(transformer),
-        )
-        ANG = _get_3w_ang(acc, transformer)
-        RAT = acc.get_rating(transformer, PSY.NU)
+    for category in WINDING_CATEGORIES
+        circuit = WINDING_CIRCUITS[category](transformer)
+        NOMV = _value_or_default(PSY.get_base_voltage_primary(circuit), PSSE_DEFAULT)
+        WINDV = PSY.get_tap(circuit)
+        ANG = _circuit_ang(circuit)
 
         if exporter.psse_version == :v35
+            # Using 0.0 as default for rating exporter, since PSSEv35 does not allow blank values
             rates = [
-                get_ext_key_or_default(transformer, "RATE$(prefix)1", RAT),
-                get_ext_key_or_default(transformer, "RATE$(prefix)2", RAT),
-                get_ext_key_or_default(transformer, "RATE$(prefix)3", RAT),
+                _value_or_default(PSY.get_rating(circuit, PSY.NU), 0.0),
+                _value_or_default(PSY.get_rating_b(circuit, PSY.NU), 0.0),
+                _value_or_default(PSY.get_rating_c(circuit, PSY.NU), 0.0),
             ]
-            for i in 4:12
-                push!(
-                    rates,
-                    get_ext_key_or_default(transformer, "RATE$(prefix)$i", 0.0),
-                )
+            for _ in 4:12
+                push!(rates, 0.0)
             end
             RATES = tuple(rates...)
         else
-            RATA = get_ext_key_or_default(transformer, "RATA$prefix", RAT)
-            RATB = get_ext_key_or_default(transformer, "RATB$prefix", RAT)
-            RATC = get_ext_key_or_default(transformer, "RATC$prefix", RAT)
+            RATA = _value_or_default(PSY.get_rating(circuit, PSY.NU), PSSE_DEFAULT)
+            RATB = _value_or_default(PSY.get_rating_b(circuit, PSY.NU), PSSE_DEFAULT)
+            RATC = _value_or_default(PSY.get_rating_c(circuit, PSY.NU), PSSE_DEFAULT)
             RATES = (RATA, RATB, RATC)
         end
 
-        COD = get_ext_key_or_default(transformer, "COD$prefix")
-        CONT = get_ext_key_or_default(transformer, "CONT$prefix")
-        NOD = get_ext_key_or_default(transformer, "NOD$prefix")
-        RMA = get_ext_key_or_default(transformer, "RMA$prefix")
-        RMI = get_ext_key_or_default(transformer, "RMI$prefix")
-        VMA = get_ext_key_or_default(transformer, "VMA$prefix")
-        VMI = get_ext_key_or_default(transformer, "VMI$prefix")
-        # Set to default/actual value to integer, since by default is getting exported as float, causing an error when loaded into PSSE
-        NTP = _permissive_parse_int(get_ext_key_or_default(transformer, "NTP$prefix"))
+        COD = _psse_enum_code(
+            PSY.get_control_objective(circuit),
+            PSY.TransformerControlObjective.UNDEFINED,
+        )
+        CONT = PSY.get_regulated_bus_number(circuit)
+        NOD = PSSE_DEFAULT
+        control_limits = _circuit_control_limits_degrees(circuit)
+        RMA = control_limits.max
+        RMI = control_limits.min
+        controlled_quantity_limits = PSY.get_controlled_quantity_limits(circuit)
+        VMA = controlled_quantity_limits.max
+        VMI = controlled_quantity_limits.min
+        NTP = PSY.get_number_of_tap_positions(circuit)
         TAB = 0
         supp_attr = PSY.get_supplemental_attributes(transformer)
         for icd_tr in supp_attr
@@ -1169,9 +1047,9 @@ function _collect_3w_winding_data(
                 TAB = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
             end
         end
-        CR = get_ext_key_or_default(transformer, "CR$prefix")
-        CX = get_ext_key_or_default(transformer, "CX$prefix")
-        CNXA = get_ext_key_or_default(transformer, "CNXA$prefix")
+        CR = PSSE_DEFAULT
+        CX = PSSE_DEFAULT
+        CNXA = PSSE_DEFAULT
 
         if exporter.psse_version == :v35
             push!(
@@ -1223,12 +1101,12 @@ _psse_get_load_data(
     exporter::PSSEExporter,
     load::Union{PSY.StandardLoad, PSY.InterruptibleStandardLoad},
 ) = (
-    _psse_round_val(PSY.get_constant_active_power(load, PSY.NU)),
-    _psse_round_val(PSY.get_constant_reactive_power(load, PSY.NU)),
-    _psse_round_val(PSY.get_current_active_power(load, PSY.NU)),
-    _psse_round_val(PSY.get_current_reactive_power(load, PSY.NU)),
-    _psse_round_val(PSY.get_impedance_active_power(load, PSY.NU)),
-    _psse_round_val(PSY.get_impedance_reactive_power(load, PSY.NU)),
+    PSY.get_constant_active_power(load, PSY.NU),
+    PSY.get_constant_reactive_power(load, PSY.NU),
+    PSY.get_current_active_power(load, PSY.NU),
+    PSY.get_current_reactive_power(load, PSY.NU),
+    PSY.get_impedance_active_power(load, PSY.NU),
+    PSY.get_impedance_reactive_power(load, PSY.NU),
 )
 
 # Fallback if not all the data is available
@@ -1289,10 +1167,10 @@ function write_to_buffers!(
         INTRPT = _psse_interruptible(load)
 
         if exporter.psse_version == :v35
-            DGENP = get_ext_key_or_default(load, "DGENP")
-            DGENQ = get_ext_key_or_default(load, "DGENQ")
-            DGENF = get_ext_key_or_default(load, "DGENF")
-            LOAD_TYPE = get_ext_key_or_default(load, "LOADTYPE")
+            DGENP = PSSE_DEFAULT
+            DGENQ = PSSE_DEFAULT
+            DGENF = PSSE_DEFAULT
+            LOAD_TYPE = PSSE_DEFAULT
 
             @fastprintdelim_unroll(io, true, I, ID, STATUS, AREA, ZONE,
                 PL, QL, IP, IQ, YP, YQ, OWNER,
@@ -1476,7 +1354,8 @@ Create a synthetic generator (`PSY.ThermalStandard`) representing one end of a T
 for export purposes. The generator is initialized with parameters reflecting the HVDC line's state.
 # Notes
     - The generator's name is constructed as "<hvdc_line_name>_<suffix>".
-    - The `ext` field includes `"HVDC_END"` to indicate the end ("FR"/"TO").
+    - Which end ("FR"/"TO") a synthetic generator represents is recorded in the exporter's
+      `"hvdc_generator_ends"` cache, keyed by generator name.
 """
 function _make_gens_from_hvdc(
     hvdc_line::PSY.TwoTerminalGenericHVDCLine,
@@ -1504,9 +1383,6 @@ function _make_gens_from_hvdc(
             0.0, 0.0, 0.0,
         ),
         base_power = PSY.get_base_power(exporter.system, PSY.NU),
-        ext = Dict{String, Any}(
-            "HVDC_END" => suffix,
-        ),
     )
 end
 
@@ -1616,6 +1492,11 @@ function _build_generator_list(exporter::PSSEExporter, md::OrderedDict{String, A
     end
 
     _update_gens_from_hvdc!(synthetic_gens, gen_to_hvdc_map, exporter)
+    # Cached alongside "generators" (both are written by this one call) so the writer can tell
+    # which end of its DC line a synthetic generator stands for.
+    exporter.components_cache["hvdc_generator_ends"] = Dict(
+        PSY.get_name(gen) => suffix for (gen, (_, suffix)) in gen_to_hvdc_map
+    )
     append!(temp_gens, synthetic_gens)
     return temp_gens
 end
@@ -1671,10 +1552,12 @@ function write_to_buffers!(
         ),
     )
 
+    hvdc_generator_ends = exporter.components_cache["hvdc_generator_ends"]
+
     base_power = PSY.get_base_power(exporter.system, PSY.NU)
     for generator in generators
         sienna_bus_number = PSY.get_number(PSY.get_bus(generator))
-        hvdc_end = get_ext_key_or_default(generator, "HVDC_END", nothing)
+        hvdc_end = get(hvdc_generator_ends, PSY.get_name(generator), nothing)
         I = md["bus_number_mapping"][sienna_bus_number]
         ID =
             _psse_quote_string(
@@ -1711,26 +1594,33 @@ function write_to_buffers!(
 
         # Get common fields
         VS = PSY.get_magnitude(PSY.get_bus(generator))
-        IREG = get_ext_key_or_default(generator, "IREG")
         MBASE = PSY.get_base_power(generator, PSY.NU)
-        ZR = get_ext_key_or_default(generator, "r")
-        ZX = get_ext_key_or_default(generator, "x")
-        RT = get_ext_key_or_default(generator, "rt")
-        XT = get_ext_key_or_default(generator, "xt")
-        GTAP = get_ext_key_or_default(generator, "GTAP")
-        STAT = PSY.get_available(generator) ? 1 : 0
-        RMPCT = get_ext_key_or_default(generator, "RMPCT")
-        WMOD = get_ext_key_or_default(generator, "WMOD")
-        WPF = get_ext_key_or_default(generator, "WPF")
+        STAT = 0
+        if PSY.get_available(generator)
+            STAT = 1
+        end
 
+        # Generator machine data PSY does not model. v35 forbids blank fields, so it writes
+        # the spec defaults the reader would have substituted; v33 leaves them blank.
         if exporter.psse_version == :v35
-            NREG = get_ext_key_or_default(generator, "NREG")
-            BASLOD = get_ext_key_or_default(generator, "BASLOD")
             _write_generator_v35_record!(
-                io, I, ID, PG, QG, QT, QB, VS, IREG, NREG, MBASE, ZR, ZX,
-                RT, XT, GTAP, STAT, RMPCT, PT, PB, BASLOD, WMOD, WPF,
+                io, I, ID, PG, QG, QT, QB, VS,
+                PSSE_GEN_DEFAULT_IREG, PSSE_GEN_DEFAULT_NREG, MBASE,
+                PSSE_GEN_DEFAULT_ZR, PSSE_GEN_DEFAULT_ZX,
+                PSSE_GEN_DEFAULT_RT, PSSE_GEN_DEFAULT_XT, PSSE_GEN_DEFAULT_GTAP,
+                STAT, PSSE_GEN_DEFAULT_RMPCT, PT, PB, PSSE_GEN_DEFAULT_BASLOD,
+                PSSE_GEN_DEFAULT_WMOD, PSSE_GEN_DEFAULT_WPF,
             )
         else
+            IREG = PSSE_DEFAULT
+            ZR = PSSE_DEFAULT
+            ZX = PSSE_DEFAULT
+            RT = PSSE_DEFAULT
+            XT = PSSE_DEFAULT
+            GTAP = PSSE_DEFAULT
+            RMPCT = PSSE_DEFAULT
+            WMOD = PSSE_DEFAULT
+            WPF = PSSE_DEFAULT
             _write_generator_v33_record!(
                 io, I, ID, PG, QG, QT, QB, VS, IREG, MBASE, ZR, ZX,
                 RT, XT, GTAP, STAT, RMPCT, PT, PB, WMOD, WPF,
@@ -1772,9 +1662,8 @@ end
 
 """Calculate the STAT field for a 3-winding transformer based on per-winding availability."""
 function _calculate_3w_transformer_stat(transformer::PSY.ThreeWindingTransformer)
-    primary = PSY.get_available_primary(transformer)
-    secondary = PSY.get_available_secondary(transformer)
-    tertiary = PSY.get_available_tertiary(transformer)
+    # Availability is per-circuit; the transformer derives its own from the circuits' flags.
+    primary, secondary, tertiary = PSY.get_available.(PSY.get_circuits(transformer))
     # The STAT value is determined based on the availability of the windings
     if (!primary && !secondary) || (!primary && !tertiary) || (!secondary && !tertiary)
         return 0
@@ -1789,6 +1678,10 @@ function _calculate_3w_transformer_stat(transformer::PSY.ThreeWindingTransformer
     end
 end
 
+# The PSS/E branch NAME field holds 40 characters.
+_psse_branch_name(branch::PSY.ACBranch) =
+    _psse_quote_string(first(PSY.get_name(branch), 40))
+
 """Write a regular (Line/MonitoredLine) branch record to the buffer."""
 function _write_regular_branch_record!(
     io::IO,
@@ -1799,19 +1692,19 @@ function _write_regular_branch_record!(
     branch::PSY.ACBranch,
 )
     ST = PSY.get_available(branch) ? 1 : 0
-    MET = get_ext_key_or_default(branch, "MET")
-    LEN = get_ext_key_or_default(branch, "LEN")
+    MET = PSSE_DEFAULT
+    LEN = PSSE_DEFAULT
     R = PSY.get_r(branch, PSY.SU)
     X = PSY.get_x(branch, PSY.SU)
-    B = if branch isa PSY.TapTransformer
-        imag(PSY.get_primary_shunt(branch, PSY.SU)) * 2
-    else
-        PSY.get_b(branch, PSY.SU).from + PSY.get_b(branch, PSY.SU).to
-    end
-    GI = get_ext_key_or_default(branch, "GI")
-    BI = get_ext_key_or_default(branch, "BI")
-    GJ = get_ext_key_or_default(branch, "GJ")
-    BJ = get_ext_key_or_default(branch, "BJ")
+    b = PSY.get_b(branch, PSY.SU)
+    B = b.from + b.to
+    g = PSY.get_g(branch, PSY.SU)
+    GI = g.from
+    GJ = g.to
+    # The line-end susceptances are folded into the branch's `b`, which B already carries in
+    # full; writing them again here would double-count.
+    BI = 0.0
+    BJ = 0.0
 
     RATEA = _value_or_default(PSY.get_rating(branch, PSY.NU), PSSE_DEFAULT)
     RATEB = _value_or_default(PSY.get_rating_b(branch, PSY.NU), PSSE_DEFAULT)
@@ -1820,14 +1713,14 @@ function _write_regular_branch_record!(
         (_fix_3w_transformer_rating(x) for x in (RATEA, RATEB, RATEC))
 
     if exporter.psse_version == :v35
-        NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
+        NAME = _psse_branch_name(branch)
         # Using 0.0 as default for rating exporter, since PSSEv35 does not allow blank values
         @fastprintdelim_unroll(io, false, I, J, CKT, R, X, B, NAME)
         fastprintdelim(io, RATEA)
         fastprintdelim(io, RATEB)
         fastprintdelim(io, RATEC)
-        for i in 4:12
-            fastprintdelim(io, get_ext_key_or_default(branch, "RATE$i", 0.0))
+        for _ in 4:12
+            fastprintdelim(io, 0.0)
         end
 
         @fastprintdelim_unroll(io, false, GI, BI, GJ, BJ, ST, MET, LEN)
@@ -1851,15 +1744,15 @@ function _write_discrete_branch_record!(
     branch_type::PSY.DiscreteControlledBranchType,
 )
     ST = PSY.get_available(branch) ? 1 : 0
-    MET = get_ext_key_or_default(branch, "MET")
-    LEN = get_ext_key_or_default(branch, "LEN")
+    MET = PSSE_DEFAULT
+    LEN = PSSE_DEFAULT
     R = PSY.get_r(branch, PSY.SU)
     X = PSY.get_x(branch, PSY.SU)
     B = 0.0
-    GI = get_ext_key_or_default(branch, "GI")
-    BI = get_ext_key_or_default(branch, "BI")
-    GJ = get_ext_key_or_default(branch, "GJ")
-    BJ = get_ext_key_or_default(branch, "BJ")
+    GI = PSSE_DEFAULT
+    BI = PSSE_DEFAULT
+    GJ = PSSE_DEFAULT
+    BJ = PSSE_DEFAULT
 
     RATEA = _value_or_default(PSY.get_rating(branch, PSY.NU), PSSE_DEFAULT)
     RATEB = 0.0
@@ -1877,14 +1770,6 @@ end
 _is_discrete_controlled(::PSY.DiscreteControlledACBranch) = true
 _is_discrete_controlled(::PSY.ACBranch) = false
 
-function _export_tap_transformer_as_branch(transformer::PSY.TapTransformer)
-    control_obj = PSY.get_control_objective(transformer)
-    return (
-        control_obj ==
-        PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
-    ) && isapprox(PSY.get_tap(transformer), 1.0)
-end
-
 # WRITTEN TO SPEC: PSS/E 33.3/35.4 POM 5.2.1 Non-Transformer Branch Data
 function write_to_buffers!(
     exporter::PSSEExporter,
@@ -1897,19 +1782,8 @@ function write_to_buffers!(
     write_v35_header(io, exporter, "Non-Transformer Branch Data")
 
     branches_with_numbers = get!(exporter.components_cache, "branches") do
-        regular_branches = get_branches_with_numbers(exporter)
-
-        transformer_as_branches = Tuple{PSY.ACBranch, Tuple{Int, Int}}[]
-        for transformer in PSY.get_components(PSY.TapTransformer, exporter.system)
-            if _export_tap_transformer_as_branch(transformer)
-                bus_nums = branch_to_bus_numbers(transformer)
-                push!(transformer_as_branches, (transformer, bus_nums))
-            end
-        end
-
-        all_branches = vcat(regular_branches, transformer_as_branches)
+        all_branches = get_branches_with_numbers(exporter)
         sort!(all_branches; by = x -> last(x))
-
         all_branches
     end
 
@@ -2028,13 +1902,13 @@ function write_to_buffers!(
 
         rates = [RATE1]
         # Using 0.0 as default for rating exporter, since PSSEv35 does not allow blank values
-        for i in 2:12
-            push!(rates, get_ext_key_or_default(branch, "RATE$i", 0.0))
+        for _ in 2:12
+            push!(rates, 0.0)
         end
 
         STAT = PSY.get_available(branch) ? 1 : 0
-        NSTAT = get_ext_key_or_default(branch, "NSTAT")
-        MET = get_ext_key_or_default(branch, "MET")
+        NSTAT = PSSE_DEFAULT
+        MET = PSSE_DEFAULT
 
         STYPE = if branch_type == PSY.DiscreteControlledBranchType.BREAKER
             2  # Circuit breaker
@@ -2044,7 +1918,7 @@ function write_to_buffers!(
             1  # Generic connector (default for OTHER)
         end
 
-        NAME = _psse_quote_string(get_ext_key_or_default(branch, "NAME", ""))
+        NAME = _psse_branch_name(branch)
 
         @fastprintdelim_unroll(io, false, I, J, CKT, X)
         for rate in rates
@@ -2115,28 +1989,16 @@ end
 function _collect_control_objective!(
     mapping::AbstractDict,
     name::String,
-    t::Union{PSY.TapTransformer, PSY.PhaseShiftingTransformer},
+    t::PSY.TwoWindingTransformer,
 )
-    cod1 = PSY.get_control_objective(t)
+    cod1 = PSY.get_control_objective(PSY.get_circuit(t))
     cod1 ==
     PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED &&
         (mapping[name] = cod1.value)
     return
 end
-_collect_control_objective!(::AbstractDict, ::String, ::PSY.TwoWindingTransformer) = nothing
 
-function _collect_winding_group!(
-    mapping::AbstractDict,
-    name::String,
-    t::Union{PSY.TapTransformer, PSY.Transformer2W},
-)
-    ang1 = PSY.get_winding_group_number(t)
-    ang1 == PSY.WindingGroupNumber.UNDEFINED && (mapping[name] = ang1.value)
-    return
-end
-_collect_winding_group!(::AbstractDict, ::String, ::PSY.TwoWindingTransformer) = nothing
-
-"""Build all transformer-related metadata mappings (names, control objectives, winding groups, impedance, taps)."""
+"""Build all transformer-related metadata mappings (names, control objectives, impedance, taps)."""
 function _build_transformer_metadata!(
     md::OrderedDict{String, Any},
     transformers_with_numbers::Vector,
@@ -2153,18 +2015,14 @@ function _build_transformer_metadata!(
             transformer_ckt_mapping,
         )
         control_objective_mapping = OrderedDict{String, Any}()
-        winding_group_category_mapping = OrderedDict{String, Any}()
         for (transformer, _) in transformers_with_numbers
             name = PSY.get_name(transformer)
             _collect_control_objective!(control_objective_mapping, name, transformer)
-            _collect_winding_group!(winding_group_category_mapping, name, transformer)
         end
         md["transformer_control_objective_mapping"] = control_objective_mapping
-        md["transformer_winding_group_category_mapping"] = winding_group_category_mapping
     else
         md["transformer_name_mapping"] = OrderedDict{String, String}()
         md["transformer_control_objective_mapping"] = OrderedDict{String, Any}()
-        md["transformer_winding_group_category_mapping"] = OrderedDict{String, Any}()
     end
 
     # Handle 3W transformers
@@ -2197,17 +2055,9 @@ function _load_transformer_components_and_mappings(exporter::PSSEExporter)
             collect(PSY.get_components(PSY.TwoWindingTransformer, exporter.system));
             by = branch_to_bus_numbers,
         )
-        # TapTransformers with UNDEFINED control objective and unity tap are exported as branches.
-        # Keep all others in transformer export.
-        filtered_transformers = filter(transformers) do transformer
-            if transformer isa PSY.TapTransformer
-                return !_export_tap_transformer_as_branch(transformer)
-            end
-            return true
-        end
         [
             (transformer, branch_to_bus_numbers(transformer)) for
-            transformer in filtered_transformers
+            transformer in transformers
         ]
     end
     transformers_3w_with_numbers = get!(exporter.components_cache, "transformers_3w") do
@@ -2362,19 +2212,17 @@ function _compute_dcline_common_fields(
     # FIXME HVDC getters like `get_r` aren't using units. Did they ever use units?
     # should they use units?
     RDC =
-        _psse_round_val(
-            PSY.get_r(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
-            PSY.get_base_power(exporter.system, PSY.NU),
-        )
+        PSY.get_r(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
+        PSY.get_base_power(exporter.system, PSY.NU)
     SETVL = PSY.get_transfer_setpoint(dcline)
     VSCHD = PSY.get_scheduled_dc_voltage(dcline)
     VCMOD = PSY.get_switch_mode_voltage(dcline)
     RCOMP = PSY.get_compounding_resistance(dcline)
-    DELTI = get_ext_key_or_default(dcline, "DELTI")
+    DELTI = PSSE_DEFAULT
     METER = PSSE_DEFAULT
     DCVMIN = PSY.get_min_compounding_voltage(dcline)
-    CCCITMX = get_ext_key_or_default(dcline, "CCCITMX")
-    CCCACC = get_ext_key_or_default(dcline, "CCCACC")
+    CCCITMX = PSSE_DEFAULT
+    CCCACC = PSSE_DEFAULT
     return (;
         NAME, MDC, RDC, SETVL, VSCHD, VCMOD, RCOMP,
         DELTI, METER, DCVMIN, CCCITMX, CCCACC,
@@ -2390,25 +2238,25 @@ function _compute_dcline_rectifier_fields(
     base_power = PSY.get_base_power(exporter.system, PSY.NU)
     IPR = I
     NBR = PSY.get_rectifier_bridges(dcline)
-    ANMXR = _psse_round_val(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).max))
-    ANMNR = _psse_round_val(rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).min))
-    RCR = _psse_round_val(
+    ANMXR = rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).max)
+    ANMNR = rad2deg(PSY.get_rectifier_delay_angle_limits(dcline).min)
+    RCR =
         PSY.get_rectifier_rc(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
-        base_power)
-    XCR = _psse_round_val(
+        base_power
+    XCR =
         PSY.get_rectifier_xc(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
-        base_power)
+        base_power
     EBASR = PSY.get_rectifier_base_voltage(dcline)
     TRR = PSY.get_rectifier_transformer_ratio(dcline)
     TAPR = PSY.get_rectifier_tap_setting(dcline)
     TMXR = PSY.get_rectifier_tap_limits(dcline).max
     TMNR = PSY.get_rectifier_tap_limits(dcline).min
     STPR = PSY.get_rectifier_tap_step(dcline)
-    ICR = get_ext_key_or_default(dcline, "ICR")
-    NDR = get_ext_key_or_default(dcline, "NDR")
-    IFR = get_ext_key_or_default(dcline, "IFR")
-    ITR = get_ext_key_or_default(dcline, "ITR")
-    IDR = get_ext_key_or_default(dcline, "IDR")
+    ICR = PSSE_DEFAULT
+    NDR = PSSE_DEFAULT
+    IFR = PSSE_DEFAULT
+    ITR = PSSE_DEFAULT
+    IDR = PSSE_DEFAULT
     XCAPR =
         PSY.get_rectifier_capacitor_reactance(dcline) *
         PSY.get_rectifier_base_voltage(dcline)^2 /
@@ -2428,27 +2276,25 @@ function _compute_dcline_inverter_fields(
     base_power = PSY.get_base_power(exporter.system, PSY.NU)
     IPI = J
     NBI = PSY.get_inverter_bridges(dcline)
-    ANMXI =
-        _psse_round_val(rad2deg(PSY.get_inverter_extinction_angle_limits(dcline).max))
-    ANMNI =
-        _psse_round_val(rad2deg(PSY.get_inverter_extinction_angle_limits(dcline).min))
-    RCI = _psse_round_val(
+    ANMXI = rad2deg(PSY.get_inverter_extinction_angle_limits(dcline).max)
+    ANMNI = rad2deg(PSY.get_inverter_extinction_angle_limits(dcline).min)
+    RCI =
         PSY.get_inverter_rc(dcline) * PSY.get_inverter_base_voltage(dcline)^2 /
-        base_power)
-    XCI = _psse_round_val(
+        base_power
+    XCI =
         PSY.get_inverter_xc(dcline) * PSY.get_inverter_base_voltage(dcline)^2 /
-        base_power)
+        base_power
     EBASI = PSY.get_inverter_base_voltage(dcline)
     TRI = PSY.get_inverter_transformer_ratio(dcline)
     TAPI = PSY.get_inverter_tap_setting(dcline)
     TMXI = PSY.get_inverter_tap_limits(dcline).max
     TMNI = PSY.get_inverter_tap_limits(dcline).min
     STPI = PSY.get_inverter_tap_step(dcline)
-    ICI = get_ext_key_or_default(dcline, "ICI")
-    NDI = get_ext_key_or_default(dcline, "NDI")
-    IFI = get_ext_key_or_default(dcline, "IFI")
-    ITI = get_ext_key_or_default(dcline, "ITI")
-    IDI = get_ext_key_or_default(dcline, "IDI")
+    ICI = PSSE_DEFAULT
+    NDI = PSSE_DEFAULT
+    IFI = PSSE_DEFAULT
+    ITI = PSSE_DEFAULT
+    IDI = PSSE_DEFAULT
     XCAPI =
         PSY.get_inverter_capacitor_reactance(dcline) *
         PSY.get_inverter_base_voltage(dcline)^2 /
@@ -2531,6 +2377,56 @@ function write_to_buffers!(
         (md["dcline_name_mapping"] = serialize_component_ids(dcline_name_mapping))
 end
 
+# PSS/E VSC converter DC-control TYPE: 1 = DC voltage control, 2 = MW (power) control. The PSS/E
+# .raw VSC record has no droop representation, so a `DC_VOLTAGE_DROOP` terminal is exported as MW
+# control (TYPE 2) and its DC-voltage-droop characteristic is not preserved; only a strict
+# `DC_VOLTAGE` terminal is exported as the DC-voltage controller (TYPE 1).
+function _vsc_export_dc_type(dc_control)
+    if dc_control == PSY.VSCDCControlModes.DC_VOLTAGE
+        return 1
+    end
+    return 2
+end
+
+# Whether a terminal carries a usable DC-voltage reference (so its `dc_setpoint` is a voltage):
+# true for strict DC-voltage and droop control, false for MW (DC_POWER) control whose setpoint is
+# a power. Used to source the DC line's base voltage from the correct terminal.
+function _has_dc_voltage_reference(dc_control)
+    return dc_control == PSY.VSCDCControlModes.DC_VOLTAGE ||
+           dc_control == PSY.VSCDCControlModes.DC_VOLTAGE_DROOP
+end
+
+# DCSET for one converter. A droop terminal is exported as MW control, so its setpoint is the
+# scheduled active-power demand (NOT the droop reference voltage, which the record cannot hold);
+# the from terminal injects +P_flow into the DC line, the to terminal receives -P_flow. Setpoints
+# are stored in system-base p.u.; scale back to PSS/E units — a DC-voltage setpoint by
+# `rated_dc_voltage` (kV), a DC-power setpoint by `base_power` (MW). `rated_dc_voltage == 0`
+# (unspecified) writes the DC-voltage setpoint through unchanged.
+function _vsc_export_dcset(
+    vscline::PSY.TwoTerminalVSCLine,
+    side::Symbol,
+    base_power::Float64,
+)
+    if side == :from
+        dc_control = PSY.get_dc_control_from(vscline)
+        dc_setpoint = PSY.get_dc_setpoint_from(vscline)
+        flow_sign = 1.0
+    else
+        dc_control = PSY.get_dc_control_to(vscline)
+        dc_setpoint = PSY.get_dc_setpoint_to(vscline)
+        flow_sign = -1.0
+    end
+    if dc_control == PSY.VSCDCControlModes.DC_VOLTAGE_DROOP
+        return flow_sign * PSY.get_active_power_flow(vscline, PSY.SU) * base_power
+    end
+    if dc_control == PSY.VSCDCControlModes.DC_VOLTAGE
+        vdc_base = PSY.get_rated_dc_voltage(vscline)
+        iszero(vdc_base) && return dc_setpoint
+        return dc_setpoint * vdc_base
+    end
+    return dc_setpoint * base_power
+end
+
 """Compute VSC converter fields for one side (from or to) of a VSC DC line."""
 function _compute_vsc_converter_fields(
     exporter::PSSEExporter,
@@ -2543,62 +2439,62 @@ function _compute_vsc_converter_fields(
     suffix = side == :from ? "FROM" : "TO"
 
     IBUS = bus_number
-    TYPE = get_ext_key_or_default(vscline, "TYPE_$suffix", type_org)
+    # TYPE (DC control) and MODE (AC control) are reconstructed from the control enums, not stored.
+    TYPE = type_org
 
     if side == :from
-        MODE = PSY.get_ac_voltage_control_from(vscline) ? 1 : 2
-        DCSET = PSY.get_dc_setpoint_from(vscline)
+        MODE =
+            PSY.get_ac_control_from(vscline) == PSY.VSCACControlModes.AC_VOLTAGE ? 1 : 2
+        DCSET = _vsc_export_dcset(vscline, :from, base_power)
         ACSET = PSY.get_ac_setpoint_from(vscline)
         converter_loss = PSY.get_converter_loss_from(vscline)
         get_rating = PSY.get_rating_from
         get_imax = PSY.get_max_dc_current_from
         PWF = PSY.get_power_factor_weighting_fraction_from(vscline)
         q_limits = PSY.get_reactive_power_limits_from(vscline, PSY.SU)
+        # PSY spells local (terminal-bus) regulation as `nothing`; PSS/E as REMOT = 0.
+        REMOT = _value_or_default(PSY.get_remote_bus_control_from(vscline), 0)
+        RMPCT = PSY.get_rmpct_from(vscline)
     else
-        MODE = PSY.get_ac_voltage_control_to(vscline) ? 1 : 2
-        DCSET = PSY.get_dc_setpoint_to(vscline)
+        MODE =
+            PSY.get_ac_control_to(vscline) == PSY.VSCACControlModes.AC_VOLTAGE ? 1 : 2
+        DCSET = _vsc_export_dcset(vscline, :to, base_power)
         ACSET = PSY.get_ac_setpoint_to(vscline)
         converter_loss = PSY.get_converter_loss_to(vscline)
         get_rating = PSY.get_rating_to
         get_imax = PSY.get_max_dc_current_to
         PWF = PSY.get_power_factor_weighting_fraction_to(vscline)
         q_limits = PSY.get_reactive_power_limits_to(vscline, PSY.SU)
+        REMOT = _value_or_default(PSY.get_remote_bus_control_to(vscline), 0)
+        RMPCT = PSY.get_rmpct_to(vscline)
     end
 
-    BLOSS = _psse_round_val(
-        PSY.get_proportional_term(PSY.get_function_data(converter_loss)) *
-        1e3 * base_power)
-    psse_converter_loss = _psse_round_val(BLOSS * abs(PSY.get_dc_current(vscline)))
-    ALOSS_org = _psse_round_val(
-        abs(
-            psse_converter_loss -
-            PSY.get_constant_term(PSY.get_function_data(converter_loss)) *
-            1e3 * base_power,
-        ),
-    )
-    ALOSS = get_ext_key_or_default(vscline, "ALOSS_$suffix", ALOSS_org)
-    MINLOSS = get_ext_key_or_default(vscline, "MINLOSS_$suffix", psse_converter_loss)
+    # Invert the parser's loss normalization: the parser always reads BLOSS, ALOSS, and MINLOSS
+    # as kW/kW-per-A normalized by 1e3 * baseMVA, never by rated_dc_voltage. The PSS/E constant
+    # loss splits into ALOSS + MINLOSS, but only the sum is a model quantity (the curve's constant
+    # term), so the whole constant is exported as ALOSS with MINLOSS = 0 (re-parse recovers the
+    # same curve).
+    fd = PSY.get_function_data(converter_loss)
+    BLOSS = PSY.get_proportional_term(fd) * 1e3 * base_power
+    ALOSS = PSY.get_constant_term(fd) * 1e3 * base_power
+    MINLOSS = 0.0
 
     SMAX = get_rating(vscline, PSY.SU)
     # Revert parser transformation: SMAX == 0.0 ? PSSE_INFINITY : SMAX / baseMVA
     SMAX = if SMAX == PSSE_INFINITY
         0.0
     else
-        _psse_round_val(SMAX * base_power)
+        SMAX * base_power
     end
     IMAX = get_imax(vscline)
     IMAX = IMAX == PSSE_INFINITY ? 0.0 : IMAX
 
     MAXQ = q_limits.max * base_power
     MINQ = q_limits.min * base_power
-    VSREG = get_ext_key_or_default(vscline, "VSREG_$suffix", 0)
-    NREG = get_ext_key_or_default(vscline, "NREG_$suffix", 0)
-    REMOT = get_ext_key_or_default(vscline, "REMOT_$suffix")
-    RMPCT = get_ext_key_or_default(vscline, "RMPCT_$suffix")
 
     return (;
         IBUS, TYPE, MODE, DCSET, ACSET, ALOSS, BLOSS, MINLOSS,
-        SMAX, IMAX, PWF, MAXQ, MINQ, VSREG, NREG, REMOT, RMPCT,
+        SMAX, IMAX, PWF, MAXQ, MINQ, REMOT, RMPCT,
     )
 end
 
@@ -2640,33 +2536,40 @@ function write_to_buffers!(
         vsc_line_name = string(split(PSY.get_name(vscline), "_")[end])
         NAME = _psse_quote_string(vsc_line_name)
         MDC = PSY.get_available(vscline) ? 1 : 0
-        if PSY.get_dc_voltage_control_from(vscline) &&
-           !PSY.get_dc_voltage_control_to(vscline)
-            base_voltage = PSY.get_dc_setpoint_from(vscline)
+        from_dc_control = PSY.get_dc_control_from(vscline)
+        to_dc_control = PSY.get_dc_control_to(vscline)
+        # Base (DC) voltage comes from a terminal carrying a DC-voltage reference (strict DC_VOLTAGE
+        # or droop); a pure MW (DC_POWER) terminal's setpoint is a power, not a voltage. The DC-side
+        # kV is the per-unit setpoint times `rated_dc_voltage` (kV); `rated_dc_voltage == 0` treats
+        # the setpoint as already in kV. RDC is reconstructed from `g` and Zbase (round-trips `g`).
+        vdc_scale = if iszero(PSY.get_rated_dc_voltage(vscline))
+            1.0
         else
-            base_voltage = PSY.get_dc_setpoint_to(vscline)
+            PSY.get_rated_dc_voltage(vscline)
+        end
+        if _has_dc_voltage_reference(from_dc_control)
+            base_voltage = PSY.get_dc_setpoint_from(vscline) * vdc_scale
+        else
+            base_voltage = PSY.get_dc_setpoint_to(vscline) * vdc_scale
         end
         Zbase = base_voltage^2 / PSY.get_base_power(exporter.system, PSY.NU)
-        # FIXME: no units.
-        RDC_org = if PSY.get_g(vscline) != 0.0
-            (1 / PSY.get_g(vscline)) * Zbase
-        else
+        RDC = if iszero(PSY.get_g(vscline))
             0.0
-        end
-        RDC = get_ext_key_or_default(vscline, "RDC", RDC_org)
-
-        # Determine converter types based on DC voltage control configuration
-        if PSY.get_dc_voltage_control_from(vscline) &&
-           !PSY.get_dc_voltage_control_to(vscline)
-            type1_org = 1
-            type2_org = 2
-        elseif !PSY.get_dc_voltage_control_from(vscline) &&
-               PSY.get_dc_voltage_control_to(vscline)
-            type1_org = 2
-            type2_org = 1
         else
-            type1_org = 0
-            type2_org = 0
+            (1 / PSY.get_g(vscline)) * Zbase
+        end
+
+        # Converter DC-control TYPE per terminal: DC_VOLTAGE -> 1, MW/droop -> 2 (droop is exported
+        # as MW control; the PSS/E record cannot represent DC-voltage droop).
+        type1_org = _vsc_export_dc_type(from_dc_control)
+        type2_org = _vsc_export_dc_type(to_dc_control)
+        # PSS/E requires exactly one in-service converter to be DC-voltage controlling (TYPE 1). PSY
+        # does not enforce this, so a both- or neither-DC_VOLTAGE line produces a record PSS/E cannot
+        # read; warn and write best-effort rather than emit it silently.
+        if PSY.get_available(vscline) && (type1_org == 1) == (type2_org == 1)
+            @warn "TwoTerminalVSCLine $(PSY.get_name(vscline)) does not have exactly one " *
+                  "DC-voltage-controlling terminal; exported PSS/E TYPE $type1_org/$type2_org " *
+                  "violates the one-TYPE-1 rule and may not re-parse."
         end
 
         c1 = _compute_vsc_converter_fields(exporter, vscline, I, type1_org, :from)
@@ -2675,29 +2578,17 @@ function write_to_buffers!(
         @fastprintdelim_unroll(io, false, NAME, MDC, RDC)
         fastprintln_psse_default_ownership(io)
 
-        if exporter.psse_version == :v35
-            @fastprintdelim_unroll(io, false,
-                c1.IBUS, c1.TYPE, c1.MODE, c1.DCSET, c1.ACSET, c1.ALOSS, c1.BLOSS,
-                c1.MINLOSS, c1.SMAX, c1.IMAX, c1.PWF, c1.MAXQ, c1.MINQ,
-                c1.VSREG, c1.NREG)
-            fastprintln(io, c1.RMPCT)
+        # The converter sub-record ends in `REMOT, RMPCT` in both v33 and v35 (PSS/E's parser uses
+        # one VSC converter schema across versions), so the trailing fields are written the same.
+        @fastprintdelim_unroll(io, false,
+            c1.IBUS, c1.TYPE, c1.MODE, c1.DCSET, c1.ACSET, c1.ALOSS, c1.BLOSS,
+            c1.MINLOSS, c1.SMAX, c1.IMAX, c1.PWF, c1.MAXQ, c1.MINQ, c1.REMOT)
+        fastprintln(io, c1.RMPCT)
 
-            @fastprintdelim_unroll(io, false,
-                c2.IBUS, c2.TYPE, c2.MODE, c2.DCSET, c2.ACSET, c2.ALOSS, c2.BLOSS,
-                c2.MINLOSS, c2.SMAX, c2.IMAX, c2.PWF, c2.MAXQ, c2.MINQ,
-                c2.VSREG, c2.NREG)
-            fastprintln(io, c2.RMPCT)
-        else
-            @fastprintdelim_unroll(io, false,
-                c1.IBUS, c1.TYPE, c1.MODE, c1.DCSET, c1.ACSET, c1.ALOSS, c1.BLOSS,
-                c1.MINLOSS, c1.SMAX, c1.IMAX, c1.PWF, c1.MAXQ, c1.MINQ, c1.REMOT)
-            fastprintln(io, c1.RMPCT)
-
-            @fastprintdelim_unroll(io, false,
-                c2.IBUS, c2.TYPE, c2.MODE, c2.DCSET, c2.ACSET, c2.ALOSS, c2.BLOSS,
-                c2.MINLOSS, c2.SMAX, c2.IMAX, c2.PWF, c2.MAXQ, c2.MINQ, c2.REMOT)
-            fastprintln(io, c2.RMPCT)
-        end
+        @fastprintdelim_unroll(io, false,
+            c2.IBUS, c2.TYPE, c2.MODE, c2.DCSET, c2.ACSET, c2.ALOSS, c2.BLOSS,
+            c2.MINLOSS, c2.SMAX, c2.IMAX, c2.PWF, c2.MAXQ, c2.MINQ, c2.REMOT)
+        fastprintln(io, c2.RMPCT)
     end
     end_group(
         io,
@@ -2870,33 +2761,33 @@ function write_to_buffers!(
     for facts in facts_devices
         sienna_bus_number = PSY.get_number(PSY.get_bus(facts))
         I = md["bus_number_mapping"][sienna_bus_number]
-        J = get_ext_key_or_default(facts, "J")
+        # PSY models the shunt element only; J = 0 marks a device with no series end.
+        J = 0
         name = PSY.get_name(facts)
         if startswith(name, string(sienna_bus_number) * "_")
             name = name[(length(string(sienna_bus_number)) + 2):end]
         end
         NAME = _psse_quote_string(name)
         MODE = get(FACTS_MODE_MAP, PSY.get_control_mode(facts), 2)
-        PDES = get_ext_key_or_default(facts, "PDES")
-        QDES = get_ext_key_or_default(facts, "QDES")
+        PDES = PSSE_DEFAULT
+        QDES = PSSE_DEFAULT
         VSET = PSY.get_voltage_setpoint(facts)
         SHMX = PSY.get_max_shunt_current(facts)
-        TRMX = get_ext_key_or_default(facts, "TRMX", PSSE_INFINITY)
-        VTMX = get_ext_key_or_default(facts, "VTMX")
-        VTMN = get_ext_key_or_default(facts, "VTMN")
-        VSMX = get_ext_key_or_default(facts, "VSMX")
-        IMX = get_ext_key_or_default(facts, "IMX")
-        LINX = get_ext_key_or_default(facts, "LINX")
-        RMPCT = PSY.get_reactive_power_required(facts)
+        TRMX = PSSE_INFINITY
+        VTMX = PSSE_DEFAULT
+        VTMN = PSSE_DEFAULT
+        VSMX = PSSE_DEFAULT
+        IMX = PSSE_DEFAULT
+        LINX = PSSE_DEFAULT
+        RMPCT = PSSE_DEFAULT
         OWNER = PSSE_DEFAULT
-        SET1 = get_ext_key_or_default(facts, "SET1")
-        SET2 = get_ext_key_or_default(facts, "SET2")
-        VSREF = get_ext_key_or_default(facts, "VSREF")
-        FCREG = get_ext_key_or_default(facts, "FCREG")
-        NREG = get_ext_key_or_default(facts, "NREG")
-        REMOT = get_ext_key_or_default(facts, "REMOT")
-        MNAME = get_ext_key_or_default(facts, "MNAME", "")
-        MNAME = _psse_quote_string(String(MNAME))
+        SET1 = PSSE_DEFAULT
+        SET2 = PSSE_DEFAULT
+        VSREF = PSSE_DEFAULT
+        FCREG = PSY.get_regulated_bus_number(facts)
+        NREG = PSSE_DEFAULT
+        REMOT = PSY.get_regulated_bus_number(facts)
+        MNAME = _psse_quote_string("")
 
         if exporter.psse_version == :v35
             @fastprintdelim_unroll(io, false, NAME, I, J, MODE, PDES, QDES,
@@ -2922,13 +2813,14 @@ function _build_switched_shunt_steps_v35(
     increases::Vector{Complex{Float64}},
     base_power::Float64,
 )
+    initial_status = PSY.get_initial_status(shunt)
     S_vals = []
     N_vals = []
     B_vals = []
     for (N, B) in zip(steps, increases)
-        push!(S_vals, get_ext_key_or_default(shunt, "S$(length(S_vals)+1)", 1))
+        push!(S_vals, get(initial_status, length(S_vals) + 1, 1))
         push!(N_vals, N)
-        push!(B_vals, _psse_round_val(imag(B) * base_power))
+        push!(B_vals, imag(B) * base_power)
     end
     while length(S_vals) < 8
         push!(S_vals, PSSE_DEFAULT)
@@ -2952,7 +2844,7 @@ function _build_switched_shunt_steps_v33(
     B_vals = []
     for (N, B) in zip(steps, increases)
         push!(N_vals, N)
-        push!(B_vals, _psse_round_val(imag(B) * base_power))
+        push!(B_vals, imag(B) * base_power)
     end
     while length(N_vals) < 8
         push!(N_vals, PSSE_DEFAULT)
@@ -3002,26 +2894,26 @@ function write_to_buffers!(
             ID = _psse_quote_string(string(bus_id_counters[I]))
         end
 
-        MODSW = get_ext_key_or_default(shunt, "MODSW")
-        ADJM = get_ext_key_or_default(shunt, "ADJM")
+        MODSW = _psse_enum_code(
+            PSY.get_control_mode(shunt),
+            PSY.SwitchedAdmittanceControlMode.UNDEFINED,
+        )
+        ADJM = PSSE_DEFAULT
         STAT = PSY.get_available(shunt) ? 1 : 0
-        VSWHI = PSY.get_admittance_limits(shunt).max
-        VSWLO = PSY.get_admittance_limits(shunt).min
+        admittance_limits = PSY.get_admittance_limits(shunt)
+        VSWHI = admittance_limits.max
+        VSWLO = admittance_limits.min
 
         if exporter.psse_version == :v35
-            SWREG = get_ext_key_or_default(
-                shunt,
-                "SWREG",
-                get_ext_key_or_default(shunt, "SWREM"),
-            )
-            NREG = get_ext_key_or_default(shunt, "NREG")
+            SWREG = PSY.get_regulated_bus_number(shunt)
+            NREG = PSSE_DEFAULT
         else
-            SWREM = get_ext_key_or_default(shunt, "SWREM")
+            SWREM = PSY.get_regulated_bus_number(shunt)
         end
 
-        RMPCT = get_ext_key_or_default(shunt, "RMPCT")
-        RMIDNT = _psse_quote_string(String(get_ext_key_or_default(shunt, "RMIDNT")))
-        BINIT = _psse_round_val(imag(PSY.get_Y(shunt)) * base_power)
+        RMPCT = PSSE_DEFAULT
+        RMIDNT = _psse_quote_string("")
+        BINIT = imag(PSY.get_Y(shunt)) * base_power
 
         steps = PSY.get_number_of_steps(shunt)
         increases = PSY.get_Y_increase(shunt)

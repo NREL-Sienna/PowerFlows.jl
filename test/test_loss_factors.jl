@@ -115,10 +115,8 @@ function _summation_dc_loss_factors(sys, data)
     for line in get_components(PSY.Line, sys)
         Rs[PNM.get_arc_tuple(line)] = get_r(line, PSY.SU)
     end
-    for comp_type in (PSY.TapTransformer, PSY.Transformer2W)
-        for line in get_components(comp_type, sys)
-            Rs[PNM.get_arc_tuple(line)] = PSY.get_r(line, PSY.SU)
-        end
+    for line in get_components(PSY.TwoWindingTransformer, sys)
+        Rs[PNM.get_arc_tuple(line)] = PSY.get_r(line, PSY.SU)
     end
     ptdf = data.power_network_matrix
     n_buses = length(get_components(PSY.ACBus, sys))
@@ -140,8 +138,8 @@ end
     pf = PTDFDCPowerFlow(; time_steps = 1)
     data = PF.PowerFlowData(pf, sys)
     PF.solve_power_flow!(data)
-    loss_p, injections = _summation_dc_loss_factors(sys, data)
-    calculated_loss = PF.dc_loss_factors(data, injections)
+    loss_p, _ = _summation_dc_loss_factors(sys, data)
+    calculated_loss = PF.dc_loss_factors(data)
     @test isapprox(calculated_loss[:, 1], loss_p; atol = 1e-10)
 end
 
@@ -150,8 +148,8 @@ end
     pf = vPTDFDCPowerFlow(; time_steps = 1)
     data = PF.PowerFlowData(pf, sys)
     PF.solve_power_flow!(data)
-    loss_p, injections = _summation_dc_loss_factors(sys, data)
-    calculated_loss = PF.dc_loss_factors(data, injections)
+    loss_p, _ = _summation_dc_loss_factors(sys, data)
+    calculated_loss = PF.dc_loss_factors(data)
     @test isapprox(calculated_loss[:, 1], loss_p; atol = 1e-10)
 end
 
@@ -167,9 +165,7 @@ end
     @test size(data_lf.loss_factors) == (n_buses, 1)
 
     # Compare against manual call to dc_loss_factors
-    injections = data_lf.bus_active_power_injections .- data_lf.bus_active_power_withdrawals
-    injections .+= data_lf.bus_hvdc_net_power
-    manual_lf = PF.dc_loss_factors(data_lf, injections)
+    manual_lf = PF.dc_loss_factors(data_lf)
     @test isapprox(data_lf.loss_factors, manual_lf; atol = 1e-10)
 
     # Default (calculate_loss_factors = false) should leave loss_factors as nothing
@@ -201,4 +197,40 @@ end
     data_no_lf = PowerFlowData(pf_no_lf, sys)
     solve_power_flow!(data_no_lf)
     @test isnothing(data_no_lf.loss_factors)
+end
+
+@testset "loss factors computed on a 0-iteration warm-converged polar solve" begin
+    # Regression: the deferred-Jacobian 0-iteration branch must still compute the
+    # loss/voltage-stability factors when the caller opted in — otherwise a solve that
+    # lands within tol at iteration 0 leaves them at their zero-initialized values.
+    sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
+    pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(; calculate_loss_factors = true)
+    data = PowerFlowData(pf, sys)
+    solve_power_flow!(data)                 # iterating solve populates the factors
+    lf_ref = copy(data.loss_factors)
+    @test !all(iszero, lf_ref)
+    # Re-solve on the same converged data ⇒ 0 NR iterations (warm start hits the deferred
+    # branch). Zero the factors first so the assertion discriminates: pre-fix they stay zero.
+    data.loss_factors .= 0.0
+    solve_power_flow!(data)
+    @test !all(iszero, data.loss_factors)
+    @test isapprox(data.loss_factors, lf_ref; atol = 1e-10)
+end
+
+@testset "DC loss factors reuse the cached arc resistances across solves" begin
+    sys = build_system(PSITestSystems, "c_sys14"; add_forecasts = false)
+    for pf in (
+        PTDFDCPowerFlow(; calculate_loss_factors = true),
+        vPTDFDCPowerFlow(; calculate_loss_factors = true),
+    )
+        data = PF.PowerFlowData(pf, sys)
+        PF.solve_power_flow!(data)
+        first_pass = copy(data.loss_factors)
+        PF.solve_power_flow!(data)
+        @test data.loss_factors ≈ first_pass
+        # The two-argument form is what the solve path uses; the convenience form must agree.
+        Rs = PF._get_arc_resistances(data)
+        @test PF.dc_loss_factors(data, Rs) ≈ PF.dc_loss_factors(data)
+        @test eltype(Rs) === Float64
+    end
 end

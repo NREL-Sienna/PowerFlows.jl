@@ -10,7 +10,12 @@ function _calculate_ϕ_lcc(
     x_t::Float64,
     Vm::Float64,
 )::Float64
-    raw = sign(I_dc) * (cos(α) - (x_t * I_dc) / (sqrt(2) * Vm * t))
+    # Commutation drop x_t·|I_dc| always REDUCES the DC voltage on both sides, hence abs(I_dc).
+    # The inverter passes I_dc = −i_dc, so the outer sign(I_dc) flips only the convention
+    # (cos ϕ_i < 0 ⇒ cos ϕ_i = −(cos γ − commutation)); a signed I_dc in the drop term would
+    # non-physically ADD it on the inverter. Inverter derivatives carry this sign via −xtr_i
+    # (first-derivative helpers) and σ (second-derivative _d2Q_lcc).
+    raw = sign(I_dc) * (cos(α) - (x_t * abs(I_dc)) / (sqrt(2) * Vm * t))
     if raw < -1.0 || raw > 1.0
         @warn "LCC ϕ argument outside [-1, 1] (got $raw); clamping. \
                Derivative formulas in lcc_utils.jl are singular on this boundary \
@@ -210,6 +215,96 @@ function _calculate_dQ_dα_lcc(
     sϕ = sin(ϕ)
     sϕ < LCC_sinϕ_TOLERANCE && return 0.0
     return Vm * t * SQRT6_DIV_PI * I_dc * cos(ϕ) * sin(α) / sϕ
+end
+
+"""
+    _d2P_lcc(V, t, α, I_dc, ϕ, σ) -> NamedTuple
+
+Second partials of the LCC active-power contribution `P_s = K·I·V·t·cos ϕ_s`
+with respect to `(V_s, t_s, α_s)`. `σ = +1` rectifier, `σ = -1` inverter; `ϕ`
+is the side-specific phase angle (its `cos` carries the side sign, as in
+[`_d2Q_lcc`](@ref)).
+
+Interior regime: `cos ϕ_r = cos α − β/(Vt)` (inverter: `−cos α − β/(Vt)`), so
+`P_s` is linear in `V·t` with an α-dependent coefficient. Clamp regime
+(`sin ϕ < LCC_sinϕ_TOLERANCE`): `cos ϕ` is pinned at ±1, locally constant, so
+the mixed `V–t` partial `K·I·cos ϕ` is the only survivor and all α-partials
+vanish — matching the clamp-guarded first-derivative helpers.
+"""
+function _d2P_lcc(
+    V::Float64,
+    t::Float64,
+    α::Float64,
+    I_dc::Float64,
+    ϕ::Float64,
+    σ::Int,
+)
+    KI = SQRT6_DIV_PI * I_dc
+    if sin(ϕ) < LCC_sinϕ_TOLERANCE
+        return (VV = 0.0, tt = 0.0, Vt = KI * cos(ϕ), Vα = 0.0, tα = 0.0, αα = 0.0)
+    end
+    cα = cos(α)
+    sα = sin(α)
+    return (
+        VV = 0.0,
+        tt = 0.0,
+        Vt = σ * KI * cα,
+        Vα = -σ * KI * t * sα,
+        tα = -σ * KI * V * sα,
+        αα = -σ * KI * V * t * cα,
+    )
+end
+
+"""
+    _d2Q_lcc(V, t, α, x_t, I_dc, ϕ, σ) -> NamedTuple
+
+Second partials of the LCC reactive-power contribution `Q_s = V t K I sin ϕ_s`
+with respect to `(V_s, t_s, α_s)`. `σ = +1` for the rectifier, `σ = -1`
+for the inverter. `I_dc > 0`, `x_t > 0`, and `ϕ` is the side-specific
+phase angle (so `cos ϕ_s` already carries the side sign).
+
+Uses the `sin ϕ → 0` clamp guard: when `sin ϕ` falls below
+`LCC_sinϕ_TOLERANCE`, returns all-zero second partials, mirroring the
+existing `_calculate_dQ_*_lcc` helpers. In that regime `Q_s ≈ 0` and the
+analytic formulas (which contain `1/sin³ϕ` factors) are singular but the
+residual sees no `Q_s` dependence locally.
+"""
+function _d2Q_lcc(
+    V::Float64,
+    t::Float64,
+    α::Float64,
+    x_t::Float64,
+    I_dc::Float64,
+    ϕ::Float64,
+    σ::Int,
+)
+    S = sin(ϕ)
+    if S < LCC_sinϕ_TOLERANCE
+        return (VV = 0.0, tt = 0.0, Vt = 0.0, Vα = 0.0, tα = 0.0, αα = 0.0)
+    end
+    KI = SQRT6_DIV_PI * I_dc
+    # σ·x_t carries the commutation sign: the inverter (σ = −1) subtracts the commutation drop,
+    # so its β-LINEAR curvature terms have opposite sign to the rectifier form derived here (β²
+    # terms are even in β, unchanged). Second-derivative analogue of the −xtr_i passed to the
+    # first-derivative helpers; keying on σ keeps this in the helper (homotopy Hessian unchanged).
+    β = σ * x_t * I_dc / sqrt(2)
+    β² = β * β
+    C = cos(ϕ)
+    S² = S * S
+    S³ = S² * S
+    sα = sin(α)
+    cα = cos(α)
+    V² = V * V
+    t² = t * t
+    Vt = V * t
+    return (
+        VV = -KI * β² / (V² * V * t * S³),
+        tt = -KI * β² / (V * t² * t * S³),
+        Vt = KI * (S - C * β / (Vt * S) - β² / (V² * t² * S³)),
+        Vα = σ * KI * sα * (t * C / S + β / (V * S³)),
+        tα = σ * KI * sα * (V * C / S + β / (t * S³)),
+        αα = -KI * Vt * sα * sα / S³ + σ * KI * Vt * C * cα / S,
+    )
 end
 
 """
@@ -436,6 +531,12 @@ function _lcc_jacobian_scalars(
     phi_i = data.lcc.inverter.phi[i, time_step]
     xtr_r = data.lcc.rectifier.transformer_reactance[i]
     xtr_i = data.lcc.inverter.transformer_reactance[i]
+    # The inverter ϕ subtracts the commutation drop (cos ϕ_i = −(cos γ − comm)),
+    # so ∂ϕ_i/∂{V,t} — and every commutation-chain term in the true-ϕ dP/dQ helpers — has
+    # the opposite sign to the rectifier form the helpers assume. Each such term is linear
+    # in x_t and x_t is absent from the leading/α terms, so passing −xtr_i flips exactly the
+    # commutation-chain terms and nothing else.
+    xtr_i_deriv = -xtr_i
     cos_alpha_r = cos(alpha_r)
     sin_alpha_r = sin(alpha_r)
     cos_alpha_i = cos(alpha_i)
@@ -446,17 +547,14 @@ function _lcc_jacobian_scalars(
     common_tap_i = tap_i * SQRT6_DIV_PI * (-i_dc) * cos_alpha_i
     common_alpha_r = -common_fb * tap_r * sin_alpha_r
     common_alpha_i = -common_tb * tap_i * sin_alpha_i
-    # True-ϕ derivatives of P_lcc_{from, to} for the tail × tail block.
-    # Inverter signs:
-    #   ∂P_lcc_to/∂tap_i: the helper returns the rectifier-style formula;
-    #     for the inverter `phi_i ≈ π − α_i` makes `cos(phi_i) < 0`, so the
-    #     helper already returns the correct negative coefficient — no sign
-    #     flip needed here.
-    #   ∂P_lcc_to/∂α_i: ϕ_i convention flips `∂ϕ_i/∂α_i`, so negate the helper.
+    # True-ϕ derivatives of P_lcc_{from, to} for the tail × tail block. Inverter uses
+    # xtr_i_deriv (= −xtr_i) so the commutation-chain term carries the inverter sign; the
+    # leading `cos ϕ_i` term is x_t-free and stays correct (cos ϕ_i < 0). ∂P_lcc_to/∂α_i is
+    # x_t-free too; its ϕ_i-convention sign flip is handled by negating the α helper below.
     dP_dV_fb = _calculate_dP_dV_lcc(tap_r, i_dc, xtr_r, Vm_fb, phi_r)
-    dP_dV_tb = _calculate_dP_dV_lcc(tap_i, i_dc, xtr_i, Vm_tb, phi_i)
+    dP_dV_tb = _calculate_dP_dV_lcc(tap_i, i_dc, xtr_i_deriv, Vm_tb, phi_i)
     dP_dt_fb = _calculate_dP_dt_lcc(tap_r, i_dc, xtr_r, Vm_fb, phi_r)
-    dP_dt_tb = _calculate_dP_dt_lcc(tap_i, i_dc, xtr_i, Vm_tb, phi_i)
+    dP_dt_tb = _calculate_dP_dt_lcc(tap_i, i_dc, xtr_i_deriv, Vm_tb, phi_i)
     dP_dα_fb = _calculate_dP_dα_lcc(tap_r, i_dc, Vm_fb, alpha_r, phi_r)
     # Negated: inverter ϕ_i ≈ π − α_i flips ∂ϕ_i/∂α_i vs the helper's rectifier form (see above).
     dP_dα_tb = -_calculate_dP_dα_lcc(tap_i, i_dc, Vm_tb, alpha_i, phi_i)
@@ -797,13 +895,21 @@ lcc_vsc_fixed_injections!(
     ::Set{Int},
 ) = nothing
 
-lcc_vsc_fixed_injections!(
+function lcc_vsc_fixed_injections!(
     data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
     sys::PSY.System,
     bus_lookup::Dict{Int, Int},
     reverse_bus_search_map::Dict{Int, Int},
     removed_buses::Set{Int},
-) =
+)
+    # Only two-terminal HVDC lines carry a fixed flow the DC formulations can inject; a
+    # multi-terminal DC grid (InterconnectingConverter) has no fixed per-converter order for the
+    # DC-slack terminal, so it is not modeled here — warn instead of silently dropping it.
+    if !isempty(PSY.get_available_components(PSY.InterconnectingConverter, sys))
+        @warn "The system contains InterconnectingConverter components: multi-terminal DC " *
+              "networks are not modeled in DC power flow, and their converter injections are " *
+              "ignored. Use an AC power flow for joint AC-DC results."
+    end
     hvdc_fixed_injections!.(
         (data,),
         (PSY.TwoTerminalLCCLine, PSY.TwoTerminalVSCLine),
@@ -812,6 +918,8 @@ lcc_vsc_fixed_injections!(
         (reverse_bus_search_map,),
         (removed_buses,),
     )
+    return
+end
 
 function initialize_generic_hvdc_flows!(
     data::PowerFlowData,
