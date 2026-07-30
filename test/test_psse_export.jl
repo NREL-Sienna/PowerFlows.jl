@@ -95,9 +95,6 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         :time_limits,
         :services,
         :angle_limits,
-        # Inert once PSY drops winding_group_number; until then reimport derives a group
-        # from ANG while API-built originals keep the constructor default.
-        :winding_group_number,
         :control_objective_primary,
     ]),
     exclude_fields_for_type = Dict(
