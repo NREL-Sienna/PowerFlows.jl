@@ -243,6 +243,19 @@ end
     @test va[lookup[2], 1] ≈ 0.05 atol = 1e-9
 end
 
+@testset "Multi-swing: RobustHomotopy is rejected, NR still solves" begin
+    # HomotopyHessian has no independent-per-swing slack handling, so its curvature would
+    # disagree with the residual's self-balancing rows. Gate until that is implemented.
+    sys = _two_swing_system()
+    pf_rh = PF.ACPowerFlow{RobustHomotopyPowerFlow}(; correct_bustypes = false)
+    data_rh = PF.PowerFlowData(pf_rh, sys)
+    @test_throws ArgumentError PF.solve_power_flow!(data_rh)
+    # Single-swing systems must keep working: the gate is multi-swing-specific, not a
+    # blanket RobustHomotopy rejection.
+    pf_nr = PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = false)
+    @test PF.solve_power_flow!(PF.PowerFlowData(pf_nr, sys); tol = 1e-9)
+end
+
 @testset "Jacobian verification with two swings (multi-swing)" begin
     # Each swing's ∂F_P/∂x[2i−1] = −1 with no cross-terms; a wrong diagonal or stray
     # cross-term shows as order-1 decay in the asymptotic check.
