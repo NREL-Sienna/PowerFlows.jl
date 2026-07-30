@@ -79,6 +79,15 @@ struct DCSolveScratch{A}
     tb_ix::Vector{Int}
 end
 
+"""
+    _make_dc_scratch(data::PowerFlowData) -> DCSolveScratch
+
+Build the `DCSolveScratch` a DC solve reuses across time steps: the injection work
+buffers, plus the topology-fixed precomputes (non-reference bus rows, per-arc from/to bus
+indices, per-arc equivalent resistances, and the arc-bus incidence). Built once per network
+matrix because everything but the work buffers depends only on the topology, not on the
+injections that change between steps.
+"""
 function _make_dc_scratch(data::PowerFlowData)
     n_buses = size(data.bus_active_power_injections, 1)
     valid_ix = collect(1:n_buses)[get_valid_ix(data)]  # resolve Not(ref) → Vector{Int}
@@ -551,7 +560,7 @@ end
     _get_arc_resistances(data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData}) -> Vector{Float64}
 
 Look up the equivalent resistance of each arc from the network reduction data via
-[`PNM.arc_dc_resistance`](@ref), which is total on lossy shifted parallel groups (unlike
+`PNM.arc_dc_resistance`, which is total on lossy shifted parallel groups (unlike
 [`_get_arc_branch_params`](@ref)'s single-π extraction, which throws on them).
 """
 function _get_arc_resistances(

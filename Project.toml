@@ -31,8 +31,8 @@ PowerFlowsPardisoExt = "Pardiso"
 InfrastructureSystems = {rev = "IS4", url = "https://github.com/Sienna-Platform/InfrastructureSystems.jl.git"}
 PowerSystems = {rev = "psy6", url = "https://github.com/Sienna-Platform/PowerSystems.jl.git"}
 # Registry PNM v0.24 requires PSY ^5.11, which conflicts with the psy6 branch (5.10.0);
-# jd/transformer_refactor carries the transformer-circuit API against the psy6/IS4 sources.
-PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl.git", rev = "jd/transformer_refactor"}
+# the psy6 branch carries the transformer-circuit API against the psy6/IS4 sources.
+PowerNetworkMatrices = {url = "https://github.com/Sienna-Platform/PowerNetworkMatrices.jl.git", rev = "psy6"}
 
 [compat]
 DataFrames = "1"

@@ -33,10 +33,9 @@ using PowerFlows
 
 function build_stressed_system(load_scale::Float64)
     sys = build_system(PSITestSystems, "c_sys14"; force_build = true, add_forecasts = false)
-    set_units_base_system!(sys, "SYSTEM_BASE")
     for load in get_components(PowerLoad, sys)
-        set_active_power!(load, get_active_power(load) * load_scale)
-        set_reactive_power!(load, get_reactive_power(load) * load_scale)
+        set_active_power!(load, get_active_power(load, SU) * load_scale * SU)
+        set_reactive_power!(load, get_reactive_power(load, SU) * load_scale * SU)
     end
     return sys
 end

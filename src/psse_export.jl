@@ -1,5 +1,21 @@
 const PSSE_DEFAULT = ""  # Used below in cases where we want to insert an empty field to signify the PSSE default
 const PSSE_INFINITY = 9999.0
+
+# PSS/E spec defaults for generator machine data PSY does not model (source impedance,
+# step-up transformer, remote regulation, wind mode). v33 accepts a blank field and the
+# reader substitutes these; v35 does not allow blanks, so the v35 record writes them
+# explicitly. Values mirror the reader's own default table — do not diverge from it.
+const PSSE_GEN_DEFAULT_IREG = 0
+const PSSE_GEN_DEFAULT_NREG = 0
+const PSSE_GEN_DEFAULT_ZR = 0.0
+const PSSE_GEN_DEFAULT_ZX = 1.0
+const PSSE_GEN_DEFAULT_RT = 0.0
+const PSSE_GEN_DEFAULT_XT = 0.0
+const PSSE_GEN_DEFAULT_GTAP = 1.0
+const PSSE_GEN_DEFAULT_RMPCT = 100.0
+const PSSE_GEN_DEFAULT_BASLOD = 0
+const PSSE_GEN_DEFAULT_WMOD = 0
+const PSSE_GEN_DEFAULT_WPF = 1.0
 const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.PQ => 1,
     PSY.ACBusTypes.PV => 2,
@@ -1578,26 +1594,33 @@ function write_to_buffers!(
 
         # Get common fields
         VS = PSY.get_magnitude(PSY.get_bus(generator))
-        IREG = PSSE_DEFAULT
         MBASE = PSY.get_base_power(generator, PSY.NU)
-        ZR = PSSE_DEFAULT
-        ZX = PSSE_DEFAULT
-        RT = PSSE_DEFAULT
-        XT = PSSE_DEFAULT
-        GTAP = PSSE_DEFAULT
-        STAT = PSY.get_available(generator) ? 1 : 0
-        RMPCT = PSSE_DEFAULT
-        WMOD = PSSE_DEFAULT
-        WPF = PSSE_DEFAULT
+        STAT = 0
+        if PSY.get_available(generator)
+            STAT = 1
+        end
 
+        # Generator machine data PSY does not model. v35 forbids blank fields, so it writes
+        # the spec defaults the reader would have substituted; v33 leaves them blank.
         if exporter.psse_version == :v35
-            NREG = PSSE_DEFAULT
-            BASLOD = PSSE_DEFAULT
             _write_generator_v35_record!(
-                io, I, ID, PG, QG, QT, QB, VS, IREG, NREG, MBASE, ZR, ZX,
-                RT, XT, GTAP, STAT, RMPCT, PT, PB, BASLOD, WMOD, WPF,
+                io, I, ID, PG, QG, QT, QB, VS,
+                PSSE_GEN_DEFAULT_IREG, PSSE_GEN_DEFAULT_NREG, MBASE,
+                PSSE_GEN_DEFAULT_ZR, PSSE_GEN_DEFAULT_ZX,
+                PSSE_GEN_DEFAULT_RT, PSSE_GEN_DEFAULT_XT, PSSE_GEN_DEFAULT_GTAP,
+                STAT, PSSE_GEN_DEFAULT_RMPCT, PT, PB, PSSE_GEN_DEFAULT_BASLOD,
+                PSSE_GEN_DEFAULT_WMOD, PSSE_GEN_DEFAULT_WPF,
             )
         else
+            IREG = PSSE_DEFAULT
+            ZR = PSSE_DEFAULT
+            ZX = PSSE_DEFAULT
+            RT = PSSE_DEFAULT
+            XT = PSSE_DEFAULT
+            GTAP = PSSE_DEFAULT
+            RMPCT = PSSE_DEFAULT
+            WMOD = PSSE_DEFAULT
+            WPF = PSSE_DEFAULT
             _write_generator_v33_record!(
                 io, I, ID, PG, QG, QT, QB, VS, IREG, MBASE, ZR, ZX,
                 RT, XT, GTAP, STAT, RMPCT, PT, PB, WMOD, WPF,

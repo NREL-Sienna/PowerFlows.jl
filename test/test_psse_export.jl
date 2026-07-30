@@ -68,6 +68,55 @@ loose_system_match_fn(a::Float64, b::Float64) =
         rtol = SYSTEM_REIMPORT_RELATIVE_TOLERANCE) || IS.isequivalent(a, b)
 loose_system_match_fn(a, b) = IS.isequivalent(a, b)
 
+"""PSS/E's COD field has no spelling for `UNDEFINED`, so an unset control objective exports
+blank and re-parses as `FIXED`. Every other objective round-trips exactly."""
+function expected_reimported_objective(objective::PSY.TransformerControlObjective)
+    if objective == PSY.TransformerControlObjective.UNDEFINED
+        return PSY.TransformerControlObjective.FIXED
+    end
+    return objective
+end
+
+function _circuit_objective_round_trips(
+    circuit1::PSY.TransformerCircuit,
+    circuit2::PSY.TransformerCircuit,
+)
+    original = PSY.get_control_objective(circuit1)
+    actual = PSY.get_control_objective(circuit2)
+    # This helper also compares a system against itself, where nothing was exported and the
+    # objective is untouched. So accept the original, or the one documented lossy mapping a
+    # re-import applies. Any other objective is a genuine COD export bug.
+    if actual == original || actual == expected_reimported_objective(original)
+        return true
+    end
+    @error "control_objective did not round-trip: expected $original or \
+        $(expected_reimported_objective(original)), got $actual"
+    return false
+end
+
+# `compare_systems_loosely` excludes `:control_objective` because `IS.compare_values` matches
+# exclusions by field name recursively, so it cannot express the asymmetric UNDEFINED→FIXED
+# mapping. These methods restore the check as an explicit contract, so a genuine COD export
+# bug on any of the other objectives still fails the round trip. Both arities are checked at
+# the `TransformerCircuit` level, since that is where the objective lives.
+_control_objectives_round_trip(comp1, comp2) = true
+
+_control_objectives_round_trip(
+    tx1::PSY.TwoWindingTransformer,
+    tx2::PSY.TwoWindingTransformer,
+) = _circuit_objective_round_trips(PSY.get_circuit(tx1), PSY.get_circuit(tx2))
+
+function _control_objectives_round_trip(
+    tx1::PSY.ThreeWindingTransformer,
+    tx2::PSY.ThreeWindingTransformer,
+)
+    result = true
+    for (circuit1, circuit2) in zip(PSY.get_circuits(tx1), PSY.get_circuits(tx2))
+        result &= _circuit_objective_round_trips(circuit1, circuit2)
+    end
+    return result
+end
+
 function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
     bus_name_mapping = Dict{String, String}(),
     include_types = [
@@ -116,14 +165,17 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         PSY.TwoWindingTransformer => Set([
             :active_power_flow,
             :reactive_power_flow,
-            # PSS/E's COD field can't spell "no control block" (`UNDEFINED`); any circuit
-            # written out gets a concrete COD, and re-parsing it back as `FIXED` is expected.
+            # PSS/E's COD field can't spell "no control block" (`UNDEFINED`), so it exports
+            # blank and re-parses as `FIXED`. Excluded here only because IS matches
+            # exclusions by name recursively; `_control_objectives_round_trip` asserts the
+            # exact mapping instead, so the other objectives are still checked.
             :control_objective,
         ]),
         PSY.ThreeWindingTransformer => Set([
             :active_power_flow,
             :reactive_power_flow,
             :rating,  # TODO why don't ratings match?
+            :control_objective,  # same UNDEFINED→FIXED mapping; see the 2W note above
         ]),
     ),
     generator_comparison_fns = [  # TODO rating
@@ -203,8 +255,9 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
                 comp2;
                 exclude = my_excludes,
             )
-            result &= comparison
-            if !comparison
+            objectives_ok = _control_objectives_round_trip(comp1, comp2)
+            result &= comparison & objectives_ok
+            if !comparison || !objectives_ok
                 @error "Mismatched component LHS: $comp1"
                 @error "Mismatched component RHS: $comp2"
             end
@@ -636,7 +689,7 @@ end
     @test isapprox(control_limits2.max, deg2rad(30); atol = 1e-8)
 end
 
-@testset "PSSE Exporter RTS regression: TapTransformer and v35 default ratings" begin
+@testset "PSSE Exporter RTS regression: non-unity tap circuit and v35 default ratings" begin
     sys = with_logger(SimpleLogger(Error)) do
         build_system(PSISystems, "modified_RTS_GMLC_DA_sys"; force_build = true)
     end
@@ -644,16 +697,16 @@ end
 
     undefined_obj =
         PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
-    tap_transformers = collect(PSY.get_components(PSY.TwoWindingTransformer, sys))
+    two_winding_transformers = collect(PSY.get_components(PSY.TwoWindingTransformer, sys))
     target_tap_idx = findfirst(
         t ->
             PSY.get_control_objective(PSY.get_circuit(t)) == undefined_obj &&
                 !isapprox(PSY.get_tap(PSY.get_circuit(t)), 1.0),
-        tap_transformers,
+        two_winding_transformers,
     )
     @test !isnothing(target_tap_idx)
     isnothing(target_tap_idx) && return
-    target_tap = tap_transformers[target_tap_idx]
+    target_tap = two_winding_transformers[target_tap_idx]
 
     lines = sort!(collect(PSY.get_components(PSY.Line, sys)); by = PSY.get_name)
     @test !isempty(lines)
@@ -662,7 +715,7 @@ end
 
     # In v35, unspecified extra rating fields are exported as explicit 0.0 values.
     export_location = joinpath(test_psse_export_dir, "v35", "rts_targeted_regressions")
-    scenario_name = "taptransformer_nonunity_and_v35_missing_ratings"
+    scenario_name = "nonunity_tap_circuit_and_v35_missing_ratings"
     exporter =
         PSSEExporter(sys, :v35, export_location; write_comments = true, overwrite = true)
     write_export(exporter, scenario_name; overwrite = true)
@@ -677,11 +730,11 @@ end
     branch_name_mapping = md["branch_name_mapping"]
 
     tap_name = PSY.get_name(target_tap)
-    tap_transformer_keys =
+    two_winding_transformer_keys =
         filter(k -> endswith(k, "_" * tap_name), collect(keys(transformer_ckt_mapping)))
     tap_branch_keys =
         filter(k -> endswith(k, "_" * tap_name), collect(keys(branch_name_mapping)))
-    @test length(tap_transformer_keys) == 1
+    @test length(two_winding_transformer_keys) == 1
     @test isempty(tap_branch_keys)
 
     line_name = PSY.get_name(target_line)
@@ -707,7 +760,7 @@ end
     isnothing(line_record_idx) && return
     @test occursin(", 0.0, 0.0, 0.0,", raw_lines[line_record_idx])
 
-    tap_key = tap_transformer_keys[1]
+    tap_key = two_winding_transformer_keys[1]
     tap_bus_pair = split(tap_key, "_"; limit = 2)[1]
     tap_from_orig, tap_to_orig = split(tap_bus_pair, "-")
     tap_from = bus_number_mapping[tap_from_orig]
@@ -724,10 +777,10 @@ end
     @test occursin(", 0.0, 0.0, 0.0,", tap_winding1_record)
 end
 
-# Regression for issue #361: a programmatically-built Line has no RATE4..RATE12 keys in its
-# `ext` dict, which used to trigger a `MethodError: Cannot convert String to Float64` in the
-# v35 non-transformer branch writer. The missing extra ratings must export as numeric 0.0.
-@testset "PSSE Exporter issue #361: v35 Line with missing RATE4..RATE12 ext keys" begin
+# Regression for issue #361: a programmatically-built Line carries no RATE4..RATE12 data,
+# which used to trigger a `MethodError: Cannot convert String to Float64` in the v35
+# non-transformer branch writer. The absent extra ratings must export as numeric 0.0.
+@testset "PSSE Exporter issue #361: v35 Line with no RATE4..RATE12 data" begin
     sys = System(100.0)
     b1 = ACBus(; number = 1, name = "b1", available = true, bustype = ACBusTypes.REF,
         angle = 0.0, magnitude = 1.0, voltage_limits = (0.0, 2.0), base_voltage = 138.0,
@@ -742,9 +795,6 @@ end
         b = (from = 0.0, to = 0.0), rating = 1.0,
         angle_limits = (min = -pi / 2, max = pi / 2))
     add_component!(sys, line)
-
-    # Precondition: the programmatic Line really is missing the extra rating keys.
-    @test !any(haskey(PSY.get_ext(line), "RATE$i") for i in 4:12)
 
     export_location = joinpath(test_psse_export_dir, "v35", "issue361_missing_rate_keys")
     exporter = PSSEExporter(sys, :v35, export_location; overwrite = true)

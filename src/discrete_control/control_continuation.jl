@@ -962,15 +962,40 @@ function snap_and_restore!(
     return true
 end
 
+"""Reporting family of a controlled device. Taps report the PSY object that actually carries
+the control — the `TransformerCircuit` — not the owning transformer, so a 2W and a 3W winding
+land in the same family."""
+control_family(::ControlledTap) = "TransformerCircuit"
+control_family(::ControlledSwitchedShunt) = "SwitchedAdmittance"
+control_family(::ControlledFACTS) = "FACTSControlDevice"
+
+# Owning-component address, reported so a tap row resolves to its circuit for either arity
+# (`PSY.get_circuits(device_name)[circuit_index]`). Families with no sub-component address
+# report `missing` rather than a fabricated index.
+_report_device_name(d::ControlledTap) = d.device_name
+_report_device_name(::ControlledSwitchedShunt) = missing
+_report_device_name(::ControlledFACTS) = missing
+
+_report_circuit_index(d::ControlledTap) = d.circuit_index
+_report_circuit_index(::ControlledSwitchedShunt) = missing
+_report_circuit_index(::ControlledFACTS) = missing
+
 """
     get_controlled_device_results(data) -> DataFrames.DataFrame
 
 Solved discrete-control device settings: one row per enrolled device per time step, with
 its family, name, time step, control band, enrollment-time (`initial`) and solved
-(`final`) parameter for that step. Every family (including taps) reports its own
-per-time-step state. For a single-time-step solve (`time_steps == 1`), the solved
-settings are also written back to
-the `PSY.System` by [`solve_and_store_power_flow!`](@ref) under active controls, and
+(`final`) parameter for that step. Every family reports its own per-time-step state.
+
+Tap rows are reported at the `PSY.TransformerCircuit` level and are identical in shape for
+both transformer arities: `family` is `"TransformerCircuit"`, and `device_name` +
+`circuit_index` address the owning circuit as `PSY.get_circuits(device_name)[circuit_index]`
+(`circuit_index == 1` for a two-winding transformer). `name` is the control's own name,
+which for a three-winding winding is suffixed per circuit. Non-transformer families leave
+`device_name`/`circuit_index` `missing`.
+
+For a single-time-step solve (`time_steps == 1`), the solved settings are also written back
+to the `PSY.System` by [`solve_and_store_power_flow!`](@ref) under active controls, and
 applied to PSS/E exports by [`update_exporter!`](@ref) — see
 [`write_device_settings!`](@ref). For `time_steps > 1`, a PSY component cannot hold a
 per-time-step schedule, so this DataFrame is the only place the full per-step results
@@ -979,6 +1004,8 @@ are available. Returns an empty frame when the data was built without discrete c
 function get_controlled_device_results(data)
     family = String[]
     name = String[]
+    device_name = Union{String, Missing}[]
+    circuit_index = Union{Int, Missing}[]
     time_step = Int[]
     lower = Float64[]
     upper = Float64[]
@@ -989,15 +1016,13 @@ function get_controlled_device_results(data)
     set = get_controlled_devices(data)
     if !isnothing(set)
         for ts in 1:get_time_steps(data)
-            for (fam, devices) in (
-                ("TapTransformer", set.taps),
-                ("SwitchedAdmittance", set.shunts),
-                ("FACTSControlDevice", set.facts),
-            )
+            for devices in (set.taps, set.shunts, set.facts)
                 for (i, d) in enumerate(devices)
                     lo, hi = stored_parameter_limits(set, d, i, ts)
-                    push!(family, fam)
+                    push!(family, control_family(d))
                     push!(name, d.name)
+                    push!(device_name, _report_device_name(d))
+                    push!(circuit_index, _report_circuit_index(d))
                     push!(time_step, ts)
                     push!(lower, lo)
                     push!(upper, hi)
@@ -1012,6 +1037,8 @@ function get_controlled_device_results(data)
     return DataFrames.DataFrame(
         "family" => family,
         "name" => name,
+        "device_name" => device_name,
+        "circuit_index" => circuit_index,
         "time_step" => time_step,
         "lower_limit" => lower,
         "upper_limit" => upper,

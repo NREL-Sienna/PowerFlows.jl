@@ -114,6 +114,19 @@ function _resolve_tap_circuit(system::PSY.System, d::ControlledTap)
     return circuits[d.circuit_index]
 end
 
+"""
+    write_device_settings!(system::PSY.System, data)
+
+Write solved discrete-control device settings back onto the components of `system`: tap
+ratios onto the owning `PSY.TransformerCircuit` (of either transformer arity), and switched
+shunt and FACTS settings onto their devices. A no-op when `data` carries no controlled
+devices.
+
+Skips with a warning when `get_time_steps(data) > 1`: a PSY component holds a single scalar
+setting and cannot represent a per-time-step schedule, so writing back would silently
+discard every step but one. Use [`get_controlled_device_results`](@ref) for the full
+per-step settings.
+"""
 function write_device_settings!(system::PSY.System, data)
     set = get_controlled_devices(data)
     isnothing(set) && return

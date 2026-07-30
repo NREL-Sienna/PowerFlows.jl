@@ -901,8 +901,12 @@ end
     solve_power_flow!(data)
     df = PowerFlows.get_controlled_device_results(data)
     @test size(df, 1) == 2
-    tap_row = df[df.family .== "TapTransformer", :]
+    tap_row = df[df.family .== "TransformerCircuit", :]
     @test tap_row.name == ["tap_1_2"]
+    # A 2W transformer's control lives on its single circuit, addressed the same way a 3W
+    # winding is: `PSY.get_circuits(device_name)[circuit_index]`.
+    @test tap_row.device_name == ["tap_1_2"]
+    @test tap_row.circuit_index == [1]
     @test tap_row.initial == [1.0]
     t = data.controlled_devices.taps[1]
     @test tap_row.final == [t.current]
@@ -913,8 +917,8 @@ end
     df_off = PowerFlows.get_controlled_device_results(data_off)
     @test size(df_off, 1) == 0
     @test names(df_off) ==
-          ["family", "name", "time_step", "lower_limit", "upper_limit", "initial",
-        "final", "delivered_q_mvar", "saturated"]
+          ["family", "name", "device_name", "circuit_index", "time_step", "lower_limit",
+        "upper_limit", "initial", "final", "delivered_q_mvar", "saturated"]
 end
 
 @testset "discrete control: shunt deadband semantics" begin

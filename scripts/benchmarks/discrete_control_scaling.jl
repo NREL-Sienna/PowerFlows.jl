@@ -60,11 +60,11 @@ function _add_feeder!(sys::PSY.System, ref::PSY.ACBus, k::Int)
             r = 1e-2, x = 1e-2, b = (from = 0.0, to = 0.0),
             rating = 10.0, angle_limits = (min = -pi / 2, max = pi / 2)))
     PSY.add_component!(sys,
-        PSY.TapTransformer(; name = "tap_$k", available = true, active_power_flow = 0.0,
-            reactive_power_flow = 0.0, arc = PSY.Arc(; from = ref, to = b_load),
-            r = 0.01, x = 0.10, primary_shunt = 0.0 + 0.0im, tap = 1.0, rating = 1.0,
-            base_power = 100.0,
-            control_objective = PSY.TransformerControlObjective.VOLTAGE))
+        PSY.TwoWindingTransformer(; name = "tap_$k",
+            circuit = PSY.TransformerCircuit(; available = true,
+                arc = PSY.Arc(; from = ref, to = b_load),
+                r = 0.01, x = 0.10, tap = 1.0, rating = 1.0, base_power = 100.0,
+                control_objective = PSY.TransformerControlObjective.VOLTAGE)))
     PSY.add_component!(sys,
         PSY.SwitchedAdmittance(; name = "shunt_$k", available = true, bus = b_sh,
             Y = 0.0 + 0.0im, initial_status = [0], number_of_steps = [4],

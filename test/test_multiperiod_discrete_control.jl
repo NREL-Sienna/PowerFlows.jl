@@ -183,7 +183,7 @@ end
 
     # Tap moved differently across steps (control actually acted per-step):
     res = PowerFlows.get_controlled_device_results(data)
-    tap_rows = res[res.family .== "TapTransformer", :]
+    tap_rows = res[res.family .== "TransformerCircuit", :]
     @test length(unique(round.(tap_rows.final; digits = 6))) >= 2
 end
 
