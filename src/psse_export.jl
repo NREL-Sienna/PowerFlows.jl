@@ -20,7 +20,10 @@ const PSSE_BUS_TYPE_MAP = Dict(
     PSY.ACBusTypes.PQ => 1,
     PSY.ACBusTypes.PV => 2,
     PSY.ACBusTypes.REF => 3,
-    PSY.ACBusTypes.SLACK => 3,
+    # SLACK is an area-interchange (ISW) designation on a PV bus, so IDE=2. Mapping it to 3
+    # would emit a second swing bus, and the exporter writes no AREA INTERCHANGE record to
+    # carry the ISW back.
+    PSY.ACBusTypes.SLACK => 2,
     PSY.ACBusTypes.ISOLATED => 4,
 )
 const PSSE_BRANCH_SPECIAL_CHARACTERS = ["&", "@", "*"]
@@ -2209,13 +2212,14 @@ function _compute_dcline_common_fields(
     NAME = _is_valid_psse_name(dcline_name) ? dcline_name : last(dcline_name, 12)
     NAME = _psse_quote_string(NAME)
     MDC = Int(PSY.get_power_mode(dcline))
-    # FIXME HVDC getters like `get_r` aren't using units. Did they ever use units?
-    # should they use units?
-    RDC =
-        PSY.get_r(dcline) * PSY.get_rectifier_base_voltage(dcline)^2 /
-        PSY.get_base_power(exporter.system, PSY.NU)
+    # FIXME HVDC getters like `get_transfer_setpoint` aren't using units. Did they ever
+    # use units? should they use units?
     SETVL = PSY.get_transfer_setpoint(dcline)
     VSCHD = PSY.get_scheduled_dc_voltage(dcline)
+    # RDC is a DC-circuit resistance: PSY per-unitizes it against the DC base (VSCHD^2 /
+    # baseMVA), not the rectifier AC commutating base, so the inverse conversion must use
+    # the same base or the raw round trip scales `r` by (VSCHD/EBASR)^2.
+    RDC = PSY.get_r(dcline) * VSCHD^2 / PSY.get_base_power(exporter.system, PSY.NU)
     VCMOD = PSY.get_switch_mode_voltage(dcline)
     RCOMP = PSY.get_compounding_resistance(dcline)
     DELTI = PSSE_DEFAULT

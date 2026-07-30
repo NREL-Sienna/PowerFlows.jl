@@ -1,11 +1,13 @@
 name: Main - CI
 
 on:
+  # `schedule` was previously nested under `push`, which is not a valid trigger key,
+  # so the scheduled run never fired. Cadence matches PowerSystems.jl.
+  schedule:
+    - cron: "0 0 * * 1-5"
   push:
     branches:
       - main
-    schedule:
-      - cron: 0 * * * *
 jobs:
   test:
     name: Julia ${{ matrix.julia-version }} - ${{ matrix.os }}
@@ -17,16 +19,16 @@ jobs:
         os: [ubuntu-latest, windows-latest, macOS-latest]
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: julia-actions/setup-julia@latest
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
         continue-on-error: true
         with:
           version: ${{ matrix.julia-version }}
           arch: ${{ matrix.julia-arch }}
-      - uses: julia-actions/julia-buildpkg@latest
+      - uses: julia-actions/julia-buildpkg@v1
         env:
           PYTHON: ""
-      - uses: julia-actions/julia-runtest@latest
+      - uses: julia-actions/julia-runtest@v1
         continue-on-error: ${{ matrix.julia-version == 'nightly' }}
         env:
           PYTHON: ""
@@ -45,3 +47,5 @@ jobs:
           slug: ${{ github.repository }}
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
+          # Required when CODECOV_TOKEN is an organization-level token.
+          slug: ${{ github.repository }}
