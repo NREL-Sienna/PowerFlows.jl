@@ -1637,3 +1637,48 @@ function _comprehensive_area_dc_fixture(; lcc_metered_end::String = "from")
 
     return sys
 end
+
+"""Give Area3 a schedule no platform can meet, for the greedy-relax tests. Returns the target.
+
+Area3's only variable-flow tie is the Area2<->Area3 breaker (`x = 0.05`), so its transfer
+ceiling is near `V_f * V_t / x` ≈ 20 pu; a 20 pu target sat ON the ceiling and was
+platform-dependent (converged on x86_64, capped out on arm64). Do NOT weaken the breaker to
+lower the ceiling — it is also Area2's tie, and fixed-Jacobian Fast Decoupled then cannot meet
+Area2's 0.3 pu. Do NOT raise the target much further — beyond roughly 100 pu the solve
+collapses entirely."""
+function _make_area3_schedule_infeasible!(sys::System)
+    target = 30.0
+    PSY.set_active_power_flow!(
+        PSY.get_component(PSY.AreaInterchange, sys, "A3_A1"),
+        target,
+    )
+    return target
+end
+
+"""Solve and assert that `area_name`'s infeasible schedule was relaxed, loudly, and that the
+solve still converged. Returns the captured log records.
+
+Deliberately does NOT assert WHICH area is de-enrolled first or how many are: the greedy rule
+picks `findmax(abs, gaps)` at a NON-CONVERGED iterate, where gaps measure divergence, not
+infeasibility -- a feasible area can show the larger gap (Area2 at 0.3 pu measured 54.0 vs
+Area3's 49.3). Pinning the order is what made these tests platform-dependent.
+`collect_test_logs` rather than `@test_logs`: ReTest has no
+`record(::ReTestSet, ::Test.LogTestFailure)`, so a `@test_logs` failure surfaces as an opaque
+MethodError instead of naming the unmatched pattern."""
+function _assert_schedule_relaxed(data, area_name::String; time_step::Int = 1)
+    logs, converged = Test.collect_test_logs(; min_level = Logging.Warn) do
+        solve_power_flow!(data)
+    end
+    @test converged
+    @test haskey(data.area_interchange.relaxed, time_step)
+    @test area_name in [r.name for r in data.area_interchange.relaxed[time_step]]
+    # Relaxation is never silent: an Error-level record must name the relaxed area.
+    @test any(
+        r ->
+            r.level == Logging.Error &&
+                occursin("Area interchange:", string(r.message)) &&
+                occursin(area_name, string(r.message)),
+        logs,
+    )
+    return logs
+end

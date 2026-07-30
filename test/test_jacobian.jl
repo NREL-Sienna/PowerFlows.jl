@@ -250,8 +250,7 @@ end
     pf_rh = PF.ACPowerFlow{RobustHomotopyPowerFlow}(; correct_bustypes = false)
     data_rh = PF.PowerFlowData(pf_rh, sys)
     @test_throws ArgumentError PF.solve_power_flow!(data_rh)
-    # Single-swing systems must keep working: the gate is multi-swing-specific, not a
-    # blanket RobustHomotopy rejection.
+    # The gate rejects only RobustHomotopy: NR on the same system still solves.
     pf_nr = PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = false)
     @test PF.solve_power_flow!(PF.PowerFlowData(pf_nr, sys); tol = 1e-9)
 end
