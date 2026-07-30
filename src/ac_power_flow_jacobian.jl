@@ -12,6 +12,7 @@ and can be called as a function at the same time. Calling the instance as a func
 - `diag_elements::MVector{4, Float64}`: Temporary storage for diagonal elements during Jacobian update.
 - `bus_slack_participation_factors::SparseVector{Float64, Int}`: Normalized per-bus slack participation factors for the current time step (from the `ACPowerFlowResidual`). Used for the distributed slack Jacobian entries.
 - `subnetworks::Dict{Int64, Vector{Int64}}`: Subnetwork mapping from REF bus to bus list (from the `ACPowerFlowResidual`). Used for the distributed slack Jacobian entries.
+- `independent_ref::Set{Int}`: Multi-swing REF bus indices, from `_multi_swing_ref_indices`. Computed once at construction because the Q-limit loop only flips PV↔PQ, never REF.
 """
 struct ACPowerFlowJacobian
     data::ACPowerFlowData
@@ -19,6 +20,7 @@ struct ACPowerFlowJacobian
     diag_elements::MVector{4, Float64}  # Temporary storage for diagonal elements during Jacobian update
     bus_slack_participation_factors::SparseVector{Float64, Int}
     subnetworks::Dict{Int64, Vector{Int64}}
+    independent_ref::Set{Int}
     bus_active_constant_I::Vector{Float64}
     bus_reactive_constant_I::Vector{Float64}
     bus_active_constant_Z::Vector{Float64}
@@ -44,7 +46,7 @@ J(time_step)  # Updates the Jacobian matrix Jv
 """
 function (J::ACPowerFlowJacobian)(time_step::Int64)
     _update_jacobian_matrix_values!(J.Jv, J.data, time_step, J.diag_elements,
-        J.bus_slack_participation_factors, J.subnetworks,
+        J.bus_slack_participation_factors, J.subnetworks, J.independent_ref,
         J.bus_active_constant_I, J.bus_reactive_constant_I,
         J.bus_active_constant_Z, J.bus_reactive_constant_Z)
     return
@@ -76,7 +78,7 @@ function (J::ACPowerFlowJacobian)(
     time_step::Int64,
 )
     _update_jacobian_matrix_values!(J.Jv, J.data, time_step, J.diag_elements,
-        J.bus_slack_participation_factors, J.subnetworks,
+        J.bus_slack_participation_factors, J.subnetworks, J.independent_ref,
         J.bus_active_constant_I, J.bus_reactive_constant_I,
         J.bus_active_constant_Z, J.bus_reactive_constant_Z)
     copyto!(Jv, J.Jv)
@@ -159,6 +161,7 @@ function ACPowerFlowJacobian(
         MVector{4, Float64}(undef),
         residual.bus_slack_participation_factors,
         residual.subnetworks,
+        _multi_swing_ref_indices(residual.data.bus_type, residual.subnetworks, time_step),
         residual.bus_active_constant_I,
         residual.bus_reactive_constant_I,
         residual.bus_active_constant_Z,
@@ -855,6 +858,7 @@ function _update_jacobian_matrix_values!(
     diag_elements::MVector{4, Float64},
     bus_slack_participation_factors::SparseVector{Float64, Int},
     subnetworks::Dict{Int64, Vector{Int64}},
+    independent_ref::Set{Int},
     bus_active_constant_I::Vector{Float64},
     bus_reactive_constant_I::Vector{Float64},
     bus_active_constant_Z::Vector{Float64},
@@ -864,7 +868,6 @@ function _update_jacobian_matrix_values!(
     Vm = view(data.bus_magnitude, :, time_step)
     θ = view(data.bus_angles, :, time_step)
     num_buses = first(size(data.bus_type))
-    independent_ref = _multi_swing_ref_indices(data.bus_type, subnetworks, time_step)
 
     for bus_from in 1:num_buses
         row_from_p = 2 * bus_from - 1

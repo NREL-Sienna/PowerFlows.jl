@@ -62,7 +62,12 @@ function _compute_bus_active_power_range!(
             continue
         bus = PSY.get_bus(source)
         PSY.get_number(bus) in removed_buses && continue
-        PSY.get_bustype(bus) ∈ (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV) || continue
+        # Raw PSY bustype, so SLACK must be listed explicitly: it normalizes to PV
+        # (`_normalize_slack_bustype`) and an area slack is exactly the bus whose headroom
+        # matters most. A SLACK bus that normalizes to PQ instead gets its range filtered
+        # out downstream by `_build_bus_slack_participation_factors`.
+        PSY.get_bustype(bus) ∈
+        (PSY.ACBusTypes.REF, PSY.ACBusTypes.PV, PSY.ACBusTypes.SLACK) || continue
         limits = get_active_power_limits_for_power_flow(source)
         range_k = limits.max - PSY.get_active_power(source)
         range_k <= 0.0 && continue
@@ -286,6 +291,23 @@ function _normalize_slack_bustype(
     end
     _warn_slack_demoted_to_pq(pf, bus_name)
     return PSY.ACBusTypes.PQ
+end
+
+"""Whether a solved bus type should be written back onto the `PSY.ACBus`.
+
+`data.bus_type` holds the NORMALIZED type, so a SLACK bus legitimately solves as PV
+(`_normalize_slack_bustype`). Writing that back would erase the ISW designation, and
+`_area_slack_buses` reads it from the bus, so the area would silently de-enroll from
+interchange control on the next `PowerFlowData` build. A SLACK→PQ demotion is still
+written back: it mirrors the PV→PQ Q-limit flip and is already warned about."""
+function _bustype_write_back_needed(
+    bus_bt::PSY.ACBusTypes,
+    solved_bt::PSY.ACBusTypes,
+)
+    if bus_bt == PSY.ACBusTypes.SLACK && solved_bt == PSY.ACBusTypes.PV
+        return false
+    end
+    return bus_bt != solved_bt
 end
 
 function _initialize_bus_data!(

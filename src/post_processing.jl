@@ -718,7 +718,7 @@ function write_power_flow_solution!(
             bus = PSY.get_component(PSY.ACBus, sys, bus_name)
             ix = bus_lookup[bus_number]
             bustype = data.bus_type[ix, time_step] # may not be the same as bus.bustype!
-            if bustype != PSY.get_bustype(bus)
+            if _bustype_write_back_needed(PSY.get_bustype(bus), bustype)
                 @warn "Changing system bus type at bus $(PSY.get_name(bus)) to match " *
                       "power flow bus type." maxlog = PF_MAX_LOG
                 PSY.set_bustype!(bus, bustype)
@@ -878,7 +878,7 @@ function write_power_flow_solution!(
         bus = PSY.get_component(PSY.ACBus, sys, bus_name)
         ix = bus_lookup[bus_number]
         bustype = data.bus_type[ix, time_step]
-        if bustype != PSY.get_bustype(bus)
+        if _bustype_write_back_needed(PSY.get_bustype(bus), bustype)
             @warn "Changing system bus type at bus $(PSY.get_name(bus)) to match " *
                   "power flow bus type." maxlog = PF_MAX_LOG
             PSY.set_bustype!(bus, bustype)
