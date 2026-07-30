@@ -787,6 +787,58 @@ end
     @test area2_row.schedule_status == :enforced
 end
 
+@testset "area interchange beyond_limits compounds ΔP_a with distributed slack" begin
+    # ΔP_a and the slack bus's distributed-slack share add up at the same machine, so a ΔP_a
+    # that fits on its own can still breach the limits once the share is included. The two
+    # solves differ ONLY by `generator_slack_participation_factors`, which isolates the
+    # share as the cause of the flag flipping.
+    gspf = Dict(
+        (PSY.ThermalStandard, "Bus1") => 0.4,
+        (PSY.ThermalStandard, "Bus2") => 0.3,
+        (PSY.ThermalStandard, "Bus3") => 0.1,
+        (PSY.ThermalStandard, "Bus6") => 0.1,
+        (PSY.ThermalStandard, "Bus8") => 0.1,
+        (PSY.ThermalStandard, "Bus9Gen") => 0.1,
+    )
+    function area2_effective(pf)
+        sys = _three_area_transfer_fixture(; slack_area3 = true)
+        data = PowerFlowData(pf, sys)
+        @test PF.n_controlled_areas(data) == 2
+        @test solve_power_flow!(data)
+        area2 = only(filter(a -> a.name == "Area2", data.area_interchange.areas))
+        injection =
+            data.bus_active_power_injections[area2.slack_bus_ix, 1] +
+            data.area_interchange.delta_p[area2.tail_ix, 1]
+        row = only(
+            filter(
+                :area => ==("Area2"),
+                PF.area_interchange_results_dataframe(sys, data, 1),
+            ),
+        )
+        share = PF.get_bus_slack_participation_factors(data)[area2.slack_bus_ix, 1]
+        return (; injection, beyond = row.beyond_limits, share)
+    end
+
+    plain = area2_effective(
+        ACPolarPowerFlow{NewtonRaphsonACPowerFlow}(; area_interchange_control = true),
+    )
+    distributed = area2_effective(
+        ACPolarPowerFlow{NewtonRaphsonACPowerFlow}(;
+            area_interchange_control = true,
+            generator_slack_participation_factors = gspf,
+        ),
+    )
+
+    # Guard against a vacuous comparison: the bus must actually participate in slack.
+    @test iszero(plain.share)
+    @test distributed.share > 0.0
+    # The share moves the effective injection, i.e. it is genuinely in the checked quantity
+    # and not silently dropped.
+    @test !isapprox(distributed.injection, plain.injection; atol = 1e-6)
+    @test distributed.beyond == true
+    @test plain.beyond == false
+end
+
 # Strong Bus1-Bus2 tie (Area2) + deliberately weak, high-reactance Bus1-Bus3 tie (Area3).
 # Built from primitives, not c_sys14: c_sys14's transfer-capability nose is a
 # voltage-collapse bifurcation that makes Newton iterates nondeterministic near

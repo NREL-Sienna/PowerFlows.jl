@@ -1015,10 +1015,14 @@ empty_area_interchange_results() = DataFrames.DataFrame(;
     _area_beyond_limits(sys, bus, p_bus_effective) -> Bool
 
 Whether `p_bus_effective` (pu, the solved slack-bus injection) exceeds the in-service
-machines' `active_power_limits` at `bus` — flag only, never clamp. `p_bus_effective` is
-NOT `bus_active_power_injections` directly (that is the PV/SLACK input, never refreshed
-from the Newton solution): the caller must add the area's converged `ΔP_a` first. A slack
-bus with no in-service source returns `false` rather than throwing on an empty `sum`.
+machines' `active_power_limits` at `bus` — flag only, never clamp. A slack bus with no
+in-service source returns `false` rather than throwing on an empty `sum`.
+
+`p_bus_effective` is NOT `bus_active_power_injections` directly. `_setpq` refreshes that
+field on every residual call, so it already carries this bus's distributed-slack share
+(`slack_scalar * c_k`) — but deliberately NOT `ΔP_a`, which the residual applies straight
+to `F` to stay exactly-once across a PV->PQ flip. The caller must therefore add the area's
+converged `ΔP_a`, and only that, to get the machine's full solved output.
 """
 function _area_beyond_limits(
     sys::PSY.System,
@@ -1078,9 +1082,8 @@ function area_interchange_results_dataframe(
             delta_p_pu = aid.pristine_delta_p[area.tail_ix, time_step]
         end
         bus = bus_of_number[bus_axis[area.slack_bus_ix]]
-        # `delta_p_pu` is 0.0 for a relaxed area, so this correctly reduces to the bus's
-        # unaugmented (uncontrolled) input injection — see `_area_beyond_limits`'s docstring
-        # for why the raw field alone is not the solved value for an enforced area.
+        # The field already includes this bus's distributed-slack share; `delta_p_pu` is the
+        # only missing term (0.0 for a relaxed area). See `_area_beyond_limits`'s docstring.
         p_bus_effective =
             data.bus_active_power_injections[area.slack_bus_ix, time_step] + delta_p_pu
         beyond_limits = _area_beyond_limits(sys, bus, p_bus_effective)
