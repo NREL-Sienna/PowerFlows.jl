@@ -1,6 +1,6 @@
 # PowerFlows.jl — Claude Guide (psy6 branch)
 
-Platform-wide Sienna conventions (performance, type stability, formatter, environments, code style) live in `.claude/Sienna.md` — read it too. This file is repo-specific and does not restate them.
+Platform-wide Sienna conventions (performance, type stability, formatter, environments, code style) live in the `sienna-psy6` skill — invoke it. This file is repo-specific and does not restate them.
 
 ## Purpose & place in the stack
 
