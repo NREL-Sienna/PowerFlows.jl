@@ -14,8 +14,18 @@ const CONTROL_CONTRACTION = 0.5
     end
     return Float64[], Float64[], Float64[]
 end
+@inline function _lcc_state_cols(data, ts::Int)
+    if get_lcc_count(data) > 0
+        lcc = data.lcc
+        return lcc.rectifier.tap[:, ts], lcc.inverter.tap[:, ts],
+        lcc.rectifier.thyristor_angle[:, ts], lcc.inverter.thyristor_angle[:, ts],
+        lcc.i_dc[:, ts]
+    end
+    return Float64[], Float64[], Float64[], Float64[], Float64[]
+end
 @inline function _snapshot_state(data, ts::Int)
     dc_p, dc_q, dc_v = _dc_state_cols(data, ts)
+    lcc_rt, lcc_it, lcc_ra, lcc_ia, lcc_idc = _lcc_state_cols(data, ts)
     return (
         data.bus_magnitude[:, ts],
         data.bus_angles[:, ts],
@@ -23,10 +33,11 @@ end
         data.bus_active_power_injections[:, ts],
         data.bus_reactive_power_injections[:, ts],
         dc_p, dc_q, dc_v,
+        lcc_rt, lcc_it, lcc_ra, lcc_ia, lcc_idc,
     )
 end
 @inline function _capture_state!(
-    (vmag, vang, btype, pinj, qinj, dc_p, dc_q, dc_v),
+    (vmag, vang, btype, pinj, qinj, dc_p, dc_q, dc_v, lcc_rt, lcc_it, lcc_ra, lcc_ia, lcc_idc),
     data,
     ts::Int,
 )
@@ -41,12 +52,20 @@ end
         dc_q .= view(dcn.q_c, :, ts)
         dc_v .= view(dcn.node_vdc, :, ts)
     end
+    if !isempty(lcc_rt)
+        lcc = data.lcc
+        lcc_rt .= view(lcc.rectifier.tap, :, ts)
+        lcc_it .= view(lcc.inverter.tap, :, ts)
+        lcc_ra .= view(lcc.rectifier.thyristor_angle, :, ts)
+        lcc_ia .= view(lcc.inverter.thyristor_angle, :, ts)
+        lcc_idc .= view(lcc.i_dc, :, ts)
+    end
     return
 end
 @inline function _restore_state!(
     data,
     ts::Int,
-    (vmag, vang, btype, pinj, qinj, dc_p, dc_q, dc_v),
+    (vmag, vang, btype, pinj, qinj, dc_p, dc_q, dc_v, lcc_rt, lcc_it, lcc_ra, lcc_ia, lcc_idc),
 )
     data.bus_magnitude[:, ts] .= vmag
     data.bus_angles[:, ts] .= vang
@@ -58,6 +77,18 @@ end
         dcn.p_c[:, ts] .= dc_p
         dcn.q_c[:, ts] .= dc_q
         dcn.node_vdc[:, ts] .= dc_v
+    end
+    if !isempty(lcc_rt)
+        lcc = data.lcc
+        lcc.rectifier.tap[:, ts] .= lcc_rt
+        lcc.inverter.tap[:, ts] .= lcc_it
+        lcc.rectifier.thyristor_angle[:, ts] .= lcc_ra
+        lcc.inverter.thyristor_angle[:, ts] .= lcc_ia
+        lcc.i_dc[:, ts] .= lcc_idc
+        # Derived LCC caches (phi, branch_admittances) must match the restored state at the
+        # restored voltages; they are re-derived rather than snapshotted (branch_admittances
+        # is a scratch vector shared across time steps).
+        _update_ybus_lcc!(data, ts)
     end
     return
 end

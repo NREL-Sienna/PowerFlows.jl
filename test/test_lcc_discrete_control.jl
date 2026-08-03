@@ -38,3 +38,41 @@ const LCC_STATIC_MATRIX_FIELDS = Dict(
         @test allunique(classified)
     end
 end
+
+@testset "continuation checkpoint restores LCC solver state" begin
+    raw = joinpath(TEST_DATA_DIR, "case5_2_lcc.raw")
+    sys = make_system(PFP.PowerModelsData(raw); runchecks = false)
+    pf = ACPolarPowerFlow(; check_reactive_power_limits = false)
+    data = PowerFlowData(pf, sys)
+    ts = 1
+    @test PowerFlows.get_lcc_count(data) > 0
+
+    # Establish a consistent derived state, then snapshot.
+    PowerFlows._update_ybus_lcc!(data, ts)
+    ref_rt = copy(data.lcc.rectifier.tap[:, ts])
+    ref_it = copy(data.lcc.inverter.tap[:, ts])
+    ref_ra = copy(data.lcc.rectifier.thyristor_angle[:, ts])
+    ref_ia = copy(data.lcc.inverter.thyristor_angle[:, ts])
+    ref_idc = copy(data.lcc.i_dc[:, ts])
+    ref_admittances = copy(data.lcc.branch_admittances)
+    snap = PowerFlows._snapshot_state(data, ts)
+
+    # Simulate a diverged trial: garbage into every LCC solver-state column and bus state.
+    data.lcc.rectifier.tap[:, ts] .= 9.9
+    data.lcc.inverter.tap[:, ts] .= 9.9
+    data.lcc.rectifier.thyristor_angle[:, ts] .= 1.5
+    data.lcc.inverter.thyristor_angle[:, ts] .= 1.5
+    data.lcc.i_dc[:, ts] .= -42.0
+    data.bus_magnitude[:, ts] .= 0.5
+    PowerFlows._update_ybus_lcc!(data, ts)  # caches now reflect the garbage
+
+    PowerFlows._restore_state!(data, ts, snap)
+
+    @test data.lcc.rectifier.tap[:, ts] == ref_rt
+    @test data.lcc.inverter.tap[:, ts] == ref_it
+    @test data.lcc.rectifier.thyristor_angle[:, ts] == ref_ra
+    @test data.lcc.inverter.thyristor_angle[:, ts] == ref_ia
+    @test data.lcc.i_dc[:, ts] == ref_idc
+    # Derived caches must be re-derived at the restored state, not left stale.
+    @test data.lcc.branch_admittances == ref_admittances
+end
