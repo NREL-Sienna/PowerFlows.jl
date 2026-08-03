@@ -76,3 +76,13 @@ end
     # Derived caches must be re-derived at the restored state, not left stale.
     @test data.lcc.branch_admittances == ref_admittances
 end
+
+@testset "LCC + control_discrete_devices constructs at any time_steps" begin
+    raw = joinpath(TEST_DATA_DIR, "case5_2_lcc.raw")
+    sys = make_system(PFP.PowerModelsData(raw); runchecks = false)
+    for nts in (1, 3)
+        pf = ACPolarPowerFlow(; control_discrete_devices = true, time_steps = nts)
+        data = PowerFlowData(pf, sys)   # must not throw
+        @test PowerFlows.get_lcc_count(data) > 0
+    end
+end
