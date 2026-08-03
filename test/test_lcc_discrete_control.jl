@@ -219,3 +219,134 @@ end
     @test all(isapprox.(
         data.lcc.rectifier.tap[:, 1], data.lcc.rectifier.tap_setpoint; atol = 1e-8))
 end
+
+"""Per-step reactive-withdrawal scale for bus 101, mirroring `_shunt_step_q_scale`/
+`_set_multiperiod_shunt_loads!` (test/test_utils/common.jl). Those helpers scale EVERY bus's
+withdrawal because their 2-bus fixture has only one PQ bus; `case5_2_lcc.raw` also loads buses
+103/105 (see `build_lcc_control_system`'s docstring), so here the scaling is narrowed to bus
+101 -- the bus hosting the enrolled controlled devices -- leaving the other loads fixed."""
+_lcc_bus101_q_scale(t::Int) = 0.8 + 0.2 * t
+
+"""Scale bus 101's reactive withdrawal per time-step column `1:n` of a multiperiod `data`,
+replicating `_set_multiperiod_loads!`'s pattern (capture column 1 as the base, then overwrite
+every column from it) but restricted to bus 101's row."""
+function _set_lcc_bus101_loads!(data, n::Int)
+    bix = PF.get_bus_lookup(data)[101]
+    base_q = data.bus_reactive_power_withdrawals[bix, 1]
+    for t in 1:n
+        data.bus_reactive_power_withdrawals[bix, t] = base_q * _lcc_bus101_q_scale(t)
+    end
+    return
+end
+
+"""Set bus 101's reactive withdrawal in a SINGLE-period `data` (column 1) to the same value
+`_set_lcc_bus101_loads!` assigns to multiperiod column `t` -- mirrors `_set_single_tap_load!`
+(test/test_utils/common.jl), used to build single-period twins/oracles for one step of the
+multiperiod solve."""
+function _set_lcc_bus101_load_at_step!(data, t::Int)
+    bix = PF.get_bus_lookup(data)[101]
+    data.bus_reactive_power_withdrawals[bix, 1] *= _lcc_bus101_q_scale(t)
+    return
+end
+
+@testset "LCC + control multiperiod: per-step equivalence" begin
+    time_steps = 3
+    sys = build_lcc_control_system()
+    pf = ACPolarPowerFlow(; control_discrete_devices = true, time_steps = time_steps)
+    data = PowerFlowData(pf, sys)
+    _set_lcc_bus101_loads!(data, time_steps)
+    solve_power_flow!(data)
+    @test all(data.converged)
+    for ts in 1:time_steps
+        # Twin: control off, devices fixed at step ts's converged settings, same ts loads.
+        # Recipe mirrors "LCC + control: equivalence with devices locked at converged settings"
+        # above, narrowed to step ts's row of the results table.
+        results = PowerFlows.get_controlled_device_results(data)
+        step_results = results[results.time_step .== ts, :]
+        shunt_final = only(step_results.final[step_results.family .== "SwitchedAdmittance"])
+        facts_final_b =
+            only(step_results.final[step_results.family .== "FACTSControlDevice"])
+        facts_q =
+            only(step_results.delivered_q_mvar[step_results.family .== "FACTSControlDevice"])
+
+        sys2 = build_lcc_control_system()
+        sa_orig = get_component(SwitchedAdmittance, sys, "ctrl_shunt_101")
+        sa2 = get_component(SwitchedAdmittance, sys2, "ctrl_shunt_101")
+        set_Y!(sa2, Complex(real(get_Y(sa_orig)), shunt_final))
+        fd2 = get_component(FACTSControlDevice, sys2, "ctrl_facts_101")
+        set_reactive_power_required!(fd2, facts_q)   # reporting parity only; see the
+        # equivalence testset above for why this setter is a no-op on the physics
+        add_component!(
+            sys2,
+            FixedAdmittance(;
+                name = "ctrl_facts_101_locked_shunt", available = true,
+                bus = get_bus(sys2, 101), Y = Complex(0.0, facts_final_b),
+            ),
+        )
+
+        pf2 = ACPolarPowerFlow(; control_discrete_devices = false)
+        data2 = PowerFlowData(pf2, sys2)
+        _set_lcc_bus101_load_at_step!(data2, ts)
+        solve_power_flow!(data2)
+        @test all(data2.converged)
+        @test isapprox(data2.bus_magnitude[:, 1], data.bus_magnitude[:, ts]; atol = 1e-6)
+        @test isapprox(
+            data2.lcc.rectifier.tap[:, 1], data.lcc.rectifier.tap[:, ts]; atol = 1e-6)
+    end
+end
+
+@testset "LCC + control multiperiod: probe restores do not leak across steps" begin
+    time_steps = 3
+    sys = build_lcc_control_system()
+    pf = ACPolarPowerFlow(; control_discrete_devices = true, time_steps = time_steps)
+    data = PowerFlowData(pf, sys)
+    _set_lcc_bus101_loads!(data, time_steps)
+    solve_power_flow!(data)
+    @test all(data.converged)
+    # Re-solve steps 1 and 3 independently (fresh single-period data with that step's
+    # loads); their solutions must match the multiperiod run's steps 1 and 3, proving
+    # step 2's probes/rollbacks left no trace.
+    for ts in (1, 3)
+        sys_s = build_lcc_control_system()
+        pf_s = ACPolarPowerFlow(; control_discrete_devices = true)
+        data_s = PowerFlowData(pf_s, sys_s)
+        _set_lcc_bus101_load_at_step!(data_s, ts)
+        solve_power_flow!(data_s)
+        @test all(data_s.converged)
+        @test isapprox(data_s.bus_magnitude[:, 1], data.bus_magnitude[:, ts]; atol = 1e-8)
+        @test isapprox(data_s.lcc.i_dc[:, 1], data.lcc.i_dc[:, ts]; atol = 1e-8)
+    end
+end
+
+@testset "LCC + control multiperiod: single-step i_dc = 0 tap pinning" begin
+    time_steps = 3
+    # Unmodified reference run: identical construction/loads to the equivalence test above.
+    sys_ref = build_lcc_control_system()
+    pf = ACPolarPowerFlow(; control_discrete_devices = true, time_steps = time_steps)
+    data_ref = PowerFlowData(pf, sys_ref)
+    _set_lcc_bus101_loads!(data_ref, time_steps)
+    solve_power_flow!(data_ref)
+    @test all(data_ref.converged)
+
+    # Same construction, but force LCC transfer to 0 MW at step 2 only.
+    sys = build_lcc_control_system()
+    data = PowerFlowData(pf, sys)
+    _set_lcc_bus101_loads!(data, time_steps)
+    # `p_set` seeds `i_dc` once at construction (`lcc_i_dc .= _lcc_i_dc_from_p_set.(...)`,
+    # src/lcc_utils.jl:861,869) and `i_dc` is never recomputed in any solve path (see the
+    # classification note atop this file: i_dc is CHECKPOINTED, solver state fixed at init).
+    # Overriding `p_set` alone after construction therefore leaves `i_dc` stale at its nonzero
+    # value; both must be zeroed at step 2 to keep them consistent for the 0 MW transfer.
+    data.lcc.p_set[:, 2] .= 0.0
+    data.lcc.i_dc[:, 2] .= 0.0
+    solve_power_flow!(data)
+    @test all(data.converged)
+
+    @test all(isapprox.(
+        data.lcc.rectifier.tap[:, 2], data.lcc.rectifier.tap_setpoint; atol = 1e-8))
+    for ts in (1, 3)
+        @test isapprox(data.bus_magnitude[:, ts], data_ref.bus_magnitude[:, ts]; atol = 1e-6)
+        @test isapprox(
+            data.lcc.rectifier.tap[:, ts], data_ref.lcc.rectifier.tap[:, ts]; atol = 1e-6)
+    end
+end
