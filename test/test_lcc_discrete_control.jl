@@ -216,8 +216,10 @@ end
     data = PowerFlowData(pf, sys)
     solve_power_flow!(data)
     @test all(data.converged)
-    @test all(isapprox.(
-        data.lcc.rectifier.tap[:, 1], data.lcc.rectifier.tap_setpoint; atol = 1e-8))
+    @test all(
+        isapprox.(
+            data.lcc.rectifier.tap[:, 1], data.lcc.rectifier.tap_setpoint; atol = 1e-8),
+    )
 end
 
 """Per-step reactive-withdrawal scale for bus 101, mirroring `_shunt_step_q_scale`/
@@ -267,7 +269,9 @@ end
         facts_final_b =
             only(step_results.final[step_results.family .== "FACTSControlDevice"])
         facts_q =
-            only(step_results.delivered_q_mvar[step_results.family .== "FACTSControlDevice"])
+            only(
+                step_results.delivered_q_mvar[step_results.family .== "FACTSControlDevice"],
+            )
 
         sys2 = build_lcc_control_system()
         sa_orig = get_component(SwitchedAdmittance, sys, "ctrl_shunt_101")
@@ -342,10 +346,16 @@ end
     solve_power_flow!(data)
     @test all(data.converged)
 
-    @test all(isapprox.(
-        data.lcc.rectifier.tap[:, 2], data.lcc.rectifier.tap_setpoint; atol = 1e-8))
+    @test all(
+        isapprox.(
+            data.lcc.rectifier.tap[:, 2], data.lcc.rectifier.tap_setpoint; atol = 1e-8),
+    )
     for ts in (1, 3)
-        @test isapprox(data.bus_magnitude[:, ts], data_ref.bus_magnitude[:, ts]; atol = 1e-6)
+        @test isapprox(
+            data.bus_magnitude[:, ts],
+            data_ref.bus_magnitude[:, ts];
+            atol = 1e-6,
+        )
         @test isapprox(
             data.lcc.rectifier.tap[:, ts], data_ref.lcc.rectifier.tap[:, ts]; atol = 1e-6)
     end

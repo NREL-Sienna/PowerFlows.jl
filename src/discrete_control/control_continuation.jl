@@ -4,9 +4,11 @@
 const CONTROL_CONTRACTION = 0.5
 
 # State a rolled-back trial must not permanently change: V/θ, `bus_type` (one-way PV→PQ flips), the
-# injection columns (Q clamps, distributed-slack setpoint updates), and the VSC DC-network state
+# injection columns (Q clamps, distributed-slack setpoint updates), the VSC DC-network state
 # (`_read_vsc_state!` writes the iterate into dcn.p_c/q_c/node_vdc every residual eval, so a
-# diverged trial corrupts it exactly like bus state).
+# diverged trial corrupts it exactly like bus state), and the LCC solver state (converter taps,
+# thyristor angles, DC current). Derived caches (phi, branch_admittances) are re-derived from the
+# restored state rather than snapshotted.
 @inline function _dc_state_cols(data, ts::Int)
     dcn = get_dc_network(data)
     if has_dc_network(dcn)
@@ -37,7 +39,21 @@ end
     )
 end
 @inline function _capture_state!(
-    (vmag, vang, btype, pinj, qinj, dc_p, dc_q, dc_v, lcc_rt, lcc_it, lcc_ra, lcc_ia, lcc_idc),
+    (
+        vmag,
+        vang,
+        btype,
+        pinj,
+        qinj,
+        dc_p,
+        dc_q,
+        dc_v,
+        lcc_rt,
+        lcc_it,
+        lcc_ra,
+        lcc_ia,
+        lcc_idc,
+    ),
     data,
     ts::Int,
 )
@@ -65,7 +81,21 @@ end
 @inline function _restore_state!(
     data,
     ts::Int,
-    (vmag, vang, btype, pinj, qinj, dc_p, dc_q, dc_v, lcc_rt, lcc_it, lcc_ra, lcc_ia, lcc_idc),
+    (
+        vmag,
+        vang,
+        btype,
+        pinj,
+        qinj,
+        dc_p,
+        dc_q,
+        dc_v,
+        lcc_rt,
+        lcc_it,
+        lcc_ra,
+        lcc_ia,
+        lcc_idc,
+    ),
 )
     data.bus_magnitude[:, ts] .= vmag
     data.bus_angles[:, ts] .= vang
