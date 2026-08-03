@@ -264,14 +264,20 @@ solution is silently returned.
 
 ### State checkpoint and rollback during continuation
 
-The outer loop maintains a checkpoint of the full `PowerFlowData` state at the
-beginning of each continuation attempt. If an attempt fails to converge, the
-checkpoint is restored to roll back all mutations (discrete device moves, bus
-voltage updates, and HVDC converter state). For LCC systems, the checkpointed
-state includes per-time-step converter taps, thyristor angles, and DC current
-columns, alongside the VSC DC-network state for systems containing VSC lines.
-When the checkpoint is restored, the derived LCC impedance caches (`branch_admittances`)
-are automatically re-derived from the restored converter parameters at the snapped network state.
+The outer loop maintains a checkpoint at the beginning of each continuation
+attempt: V/θ, `bus_type`, the two bus injection columns, and, for systems
+carrying HVDC, the VSC DC-network columns and the LCC converter columns
+(per-time-step taps, thyristor angles, and DC current). It does not cover
+Ybus tap deltas, shunt/FACTS withdrawal vectors, or device parameters — those
+are restored separately, at the call sites, by `apply_parameter!` resetting
+each device to its pre-attempt value. The orientation-probe phase
+(`_plant_sign`) captures and restores this checkpoint unconditionally on
+every control-enabled solve, not only when an attempt fails; when a
+continuation attempt itself fails to converge, the checkpoint is restored to
+roll back the bus/DC-network/LCC mutations the attempt made. When the
+checkpoint is restored, the derived LCC caches (`phi`, `branch_admittances`)
+are re-derived from the restored converter parameters at the restored
+network state, rather than snapshotted.
 
 ## [Metadata sourcing](@id discrete-control-metadata)
 
