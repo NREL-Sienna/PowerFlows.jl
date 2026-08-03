@@ -209,3 +209,13 @@ end
     @test isapprox(data2.bus_angles[:, 1], va_ctrl; atol = 1e-6)
     @test isapprox(data2.lcc.rectifier.tap[:, 1], lcc_taps; atol = 1e-6)
 end
+
+@testset "LCC + control with 0 MW transfer (i_dc = 0 tap pinning) survives restores" begin
+    sys = build_lcc_control_system(; p_set_mw = 0.0)
+    pf = ACPolarPowerFlow(; control_discrete_devices = true)
+    data = PowerFlowData(pf, sys)
+    solve_power_flow!(data)
+    @test all(data.converged)
+    @test all(isapprox.(
+        data.lcc.rectifier.tap[:, 1], data.lcc.rectifier.tap_setpoint; atol = 1e-8))
+end
