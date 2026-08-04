@@ -47,32 +47,42 @@ end
     ts = 1
     @test PowerFlows.get_lcc_count(data) > 0
 
+    # Every classified CHECKPOINTED column, as (owning object, field name) pairs. Driving the
+    # garbage/restore assertions off this list -- instead of naming columns literally -- means a
+    # field newly classified as CHECKPOINTED in the dict above is exercised automatically; if
+    # `_lcc_state_cols` isn't extended to match, the length assertion below catches it.
+    checkpointed_cols = vcat(
+        [
+            (conv, f)
+            for conv in (data.lcc.rectifier, data.lcc.inverter)
+            for f in LCC_CHECKPOINTED_FIELDS[PF.LCCConverterParameters]
+        ],
+        [(data.lcc, f) for f in LCC_CHECKPOINTED_FIELDS[PF.LCCParameters]],
+    )
+
     # Establish a consistent derived state, then snapshot.
     PowerFlows._update_ybus_lcc!(data, ts)
-    ref_rt = copy(data.lcc.rectifier.tap[:, ts])
-    ref_it = copy(data.lcc.inverter.tap[:, ts])
-    ref_ra = copy(data.lcc.rectifier.thyristor_angle[:, ts])
-    ref_ia = copy(data.lcc.inverter.thyristor_angle[:, ts])
-    ref_idc = copy(data.lcc.i_dc[:, ts])
+    ref_cols = [copy(getfield(obj, f)[:, ts]) for (obj, f) in checkpointed_cols]
     ref_admittances = copy(data.lcc.branch_admittances)
     snap = PowerFlows._snapshot_state(data, ts)
+    # 8 non-LCC columns (vmag, vang, bus_type, pinj, qinj, dc_p, dc_q, dc_v) plus one entry
+    # per classified checkpointed column -- fails loudly if `_lcc_state_cols` drifts from the
+    # classification above.
+    @test length(snap) == 8 + length(checkpointed_cols)
 
-    # Simulate a diverged trial: garbage into every LCC solver-state column and bus state.
-    data.lcc.rectifier.tap[:, ts] .= 9.9
-    data.lcc.inverter.tap[:, ts] .= 9.9
-    data.lcc.rectifier.thyristor_angle[:, ts] .= 1.5
-    data.lcc.inverter.thyristor_angle[:, ts] .= 1.5
-    data.lcc.i_dc[:, ts] .= -42.0
+    # Simulate a diverged trial: distinct garbage into every classified LCC solver-state
+    # column (catching any accidental column swap) and into bus state.
+    for (i, (obj, f)) in enumerate(checkpointed_cols)
+        getfield(obj, f)[:, ts] .= 100.0 + i
+    end
     data.bus_magnitude[:, ts] .= 0.5
     PowerFlows._update_ybus_lcc!(data, ts)  # caches now reflect the garbage
 
     PowerFlows._restore_state!(data, ts, snap)
 
-    @test data.lcc.rectifier.tap[:, ts] == ref_rt
-    @test data.lcc.inverter.tap[:, ts] == ref_it
-    @test data.lcc.rectifier.thyristor_angle[:, ts] == ref_ra
-    @test data.lcc.inverter.thyristor_angle[:, ts] == ref_ia
-    @test data.lcc.i_dc[:, ts] == ref_idc
+    for ((obj, f), ref) in zip(checkpointed_cols, ref_cols)
+        @test getfield(obj, f)[:, ts] == ref
+    end
     # Derived caches must be re-derived at the restored state, not left stale.
     @test data.lcc.branch_admittances == ref_admittances
 end
@@ -259,6 +269,11 @@ end
     _set_lcc_bus101_loads!(data, time_steps)
     solve_power_flow!(data)
     @test all(data.converged)
+    # Guard against vacuity: the per-step loads must actually move the solution, comfortably
+    # above the 1e-8 tolerance the "probe restores do not leak across steps" isolation test
+    # uses to compare steps 1 and 3 -- otherwise that test could pass even if step 2's probes
+    # leaked into its neighbors, simply because there'd be nothing left to tell apart.
+    @test maximum(abs.(data.bus_magnitude[:, 1] .- data.bus_magnitude[:, 3])) > 1e-7
     for ts in 1:time_steps
         # Twin: control off, devices fixed at step ts's converged settings, same ts loads.
         # Recipe mirrors "LCC + control: equivalence with devices locked at converged settings"
@@ -359,4 +374,44 @@ end
         @test isapprox(
             data.lcc.rectifier.tap[:, ts], data_ref.lcc.rectifier.tap[:, ts]; atol = 1e-6)
     end
+end
+
+@testset "LCC + control: non-polar formulation (ACRectangularPowerFlow)" begin
+    # Everything above is polar. `_probe_one_sign` falls back to the FD `_plant_sign` probe
+    # whenever no `_SensitivityContext` is available -- the case for every non-polar
+    # formulation, since the linear sensitivity path is polar-Jacobian-only (see the
+    # comment above `_SensitivityContext`) -- so the continuation itself is formulation-
+    # agnostic. This exercises that fallback against a real LCC + discrete-control system
+    # rather than leaving it implied by the polar-only test coverage above.
+    sys_polar = build_lcc_control_system()
+    pf_polar = ACPolarPowerFlow(; control_discrete_devices = true)
+    data_polar = PowerFlowData(pf_polar, sys_polar)
+    solve_power_flow!(data_polar)
+    @test all(data_polar.converged)
+
+    sys_rect = build_lcc_control_system()
+    pf_rect = ACRectangularPowerFlow(; control_discrete_devices = true)
+    data_rect = PowerFlowData(pf_rect, sys_rect)
+    solve_power_flow!(data_rect)
+    @test all(data_rect.converged)
+
+    # Rectangular-CI solves in an e/f state vector internally but still populates
+    # `data.bus_magnitude`/`bus_angles` on solve (see test_rectangular_ci_polar_parity.jl),
+    # so compare the physical quantities directly: bus voltage magnitude and the LCC
+    # solver state (taps, thyristor angles, DC current).
+    @test isapprox(
+        data_rect.bus_magnitude[:, 1],
+        data_polar.bus_magnitude[:, 1];
+        atol = 1e-6,
+    )
+    @test isapprox(
+        data_rect.lcc.rectifier.tap[:, 1], data_polar.lcc.rectifier.tap[:, 1]; atol = 1e-6)
+    @test isapprox(
+        data_rect.lcc.inverter.tap[:, 1], data_polar.lcc.inverter.tap[:, 1]; atol = 1e-6)
+    @test isapprox(
+        data_rect.lcc.rectifier.thyristor_angle[:, 1],
+        data_polar.lcc.rectifier.thyristor_angle[:, 1];
+        atol = 1e-6,
+    )
+    @test isapprox(data_rect.lcc.i_dc[:, 1], data_polar.lcc.i_dc[:, 1]; atol = 1e-6)
 end
