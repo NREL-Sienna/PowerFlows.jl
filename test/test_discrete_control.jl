@@ -801,8 +801,7 @@ end
     # NR/TR with a single time step construct fine.
     @test ACPolarPowerFlow{TrustRegionACPowerFlow}(;
         control_discrete_devices = true) isa ACPolarPowerFlow
-    # LCC systems now support discrete control via the checkpoint mechanism's LCC state
-    # coverage. Construction succeeds at any time_steps.
+    # LCC systems are supported: the continuation checkpoint covers the LCC tail state.
     lcc_sys, _ = simple_lcc_system()
     @test PowerFlowData(
         ACPolarPowerFlow(; control_discrete_devices = true), lcc_sys) isa PowerFlowData

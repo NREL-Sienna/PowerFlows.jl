@@ -1,11 +1,10 @@
-# Tests for LCC coexistence with the discrete-control continuation. The classification
-# below is the contract the checkpoint in control_continuation.jl implements: every
-# per-time-step Matrix field of the LCC state must be consciously placed in exactly one
-# bucket, so adding converter state without extending the checkpoint fails this test
-# instead of shipping a silent rollback bug.
-# i_dc classification evidence: src/lcc_utils.jl:869, written only at initialization
-# in initialize_LCCParameters!, not in any solve path. Classification: CHECKPOINTED
-# (solver state determined from p_set at init, read-only during solves).
+# Tests for LCC coexistence with the discrete-control continuation.
+#
+# The classification below is the contract the continuation's checkpoint implements: every
+# per-time-step Matrix field of the LCC state belongs to exactly one bucket, so a new field
+# added without extending the checkpoint fails a test rather than breaking rollback silently.
+# `i_dc` is CHECKPOINTED because `initialize_LCCParameters!` derives it from `p_set` at
+# construction and no solve path rewrites it.
 
 const LCC_CHECKPOINTED_FIELDS = Dict(
     PF.LCCConverterParameters => [:tap, :thyristor_angle],
@@ -47,10 +46,8 @@ end
     ts = 1
     @test PowerFlows.get_lcc_count(data) > 0
 
-    # Every classified CHECKPOINTED column, as (owning object, field name) pairs. Driving the
-    # garbage/restore assertions off this list -- instead of naming columns literally -- means a
-    # field newly classified as CHECKPOINTED in the dict above is exercised automatically; if
-    # `_lcc_state_cols` isn't extended to match, the length assertion below catches it.
+    # Driven off the classification rather than naming columns literally, so a newly
+    # classified field is exercised here automatically.
     checkpointed_cols = vcat(
         [
             (conv, f)
@@ -65,13 +62,11 @@ end
     ref_cols = [copy(getfield(obj, f)[:, ts]) for (obj, f) in checkpointed_cols]
     ref_admittances = copy(data.lcc.branch_admittances)
     snap = PowerFlows._snapshot_state(data, ts)
-    # 8 non-LCC columns (vmag, vang, bus_type, pinj, qinj, dc_p, dc_q, dc_v) plus one entry
-    # per classified checkpointed column -- fails loudly if `_lcc_state_cols` drifts from the
-    # classification above.
+    # 8 non-LCC columns plus one per checkpointed column: catches `_lcc_state_cols` drifting
+    # from the classification.
     @test length(snap) == 8 + length(checkpointed_cols)
 
-    # Simulate a diverged trial: distinct garbage into every classified LCC solver-state
-    # column (catching any accidental column swap) and into bus state.
+    # Simulate a diverged trial. Garbage is distinct per column so a column swap fails too.
     for (i, (obj, f)) in enumerate(checkpointed_cols)
         getfield(obj, f)[:, ts] .= 100.0 + i
     end
@@ -83,7 +78,7 @@ end
     for ((obj, f), ref) in zip(checkpointed_cols, ref_cols)
         @test getfield(obj, f)[:, ts] == ref
     end
-    # Derived caches must be re-derived at the restored state, not left stale.
+    # Caches recomputed at the restored state, not left holding the garbage-derived values.
     @test data.lcc.branch_admittances == ref_admittances
 end
 
@@ -98,22 +93,16 @@ end
 end
 
 """Parse the bundled two-LCC fixture and add enrollable controlled devices: a stepping
-switched shunt and a shunt FACTS device at bus 101 (PQ, 230 kV, largest load). The
-fixture carries no transformers, so tap devices are exercised by the existing
-discrete-control suites; the tap/LCC interaction is limited to the shared checkpoint,
-which is device-independent. `p_set_mw` overrides both LCC transfer setpoints (0.0
-exercises the i_dc = 0 tap-pinning branch).
+switched shunt and a shunt FACTS device at bus 101 (PQ, 230 kV, largest load). The fixture
+has no transformers, so tap devices stay covered by the existing discrete-control suites.
+`p_set_mw` overrides both LCC transfer setpoints (0.0 exercises the i_dc = 0 tap-pinning
+branch).
 
-Every branch in `case5_2_lcc.raw` carries x = 1e-4 pu (a minimal synthetic topology sized
-for LCC solving, not for realistic bus-to-bus electrical distance), so bus 101 sits
-electrically very close to the REF bus: the measured dVm/d(susceptance) there is
-~5.8e-5 pu/pu. Both devices are sized well past their PSS/E-typical rating (`number_of_steps`
-/ `Y_increase` and `max_shunt_current`) so `|dy/dp|*(hi-lo)` clears `CONTROL_GAIN_FLOOR`
-(src/definitions.jl) instead of being auto-frozen as insensitive
-(src/discrete_control/control_continuation.jl:565-579), and each `voltage_setpoint`/
-deadband is placed above the actual solved voltage (~1.0007 pu) so the continuation
-actually drives the device toward its rail across several passes rather than finding it
-already in-band on pass 1."""
+Every branch in the fixture carries x = 1e-4 pu, leaving bus 101 electrically bolted to the
+REF bus (dVm/d(susceptance) there is ~5.8e-5 pu/pu). Device ratings and setpoints are
+therefore sized far past anything realistic: the ratings clear `CONTROL_GAIN_FLOOR` so the
+devices enroll instead of being frozen as insensitive, and the setpoints sit above the
+solved voltage (~1.0007 pu) so the continuation drives them over several passes."""
 function build_lcc_control_system(; p_set_mw::Union{Nothing, Float64} = nothing)
     raw = joinpath(TEST_DATA_DIR, "case5_2_lcc.raw")
     sys = make_system(PFP.PowerModelsData(raw); runchecks = false)
@@ -126,9 +115,6 @@ function build_lcc_control_system(; p_set_mw::Union{Nothing, Float64} = nothing)
             control_mode = PSY.SwitchedAdmittanceControlMode.DISCRETE_VOLTAGE,
         ),
     )
-    # FACTS construction mirrors build_ieee14_facts_system (test_discrete_control.jl:10-60)
-    # with bus/name adjusted and `max_shunt_current`/`voltage_setpoint` widened/offset for the
-    # same insensitive-bus reason as the shunt above (see docstring).
     add_component!(
         sys,
         FACTSControlDevice(;
@@ -144,9 +130,7 @@ function build_lcc_control_system(; p_set_mw::Union{Nothing, Float64} = nothing)
         ),
     )
     if p_set_mw !== nothing
-        # `data.lcc.p_set` is seeded in `initialize_LCCParameters!` (src/lcc_utils.jl:861)
-        # from `PSY.get_transfer_setpoint.(lccs)` in MW (divided by base power there to
-        # reach pu), so the matching setter takes MW directly, not a pu value.
+        # `initialize_LCCParameters!` seeds `p_set` from this setter's value in MW.
         for l in get_components(TwoTerminalLCCLine, sys)
             set_transfer_setpoint!(l, p_set_mw)
         end
@@ -168,32 +152,13 @@ end
     va_ctrl = copy(data.bus_angles[:, 1])
     lcc_taps = copy(data.lcc.rectifier.tap[:, 1])
 
-    # Twin system: same devices fixed at the converged settings, control off.
-    #   - shunt: `PSY.set_Y!(sa, Complex(d.g0, d.current))`, exactly what write_device_settings!
-    #     (the continuation's save-back, src/solve_ac_power_flow.jl:130-181) writes -- this
-    #     fixture's shunt is built with an all-zero `initial_status`, so `_is_binit_shunt`
-    #     classifies it `psse_convention = true`
-    #     (src/discrete_control/control_metadata.jl:147-149,327), the branch
-    #     write_device_settings! takes; `d.g0 == real(get_Y(...)) == 0.0` here and `d.current`
-    #     is exactly `results.final` for this row. A `SwitchedAdmittance`'s `Y` feeds the Ybus
-    #     the same way whether or not `control_discrete_devices` is set, so this reproduces the
-    #     controlled solve's physics exactly.
-    #   - FACTS: write_device_settings! itself writes `PSY.set_reactive_power_required!(fd,
-    #     delivered_q_mvar(d, |V|))`, and this test calls that same setter for reporting parity
-    #     -- but it is a NO-OP for the actual physics: `contributes_reactive_power(::
-    #     PSY.FACTSControlDevice) = false` (src/psi_utils.jl:61) makes `_get_injections!`
-    #     (src/common.jl:20-40) skip every FACTSControlDevice unconditionally, so
-    #     `reactive_power_required` is read only by reporting/export code (psse_export.jl),
-    #     never by the AC solve. A `FACTSControlDevice`'s only physical footprint is the
-    #     discrete-control continuation's live constant-Z withdrawal term
-    #     (src/discrete_control/control_continuation.jl:297-310), which does not exist when
-    #     `control_discrete_devices = false`. Confirmed empirically: locking only via
-    #     `set_reactive_power_required!` left bus 101's twin voltage off by ~5e-4 -- the same
-    #     order as the FACTS device's entire contribution (`dVm/db * b_final`), i.e. the FACTS
-    #     term was silently absent, not merely approximated. The physically-equivalent lock is
-    #     therefore a real shunt admittance of `results.final` (susceptance, not
-    #     `delivered_q_mvar`) at the same bus, which -- like the `SwitchedAdmittance` above --
-    #     feeds the Ybus the same way regardless of `control_discrete_devices`.
+    # Twin system: same devices fixed at the converged settings, control off. The shunt locks
+    # through its own `Y`, as `write_device_settings!` saves back. The FACTS device needs a
+    # `FixedAdmittance` instead: `contributes_reactive_power(::FACTSControlDevice)` is false,
+    # so `reactive_power_required` reaches reporting only, and the device's physical footprint
+    # is a constant-Z withdrawal that exists solely inside the continuation. Locking via
+    # `set_reactive_power_required!` alone leaves the twin's voltage off by the device's whole
+    # contribution (~5e-4 pu here).
     sys2 = build_lcc_control_system()
     shunt_final = only(results.final[results.family .== "SwitchedAdmittance"])
     facts_final_b = only(results.final[results.family .== "FACTSControlDevice"])
@@ -232,16 +197,13 @@ end
     )
 end
 
-"""Per-step reactive-withdrawal scale for bus 101, mirroring `_shunt_step_q_scale`/
-`_set_multiperiod_shunt_loads!` (test/test_utils/common.jl). Those helpers scale EVERY bus's
-withdrawal because their 2-bus fixture has only one PQ bus; `case5_2_lcc.raw` also loads buses
-103/105 (see `build_lcc_control_system`'s docstring), so here the scaling is narrowed to bus
-101 -- the bus hosting the enrolled controlled devices -- leaving the other loads fixed."""
+"""Per-step reactive-withdrawal scale for bus 101, mirroring `_shunt_step_q_scale`
+(test/test_utils/common.jl). Scaling is narrowed to bus 101, the bus hosting the enrolled
+devices, so the fixture's other loads stay fixed."""
 _lcc_bus101_q_scale(t::Int) = 0.8 + 0.2 * t
 
-"""Scale bus 101's reactive withdrawal per time-step column `1:n` of a multiperiod `data`,
-replicating `_set_multiperiod_loads!`'s pattern (capture column 1 as the base, then overwrite
-every column from it) but restricted to bus 101's row."""
+"""Scale bus 101's reactive withdrawal across time-step columns `1:n` of a multiperiod
+`data`, taking column 1 as the base."""
 function _set_lcc_bus101_loads!(data, n::Int)
     bix = PF.get_bus_lookup(data)[101]
     base_q = data.bus_reactive_power_withdrawals[bix, 1]
@@ -251,10 +213,8 @@ function _set_lcc_bus101_loads!(data, n::Int)
     return
 end
 
-"""Set bus 101's reactive withdrawal in a SINGLE-period `data` (column 1) to the same value
-`_set_lcc_bus101_loads!` assigns to multiperiod column `t` -- mirrors `_set_single_tap_load!`
-(test/test_utils/common.jl), used to build single-period twins/oracles for one step of the
-multiperiod solve."""
+"""Set bus 101's reactive withdrawal in a single-period `data` to the value
+`_set_lcc_bus101_loads!` assigns to multiperiod column `t`, for building one step's twin."""
 function _set_lcc_bus101_load_at_step!(data, t::Int)
     bix = PF.get_bus_lookup(data)[101]
     data.bus_reactive_power_withdrawals[bix, 1] *= _lcc_bus101_q_scale(t)
@@ -269,15 +229,11 @@ end
     _set_lcc_bus101_loads!(data, time_steps)
     solve_power_flow!(data)
     @test all(data.converged)
-    # Guard against vacuity: the per-step loads must actually move the solution, comfortably
-    # above the 1e-8 tolerance the "probe restores do not leak across steps" isolation test
-    # uses to compare steps 1 and 3 -- otherwise that test could pass even if step 2's probes
-    # leaked into its neighbors, simply because there'd be nothing left to tell apart.
+    # The per-step loads must move the solution clear of the 1e-8 tolerance the isolation
+    # test below uses, or that test could pass with nothing left to tell the steps apart.
     @test maximum(abs.(data.bus_magnitude[:, 1] .- data.bus_magnitude[:, 3])) > 1e-7
     for ts in 1:time_steps
-        # Twin: control off, devices fixed at step ts's converged settings, same ts loads.
-        # Recipe mirrors "LCC + control: equivalence with devices locked at converged settings"
-        # above, narrowed to step ts's row of the results table.
+        # Twin lock as in the single-period equivalence test, per step.
         results = PowerFlows.get_controlled_device_results(data)
         step_results = results[results.time_step .== ts, :]
         shunt_final = only(step_results.final[step_results.family .== "SwitchedAdmittance"])
@@ -293,8 +249,7 @@ end
         sa2 = get_component(SwitchedAdmittance, sys2, "ctrl_shunt_101")
         set_Y!(sa2, Complex(real(get_Y(sa_orig)), shunt_final))
         fd2 = get_component(FACTSControlDevice, sys2, "ctrl_facts_101")
-        set_reactive_power_required!(fd2, facts_q)   # reporting parity only; see the
-        # equivalence testset above for why this setter is a no-op on the physics
+        set_reactive_power_required!(fd2, facts_q)   # reporting parity only, not physics
         add_component!(
             sys2,
             FixedAdmittance(;
@@ -322,9 +277,8 @@ end
     _set_lcc_bus101_loads!(data, time_steps)
     solve_power_flow!(data)
     @test all(data.converged)
-    # Re-solve steps 1 and 3 independently (fresh single-period data with that step's
-    # loads); their solutions must match the multiperiod run's steps 1 and 3, proving
-    # step 2's probes/rollbacks left no trace.
+    # Independent single-period solves of steps 1 and 3 must match the multiperiod run's,
+    # proving step 2's probes and rollbacks left no trace on its neighbours.
     for ts in (1, 3)
         sys_s = build_lcc_control_system()
         pf_s = ACPolarPowerFlow(; control_discrete_devices = true)
@@ -351,11 +305,8 @@ end
     sys = build_lcc_control_system()
     data = PowerFlowData(pf, sys)
     _set_lcc_bus101_loads!(data, time_steps)
-    # `p_set` seeds `i_dc` once at construction (`lcc_i_dc .= _lcc_i_dc_from_p_set.(...)`,
-    # src/lcc_utils.jl:861,869) and `i_dc` is never recomputed in any solve path (see the
-    # classification note atop this file: i_dc is CHECKPOINTED, solver state fixed at init).
-    # Overriding `p_set` alone after construction therefore leaves `i_dc` stale at its nonzero
-    # value; both must be zeroed at step 2 to keep them consistent for the 0 MW transfer.
+    # `i_dc` is derived from `p_set` at construction and never recomputed during a solve, so
+    # overriding `p_set` afterwards requires zeroing `i_dc` too.
     data.lcc.p_set[:, 2] .= 0.0
     data.lcc.i_dc[:, 2] .= 0.0
     solve_power_flow!(data)
@@ -377,12 +328,8 @@ end
 end
 
 @testset "LCC + control: non-polar formulation (ACRectangularPowerFlow)" begin
-    # Everything above is polar. `_probe_one_sign` falls back to the FD `_plant_sign` probe
-    # whenever no `_SensitivityContext` is available -- the case for every non-polar
-    # formulation, since the linear sensitivity path is polar-Jacobian-only (see the
-    # comment above `_SensitivityContext`) -- so the continuation itself is formulation-
-    # agnostic. This exercises that fallback against a real LCC + discrete-control system
-    # rather than leaving it implied by the polar-only test coverage above.
+    # The linear sensitivity path is polar-Jacobian-only, so a non-polar formulation drives
+    # the continuation through the FD `_plant_sign` probe fallback instead.
     sys_polar = build_lcc_control_system()
     pf_polar = ACPolarPowerFlow(; control_discrete_devices = true)
     data_polar = PowerFlowData(pf_polar, sys_polar)
@@ -395,10 +342,8 @@ end
     solve_power_flow!(data_rect)
     @test all(data_rect.converged)
 
-    # Rectangular-CI solves in an e/f state vector internally but still populates
-    # `data.bus_magnitude`/`bus_angles` on solve (see test_rectangular_ci_polar_parity.jl),
-    # so compare the physical quantities directly: bus voltage magnitude and the LCC
-    # solver state (taps, thyristor angles, DC current).
+    # Rectangular-CI carries an e/f state internally but still populates `bus_magnitude`, so
+    # the physical quantities compare directly.
     @test isapprox(
         data_rect.bus_magnitude[:, 1],
         data_polar.bus_magnitude[:, 1];

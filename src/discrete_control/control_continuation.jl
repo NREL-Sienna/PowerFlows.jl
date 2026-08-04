@@ -3,12 +3,10 @@
 # It also bounds the relaxation factor itself: ω = (1−θ)/(1+gbound) ≤ 1−θ = 0.5.
 const CONTROL_CONTRACTION = 0.5
 
-# State a rolled-back trial must not permanently change: V/θ, `bus_type` (one-way PV→PQ flips), the
-# injection columns (Q clamps, distributed-slack setpoint updates), the VSC DC-network state
-# (`_read_vsc_state!` writes the iterate into dcn.p_c/q_c/node_vdc every residual eval, so a
-# diverged trial corrupts it exactly like bus state), and the LCC solver state (converter taps,
-# thyristor angles, DC current). Derived caches (phi, branch_admittances) are re-derived from the
-# restored state rather than snapshotted.
+# State a rolled-back trial must not permanently change: V/θ, `bus_type` (one-way PV→PQ
+# flips), the injection columns, and the VSC/LCC tail state, all of which the inner solve
+# rewrites on every residual eval. Derived caches (phi, branch_admittances) are recomputed
+# from the restored state instead, so they cannot drift from it.
 @inline function _dc_state_cols(data, ts::Int)
     dcn = get_dc_network(data)
     if has_dc_network(dcn)
@@ -115,9 +113,7 @@ end
         lcc.rectifier.thyristor_angle[:, ts] .= lcc_ra
         lcc.inverter.thyristor_angle[:, ts] .= lcc_ia
         lcc.i_dc[:, ts] .= lcc_idc
-        # Derived LCC caches (phi, branch_admittances) must match the restored state at the
-        # restored voltages; they are re-derived rather than snapshotted (branch_admittances
-        # is a scratch vector shared across time steps).
+        # Recompute phi/branch_admittances so they match the restored state and voltages.
         _update_ybus_lcc!(data, ts)
     end
     return
