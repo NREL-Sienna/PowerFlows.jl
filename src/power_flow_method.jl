@@ -1034,7 +1034,7 @@ function _finalize_formulation!(
     rect_finalize_bus_injections!(
         data, x, residual.bus_state_offset, residual.P_net_set,
         residual.bus_slack_participation_factors, residual.subnetworks,
-        time_step,
+        residual.independent_ref, time_step,
     )
     return
 end
@@ -1049,6 +1049,7 @@ function _finalize_formulation!(
     mixed_finalize_bus_injections!(
         data, x, residual.bus_state_offset,
         residual.bus_slack_participation_factors, residual.subnetworks,
+        residual.independent_ref,
         residual.e_state, residual.f_state,
         time_step,
     )
