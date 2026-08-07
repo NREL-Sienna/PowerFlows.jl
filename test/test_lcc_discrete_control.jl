@@ -1,15 +1,10 @@
 # Tests for LCC coexistence with the discrete-control continuation.
 #
-# Sections: (1) the checkpoint contract, (2) single-period control, (3) multiperiod control,
-# (4) non-polar formulations.
-#
 # ── 1. Checkpoint contract ────────────────────────────────────────────────────────────────
-# Every `Matrix`-typed field of the LCC state belongs to exactly one bucket below, so a new
-# Matrix field added without extending the checkpoint fails a test instead of breaking
-# rollback silently. `i_dc` is checkpointed because `initialize_LCCParameters!` derives it
-# from `p_set` at construction and no solve path rewrites it. `branch_admittances` is a
-# `Vector`, so it is outside this partition; it is re-derived on restore and asserted
-# separately below.
+# Every `Matrix`-typed field of the LCC state goes in exactly one bucket below, so a new one
+# added without extending the checkpoint fails a test instead of breaking rollback silently.
+# `i_dc` is checkpointed because it is derived from `p_set` at construction and no solve path
+# rewrites it. `branch_admittances` is a `Vector`, so it falls outside this partition.
 
 const LCC_CHECKPOINTED_FIELDS = Dict(
     PF.LCCConverterParameters => [:tap, :thyristor_angle],
@@ -68,9 +63,8 @@ end
         filter(f -> startswith(String(f), "lcc_"), fieldnames(PF.ControlStateSnapshot))
     @test length(lcc_snap_fields) == length(checkpointed_cols)
 
-    # Spread the columns apart before snapshotting. As parsed, the fixture's rectifier and
-    # inverter taps are both 1.0, so a restore that crossed those two columns would be
-    # invisible — every column is `Vector{Float64}`, so a swap is not a type error.
+    # Spread the columns apart first: the fixture parses rectifier and inverter tap to the
+    # same value, which would hide a restore that crossed those two columns.
     for (i, (obj, f)) in enumerate(checkpointed_cols)
         getfield(obj, f)[:, ts] .+= 0.01 * i
     end
@@ -108,9 +102,9 @@ end
 
 # ── 2. Single-period control ──────────────────────────────────────────────────────────────
 
-# Twin-parity tolerance, sized between the two quantities it has to separate: the measured
-# twin error is ~1.5e-8 in bus angle, while the per-step spread the multiperiod tests rely on
-# is ~2.4e-5 in bus angle and ~1e-6 in voltage magnitude.
+# Twin-parity tolerance. A locked twin represents its FACTS device on the Y-bus rather than in
+# the withdrawal the continuation uses, so some difference is expected; this sits above it and
+# well below the multiperiod per-step spread.
 const LCC_PARITY_ATOL = 1e-7
 
 """Parse the bundled two-LCC fixture and add enrollable controlled devices: a stepping
@@ -118,12 +112,11 @@ switched shunt and a shunt FACTS device at bus 101 (PQ, 230 kV, largest load). T
 has no transformers, so no tap device is enrolled. `p_set_mw` overrides both LCC transfer
 setpoints (0.0 exercises the i_dc = 0 tap-pinning branch).
 
-Every branch in the fixture carries x = 1e-4 pu, leaving bus 101 electrically bolted to the
-REF bus (dVm/d(susceptance) there is ~5.8e-5 pu/pu). Device ratings and setpoints are
-therefore sized far past anything realistic: the ratings clear `CONTROL_GAIN_FLOOR` so the
-devices enroll instead of being frozen as insensitive, and the 1.05/1.06 setpoints sit above
-the reachable voltage (the controlled solve lands at ~1.0015 pu) so the continuation drives
-them over several passes."""
+Every branch carries x = 1e-4 pu against a much larger r, so bus 101 is electrically bolted to
+the REF bus and the network is resistance-dominated — a reactive move there shifts angle far
+more than magnitude. Device ratings and setpoints are therefore sized past anything realistic,
+so the devices clear `CONTROL_GAIN_FLOOR` and enroll instead of being frozen as insensitive,
+and their setpoints sit above the reachable voltage so the continuation keeps driving them."""
 function build_lcc_control_system(; p_set_mw::Union{Nothing, Float64} = nothing)
     raw = joinpath(TEST_DATA_DIR, "case5_2_lcc.raw")
     sys = make_system(PFP.PowerModelsData(raw); runchecks = false)
@@ -161,9 +154,7 @@ end
 
 """Rebuild the fixture with both controlled devices hard-locked at the settings `results`
 reports for time step `ts`, so it can be solved with control off. The shunt locks through its
-own `Y`, as `write_device_settings!` saves back. The FACTS device needs a `FixedAdmittance`:
-its Q is reporting-only, and its physical footprint is a constant-Z withdrawal that exists
-only inside the continuation."""
+own `Y`; the FACTS device needs a `FixedAdmittance` because its Q is reporting-only."""
 function build_locked_twin(results, ts::Int)
     step_results = results[results.time_step .== ts, :]
     shunt_final = only(step_results.final[step_results.family .== "SwitchedAdmittance"])
@@ -249,6 +240,20 @@ function _set_lcc_bus101_load_at_step!(data, t::Int)
     return
 end
 
+"""Assert each pair of time-step columns in `pairs` is separated by more than the parity
+tolerance, so comparing against the wrong column would be caught. LCC converter state is not
+guarded: its terminal buses are voltage-pinned, so those columns are identical across steps
+and the LCC comparisons below are control-on/off parity checks, not per-step ones."""
+function _assert_steps_separated(data, pairs)
+    for (a, b) in pairs
+        @test maximum(abs.(data.bus_angles[:, a] .- data.bus_angles[:, b])) >
+              LCC_PARITY_ATOL
+        @test maximum(abs.(data.bus_magnitude[:, a] .- data.bus_magnitude[:, b])) >
+              LCC_PARITY_ATOL
+    end
+    return
+end
+
 @testset "LCC + control multiperiod: per-step equivalence" begin
     time_steps = 3
     sys = build_lcc_control_system()
@@ -257,10 +262,8 @@ end
     _set_lcc_bus101_loads!(data, time_steps)
     solve_power_flow!(data)
     @test all(data.converged)
-    # Bus 101 is stiff enough that the per-step loads move voltage magnitude by only ~1e-6,
-    # so bus angle is the quantity that actually separates the steps. Assert that separation
-    # exceeds the parity tolerance, or the comparisons below could pass for any `ts`.
-    @test maximum(abs.(data.bus_angles[:, 1] .- data.bus_angles[:, 3])) > LCC_PARITY_ATOL
+    # The loop below compares every step, so every pair must be distinguishable.
+    _assert_steps_separated(data, ((1, 2), (2, 3), (1, 3)))
 
     results = PowerFlows.get_controlled_device_results(data)
     for ts in 1:time_steps
@@ -289,6 +292,7 @@ end
     _set_lcc_bus101_loads!(data, time_steps)
     solve_power_flow!(data)
     @test all(data.converged)
+    _assert_steps_separated(data, ((1, 3),))
     # Steps 1 and 3 must match independent single-period solves, so nothing from step 2's
     # continuation (probe excursions, rolled-back passes) reached its neighbours.
     for ts in (1, 3)
@@ -317,6 +321,7 @@ end
     _set_lcc_bus101_loads!(data_ref, time_steps)
     solve_power_flow!(data_ref)
     @test all(data_ref.converged)
+    _assert_steps_separated(data_ref, ((1, 3),))
 
     # Same construction, but force LCC transfer to 0 MW at step 2 only.
     sys = build_lcc_control_system()

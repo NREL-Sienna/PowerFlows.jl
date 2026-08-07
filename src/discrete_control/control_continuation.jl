@@ -3,14 +3,9 @@
 # It also bounds the relaxation factor itself: ω = (1−θ)/(1+gbound) ≤ 1−θ = 0.5.
 const CONTROL_CONTRACTION = 0.5
 
-# Solver state a rolled-back trial must not permanently change: V/θ, `bus_type` (one-way
-# PV→PQ flips), the injection columns, and the VSC/LCC tail state. Derived caches (`phi`,
-# `branch_admittances`) are recomputed from the restored state, so they cannot drift from it.
-# An absent VSC or LCC subsystem is carried as empty vectors.
-#
-# Named fields rather than a positional tuple: nearly every column is `Vector{Float64}`, so a
-# mis-ordered or dropped column would be type-invisible and would silently stop being rolled
-# back.
+# State a rolled-back trial must restore. `bus_type` is here because the inner solve's Q-limit
+# logic makes one-way PV→PQ flips. An absent VSC or LCC subsystem is carried as empty vectors,
+# which is what the capture/restore guards test.
 struct ControlStateSnapshot
     vmag::Vector{Float64}
     vang::Vector{Float64}
