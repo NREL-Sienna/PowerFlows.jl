@@ -8,7 +8,7 @@ PowerFlows.jl provides AC and DC power-flow solution methods for large-scale sys
 
 Coupling:
 - **PowerSystems.jl** (`PSY`, compat `^5.10`): `System` and component model; input to all solvers (`src/powersystems_utils.jl`).
-- **PowerNetworkMatrices.jl** (`PNM`, compat `^0.24`, pinned `=0.24.0` in `test/Project.toml`): Y-bus, PTDF, incidence, network reductions, AND the linear-solver caches/factorization backends (see below). PNM owns network-reduction logic; PowerFlows must pass reduced tuples through it.
+- **PowerNetworkMatrices.jl** (`PNM`, compat `^0.24`): Y-bus, PTDF, incidence, network reductions, AND the linear-solver caches/factorization backends (see below). PNM owns network-reduction logic; PowerFlows must pass reduced tuples through it.
 - **InfrastructureSystems.jl** (`IS`, compat `3`): shared infra, `@assert_op`, serialization.
 
 ## Architecture & `src/` layout
@@ -75,18 +75,13 @@ This package uses **ReTest** and a `test/Project.toml` env (deps incl. PowerSyst
 # Compile-check between edits (package env, fast):
 julia --project -e 'using PowerFlows'
 
-# One-time per clone: make --project=test resolve PowerFlows to the WORKING TREE
-# (else it can resolve the registered copy in ~/.julia/packages and run stale source,
-#  and new test/test_*.jl files are invisible to the glob in test/PowerFlowsTests.jl):
-julia --project=test -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd()))'
-# Verify (must print the working-tree path, not ~/.julia/packages/...):
-julia --project=test -e 'import Pkg; println(Base.find_package("PowerFlows"))'
+# Run tests via TestEnv from the PACKAGE env — never `julia --project=test`, which can
+# resolve PowerFlows to a published version instead of the working tree.
+# Full suite:
+julia --project -e 'using TestEnv; TestEnv.activate(); include("test/load_tests.jl"); PowerFlowsTests.run_tests()'
 
-# Run full suite:
-julia --project=test test/runtests.jl
-
-# Run a filtered subset via ReTest:
-julia --project=test -e 'using PowerFlows; include("test/PowerFlowsTests.jl"); using .PowerFlowsTests, ReTest; retest(PowerFlowsTests, r"<regex>")'
+# Filtered subset (plain substring works; regex also accepted):
+julia --project -e 'using TestEnv; TestEnv.activate(); include("test/load_tests.jl"); PowerFlowsTests.run_tests("Schur")'
 
 # Docs:
 julia --project=docs docs/make.jl
@@ -110,4 +105,4 @@ ReTest runs the whole suite and reports failures at the end (does not abort on f
 
 ## Version
 
-Package `0.21.1`; Julia `^1.10`. Pardiso is a weakdep providing the optional MKLPardiso AC backend.
+Package `0.25.0`; Julia `^1.10`. Pardiso is a weakdep providing the optional MKLPardiso AC backend.
