@@ -146,7 +146,7 @@ const FACTS_MODE_MAP = Dict(
     PSY.FACTSOperationModes.BYP => 2,
 )
 
-const OVERWRITE_NON_CONVERGED = true # overwrite non-converged time steps with NaN values
+const OVERWRITE_NON_CONVERGED = false # overwrite non-converged time steps with NaN values
 
 # Adam / gradient descent power flow
 const ADAM_BACKTRACK_FACTOR = 0.5
