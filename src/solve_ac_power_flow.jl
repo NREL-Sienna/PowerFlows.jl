@@ -16,6 +16,15 @@ The bus types can be changed from PV to PQ if the reactive power limits are viol
 - `system::PSY.System`: The power system model, a [`PowerSystems.System`](@extref) struct.
 - `kwargs...`: Additional keyword arguments passed to the solver.
 
+When the solve ran with `control_discrete_devices`, the solved tap ratios / shunt admittances /
+phase-shifter angles are written back into the system (see [`write_device_settings!`](@ref)): the
+stored branch flows are only self-consistent with the mutated device settings, so the input
+system's controlled devices are updated to the solved values. With no controls active this is a
+no-op. This write-back only happens for single-period solves; for multiperiod solves
+(`time_steps > 1`) it is skipped with a warning, since a PSY component holds one scalar per
+setting and cannot round-trip a per-time-step schedule — use
+[`get_controlled_device_results`](@ref) for the per-time-step schedule instead.
+
 ## Keyword Arguments
 - `tol`: Infinite norm of residuals under which convergence is declared. Default is `1e-9`.
 - `maxIterations`: Maximum number of Newton-Raphson iterations. Default is `30`.
@@ -49,6 +58,10 @@ function solve_and_store_power_flow!(
     converged = solve_power_flow!(data; kwargs...)
 
     if converged
+        # Write moved device settings back BEFORE write_power_flow_solution! recomputes flows —
+        # its consistency assertion compares against the stored (moved) flows. Self-guards to a
+        # no-op when no discrete controls ran.
+        write_device_settings!(system, data)
         write_power_flow_solution!(
             system,
             pf,
@@ -61,6 +74,110 @@ function solve_and_store_power_flow!(
     end
 
     return converged
+end
+
+"""
+    write_device_settings!(system, data)
+
+Write the solved discrete-control device settings back into the `PSY.System`:
+tap ratios (`set_tap!`), switched-shunt admittances (`set_Y!`/`set_initial_status!`,
+convention-aware — see below), and phase-shifter angles (`set_α!`). FACTS devices
+carry no stored setting field in PSY and are skipped. A device no longer present
+in `system` is skipped with a `@warn` (its solved setting is not written back).
+Mutates the user's system — called by [`solve_and_store_power_flow!`](@ref) after a
+converged solve; a no-op when no discrete controls ran.
+
+Switched shunts write back per their sourcing convention (see
+[Metadata sourcing](@ref discrete-control-metadata) for how `psse_convention` is
+determined): PSS/E-parsed (BINIT) components take the solved total straight into
+`Y`; PSY API-built components keep `Y` at the fixed base and write the last-snap
+`block_n` into `initial_status`, since overwriting `Y` would double-count the
+status on re-enrollment. A never-snapped API-built device (continuous, or held in
+its deadband the whole solve) whose `block_n` cannot reconstruct `d.current` falls
+back to the BINIT write (solved total into `Y`, `initial_status` zeroed).
+
+No-op for `time_steps > 1`: a PSY component holds a single scalar setting, but a
+multiperiod solve produces one setting per time step, so there is no single value to
+write back without silently discarding all but the last-processed step. Per-time-step
+results remain available via [`get_controlled_device_results`](@ref).
+"""
+# Re-resolve a tap's circuit in `system` by name, rather than holding a reference, so the
+# write lands in the caller's system even when it is not the one enrollment read. The tap may
+# sit on either arity, and `PSY.get_circuits` covers both (a 2W returns a 1-tuple).
+function _resolve_tap_circuit(system::PSY.System, d::ControlledTap)
+    tx = PSY.get_component(PSY.ACTransmission, system, d.device_name)
+    isnothing(tx) && return nothing
+    circuits = PSY.get_circuits(tx)
+    if d.circuit_index > length(circuits)
+        return nothing
+    end
+    return circuits[d.circuit_index]
+end
+
+"""
+    write_device_settings!(system::PSY.System, data)
+
+Write solved discrete-control device settings back onto the components of `system`: tap
+ratios onto the owning `PSY.TransformerCircuit` (of either transformer arity), and switched
+shunt and FACTS settings onto their devices. A no-op when `data` carries no controlled
+devices.
+
+Skips with a warning when `get_time_steps(data) > 1`: a PSY component holds a single scalar
+setting and cannot represent a per-time-step schedule, so writing back would silently
+discard every step but one. Use [`get_controlled_device_results`](@ref) for the full
+per-step settings.
+"""
+function write_device_settings!(system::PSY.System, data)
+    set = get_controlled_devices(data)
+    isnothing(set) && return
+    if get_time_steps(data) > 1
+        @warn "write_device_settings!: skipped — a PSY component holds a single scalar and \
+            cannot round-trip a per-time-step schedule. Use get_controlled_device_results \
+            for per-time-step device settings." maxlog = 1
+        return
+    end
+    for d in set.taps
+        circuit = _resolve_tap_circuit(system, d)
+        if isnothing(circuit)
+            @warn "write_device_settings!: transformer \"$(d.device_name)\" not found in \
+                the system; the solved tap ratio $(d.current) for \"$(d.name)\" was NOT \
+                written back."
+            continue
+        end
+        PSY.set_tap!(circuit, d.current)
+    end
+    for d in set.shunts
+        sa = PSY.get_component(PSY.SwitchedAdmittance, system, d.name)
+        if isnothing(sa)
+            @warn "write_device_settings!: SwitchedAdmittance \"$(d.name)\" not found in \
+                the system; its solved susceptance $(d.current) was NOT written back."
+            continue
+        end
+        if d.psse_convention
+            PSY.set_Y!(sa, Complex(d.g0, d.current))
+        else
+            realizable = d.b0 + sum(d.block_n .* d.block_dB; init = 0.0)
+            if abs(realizable - d.current) <= BOUNDS_TOLERANCE
+                PSY.set_Y!(sa, Complex(d.g0, d.b0))
+                PSY.set_initial_status!(sa, copy(d.block_n))
+            else
+                PSY.set_Y!(sa, Complex(d.g0, d.current))
+                PSY.set_initial_status!(sa, zeros(Int, length(d.block_n)))
+            end
+        end
+    end
+    for d in set.facts
+        fd = PSY.get_component(PSY.FACTSControlDevice, system, d.name)
+        if isnothing(fd)
+            @warn "write_device_settings!: FACTSControlDevice \"$(d.name)\" not found in \
+                the system; its solved reactive output was NOT written back."
+            continue
+        end
+        # Delivered reactive power Q = b·|V_local|² (MVA) at the device's own bus.
+        PSY.set_reactive_power_required!(
+            fd, delivered_q_mvar(d, data.bus_magnitude[d.bus_ix, 1]))
+    end
+    return
 end
 
 """
@@ -127,13 +244,11 @@ The power flow solver settings are taken from the `ACPowerFlow` object stored in
 This function solves the AC power flow problem for each time step specified in `data`.
 It preallocates memory for the results and iterates over the sorted time steps.
     For each time step, it calls the `_ac_power_flow` function to solve the power flow equations and updates the `data` object with the results.
-    If the power flow converges, it updates the active and reactive power injections, as well as the voltage magnitudes and angles for different bus types (REF, PV, PQ).
+    If the power flow converges, it updates the active and reactive power injections, as well as the voltage magnitudes and angles for different bus types (REF, PV, PQ), and calculates that time step's branch power flows.
     If the power flow does not converge, it sets the corresponding entries in `data` to `NaN`.
-    Finally, it calculates the branch power flows and updates the `data` object.
 
 # Notes
-- If the grid topology changes (e.g., tap positions of transformers or in-service status of branches), the admittance matrices `Yft` and `Ytf` must be updated.
-- If `Yft` and `Ytf` change between time steps, the branch flow calculations must be moved inside the loop.
+- If the grid topology changes (e.g., tap positions of transformers or in-service status of branches), the admittance matrices `Yft` and `Ytf` must be updated before that time step's branch flows are computed.
 
 # Examples
 ```julia
@@ -173,9 +288,14 @@ function solve_power_flow!(
     tb_ix = [bus_lookup[bus_no] for bus_no in last.(arcs)]   # to bus indices
     @assert length(fb_ix) == length(arcs)
 
-    for time_step in sorted_time_steps
-        converged = _ac_power_flow(data, pf, time_step; merged_kwargs...)
-        ts_converged[time_step] = converged
+    cd = get_controlled_devices(data)
+    validate_device_store_width(cd, get_time_steps(data))
+    for (ts_pos, time_step) in enumerate(sorted_time_steps)
+        load_device_state!(cd, data, time_step)
+        converged = _ac_power_flow_with_area_relax!(data, pf, time_step; merged_kwargs...)
+        save_device_state!(cd, data, time_step)
+        ts_converged[ts_pos] = converged
+        converged && _warn_vsc_limit_violations(data, time_step)
 
         if OVERWRITE_NON_CONVERGED && !converged
             # set values to NaN for not converged time steps
@@ -210,33 +330,32 @@ function solve_power_flow!(
                     imag(S_inverter)
             end
         end
+
+        # Per-step branch flows (not batched after the loop) so a future per-step Yft/Ytf
+        # (e.g. varying tap positions) is used correctly.
+        # NOTE PNM's structs use ComplexF32, while the system objects store Float64's.
+        #      so if you set the system bus angles/voltages to match these fields, then repeat
+        #      this math using the system voltages, you'll see differences in the flows, ~1e-4.
+        step_V =
+            data.bus_magnitude[:, time_step] .* exp.(1im .* data.bus_angles[:, time_step])
+        Sft = step_V[fb_ix] .* conj.(Yft.data * step_V)
+        Stf = step_V[tb_ix] .* conj.(Ytf.data * step_V)
+        data.arc_active_power_flow_from_to[:, time_step] .= real.(Sft)
+        data.arc_reactive_power_flow_from_to[:, time_step] .= imag.(Sft)
+        data.arc_active_power_flow_to_from[:, time_step] .= real.(Stf)
+        data.arc_reactive_power_flow_to_from[:, time_step] .= imag.(Stf)
+
+        _compute_arc_angle_differences_from_indices!(data, fb_ix, tb_ix, time_step)
     end
 
-    # write branch flows
-    # NOTE PNM's structs use ComplexF32, while the system objects store Float64's.
-    #      so if you set the system bus angles/voltages to match these fields, then repeat 
-    #      this math using the system voltages, you'll see differences in the flows, ~1e-4.
-    ts_V =
-        data.bus_magnitude[:, sorted_time_steps] .*
-        exp.(1im .* data.bus_angles[:, sorted_time_steps])
+    data.converged[sorted_time_steps] .= ts_converged
 
-    Sft = ts_V[fb_ix, :] .* conj.(Yft.data * ts_V)
-    Stf = ts_V[tb_ix, :] .* conj.(Ytf.data * ts_V)
-    data.arc_active_power_flow_from_to .= real.(Sft)
-    data.arc_reactive_power_flow_from_to .= imag.(Sft)
-    data.arc_active_power_flow_to_from .= real.(Stf)
-    data.arc_reactive_power_flow_to_from .= imag.(Stf)
-
-    _compute_arc_angle_differences_from_indices!(data, fb_ix, tb_ix, sorted_time_steps)
-
-    data.converged .= ts_converged
-
-    return all(data.converged)
+    return all(ts_converged)
 end
 
-function _ac_power_flow(
-    data::ACPowerFlowData,
+function _solve_with_q_limits!(
     pf::AbstractACPowerFlow{<:ACPowerFlowSolverType},
+    data::ACPowerFlowData,
     time_step::Int64;
     kwargs...,
 )
@@ -251,7 +370,102 @@ function _ac_power_flow(
         end
     end
 
-    @error("could not enforce reactive power limits after $MAX_REACTIVE_POWER_ITERATIONS")
+    # Iteration cap reached: the last `_check_q_limit_bounds!` flipped one or more PV buses to
+    # PQ (and clamped their Q) without a follow-up solve, so `data`'s voltages no longer match
+    # its bus types. Pin that final PV/PQ assignment and solve once more so the returned state is
+    # self-consistent, then return THAT solve's actual convergence (not a forced `true`) — the
+    # classic "fix-as-PQ after N iterations" resolution, rather than discarding a solution that
+    # does converge.
+    @warn(
+        "reactive power limits still oscillating after $MAX_REACTIVE_POWER_ITERATIONS \
+        iterations; pinning the final PV/PQ assignment and solving once more"
+    )
+    return _newton_power_flow(pf, data, time_step; kwargs...)
+end
+
+function _ac_power_flow(
+    data::ACPowerFlowData,
+    pf::AbstractACPowerFlow{<:ACPowerFlowSolverType},
+    time_step::Int64;
+    kwargs...,
+)
+    cd = data.controlled_devices
+    if isnothing(cd) || isempty(cd)
+        return _solve_with_q_limits!(pf, data, time_step; kwargs...)
+    end
+    return _control_continuation!(pf, data, time_step; kwargs...)
+end
+
+"""
+    _ac_power_flow_with_area_relax!(data, pf, time_step; kwargs...) -> Bool
+
+Wraps `_ac_power_flow` with greedy-relax handling for embedded area net-interchange
+control: on non-convergence with areas still enrolled, de-enroll the worst-`|r_a|` area
+and re-solve, warm-started with surviving areas' `ΔP_a` re-seeded from the `delta_p`
+mirror; repeat until convergence or exhaustion. Exhaustion while still failing is genuine
+network non-convergence plus a terminal diagnostic (`_report_area_interchange_failure`).
+Relaxation is never silent: an `@error` at each de-enrollment and a solve-end summary;
+converging after a relax still returns `true`.
+
+Resets to the full pristine enrollment before each time step's attempt
+(`_ensure_pristine_area_set!`) so a previous step's relax never carries over. The
+never-enrolled short-circuit deliberately tests the PRISTINE set, not the WORKING one —
+a previous time step's relax may have emptied the working set, and short-circuiting on it
+would permanently disable area control for the rest of `data`'s lifetime.
+"""
+function _ac_power_flow_with_area_relax!(
+    data::ACPowerFlowData,
+    pf::AbstractACPowerFlow{<:ACPowerFlowSolverType},
+    time_step::Int64;
+    kwargs...,
+)
+    aid = data.area_interchange
+    isempty(aid.pristine_areas) &&
+        return _ac_power_flow(data, pf, time_step; kwargs...)
+    _ensure_pristine_area_set!(data, time_step)
+    relaxed_this_step = RelaxedAreaRecord[]
+    converged = false
+    while true
+        converged = _ac_power_flow(data, pf, time_step; kwargs...)
+        converged && break
+        iszero(n_controlled_areas(data)) && break
+        gaps = _area_residual_gaps(data, time_step)
+        gap, worst_ix = findmax(abs, gaps)
+        area = data.area_interchange.areas[worst_ix]
+        @error "Area interchange: Newton did not converge with area \"$(area.name)\" " *
+               "controlled (target PDES = $(area.pdes), NI gap at the failed iterate = " *
+               "$gap); de-enrolling it and re-solving with the remaining " *
+               "$(n_controlled_areas(data) - 1) controlled area(s)."
+        push!(relaxed_this_step, RelaxedAreaRecord(area.name, area.pdes))
+        _deenroll_area!(data, worst_ix)
+    end
+    if !converged
+        _report_area_interchange_failure(data, time_step)
+        return converged
+    end
+    _sync_pristine_delta_p!(data, time_step)
+    _warn_area_violations(data, time_step)
+    isempty(relaxed_this_step) && return converged
+    data.area_interchange.relaxed[time_step] = relaxed_this_step
+    pristine_tail_of = Dict(a.name => a.tail_ix for a in aid.pristine_areas)
+    relaxed_detail = join(
+        (
+            let tail_ix = pristine_tail_of[r.name],
+                ni_solved = _area_net_interchange(
+                    aid.pristine_ties, aid.pristine_dc_ties, tail_ix, data,
+                    time_step,
+                )
+
+                "$(r.name) (ni_solved=$(ni_solved), pdes=$(r.pdes), " *
+                "gap=$(ni_solved - r.pdes))"
+            end
+            for r in relaxed_this_step
+        ),
+        ", ",
+    )
+    @error "Area interchange: time step $time_step converged only after relaxing " *
+           "$(length(relaxed_this_step)) area(s): $relaxed_detail. Their schedules were " *
+           "infeasible given network/tie capacity."
     return converged
 end
 

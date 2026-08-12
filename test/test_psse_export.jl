@@ -64,8 +64,58 @@ function reverse_composite_name(name::String)
 end
 
 loose_system_match_fn(a::Float64, b::Float64) =
-    isapprox(a, b; atol = SYSTEM_REIMPORT_COMPARISON_TOLERANCE) || IS.isequivalent(a, b)
+    isapprox(a, b; atol = SYSTEM_REIMPORT_COMPARISON_TOLERANCE,
+        rtol = SYSTEM_REIMPORT_RELATIVE_TOLERANCE) || IS.isequivalent(a, b)
 loose_system_match_fn(a, b) = IS.isequivalent(a, b)
+
+"""PSS/E's COD field has no spelling for `UNDEFINED`, so an unset control objective exports
+blank and re-parses as `FIXED`. Every other objective round-trips exactly."""
+function expected_reimported_objective(objective::PSY.TransformerControlObjective)
+    if objective == PSY.TransformerControlObjective.UNDEFINED
+        return PSY.TransformerControlObjective.FIXED
+    end
+    return objective
+end
+
+function _circuit_objective_round_trips(
+    circuit1::PSY.TransformerCircuit,
+    circuit2::PSY.TransformerCircuit,
+)
+    original = PSY.get_control_objective(circuit1)
+    actual = PSY.get_control_objective(circuit2)
+    # This helper also compares a system against itself, where nothing was exported and the
+    # objective is untouched. So accept the original, or the one documented lossy mapping a
+    # re-import applies. Any other objective is a genuine COD export bug.
+    if actual == original || actual == expected_reimported_objective(original)
+        return true
+    end
+    @error "control_objective did not round-trip: expected $original or \
+        $(expected_reimported_objective(original)), got $actual"
+    return false
+end
+
+# `compare_systems_loosely` excludes `:control_objective` because `IS.compare_values` matches
+# exclusions by field name recursively, so it cannot express the asymmetric UNDEFINED→FIXED
+# mapping. These methods restore the check as an explicit contract, so a genuine COD export
+# bug on any of the other objectives still fails the round trip. Both arities are checked at
+# the `TransformerCircuit` level, since that is where the objective lives.
+_control_objectives_round_trip(comp1, comp2) = true
+
+_control_objectives_round_trip(
+    tx1::PSY.TwoWindingTransformer,
+    tx2::PSY.TwoWindingTransformer,
+) = _circuit_objective_round_trips(PSY.get_circuit(tx1), PSY.get_circuit(tx2))
+
+function _control_objectives_round_trip(
+    tx1::PSY.ThreeWindingTransformer,
+    tx2::PSY.ThreeWindingTransformer,
+)
+    result = true
+    for (circuit1, circuit2) in zip(PSY.get_circuits(tx1), PSY.get_circuits(tx2))
+        result &= _circuit_objective_round_trips(circuit1, circuit2)
+    end
+    return result
+end
 
 function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
     bus_name_mapping = Dict{String, String}(),
@@ -79,16 +129,13 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         PSY.InterruptibleStandardLoad,
         PSY.Line,
         PSY.LoadZone,
-        PSY.PhaseShiftingTransformer,
-        PSY.PhaseShiftingTransformer3W,
         PSY.StandardLoad,
         PSY.SwitchedAdmittance,
-        PSY.TapTransformer,
         PSY.ThermalStandard,
-        PSY.Transformer2W,
-        PSY.Transformer3W,
+        PSY.ThreeWindingTransformer,
         PSY.TwoTerminalLCCLine,
         PSY.TwoTerminalVSCLine,
+        PSY.TwoWindingTransformer,
     ],
     # TODO when possible, don't exclude so many fields
     exclude_fields = Set([
@@ -97,7 +144,6 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
         :time_limits,
         :services,
         :angle_limits,
-        :winding_group_number,
         :control_objective_primary,
     ]),
     exclude_fields_for_type = Dict(
@@ -116,21 +162,20 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
             :active_power_flow,
             :reactive_power_flow,
         ]),
-        PSY.TapTransformer => Set([
+        PSY.TwoWindingTransformer => Set([
             :active_power_flow,
             :reactive_power_flow,
+            # PSS/E's COD field can't spell "no control block" (`UNDEFINED`), so it exports
+            # blank and re-parses as `FIXED`. Excluded here only because IS matches
+            # exclusions by name recursively; `_control_objectives_round_trip` asserts the
+            # exact mapping instead, so the other objectives are still checked.
+            :control_objective,
         ]),
-        PSY.Transformer2W => Set([
-            :active_power_flow,
-            :reactive_power_flow,
-        ]),
-        PSY.Transformer3W => Set([
+        PSY.ThreeWindingTransformer => Set([
             :active_power_flow,
             :reactive_power_flow,
             :rating,  # TODO why don't ratings match?
-            :rating_primary,
-            :rating_secondary,
-            :rating_tertiary,
+            :control_objective,  # same UNDEFINED→FIXED mapping; see the 2W note above
         ]),
     ),
     generator_comparison_fns = [  # TODO rating
@@ -210,8 +255,9 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
                 comp2;
                 exclude = my_excludes,
             )
-            result &= comparison
-            if !comparison
+            objectives_ok = _control_objectives_round_trip(comp1, comp2)
+            result &= comparison & objectives_ok
+            if !comparison || !objectives_ok
                 @error "Mismatched component LHS: $comp1"
                 @error "Mismatched component RHS: $comp2"
             end
@@ -261,10 +307,14 @@ function test_power_flow(
     pf_with_bustypes = ACPowerFlow{typeof(pf).parameters[1]}(; correct_bustypes = true)
     result1 = solve_power_flow(pf_with_bustypes, sys1)
     result2 = solve_power_flow(pf_with_bustypes, sys2)
-    reactive_power_tol =
-        exclude_reactive_flow ? nothing : POWERFLOW_COMPARISON_TOLERANCE
+    reactive_power_tol = if exclude_reactive_flow
+        nothing
+    else
+        POWERFLOW_COMPARISON_TOLERANCE
+    end
     @test compare_df_within_tolerance("bus_results", result1["bus_results"],
-        result2["bus_results"], POWERFLOW_COMPARISON_TOLERANCE)
+        result2["bus_results"], POWERFLOW_COMPARISON_TOLERANCE;
+        Q_gen = reactive_power_tol, Q_net = reactive_power_tol)
     @test compare_df_within_tolerance("flow_results",
         sort(result1["flow_results"], names(result1["flow_results"])[2:end]),
         sort(result2["flow_results"], names(result2["flow_results"])[2:end]),
@@ -288,16 +338,19 @@ function test_power_flow(
         POWERFLOW_COMPARISON_TOLERANCE; line_name = nothing)
 end
 
-# Exercise PowerSystems' ability to parse a PSS/E System from a filename and a metadata dict
+# Exercise PSCB's ability to parse a PSS/E System from a filename and a metadata dict.
+# The `System(::AbstractString, ::Dict)` method is defined in PSCB's
+# `parsers/psse_metadata_reimport.jl`.
 function read_system_with_metadata(raw_path, metadata_path)
     md = JSON3.read(metadata_path, Dict)
     sys = System(raw_path, md)
     return sys
 end
 
-# Exercise PowerSystems' ability to automatically find the export metadata file
+# Exercise PSCB's ability to automatically find the export metadata file
 read_system_with_metadata(export_subdir) =
-    System(first(get_psse_export_paths(export_subdir)))
+    PowerSystemCaseBuilder.system_from_psse_reimport(
+        first(get_psse_export_paths(export_subdir)))
 
 function test_psse_round_trip(
     pf::ACPowerFlow{<:ACPowerFlowSolverType},
@@ -315,16 +368,10 @@ function test_psse_round_trip(
     @test isfile(raw_path)
     @test isfile(metadata_path)
 
-    # TODO(PSY6): `System(raw_file, metadata_json)` no longer works under PSY6; the
-    # PSS/E read-back path needs porting. Skip the round-trip comparison until then
-    # (export-side assertions above still run). `@test_skip` does not evaluate the
-    # expression, so the broken constructor is never called.
-    @test_skip compare_systems_loosely(
-        sys,
-        read_system_with_metadata(raw_path, metadata_path),
-    )
-    # do_power_flow_test &&
-    #     test_power_flow(pf, sys, sys2; exclude_reactive_flow = exclude_reactive_flow)
+    sys2 = read_system_with_metadata(raw_path, metadata_path)
+    @test compare_systems_loosely(sys, sys2)
+    do_power_flow_test &&
+        test_power_flow(pf, sys, sys2; exclude_reactive_flow = exclude_reactive_flow)
 end
 
 function test_psse_round_trip(
@@ -342,16 +389,10 @@ function test_psse_round_trip(
     @test isfile(raw_path)
     @test isfile(metadata_path)
 
-    # TODO(PSY6): `System(raw_file, metadata_json)` no longer works under PSY6; the
-    # PSS/E read-back path needs porting. Skip the round-trip comparison until then
-    # (export-side assertions above still run). `@test_skip` does not evaluate the
-    # expression, so the broken constructor is never called.
-    @test_skip compare_systems_loosely(
-        sys,
-        read_system_with_metadata(raw_path, metadata_path),
-    )
-    # do_power_flow_test &&
-    #     test_power_flow(pf, sys, sys2)
+    sys2 = read_system_with_metadata(raw_path, metadata_path)
+    @test compare_systems_loosely(sys, sys2)
+    do_power_flow_test &&
+        test_power_flow(pf, sys, sys2)
 end
 
 "Test that the two raw files are exactly identical and the two metadata files parse to identical JSON"
@@ -449,7 +490,206 @@ end
         "modified_case25_sys.raw")
 end
 
-@testset "PSSE Exporter RTS regression: TapTransformer and v35 default ratings" begin
+@testset "PSSE Exporter round-trip preserves a VSC DC line, v33" begin
+    # `pti_case16_complete_sys` contains a VSC DC line, so this round-trip explicitly exercises
+    # VSC export → re-parse: `compare_systems_loosely` includes `PSY.TwoTerminalVSCLine`, so the
+    # converter records (control TYPE/MODE, setpoints, losses, ratings) must survive the round-trip.
+    sys = load_test_system("pti_case16_complete_sys")
+    isnothing(sys) && return
+    @test !isempty(PSY.get_components(PSY.TwoTerminalVSCLine, sys))
+
+    export_location = joinpath(test_psse_export_dir, "v33", "case16_vsc_roundtrip")
+    exporter = PSSEExporter(sys, :v33, export_location; write_comments = true)
+    test_psse_round_trip(DCPowerFlow(), sys, exporter, "basic", export_location)
+end
+
+@testset "Parsed VSC lowers to p.u.-sane setpoints and the AC power flow solves (v33)" begin
+    # Regression: the parser stored DCSET raw (kV/MW), so lowered vdc_set was ~100s of "p.u." and
+    # the joint NR diverged on any parsed VSC line.
+    sys = load_test_system("pti_case16_complete_sys")
+    isnothing(sys) && return
+    # The fixture's MODE=1 records are ill-posed independent of this test: bus 103 is PV
+    # (rejected) and bus 501's ACSET is unreachable within its Q limits (PSS/E itself backed off
+    # to a Q limit). Use fixed-Q control within limits.
+    for vsc in PSY.get_components(PSY.TwoTerminalVSCLine, sys)
+        PSY.set_ac_control_from!(vsc, PSY.VSCACControlModes.AC_REACTIVE_POWER)
+        PSY.set_reactive_power_from!(vsc, -0.45 * PSY.SU)
+        PSY.set_ac_control_to!(vsc, PSY.VSCACControlModes.AC_REACTIVE_POWER)
+        PSY.set_reactive_power_to!(vsc, -0.4 * PSY.SU)
+    end
+    data = PowerFlowData(ACPowerFlow{NewtonRaphsonACPowerFlow}(), sys)
+    dcn = PF.get_dc_network(data)
+    @test PF.n_vsc_converters(dcn) > 0
+    @test all(0.5 .<= dcn.vdc_set .<= 1.5)
+    @test all(abs.(dcn.p_set) .< 10.0)
+    # the MW order must survive at full magnitude (guards against re-scaling, e.g. a double
+    # baseMVA division: 0.96 → 0.0096 would still pass the sanity bounds above)
+    @test maximum(abs, dcn.p_set) > 0.1
+    @test solve_power_flow!(data)
+end
+
+@testset "PSSE Exporter: a VSC built without PSS/E ext metadata re-parses (v33)" begin
+    # Regression: a VSC with no `ext` REMOT/RMPCT must still export valid numeric fields. Previously
+    # REMOT defaulted to an empty field, so the exported .raw failed to re-parse (empty-Int error).
+    sys = load_test_system("pti_case16_complete_sys")
+    isnothing(sys) && return
+    n0 = length(collect(PSY.get_components(PSY.TwoTerminalVSCLine, sys)))
+    buses = sort!(collect(PSY.get_components(PSY.ACBus, sys)); by = PSY.get_number)
+    arc = _get_or_make_arc(sys, buses[3], buses[4])
+    PSY.add_component!(
+        sys,
+        PSY.TwoTerminalVSCLine(;
+            name = "vsc_no_ext",
+            available = true,
+            arc = arc,
+            active_power_flow = 0.2,
+            rating = 1.5,
+            active_power_limits_from = (min = -1.5, max = 1.5),
+            active_power_limits_to = (min = -1.5, max = 1.5),
+            g = 40.0,
+            dc_control_from = PSY.VSCDCControlModes.DC_VOLTAGE,
+            dc_setpoint_from = 1.0,
+            dc_control_to = PSY.VSCDCControlModes.DC_POWER,
+            dc_setpoint_to = 0.2,
+        ),
+    )
+    export_location = joinpath(test_psse_export_dir, "v33", "case16_vsc_no_ext")
+    exporter = PSSEExporter(sys, :v33, export_location; write_comments = true)
+    write_export(exporter, "basic"; overwrite = true)
+    raw_path, metadata_path = get_psse_export_paths(joinpath(export_location, "basic"))
+    # the re-parse must succeed (previously threw on the empty REMOT field) and keep both VSCs
+    sys2 = read_system_with_metadata(raw_path, metadata_path)
+    @test length(collect(PSY.get_components(PSY.TwoTerminalVSCLine, sys2))) == n0 + 1
+end
+
+@testset "PSSE Exporter FACTS: RMPCT blank, FCREG/REMOT from regulated_bus_number (v33/v35)" begin
+    # `reactive_power_required` is a solver OUTPUT, not the PSS/E RMPCT input, and PSY models no
+    # RMPCT, so the field is written blank — the exporter must not fall back to `ext`. FCREG/REMOT
+    # come from the first-class `regulated_bus_number` field.
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.0, 0.0)
+    b7 = _add_simple_bus!(sys, 7, ACBusTypes.PQ, 230, 1.0, 0.0)
+    _add_simple_source!(sys, b1, 0.0, 0.0)
+    _add_simple_line!(sys, b1, b7, 0.01, 0.10, 0.0)
+    facts = PSY.FACTSControlDevice(;
+        name = "facts_1",
+        available = true,
+        bus = b1,
+        control_mode = PSY.FACTSOperationModes.NML,
+        voltage_setpoint = 1.0,
+        max_shunt_current = 100.0,
+        regulated_bus_number = 7,
+        reactive_power_required = 42.0,  # solved output; must NOT be written as RMPCT
+        ext = Dict{String, Any}("RMPCT" => 55.0),  # stale ext; the exporter must ignore it
+    )
+    PSY.add_component!(sys, facts)
+
+    export_location = joinpath(test_psse_export_dir, "v33", "facts_rmpct_fcreg")
+    exporter = PSSEExporter(sys, :v33, export_location; write_comments = true)
+    write_export(exporter, "basic"; overwrite = true)
+    raw_path, metadata_path = get_psse_export_paths(joinpath(export_location, "basic"))
+
+    raw_lines = readlines(raw_path)
+    facts_line_idx = findfirst(l -> occursin("'facts_1'", l), raw_lines)
+    @test !isnothing(facts_line_idx)
+    isnothing(facts_line_idx) && return
+    facts_line = raw_lines[facts_line_idx]
+    fields = strip.(split(facts_line, ","))
+    # v33 record: NAME, I, J, MODE, PDES, QDES, VSET, SHMX, TRMX, VTMN, VTMX, VSMX, IMX, LINX,
+    # RMPCT, OWNER, SET1, SET2, VSREF, REMOT
+    @test isempty(fields[15])
+    @test fields[20] == "7"
+    @test !occursin("42.0", facts_line)
+    @test !occursin("55.0", facts_line)
+
+    sys2 = read_system_with_metadata(raw_path, metadata_path)
+    facts2 = only(collect(PSY.get_components(PSY.FACTSControlDevice, sys2)))
+    @test PSY.get_regulated_bus_number(facts2) == 7
+end
+
+@testset "PSSE Exporter: switched shunt control_mode/regulated_bus_number round-trip (v33)" begin
+    # MODSW/SWREM must survive export + reimport so parsed switched shunts keep
+    # regulating instead of silently defaulting to FIXED (control_mode = 0).
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.0, 0.0)
+    b7 = _add_simple_bus!(sys, 7, ACBusTypes.PQ, 230, 1.0, 0.0)
+    _add_simple_source!(sys, b1, 0.0, 0.0)
+    _add_simple_line!(sys, b1, b7, 0.01, 0.10, 0.0)
+    shunt = PSY.SwitchedAdmittance(;
+        name = "shunt_1",
+        available = true,
+        bus = b1,
+        Y = 0.0 + 0.0im,
+        initial_status = [1],
+        number_of_steps = [4],
+        Y_increase = [0.0 + 0.05im],
+        admittance_limits = (min = 0.9, max = 1.1),
+        control_mode = PSY.SwitchedAdmittanceControlMode.DISCRETE_VOLTAGE,
+        regulated_bus_number = 7,
+    )
+    PSY.add_component!(sys, shunt)
+
+    export_location = joinpath(test_psse_export_dir, "v33", "switched_shunt_modsw_swrem")
+    exporter = PSSEExporter(sys, :v33, export_location; write_comments = true)
+    write_export(exporter, "basic"; overwrite = true)
+    raw_path, metadata_path = get_psse_export_paths(joinpath(export_location, "basic"))
+
+    sys2 = read_system_with_metadata(raw_path, metadata_path)
+    shunt2 = only(collect(PSY.get_components(PSY.SwitchedAdmittance, sys2)))
+    @test PSY.get_control_mode(shunt2) == PSY.SwitchedAdmittanceControlMode.DISCRETE_VOLTAGE
+    @test PSY.get_regulated_bus_number(shunt2) == 7
+end
+
+@testset "PSSE Exporter: phase-shift control_limits round-trip degrees/radians (v33)" begin
+    # PSS/E RMA/RMI are degrees for phase-shift CODs (ACTIVE_POWER_FLOW here); PSY stores
+    # `control_limits` in radians for those objectives. The exporter must write degrees, and
+    # the raw file must NOT contain the stored radian values.
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.0, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.0, 0.0)
+    _add_simple_source!(sys, b1, 0.0, 0.0)
+    arc = Arc(; from = b1, to = b2)
+    tx = TwoWindingTransformer(;
+        name = "ps_tx1",
+        circuit = TransformerCircuit(;
+            available = true,
+            arc = arc,
+            r = 0.01,
+            x = 0.10,
+            tap = 1.0,
+            rating = 1.0,
+            base_power = 100.0,
+            control_objective = PSY.TransformerControlObjective.ACTIVE_POWER_FLOW,
+            control_limits = (min = deg2rad(-30), max = deg2rad(30)),
+        ),
+    )
+    PSY.add_component!(sys, tx)
+
+    export_location =
+        joinpath(test_psse_export_dir, "v33", "transformer_phase_shift_limits")
+    exporter = PSSEExporter(sys, :v33, export_location; write_comments = true)
+    write_export(exporter, "basic"; overwrite = true)
+    raw_path, metadata_path = get_psse_export_paths(joinpath(export_location, "basic"))
+
+    raw_lines = readlines(raw_path)
+    name_line_idx = findfirst(l -> occursin("'ps_tx1'", l), raw_lines)
+    @test !isnothing(name_line_idx)
+    isnothing(name_line_idx) && return
+    # record1 (name/status), record2 (impedance), record3 (winding1: RMA/RMI at fields 9/10)
+    record3 = raw_lines[name_line_idx + 2]
+    fields = strip.(split(record3, ","))
+    @test isapprox(parse(Float64, fields[9]), 30.0; atol = 1e-8)
+    @test isapprox(parse(Float64, fields[10]), -30.0; atol = 1e-8)
+    @test !occursin(string(deg2rad(30)), record3)
+
+    sys2 = read_system_with_metadata(raw_path, metadata_path)
+    tx2 = only(collect(PSY.get_components(PSY.TwoWindingTransformer, sys2)))
+    control_limits2 = PSY.get_control_limits(PSY.get_circuit(tx2))
+    @test isapprox(control_limits2.min, deg2rad(-30); atol = 1e-8)
+    @test isapprox(control_limits2.max, deg2rad(30); atol = 1e-8)
+end
+
+@testset "PSSE Exporter RTS regression: non-unity tap circuit and v35 default ratings" begin
     sys = with_logger(SimpleLogger(Error)) do
         build_system(PSISystems, "modified_RTS_GMLC_DA_sys"; force_build = true)
     end
@@ -457,16 +697,16 @@ end
 
     undefined_obj =
         PSY.TransformerControlObjectiveModule.TransformerControlObjective.UNDEFINED
-    tap_transformers = collect(PSY.get_components(PSY.TapTransformer, sys))
+    two_winding_transformers = collect(PSY.get_components(PSY.TwoWindingTransformer, sys))
     target_tap_idx = findfirst(
         t ->
-            PSY.get_control_objective(t) == undefined_obj &&
-                !isapprox(PSY.get_tap(t), 1.0),
-        tap_transformers,
+            PSY.get_control_objective(PSY.get_circuit(t)) == undefined_obj &&
+                !isapprox(PSY.get_tap(PSY.get_circuit(t)), 1.0),
+        two_winding_transformers,
     )
     @test !isnothing(target_tap_idx)
     isnothing(target_tap_idx) && return
-    target_tap = tap_transformers[target_tap_idx]
+    target_tap = two_winding_transformers[target_tap_idx]
 
     lines = sort!(collect(PSY.get_components(PSY.Line, sys)); by = PSY.get_name)
     @test !isempty(lines)
@@ -475,7 +715,7 @@ end
 
     # In v35, unspecified extra rating fields are exported as explicit 0.0 values.
     export_location = joinpath(test_psse_export_dir, "v35", "rts_targeted_regressions")
-    scenario_name = "taptransformer_nonunity_and_v35_missing_ratings"
+    scenario_name = "nonunity_tap_circuit_and_v35_missing_ratings"
     exporter =
         PSSEExporter(sys, :v35, export_location; write_comments = true, overwrite = true)
     write_export(exporter, scenario_name; overwrite = true)
@@ -490,11 +730,11 @@ end
     branch_name_mapping = md["branch_name_mapping"]
 
     tap_name = PSY.get_name(target_tap)
-    tap_transformer_keys =
+    two_winding_transformer_keys =
         filter(k -> endswith(k, "_" * tap_name), collect(keys(transformer_ckt_mapping)))
     tap_branch_keys =
         filter(k -> endswith(k, "_" * tap_name), collect(keys(branch_name_mapping)))
-    @test length(tap_transformer_keys) == 1
+    @test length(two_winding_transformer_keys) == 1
     @test isempty(tap_branch_keys)
 
     line_name = PSY.get_name(target_line)
@@ -520,7 +760,7 @@ end
     isnothing(line_record_idx) && return
     @test occursin(", 0.0, 0.0, 0.0,", raw_lines[line_record_idx])
 
-    tap_key = tap_transformer_keys[1]
+    tap_key = two_winding_transformer_keys[1]
     tap_bus_pair = split(tap_key, "_"; limit = 2)[1]
     tap_from_orig, tap_to_orig = split(tap_bus_pair, "-")
     tap_from = bus_number_mapping[tap_from_orig]
@@ -537,10 +777,10 @@ end
     @test occursin(", 0.0, 0.0, 0.0,", tap_winding1_record)
 end
 
-# Regression for issue #361: a programmatically-built Line has no RATE4..RATE12 keys in its
-# `ext` dict, which used to trigger a `MethodError: Cannot convert String to Float64` in the
-# v35 non-transformer branch writer. The missing extra ratings must export as numeric 0.0.
-@testset "PSSE Exporter issue #361: v35 Line with missing RATE4..RATE12 ext keys" begin
+# Regression for issue #361: a programmatically-built Line carries no RATE4..RATE12 data,
+# which used to trigger a `MethodError: Cannot convert String to Float64` in the v35
+# non-transformer branch writer. The absent extra ratings must export as numeric 0.0.
+@testset "PSSE Exporter issue #361: v35 Line with no RATE4..RATE12 data" begin
     sys = System(100.0)
     b1 = ACBus(; number = 1, name = "b1", available = true, bustype = ACBusTypes.REF,
         angle = 0.0, magnitude = 1.0, voltage_limits = (0.0, 2.0), base_voltage = 138.0,
@@ -555,9 +795,6 @@ end
         b = (from = 0.0, to = 0.0), rating = 1.0,
         angle_limits = (min = -pi / 2, max = pi / 2))
     add_component!(sys, line)
-
-    # Precondition: the programmatic Line really is missing the extra rating keys.
-    @test !any(haskey(PSY.get_ext(line), "RATE$i") for i in 4:12)
 
     export_location = joinpath(test_psse_export_dir, "v35", "issue361_missing_rate_keys")
     exporter = PSSEExporter(sys, :v35, export_location; overwrite = true)
@@ -651,19 +888,38 @@ function test_psse_exporter_inner(
     set_rating!(line_to_change, get_rating(line_to_change, PSY.SU) * 123.4 * PSY.SU)  # careful not to exceed PF.INFINITE_BOUND
     update_exporter!(exporter, sys2)
     write_export(exporter, "basic4"; overwrite = true)
-    # TODO(PSY6): read-back via `System(...)` broken under PSY6 — skip reimport checks
-    # (the write/strict-equality assertions above still run). See `test_psse_round_trip`.
-    @test_skip compare_systems_loosely(sys2,
-        read_system_with_metadata(joinpath(export_location, "basic4")))
-    # reread_sys2 = read_system_with_metadata(joinpath(export_location, "basic4"))
-    # @test_logs((:error, r"values do not match"),
-    #     match_mode = :any, min_level = Logging.Error,
-    #     compare_systems_loosely(sys, reread_sys2))
-    # test_power_flow(pf, sys2, reread_sys2; exclude_reactive_flow = true)
+    reread_sys2 = read_system_with_metadata(joinpath(export_location, "basic4"))
+    @test_logs((:error, r"values do not match"),
+        match_mode = :any, min_level = Logging.Error,
+        compare_systems_loosely(sys, reread_sys2))
+    test_power_flow(pf, sys2, reread_sys2; exclude_reactive_flow = true)
 end
 
 @testset "PSSE Exporter with case24_sys.raw, v33 - NewtonRaphsonACPowerFlow" begin
-    @test_skip test_psse_exporter_inner(NewtonRaphsonACPowerFlow, "case24_sys_NR")
+    test_psse_exporter_inner(NewtonRaphsonACPowerFlow, "case24_sys_NR")
+end
+
+@testset "update_exporter!(::PowerFlowData) writes solved discrete-control settings" begin
+    # A controlled solve moves the tap; update_exporter! must write the solved tap into
+    # the exporter's (deepcopied) system without touching the caller's system.
+    sys = _make_solvable_tap_shunt_system()
+    tx = first(PSY.get_components(PSY.TwoWindingTransformer, sys))
+    tap_before = PSY.get_tap(PSY.get_circuit(tx))
+    pf = ACPolarPowerFlow{NewtonRaphsonACPowerFlow}(; control_discrete_devices = true)
+    data = PowerFlowData(pf, sys)
+    @test PowerFlows.solve_power_flow!(data)
+    t = data.controlled_devices.taps[1]
+    @test t.current != tap_before
+
+    export_location = joinpath(test_psse_export_dir, "v33", "controlled_tap_update")
+    exporter = PSSEExporter(sys, :v33, export_location)
+    update_exporter!(exporter, data)
+    tx_exported = PSY.get_component(PSY.TwoWindingTransformer, exporter.system, t.name)
+    @test PSY.get_tap(PSY.get_circuit(tx_exported)) == t.current
+    @test PSY.get_tap(PSY.get_circuit(tx_exported)) != tap_before
+
+    tx_user = PSY.get_component(PSY.TwoWindingTransformer, sys, t.name)
+    @test PSY.get_tap(PSY.get_circuit(tx_user)) == tap_before
 end
 
 @testset "Test exporter helper functions" begin

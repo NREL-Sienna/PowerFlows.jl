@@ -10,9 +10,22 @@ function initialize_power_flow_data!(
     nrd = get_network_reduction_data(data)
     reverse_bus_search_map = PNM.get_reverse_bus_search_map(nrd)
     bus_reduction_map = PNM.get_bus_reduction_map(nrd)
-    removed_buses = PNM.get_removed_buses(nrd)
     bus_lookup = get_bus_lookup(data)
     n_buses = length(bus_lookup)
+    # `removed_buses` from PNM covers merged/radial reductions. Topologically isolated buses are
+    # also out of the power flow — excluded from `bus_lookup` with no merge representative — but
+    # are not in that set, so a device (e.g. a load) still attached to one would KeyError in the
+    # `_get_*` device loops. Fold them in so those loops skip them like any other removed bus.
+    removed_buses = union(
+        PNM.get_removed_buses(nrd),
+        Set(
+            PSY.get_number(b) for b in PSY.get_components(PSY.ACBus, sys) if
+            !haskey(
+                bus_lookup,
+                get(reverse_bus_search_map, PSY.get_number(b), PSY.get_number(b)),
+            )
+        ),
+    )
 
     # bus types, angles, magnitudes
     bus_type = Vector{PSY.ACBusTypes}(undef, n_buses)
@@ -46,8 +59,10 @@ function initialize_power_flow_data!(
         removed_buses,
         sys,
     )
-    data.bus_active_power_injections[:, 1] .= bus_active_power_injections
-    data.bus_reactive_power_injections[:, 1] .= bus_reactive_power_injections
+    # Broadcast seeds every column from the snapshot; time-varying callers (PSI, prepare_ts_data!)
+    # overwrite columns afterward. An unfilled column would solve as zero, not the snapshot.
+    data.bus_active_power_injections .= bus_active_power_injections
+    data.bus_reactive_power_injections .= bus_reactive_power_injections
 
     # bus active power range and per-generator headroom for headroom-proportional
     # distributed slack. generator_headroom is populated inside
@@ -85,15 +100,17 @@ function initialize_power_flow_data!(
         removed_buses,
         sys,
     )
-    data.bus_active_power_withdrawals[:, 1] .= bus_active_power_withdrawals
-    data.bus_reactive_power_withdrawals[:, 1] .= bus_reactive_power_withdrawals
-    data.bus_active_power_constant_current_withdrawals[:, 1] .=
+    data.bus_active_power_withdrawals .= bus_active_power_withdrawals
+    data.bus_reactive_power_withdrawals .= bus_reactive_power_withdrawals
+    # Constant-I/Z baselines are time-invariant; broadcast so the per-step control delta on
+    # column `ts` keeps its baseline at `ts≥2`.
+    data.bus_active_power_constant_current_withdrawals .=
         bus_active_power_constant_current_withdrawals
-    data.bus_reactive_power_constant_current_withdrawals[:, 1] .=
+    data.bus_reactive_power_constant_current_withdrawals .=
         bus_reactive_power_constant_current_withdrawals
-    data.bus_active_power_constant_impedance_withdrawals[:, 1] .=
+    data.bus_active_power_constant_impedance_withdrawals .=
         bus_active_power_constant_impedance_withdrawals
-    data.bus_reactive_power_constant_impedance_withdrawals[:, 1] .=
+    data.bus_reactive_power_constant_impedance_withdrawals .=
         bus_reactive_power_constant_impedance_withdrawals
 
     # reactive power bounds
@@ -108,7 +125,9 @@ function initialize_power_flow_data!(
         removed_buses,
         sys,
     )
-    data.bus_reactive_power_bounds[:, 1] .= bus_reactive_power_bounds
+    # Bounds are time-invariant but read per `time_step`; broadcast so PV→PQ Q-limit switching
+    # fires at `ts≥2` (the matrix is otherwise `(-Inf, Inf)`).
+    data.bus_reactive_power_bounds .= bus_reactive_power_bounds
 
     # bus/generator participation factors
     # remark: everything after the 3rd argument here is contained inside data.
@@ -143,7 +162,9 @@ function initialize_power_flow_data!(
     # LCCs: initialize parameters. For DC power flow, this also writes the fixed flows to
     # data.lcc.arc_active_power_flow_from_to and data.lcc.arc_active_power_flow_to_from.
     initialize_LCCParameters!(data, sys, bus_lookup, reverse_bus_search_map, removed_buses)
-    # TODO VSC AC power flow model goes here.
+    # VSC + multi-terminal DC: lower all DC components into the joint DCNetwork (AC path only;
+    # the empty placeholder is left in place for DC power flow).
+    initialize_DCNetwork!(data, sys, bus_lookup, reverse_bus_search_map, removed_buses)
     # LCCs and VSCs, DC only: accumulate net power into bus_hvdc_net_power.
     lcc_vsc_fixed_injections!(data, sys, bus_lookup, reverse_bus_search_map, removed_buses)
     # generic HVDC lines: calculate fixed flows and save to generic_hvdc_flows.
@@ -161,8 +182,26 @@ function initialize_power_flow_data!(
         reverse_bus_search_map,
         removed_buses,
     )
+    # DC phase-shifters, DC only: precompute the per-arc flow offsets and paired bus
+    # injections from stored circuit α.
+    _populate_phase_shift_terms!(data)
     # ZIP Loads, DC only: convert constant current and impedance components to constant
     # powers via assuming V = 1.0 p.u.
     handle_zip_loads!(data, pf)
+    # `PowerFlowData` is immutable but `area_interchange` is a mutable struct: `append!`
+    # grows its Vector fields in place (mirroring `lcc`); `delta_p` (a Matrix) can't grow
+    # rows in place, so it is reassigned wholesale from `build_area_interchange_data`.
+    if get_area_interchange_control(pf)
+        aid = build_area_interchange_data(pf, sys, data)
+        append!(data.area_interchange.areas, aid.areas)
+        append!(data.area_interchange.ties, aid.ties)
+        append!(data.area_interchange.dc_ties, aid.dc_ties)
+        append!(data.area_interchange.ni_scratch, aid.ni_scratch)
+        data.area_interchange.delta_p = aid.delta_p
+        append!(data.area_interchange.pristine_areas, aid.pristine_areas)
+        append!(data.area_interchange.pristine_ties, aid.pristine_ties)
+        append!(data.area_interchange.pristine_dc_ties, aid.pristine_dc_ties)
+        data.area_interchange.pristine_delta_p = aid.pristine_delta_p
+    end
     return data
 end

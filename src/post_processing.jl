@@ -42,7 +42,8 @@ function _power_redistribution_ref(
     generator_slack_participation_factors::Union{
         Nothing,
         Dict{Tuple{DataType, String}, Float64},
-    } = nothing,
+    } = nothing;
+    skip_reactive::Bool = false,
 )
     devices_ =
         PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys)
@@ -69,7 +70,7 @@ function _power_redistribution_ref(
     if length(devices_) == 1
         device = first(devices_)
         PSY.set_active_power!(device, P_gen * PSY.SU)
-        _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+        skip_reactive || _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
         return
     elseif length(devices_) > 1
         devices =
@@ -100,7 +101,8 @@ function _power_redistribution_ref(
                     ) * PSY.SU,
                 )
             end
-            _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+            skip_reactive ||
+                _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
             return
         end
     end
@@ -173,7 +175,7 @@ function _power_redistribution_ref(
             end
         end
     end
-    _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
+    skip_reactive || _reactive_power_redistribution_pv(sys, Q_gen, bus, max_iterations)
     return
 end
 
@@ -530,7 +532,7 @@ Compute per-segment branch flow entries from arc-level data and endpoint voltage
 Dispatches on the arc entry type (direct, 3WT, parallel, series).
 """
 function _compute_segment_flows(
-    arc_entry::Union{PSY.ACTransmission, PNM.ThreeWindingTransformerWinding},
+    arc_entry::Union{PSY.ACTransmission, PNM.ThreeWindingTransformerCircuit},
     data::ACPowerFlowData,
     arc::Tuple{Int, Int},
     time_step::Int,
@@ -591,6 +593,99 @@ function _compute_segment_flows(
     return entries
 end
 
+# Write the solved VSC / MTDC state back to the PSY components. VSC lines are keyed by
+# reduction-mapped arc tuple, ICs by (AC bus number, DC bus number); parallel components sharing a
+# key are consumed positionally (lowering and write-back iterate the same collections).
+function _write_vsc_solution!(
+    sys::PSY.System,
+    data::ACPowerFlowData,
+    nrd::PNM.NetworkReductionData,
+    time_step::Int,
+)
+    dcn = get_dc_network(data)
+    has_dc_network(dcn) || return
+    _write_vsc_line_solution!(sys, data, dcn, nrd, time_step)
+    _write_interconnecting_converter_solution!(sys, data, dcn, time_step)
+    return
+end
+
+function _write_vsc_line_solution!(
+    sys::PSY.System,
+    data::ACPowerFlowData,
+    dcn::DCNetwork,
+    nrd::PNM.NetworkReductionData,
+    time_step::Int,
+)
+    arc_to_lines = Dict{Tuple{Int, Int}, Vector{PSY.TwoTerminalVSCLine}}()
+    for vsc in PSY.get_available_components(PSY.TwoTerminalVSCLine, sys)
+        # g == 0 lines are open DC links, not lowered into the DC network
+        iszero(PSY.get_g(vsc)) && continue
+        key = PNM.get_arc_tuple(PSY.get_arc(vsc), nrd)
+        push!(get!(() -> PSY.TwoTerminalVSCLine[], arc_to_lines, key), vsc)
+    end
+    conv_at_node = Dict{Int, Int}()
+    for c in 1:n_vsc_converters(dcn)
+        node = dcn.converter_dc_node_ix[c]
+        if dcn.node_number[node] == -1
+            conv_at_node[node] = c
+        end
+    end
+    # remap the recorded (raw) terminal numbers like `get_arc_tuple` remaps the arc key
+    rmap = PNM.get_reverse_bus_search_map(nrd)
+    for b in 1:n_dc_branches(dcn)
+        nf = dcn.branch_from[b]
+        nt = dcn.branch_to[b]
+        # MTDC (`TModelHVDCLine`) branches join real-numbered `DCBus` nodes; skip them here
+        (dcn.node_number[nf] == -1 && dcn.node_number[nt] == -1) || continue
+        cf = conv_at_node[nf]
+        ct = conv_at_node[nt]
+        from_number = dcn.converter_ac_bus_number[cf]
+        to_number = dcn.converter_ac_bus_number[ct]
+        arc = (get(rmap, from_number, from_number), get(rmap, to_number, to_number))
+        vsc = popfirst!(arc_to_lines[arc])
+        # from→to link flow = AC power drawn at the from terminal: −p_c_from
+        PSY.set_active_power_flow!(vsc, -dcn.p_c[cf, time_step] * PSY.SU)
+        PSY.set_reactive_power_from!(vsc, dcn.q_c[cf, time_step] * PSY.SU)
+        PSY.set_reactive_power_to!(vsc, dcn.q_c[ct, time_step] * PSY.SU)
+        Vm_from = data.bus_magnitude[dcn.converter_ac_bus_ix[cf], time_step]
+        Vdc_from = dcn.node_vdc[nf, time_step]
+        # the from converter injects −P_dc/V_dc into the line; dc_current is positive from→to
+        PSY.set_dc_current!(
+            vsc,
+            -_vsc_pdc(dcn, cf, Vm_from, time_step) / Vdc_from,
+        )
+    end
+    return
+end
+
+function _write_interconnecting_converter_solution!(
+    sys::PSY.System,
+    data::ACPowerFlowData,
+    dcn::DCNetwork,
+    time_step::Int,
+)
+    key_to_convs = Dict{Tuple{Int, Int}, Vector{Int}}()
+    for c in 1:n_vsc_converters(dcn)
+        node = dcn.converter_dc_node_ix[c]
+        number = dcn.node_number[node]
+        # point-to-point converters have no DCBus; handled via their DC branch above
+        number == -1 && continue
+        key = (dcn.converter_ac_bus_number[c], number)
+        push!(get!(() -> Int[], key_to_convs, key), c)
+    end
+    isempty(key_to_convs) && return
+    for ic in PSY.get_available_components(PSY.InterconnectingConverter, sys)
+        key = (PSY.get_number(PSY.get_bus(ic)), PSY.get_number(PSY.get_dc_bus(ic)))
+        # an IC whose AC bus was removed by network reduction is not lowered
+        haskey(key_to_convs, key) || continue
+        c = popfirst!(key_to_convs[key])
+        Vm = data.bus_magnitude[dcn.converter_ac_bus_ix[c], time_step]
+        # active_power is DC-side: positive = drawn from the DC bus into AC (P_dc = p_c + losses)
+        PSY.set_active_power!(ic, _vsc_pdc(dcn, c, Vm, time_step) * PSY.SU)
+    end
+    return
+end
+
 """
 Updates system voltages and powers with power flow results
 """
@@ -623,7 +718,7 @@ function write_power_flow_solution!(
             bus = PSY.get_component(PSY.ACBus, sys, bus_name)
             ix = bus_lookup[bus_number]
             bustype = data.bus_type[ix, time_step] # may not be the same as bus.bustype!
-            if bustype != PSY.get_bustype(bus)
+            if _bustype_write_back_needed(PSY.get_bustype(bus), bustype)
                 @warn "Changing system bus type at bus $(PSY.get_name(bus)) to match " *
                       "power flow bus type." maxlog = PF_MAX_LOG
                 PSY.set_bustype!(bus, bustype)
@@ -676,10 +771,9 @@ function write_power_flow_solution!(
     nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     arc_lookup = get_arc_lookup(data)
 
-    # Set flows for direct branches and 3WT windings.
+    # Set flows for direct branches, which include each 3WT circuit on its star-point arc.
     # Assert that voltage-recomputed flows match pre-computed arc-level flows.
-    for (arc, branch) in
-        merge(PNM.get_direct_branch_map(nrd), PNM.get_transformer3W_map(nrd))
+    for (arc, branch) in PNM.get_direct_branch_map(nrd)
         flow_entries = _compute_segment_flows(branch, data, arc, time_step)
         @assert length(flow_entries) == 1
         flow_entry = flow_entries[1]
@@ -722,6 +816,8 @@ function write_power_flow_solution!(
         end
     end
 
+    _write_vsc_solution!(sys, data, nrd, time_step)
+
     # Series branches: set interior bus voltages, then compute and set flows.
     bus_lookup = get_bus_lookup(data)
     for (equivalent_arc, segments) in PNM.get_series_branch_map(nrd)
@@ -742,6 +838,68 @@ function write_power_flow_solution!(
     for (equiv_arc, parallel_branches) in PNM.get_parallel_branch_map(nrd)
         flow_entries = _compute_segment_flows(parallel_branches, data, equiv_arc, time_step)
         _apply_flow_entries!(flow_entries, parallel_branches)
+    end
+    return
+end
+
+"""
+Store a DC power-flow solution into the system: bus angles, unit voltage
+magnitudes, bus types, and redistributed active generation at REF buses and
+any bus with a nonzero slack participation factor. Branch flows are not
+written (the DC flow model differs from the voltage-recomputed AC flows;
+use the `solve_power_flow` DataFrame output for DC flows).
+"""
+function write_power_flow_solution!(
+    sys::PSY.System,
+    pf::AbstractDCPowerFlow,
+    data::Union{PTDFPowerFlowData, vPTDFPowerFlowData, ABAPowerFlowData},
+    max_iterations::Int,
+    time_step::Int = 1,
+)
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
+    temp_bus_map = Dict{Int, String}(
+        PSY.get_number(b) => PSY.get_name(b) for b in PSY.get_components(PSY.ACBus, sys)
+    )
+    if isempty(get_computed_gspf(data))
+        gspf = nothing
+    else
+        gspf = get_computed_gspf(data)[time_step]
+    end
+    bus_lookup = get_bus_lookup(data)
+    for (bus_number, reduced_buses) in PNM.get_bus_reduction_map(nrd)
+        if !iszero(length(reduced_buses))
+            @warn "Buses $reduced_buses were reduced into bus $bus_number: leaving " *
+                  "their fields unchanged." maxlog = PF_MAX_LOG
+            continue
+        end
+        bus_name = temp_bus_map[bus_number]
+        bus = PSY.get_component(PSY.ACBus, sys, bus_name)
+        ix = bus_lookup[bus_number]
+        bustype = data.bus_type[ix, time_step]
+        if _bustype_write_back_needed(PSY.get_bustype(bus), bustype)
+            @warn "Changing system bus type at bus $(PSY.get_name(bus)) to match " *
+                  "power flow bus type." maxlog = PF_MAX_LOG
+            PSY.set_bustype!(bus, bustype)
+        end
+        PSY.set_angle!(bus, data.bus_angles[ix, time_step])
+        PSY.set_magnitude!(bus, 1.0)
+        participates = !iszero(data.bus_slack_participation_factors[ix, time_step])
+        redistribute =
+            !pf.skip_redistribution &&
+            (bustype == PSY.ACBusTypes.REF || participates)
+        if redistribute
+            P_gen = data.bus_active_power_injections[ix, time_step]
+            Q_gen = data.bus_reactive_power_injections[ix, time_step]
+            _power_redistribution_ref(
+                sys,
+                P_gen,
+                Q_gen,
+                bus,
+                max_iterations,
+                gspf;
+                skip_reactive = true,
+            )
+        end
     end
     return
 end
@@ -808,6 +966,310 @@ empty_lcc_results() = DataFrames.DataFrame(;
     P_losses = Float64[],
     Q_losses = Float64[],
 )
+
+empty_vsc_results() = DataFrames.DataFrame(;
+    line_name = String[],
+    bus_from = Int[],
+    bus_to = Int[],
+    P_from_to = Float64[],
+    P_to_from = Float64[],
+    Q_from_to = Float64[],
+    Q_to_from = Float64[],
+    dc_current = Float64[],
+    Vdc_from = Float64[],
+    Vdc_to = Float64[],
+    P_losses = Float64[],
+)
+
+empty_mtdc_results() = DataFrames.DataFrame(;
+    converter_name = String[],
+    ac_bus = Int[],
+    dc_bus = Int[],
+    P_dc = Float64[],
+    Q = Float64[],
+    Vac = Float64[],
+    Vdc = Float64[],
+    mode = String[],
+)
+
+empty_mtdc_line_results() = DataFrames.DataFrame(;
+    line_name = String[],
+    dc_bus_from = Int[],
+    dc_bus_to = Int[],
+    dc_current = Float64[],
+    P_losses = Float64[],
+)
+
+empty_area_interchange_results() = DataFrames.DataFrame(;
+    area = String[],
+    ni_solved = Float64[],
+    pdes = Float64[],
+    delta_p = Float64[],
+    schedule_status = Symbol[],
+    beyond_limits = Bool[],
+)
+
+"""
+    _area_beyond_limits(sys, bus, p_bus_effective) -> Bool
+
+Whether `p_bus_effective` (pu, the solved slack-bus injection) exceeds the in-service
+machines' `active_power_limits` at `bus` — flag only, never clamp. A slack bus with no
+in-service source returns `false` rather than throwing on an empty `sum`.
+
+`p_bus_effective` is NOT `bus_active_power_injections` directly. `_setpq` refreshes that
+field on every residual call, so it already carries this bus's distributed-slack share
+(`slack_scalar * c_k`) — but deliberately NOT `ΔP_a`, which the residual applies straight
+to `F` to stay exactly-once across a PV->PQ flip. The caller must therefore add the area's
+converged `ΔP_a`, and only that, to get the machine's full solved output.
+"""
+function _area_beyond_limits(
+    sys::PSY.System,
+    bus::PSY.ACBus,
+    p_bus_effective::Float64,
+)
+    devices =
+        collect(
+            PSY.get_components(x -> _is_available_source(x, bus), PSY.StaticInjection, sys),
+        )
+    isempty(devices) && return false
+    limits = get_active_power_limits_for_power_flow.(devices)
+    p_max = sum(l.max for l in limits)
+    p_min = sum(l.min for l in limits)
+    return !(p_min - BOUNDS_TOLERANCE <= p_bus_effective <= p_max + BOUNDS_TOLERANCE)
+end
+
+"""
+    area_interchange_results_dataframe(sys, data, time_step) -> DataFrame
+
+Per-controlled-area results row: net interchange achieved vs. targeted, the converged
+`ΔP_a`, whether the schedule was `:enforced` or `:relaxed` by the greedy relax loop, and
+whether the slack bus's TOTAL solved output (distributed-slack share + `ΔP_a`) fits its
+machines' limits. One row per area enrolled at construction (`pristine_areas`); relaxed
+rows report `delta_p = 0.0`. `ni_solved` is recomputed from the tie-flow kernels against
+the pristine AC and DC tie lists (`_area_net_interchange`), not trusted off a stale
+residual row, so it is correct for a relaxed area too; `ni_solved - pdes` is that area's
+infeasibility certificate. An enforced row's `delta_p` reads `pristine_delta_p` (never the
+WORKING `aid.delta_p`, which reflects whatever time step last relaxed on this `data`).
+Powers in MW.
+"""
+function area_interchange_results_dataframe(
+    sys::PSY.System,
+    data::ACPowerFlowData,
+    time_step::Int,
+)
+    aid = data.area_interchange
+    isempty(aid.pristine_areas) && return empty_area_interchange_results()
+
+    sys_basepower = PSY.get_base_power(sys)
+    relaxed_names =
+        Set(r.name for r in get(aid.relaxed, time_step, RelaxedAreaRecord[]))
+    bus_axis = PNM.get_bus_axis(data.power_network_matrix)
+    bus_of_number = Dict{Int, PSY.ACBus}(
+        PSY.get_number(b) => b for b in PSY.get_components(PSY.ACBus, sys)
+    )
+
+    df = empty_area_interchange_results()
+    for area in aid.pristine_areas
+        ni_solved = _area_net_interchange(
+            aid.pristine_ties, aid.pristine_dc_ties, area.tail_ix, data, time_step,
+        )
+        schedule_status = :enforced
+        delta_p_pu = 0.0
+        if area.name in relaxed_names
+            schedule_status = :relaxed
+        else
+            delta_p_pu = aid.pristine_delta_p[area.tail_ix, time_step]
+        end
+        bus = bus_of_number[bus_axis[area.slack_bus_ix]]
+        # The field already includes this bus's distributed-slack share; `delta_p_pu` is the
+        # only missing term (0.0 for a relaxed area). See `_area_beyond_limits`'s docstring.
+        p_bus_effective =
+            data.bus_active_power_injections[area.slack_bus_ix, time_step] + delta_p_pu
+        beyond_limits = _area_beyond_limits(sys, bus, p_bus_effective)
+        push!(
+            df,
+            (
+                area = area.name,
+                ni_solved = sys_basepower * ni_solved,
+                pdes = sys_basepower * area.pdes,
+                delta_p = sys_basepower * delta_p_pu,
+                schedule_status = schedule_status,
+                beyond_limits = beyond_limits,
+            ),
+        )
+    end
+    return df
+end
+
+# Point-to-point `TwoTerminalVSCLine` results, one row per line. Mirrors the dcn→component mapping
+# in `_write_vsc_line_solution!`: a line is the DC branch joining its two point-to-point nodes.
+# `P_losses` = P_from_to + P_to_from (converter + DC-line loss). Powers in MW/MVAr.
+function vsc_results_dataframe(
+    sys::PSY.System,
+    data::ACPowerFlowData,
+    dcn::DCNetwork,
+    nrd::PNM.NetworkReductionData,
+    sys_basepower::Float64,
+    time_step::Int,
+)
+    df = empty_vsc_results()
+    arc_to_lines = Dict{Tuple{Int, Int}, Vector{PSY.TwoTerminalVSCLine}}()
+    for vsc in PSY.get_available_components(PSY.TwoTerminalVSCLine, sys)
+        iszero(PSY.get_g(vsc)) && continue
+        key = PNM.get_arc_tuple(PSY.get_arc(vsc), nrd)
+        push!(get!(() -> PSY.TwoTerminalVSCLine[], arc_to_lines, key), vsc)
+    end
+    conv_at_node = Dict{Int, Int}()
+    for c in 1:n_vsc_converters(dcn)
+        node = dcn.converter_dc_node_ix[c]
+        if dcn.node_number[node] == -1
+            conv_at_node[node] = c
+        end
+    end
+    rmap = PNM.get_reverse_bus_search_map(nrd)
+    for b in 1:n_dc_branches(dcn)
+        nf = dcn.branch_from[b]
+        nt = dcn.branch_to[b]
+        (dcn.node_number[nf] == -1 && dcn.node_number[nt] == -1) || continue
+        cf = conv_at_node[nf]
+        ct = conv_at_node[nt]
+        from_number = dcn.converter_ac_bus_number[cf]
+        to_number = dcn.converter_ac_bus_number[ct]
+        arc = (get(rmap, from_number, from_number), get(rmap, to_number, to_number))
+        vsc = popfirst!(arc_to_lines[arc])
+        Vm_from = data.bus_magnitude[dcn.converter_ac_bus_ix[cf], time_step]
+        Vdc_from = dcn.node_vdc[nf, time_step]
+        Vdc_to = dcn.node_vdc[nt, time_step]
+        push!(
+            df,
+            (
+                line_name = PSY.get_name(vsc),
+                bus_from = from_number,
+                bus_to = to_number,
+                P_from_to = sys_basepower * (-dcn.p_c[cf, time_step]),
+                P_to_from = sys_basepower * (-dcn.p_c[ct, time_step]),
+                Q_from_to = sys_basepower * dcn.q_c[cf, time_step],
+                Q_to_from = sys_basepower * dcn.q_c[ct, time_step],
+                dc_current = -_vsc_pdc(dcn, cf, Vm_from, time_step) / Vdc_from,
+                Vdc_from = Vdc_from,
+                Vdc_to = Vdc_to,
+                # p_c is bus-injection signed (sending end < 0), so the link loss is the negated sum
+                # of both AC injections (equivalently P_from_to + P_to_from).
+                P_losses = -sys_basepower *
+                           (dcn.p_c[cf, time_step] + dcn.p_c[ct, time_step]),
+            ),
+        )
+    end
+    return df
+end
+
+# `InterconnectingConverter` (true MTDC AC↔DC interface) results, one row per converter. Mirrors
+# `_write_interconnecting_converter_solution!`. `P_dc` = DC-side power drawn (AC power + converter
+# loss); powers in MW/MVAr, voltages in p.u.
+function mtdc_results_dataframe(
+    sys::PSY.System,
+    data::ACPowerFlowData,
+    dcn::DCNetwork,
+    sys_basepower::Float64,
+    time_step::Int,
+)
+    df = empty_mtdc_results()
+    key_to_convs = Dict{Tuple{Int, Int}, Vector{Int}}()
+    for c in 1:n_vsc_converters(dcn)
+        node = dcn.converter_dc_node_ix[c]
+        number = dcn.node_number[node]
+        number == -1 && continue
+        key = (dcn.converter_ac_bus_number[c], number)
+        push!(get!(() -> Int[], key_to_convs, key), c)
+    end
+    isempty(key_to_convs) && return df
+    for ic in PSY.get_available_components(PSY.InterconnectingConverter, sys)
+        key = (PSY.get_number(PSY.get_bus(ic)), PSY.get_number(PSY.get_dc_bus(ic)))
+        haskey(key_to_convs, key) || continue
+        c = popfirst!(key_to_convs[key])
+        Vac = data.bus_magnitude[dcn.converter_ac_bus_ix[c], time_step]
+        Vdc = dcn.node_vdc[dcn.converter_dc_node_ix[c], time_step]
+        push!(
+            df,
+            (
+                converter_name = PSY.get_name(ic),
+                ac_bus = key[1],
+                dc_bus = key[2],
+                P_dc = sys_basepower * _vsc_pdc(dcn, c, Vac, time_step),
+                Q = sys_basepower * dcn.q_c[c, time_step],
+                Vac = Vac,
+                Vdc = Vdc,
+                mode = string(dcn.converter_mode[c]),
+            ),
+        )
+    end
+    return df
+end
+
+# `TModelHVDCLine` DC-branch results, one row per DC line. Steady-state DC current is g·ΔV_dc and the
+# line loss is g·ΔV_dc² (I²r); powers in MW, current in p.u.
+function mtdc_line_results_dataframe(
+    sys::PSY.System,
+    dcn::DCNetwork,
+    sys_basepower::Float64,
+    time_step::Int,
+)
+    df = empty_mtdc_line_results()
+    num_to_node = Dict{Int, Int}()
+    for k in 1:n_dc_nodes(dcn)
+        number = dcn.node_number[k]
+        number == -1 && continue
+        num_to_node[number] = k
+    end
+    isempty(num_to_node) && return df
+    for dcline in PSY.get_available_components(PSY.TModelHVDCLine, sys)
+        arc = PSY.get_arc(dcline)
+        from_number = PSY.get_number(PSY.get_from(arc))
+        to_number = PSY.get_number(PSY.get_to(arc))
+        (haskey(num_to_node, from_number) && haskey(num_to_node, to_number)) || continue
+        nf = num_to_node[from_number]
+        nt = num_to_node[to_number]
+        r = PSY.get_r(dcline)
+        if iszero(r)
+            g = 1.0e6
+        else
+            g = 1.0 / r
+        end
+        dV = dcn.node_vdc[nf, time_step] - dcn.node_vdc[nt, time_step]
+        push!(
+            df,
+            (
+                line_name = PSY.get_name(dcline),
+                dc_bus_from = from_number,
+                dc_bus_to = to_number,
+                dc_current = g * dV,
+                P_losses = sys_basepower * g * dV * dV,
+            ),
+        )
+    end
+    return df
+end
+
+# Populate the three VSC/MTDC result tables from the solved DC network. No-op (leaves the empty
+# frames from `_allocate_results_data`) when the system has no joint AC↔DC model.
+function _add_vsc_results!(
+    results::AbstractDict,
+    sys::PSY.System,
+    data::ACPowerFlowData,
+    sys_basepower::Float64,
+    time_step::Int,
+)
+    dcn = get_dc_network(data)
+    has_dc_network(dcn) || return results
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
+    results["vsc_results"] =
+        vsc_results_dataframe(sys, data, dcn, nrd, sys_basepower, time_step)
+    results["mtdc_results"] =
+        mtdc_results_dataframe(sys, data, dcn, sys_basepower, time_step)
+    results["mtdc_line_results"] =
+        mtdc_line_results_dataframe(sys, dcn, sys_basepower, time_step)
+    return results
+end
 
 function lcc_results_dataframe(
     data::Union{ABAPowerFlowData, PTDFPowerFlowData, vPTDFPowerFlowData},
@@ -881,6 +1343,48 @@ function lcc_results_dataframe(
     return lcc_df
 end
 
+function _stamp_time_steps(build_frame::Function, n_time_steps::Int)
+    return reduce(
+        vcat,
+        [
+            DataFrames.insertcols!(build_frame(t), 1, :time_step => t) for
+            t in 1:n_time_steps
+        ],
+    )
+end
+
+"""
+    get_hvdc_results(sys::PSY.System, data::ACPowerFlowData)
+
+Per-time-step HVDC results from a solved AC power flow, as a NamedTuple of DataFrames:
+`lcc` ([`PowerSystems.TwoTerminalLCCLine`](@extref) lines), `vsc` (point-to-point
+[`PowerSystems.TwoTerminalVSCLine`](@extref) lines), `mtdc_converters`
+([`PowerSystems.InterconnectingConverter`](@extref)), and `mtdc_lines`
+([`PowerSystems.TModelHVDCLine`](@extref) DC branches). Each table is the corresponding
+single-time-step results frame with a `time_step` column prepended, concatenated over
+`1:get_time_steps(data)`; a family absent from the system yields an empty table. Powers are in
+MW/MVAr; voltages, currents, and taps in p.u.; angles in radians. `sys` is required because
+component names are not stored in the solved data. Symmetric to
+[`get_controlled_device_results`](@ref) for discrete-control devices.
+"""
+function get_hvdc_results(sys::PSY.System, data::ACPowerFlowData)
+    sys_basepower = PSY.get_base_power(sys)
+    dcn = get_dc_network(data)
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
+    lcc_names = get_lcc_names(data, sys)
+    n = get_time_steps(data)
+    return (
+        lcc = _stamp_time_steps(
+            t -> lcc_results_dataframe(data, lcc_names, sys_basepower, t), n),
+        vsc = _stamp_time_steps(
+            t -> vsc_results_dataframe(sys, data, dcn, nrd, sys_basepower, t), n),
+        mtdc_converters = _stamp_time_steps(
+            t -> mtdc_results_dataframe(sys, data, dcn, sys_basepower, t), n),
+        mtdc_lines = _stamp_time_steps(
+            t -> mtdc_line_results_dataframe(sys, dcn, sys_basepower, t), n),
+    )
+end
+
 function _allocate_results_data(
     data::PowerFlowData,
     result::BranchFlowResults,
@@ -937,6 +1441,12 @@ function _allocate_results_data(
         "bus_results" => bus_df,
         "flow_results" => branch_df,
         "lcc_results" => lcc_df,
+        # VSC/MTDC tables are populated only on the AC joint-model path (`_add_vsc_results!`); the
+        # empty frames keep the result-dict schema uniform across DC and VSC-free systems.
+        "vsc_results" => empty_vsc_results(),
+        "mtdc_results" => empty_mtdc_results(),
+        "mtdc_line_results" => empty_mtdc_line_results(),
+        "area_interchange_results" => empty_area_interchange_results(),
     )
 end
 
@@ -986,21 +1496,21 @@ function _post_process_flows(
     arc_angle_diff::Vector{Float64};
     time_step::Int = 1,
 )
-    nrd = data.power_network_matrix.network_reduction_data
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     arc_lookup = get_arc_lookup(data)
+    # The direct maps carry each 3WT circuit on its star-point arc, so there is no separate
+    # three-winding map to count or iterate.
     n_branches =
-        length(keys(nrd.reverse_direct_branch_map)) +
-        length(keys(nrd.reverse_parallel_branch_map)) +
-        length(keys(nrd.reverse_series_branch_map)) +
-        length(keys(nrd.reverse_transformer3W_map))
+        length(keys(PNM.get_reverse_direct_branch_map(nrd))) +
+        length(keys(PNM.get_reverse_parallel_branch_map(nrd))) +
+        length(keys(PNM.get_reverse_series_branch_map(nrd)))
     result = BranchFlowResults(n_branches)
     # PERF: type instability.
     # if unrolled, inner call could be resolved at compile time in many cases.
     for map in [
-        nrd.direct_branch_map,
-        nrd.parallel_branch_map,
-        nrd.series_branch_map,
-        nrd.transformer3W_map,
+        PNM.get_direct_branch_map(nrd),
+        PNM.get_parallel_branch_map(nrd),
+        PNM.get_series_branch_map(nrd),
     ]
         for (arc, entry) in map
             ix_arc = arc_lookup[arc]
@@ -1041,8 +1551,10 @@ function _branch_flow_entries(
     ::Int,
 )
     ix_arc = arc_lookup[arc]
+    nrd = PNM.get_network_reduction_data(get_power_network_matrix(data))
     return _distribute_arc_flows(
         entry,
+        nrd,
         arc_P_from_to[ix_arc],
         arc_Q_from_to[ix_arc],
         arc_P_to_from[ix_arc],
@@ -1072,6 +1584,7 @@ Returns a `Vector{BranchFlowEntry}`, analogous to `_compute_segment_flows` for A
 Uses the precomputed `arc_P_losses` (e.g. from lossy DC `P_ft + P_tf`) directly."""
 function _distribute_arc_flows(
     arc_entry::PSY.ACTransmission,
+    ::PNM.NetworkReductionData,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
@@ -1095,7 +1608,8 @@ function _distribute_arc_flows(
 end
 
 function _distribute_arc_flows(
-    arc_entry::PNM.ThreeWindingTransformerWinding,
+    arc_entry::PNM.ThreeWindingTransformerCircuit,
+    ::PNM.NetworkReductionData,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
@@ -1118,8 +1632,12 @@ function _distribute_arc_flows(
     ]
 end
 
+# Per-member DC flow = susceptance-ratio split (`m`) + circulating component `c` (zero on
+# non-shifted groups). `c` is per unit at system base, matching `P_from_to`/`P_to_from` at
+# this point in the pipeline (MW scaling happens later in `_allocate_results_data`).
 function _distribute_arc_flows(
     arc_entry::PNM.AbstractBranchesParallel,
+    nrd::PNM.NetworkReductionData,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
@@ -1129,9 +1647,10 @@ function _distribute_arc_flows(
     entries = BranchFlowEntry[]
     for br in arc_entry
         arc_tuple = PNM.get_arc_tuple(br)
-        m = PNM.compute_parallel_multiplier(arc_entry, PNM.get_name(br))
-        P_ft = P_from_to * m
-        P_tf = P_to_from * m
+        m = PNM.compute_parallel_multiplier(arc_entry, br)
+        c = PNM.compute_parallel_circulating_flow(arc_entry, nrd, br)
+        P_ft = P_from_to * m + c
+        P_tf = P_to_from * m - c
         push!(
             entries,
             BranchFlowEntry((
@@ -1152,6 +1671,7 @@ end
 
 function _distribute_arc_flows(
     arc_entry::PNM.BranchesSeries,
+    nrd::PNM.NetworkReductionData,
     P_from_to::Float64,
     Q_from_to::Float64,
     P_to_from::Float64,
@@ -1164,6 +1684,7 @@ function _distribute_arc_flows(
         m = arc_entry.segment_orientations[segment_ix] == :ToFrom ? -1.0 : 1.0
         for entry in _distribute_arc_flows(
             segment,
+            nrd,
             P_from_to * m,
             Q_from_to * m,
             P_to_from * m,
@@ -1252,7 +1773,7 @@ function write_results(
     ### non time-dependent variables
 
     buses = _get_buses(data)
-    if length(PSY.get_components(PSY.Transformer3W, sys)) > 0
+    if length(PSY.get_components(PSY.ThreeWindingTransformer, sys)) > 0
         @info "3-winding transformers included in the results export: bus-to-star flows " *
               "reported with names like 'TransformerName-primary', " *
               "'TransformerName-secondary', and 'TransformerName-tertiary'."
@@ -1329,7 +1850,7 @@ function write_results(
     # NOTE: this may be different than get_bus_numbers(sys) if there's a network reduction!
     bus_numbers = PNM.get_bus_axis(data.power_network_matrix)
 
-    if length(PSY.get_components(PSY.Transformer3W, sys)) > 0
+    if length(PSY.get_components(PSY.ThreeWindingTransformer, sys)) > 0
         @info "3-winding transformers included in the results export: bus-to-star flows " *
               "reported with names like 'TransformerName-primary', " *
               "'TransformerName-secondary', and 'TransformerName-tertiary'."
@@ -1355,7 +1876,7 @@ function write_results(
         time_step = time_step,
     )
 
-    return _allocate_results_data(
+    results = _allocate_results_data(
         data,
         flow_results,
         get_lcc_names(data, sys),
@@ -1369,6 +1890,10 @@ function write_results(
         data.bus_reactive_power_withdrawals[:, time_step],
         time_step,
     )
+    _add_vsc_results!(results, sys, data, PSY.get_base_power(sys), time_step)
+    results["area_interchange_results"] =
+        area_interchange_results_dataframe(sys, data, time_step)
+    return results
 end
 
 """

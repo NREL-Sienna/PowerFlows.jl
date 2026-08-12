@@ -32,6 +32,10 @@ export update_exporter!
 export write_export
 export get_psse_export_paths
 export FlowReporting
+export ControlledDeviceSet
+export get_controlled_device_results
+export get_hvdc_results
+export write_device_settings!
 # "protected" (semi-stable because used in PSI) but not exported:
 # PowerFlowData and related type aliases, solve_power_flow!, write_results
 
@@ -61,19 +65,32 @@ include("definitions.jl")
 # Before PowerFlowData.jl: defines PFLinearSolverCache and AbstractNRCache, which
 # type the lazily-populated cache slots on PowerFlowData.
 include("linear_solver_backend.jl")
+# `AreaInterchangeData` must be defined before `power_flow_types.jl` references it in
+# `ACJacobianStructureCache`; the rest of the `area_interchange/` family has its own
+# later dependencies (LCC/VSC/discrete-control types, PowerFlowData).
+include("area_interchange/area_types.jl")
 include("branch_flow_results.jl")
 include("psi_utils.jl")
 include("powersystems_utils.jl")
 include("power_flow_types.jl")
 include("lcc_parameters.jl")
+include("vsc_parameters.jl")
+include("discrete_control/controlled_devices.jl")
+include("discrete_control/control_metadata.jl")
+include("discrete_control/control_continuation.jl")
+include("area_interchange/tie_set.jl")
 include("PowerFlowData.jl")
 include("lcc_utils.jl")
+include("vsc_utils.jl")
 include("common.jl")
+include("area_interchange/enrollment.jl")
 include("initialize_power_flow_data.jl")
 include("psse_export.jl")
 include("dcpf_loss_injection.jl")
 include("solve_dc_power_flow.jl")
 include("state_indexing_helpers.jl")
+include("area_interchange/area_residual.jl")
+include("area_interchange/area_jacobian.jl")
 include("ac_power_flow_residual.jl")
 include("ac_power_flow_jacobian.jl")
 include("rectangular_ci_setup.jl")

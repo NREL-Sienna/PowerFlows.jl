@@ -1,9 +1,31 @@
+"""Throw if any island carries more than one swing (REF) bus. `HomotopyHessian` has no
+independent-per-swing slack handling, so its curvature silently disagrees with the residual's
+multi-swing self-balancing rows; fail loudly rather than return a mis-specified solution."""
+function _reject_multi_swing_islands(data::ACPowerFlowData, time_step::Int64)
+    bus_type = view(data.bus_type, :, time_step)
+    subnetworks =
+        _find_subnetworks_for_reference_buses(data.power_network_matrix.data, bus_type)
+    multi_swing = _multi_swing_ref_indices(data.bus_type, subnetworks, time_step)
+    if !isempty(multi_swing)
+        throw(
+            ArgumentError(
+                "RobustHomotopyPowerFlow does not support multiple swing (REF) buses in " *
+                "one island ($(length(multi_swing)) found); use the polar " *
+                "NewtonRaphsonACPowerFlow, TrustRegionACPowerFlow, or " *
+                "FastDecoupledACPowerFlow solver for multi-swing systems.",
+            ),
+        )
+    end
+    return
+end
+
 function _newton_power_flow(pf::ACPolarPowerFlow{<:RobustHomotopyPowerFlow},
     data::ACPowerFlowData,
     time_step::Int64;
     Δt_k::Float64 = DEFAULT_Δt_k,
     _ignored...,
 )
+    _reject_multi_swing_islands(data, time_step)
     homHess = HomotopyHessian(data, time_step)
     x = homotopy_x0(data, time_step)
     t_k = 0.0

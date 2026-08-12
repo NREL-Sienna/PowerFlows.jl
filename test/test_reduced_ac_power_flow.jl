@@ -96,15 +96,22 @@ end
             else
                 results = solve_power_flow(pf, sys)
             end
-            @assert !isempty(PSY.get_components(PSY.Transformer3W, sys))
+            @assert !isempty(PSY.get_components(PSY.ThreeWindingTransformer, sys))
             if supported
                 arc_flows = results["flow_results"]
                 # Look up 3WT winding flows by bus_from/bus_to (arc endpoints).
                 temp_nrd = PNM.get_network_reduction_data(
                     PNM.Ybus(sys; network_reductions = deepcopy(v)))
-                test_trf = first(collect(PSY.get_components(PSY.Transformer3W, sys)))
+                PNM.populate_branch_maps_by_type!(temp_nrd)
+                test_trf =
+                    first(collect(PSY.get_components(PSY.ThreeWindingTransformer, sys)))
                 trf_arc_flows = zeros(ComplexF32, 3)
-                for (arc, winding) in PNM.get_transformer3W_map(temp_nrd)
+                # 3WT circuits share the direct branch map with ordinary branches; select the
+                # per-type bucket rather than filtering the merged map.
+                for (arc, winding) in PNM.get_typed_direct_branch_map(
+                    PNM.get_all_branch_maps_by_type(temp_nrd),
+                    PSY.ThreeWindingTransformer,
+                )
                     PNM.get_transformer(winding) !== test_trf && continue
                     wnum = PNM.get_winding_number(winding)
                     ix =
@@ -119,32 +126,32 @@ end
                 base_power = PSY.get_base_power(sys, PSY.NU)
                 # check that transformer bus-to-star entries are there.
                 @test isapprox(
-                    PSY.get_active_power_flow_primary(test_trf, PSY.SU),
+                    PSY.get_active_power_flow(PSY.get_circuits(test_trf)[1], PSY.SU),
                     real(trf_arc_flows[1]) / base_power;
                     atol = 1e-5,
                 )
                 @test isapprox(
-                    PSY.get_reactive_power_flow_primary(test_trf, PSY.SU),
+                    PSY.get_reactive_power_flow(PSY.get_circuits(test_trf)[1], PSY.SU),
                     imag(trf_arc_flows[1]) / base_power;
                     atol = 1e-5,
                 )
                 @test isapprox(
-                    PSY.get_active_power_flow_secondary(test_trf, PSY.SU),
+                    PSY.get_active_power_flow(PSY.get_circuits(test_trf)[2], PSY.SU),
                     real(trf_arc_flows[2]) / base_power;
                     atol = 1e-5,
                 )
                 @test isapprox(
-                    PSY.get_reactive_power_flow_secondary(test_trf, PSY.SU),
+                    PSY.get_reactive_power_flow(PSY.get_circuits(test_trf)[2], PSY.SU),
                     imag(trf_arc_flows[2]) / base_power;
                     atol = 1e-5,
                 )
                 @test isapprox(
-                    PSY.get_active_power_flow_tertiary(test_trf, PSY.SU),
+                    PSY.get_active_power_flow(PSY.get_circuits(test_trf)[3], PSY.SU),
                     real(trf_arc_flows[3]) / base_power;
                     atol = 1e-5,
                 )
                 @test isapprox(
-                    PSY.get_reactive_power_flow_tertiary(test_trf, PSY.SU),
+                    PSY.get_reactive_power_flow(PSY.get_circuits(test_trf)[3], PSY.SU),
                     imag(trf_arc_flows[3]) / base_power;
                     atol = 1e-5,
                 )
@@ -183,9 +190,15 @@ function compare_power_flows(
     unreduced_active_flow = unreduced.arc_active_power_flow_from_to[arc_ix, 1]
     unreduced_reactive_flow = unreduced.arc_reactive_power_flow_from_to[arc_ix, 1]
     reduced_active_flow =
-        PSY.get_active_power_flow(PSY.get_component(PSY.Branch, sys, name), PSY.SU)
+        PSY.get_active_power_flow(
+            flow_holder(PSY.get_component(PSY.Branch, sys, name)),
+            PSY.SU,
+        )
     reduced_reactive_flow =
-        PSY.get_reactive_power_flow(PSY.get_component(PSY.Branch, sys, name), PSY.SU)
+        PSY.get_reactive_power_flow(
+            flow_holder(PSY.get_component(PSY.Branch, sys, name)),
+            PSY.SU,
+        )
     @test isapprox(unreduced_active_flow, reduced_active_flow; atol = 1e-3)
     @test isapprox(unreduced_reactive_flow, reduced_reactive_flow; atol = 1e-3)
 end
@@ -240,8 +253,8 @@ end
         for br in branches
             @assert PNM.get_arc_tuple(br) == (from_bus_no, to_bus_no)
             total_flow +=
-                PSY.get_active_power_flow(br, PSY.SU) +
-                im * PSY.get_reactive_power_flow(br, PSY.SU)
+                PSY.get_active_power_flow(flow_holder(br), PSY.SU) +
+                im * PSY.get_reactive_power_flow(flow_holder(br), PSY.SU)
         end
         if reversed
             @test isapprox(net_from_to_from, total_flow; atol = 1e-3)
@@ -300,4 +313,22 @@ end
             end
         end
     end
+end
+
+@testset "Load on a topologically isolated bus does not break PowerFlowData build" begin
+    # An available load can sit on a bus that is out of the power flow: topologically isolated
+    # (no in-service branch → excluded from the reduced Ybus, no merge representative). Its
+    # withdrawal must be skipped, not KeyError in the device-bus lookup.
+    sys = System(100.0)
+    b1 = _add_simple_bus!(sys, 1, ACBusTypes.REF, 230, 1.0, 0.0)
+    b2 = _add_simple_bus!(sys, 2, ACBusTypes.PQ, 230, 1.0, 0.0)
+    _add_simple_source!(sys, b1, 0.0, 0.0)
+    _add_simple_load!(sys, b2, 30, 10)
+    _add_simple_line!(sys, b1, b2, 5e-3, 5e-3, 1e-3)
+    biso = _add_simple_bus!(sys, 99, ACBusTypes.ISOLATED, 230, 1.0, 0.0)
+    _add_simple_load!(sys, biso, 5, 2)
+    pf = PF.ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = false)
+    data = PF.PowerFlowData(pf, sys)   # must not throw (isolated-bus load skipped)
+    @test !haskey(PF.get_bus_lookup(data), 99)
+    @test PF.solve_power_flow!(data)
 end

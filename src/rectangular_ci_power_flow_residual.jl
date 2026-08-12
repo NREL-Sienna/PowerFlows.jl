@@ -8,7 +8,6 @@ PV blocks are 3 entries `(e, f, Q)`.
 
 # Fields
 - `data::ACPowerFlowData`
-- `Rf!::Function` — inplace residual update
 - `Rv::Vector{Float64}` — current residual values, length `total_bus_state + 4·n_LCC`
 - `Y_bus_eff::SparseMatrixCSC{ComplexF64, Int}` — Y_bus with ZIP constant-Z folded in
 - `P_net_const::Vector{Float64}` — constant-power net injection (no |V| dependence)
@@ -18,6 +17,9 @@ PV blocks are 3 entries `(e, f, Q)`.
 - `P_net_set::Vector{Float64}` — initial P_net for distributed-slack delta computation
 - `bus_slack_participation_factors::SparseVector{Float64, Int}`
 - `subnetworks::Dict{Int64, Vector{Int64}}`
+- `independent_ref::Set{Int}` — REF buses that share an island with another REF
+  (multi-swing); precomputed once here (bus REF-status is fixed across a solve)
+  so the hot per-iteration path never allocates a `Set`.
 - `bus_state_offset::Vector{REC_INDEX_TYPE}`
 - `bus_block_size::Vector{Int8}`
 - `total_bus_state::Int`
@@ -26,7 +28,6 @@ PV blocks are 3 entries `(e, f, Q)`.
 """
 struct ACRectangularCIResidual
     data::ACPowerFlowData
-    Rf!::Function
     Rv::Vector{Float64}
     Y_bus_eff::SparseMatrixCSC{ComplexF64, Int}
     P_net_const::Vector{Float64}
@@ -36,6 +37,7 @@ struct ACRectangularCIResidual
     P_net_set::Vector{Float64}
     bus_slack_participation_factors::SparseVector{Float64, Int}
     subnetworks::Dict{Int64, Vector{Int64}}
+    independent_ref::Set{Int}
     bus_state_offset::Vector{REC_INDEX_TYPE}
     bus_block_size::Vector{Int8}
     total_bus_state::Int
@@ -58,7 +60,7 @@ function ACRectangularCIResidual(data::ACPowerFlowData, time_step::Int64)
 
     offsets, block_sizes, total_bus_state = compute_bus_state_offsets(bus_type)
     validate_offsets = _pqpv_validate_offsets(bus_type, offsets)
-    total_state = total_bus_state + 4 * n_lccs
+    total_state = total_bus_state + state_tail_length(data, get_dc_network(data))
 
     P_net_const = Vector{Float64}(undef, n_buses)
     Q_net_const = Vector{Float64}(undef, n_buses)
@@ -68,6 +70,9 @@ function ACRectangularCIResidual(data::ACPowerFlowData, time_step::Int64)
 
     subnetworks =
         _find_subnetworks_for_reference_buses(data.power_network_matrix.data, bus_type)
+    # REF status is fixed for the life of a solve, so this is computed once here
+    # rather than per-iteration (see the `independent_ref` field docstring).
+    independent_ref = _multi_swing_ref_indices(data.bus_type, subnetworks, time_step)
 
     for ix in 1:n_buses
         # Constant-power net injection (no |V| dependence)
@@ -98,7 +103,6 @@ function ACRectangularCIResidual(data::ACPowerFlowData, time_step::Int64)
 
     return ACRectangularCIResidual(
         data,
-        _update_rect_ci_residual_values!,
         Vector{Float64}(undef, total_state),
         Y_bus_eff,
         P_net_const,
@@ -108,6 +112,7 @@ function ACRectangularCIResidual(data::ACPowerFlowData, time_step::Int64)
         P_net_set,
         bus_slack_participation_factors,
         subnetworks,
+        independent_ref,
         offsets,
         block_sizes,
         total_bus_state,
@@ -125,9 +130,9 @@ function (R::ACRectangularCIResidual)(
     x::Vector{Float64},
     time_step::Int64,
 )
-    R.Rf!(R.Rv, x, R.Y_bus_eff, R.P_net_const, R.Q_net_const,
+    _update_rect_ci_residual_values!(R.Rv, x, R.Y_bus_eff, R.P_net_const, R.Q_net_const,
         R.const_I_P, R.const_I_Q, R.P_net_set,
-        R.bus_slack_participation_factors, R.subnetworks,
+        R.bus_slack_participation_factors, R.subnetworks, R.independent_ref,
         R.bus_state_offset, R.bus_block_size, R.total_bus_state,
         R.e_state, R.f_state, R.Q_state, R.P_eff_cache, R.Q_eff_cache,
         R.data, time_step)
@@ -136,9 +141,9 @@ function (R::ACRectangularCIResidual)(
 end
 
 function (R::ACRectangularCIResidual)(x::Vector{Float64}, time_step::Int64)
-    R.Rf!(R.Rv, x, R.Y_bus_eff, R.P_net_const, R.Q_net_const,
+    _update_rect_ci_residual_values!(R.Rv, x, R.Y_bus_eff, R.P_net_const, R.Q_net_const,
         R.const_I_P, R.const_I_Q, R.P_net_set,
-        R.bus_slack_participation_factors, R.subnetworks,
+        R.bus_slack_participation_factors, R.subnetworks, R.independent_ref,
         R.bus_state_offset, R.bus_block_size, R.total_bus_state,
         R.e_state, R.f_state, R.Q_state, R.P_eff_cache, R.Q_eff_cache,
         R.data, time_step)
@@ -165,6 +170,7 @@ function _update_rect_ci_residual_values!(
     P_net_set::Vector{Float64},
     bus_slack_participation_factors::SparseVector{Float64, Int},
     subnetworks::Dict{Int64, Vector{Int64}},
+    independent_ref::Set{Int},
     bus_state_offset::Vector{REC_INDEX_TYPE},
     bus_block_size::Vector{Int8},
     total_bus_state::Int,
@@ -208,12 +214,20 @@ function _update_rect_ci_residual_values!(
     # ZIP constant-Z is folded into `Y_bus_eff` at setup (see `fold_zip_constant_z!`
     # in `rectangular_ci_setup.jl`), so only constant-P and constant-I appear here.
     @inbounds for i in 1:n_buses
-        # ZIP const-I uses |V_state|, not V_set; V_FLOOR2 (1e-16) guards 1/|V|².
+        # ZIP const-I uses |V_state|; V_FLOOR2 (1e-16) guards 1/|V|². The floor only
+        # trips at degenerate |V| < 1e-8 pu (never near a solution), where the Jacobian
+        # keeps the unfloored derivative: inexact but finite and |V|-restoring, and
+        # harmless since the iteration never converges there.
         Vm = sqrt(max(e_state[i]^2 + f_state[i]^2, V_FLOOR2))
         P_eff_cache[i] = P_net_const[i] - const_I_P[i] * Vm
         Q_eff_cache[i] = Q_net_const[i] - const_I_Q[i] * Vm
     end
     for (ref_bus, subnetwork_buses) in subnetworks
+        # An island with more than one swing (REF) bus holds each swing at its own
+        # fixed complex voltage, so each swing carries its OWN slack (handled in the
+        # REF branch below, using x[off] directly); no slack is distributed to any
+        # other bus in that island. Single-swing islands keep the distributed path.
+        ref_bus in independent_ref && continue
         ref_off = Int(bus_state_offset[ref_bus])
         P_slack_total = x[ref_off] - P_net_set[ref_bus]
         for bus_k in subnetwork_buses
@@ -257,9 +271,15 @@ function _update_rect_ci_residual_values!(
         # 1/|V|². PV's |V|² row below keeps raw V_sq (−2e/−2f Jacobian is exact).
         D = max(V_sq, V_FLOOR2)
         if bt == PSY.ACBusTypes.REF
-            c_ref = bus_slack_participation_factors[i]
-            P_slack_total = x[off] - P_net_set[i]
-            P_gen = P_net_set[i] + c_ref * P_slack_total
+            if i in independent_ref
+                # Multi-swing island: this swing self-balances at its own P-slot
+                # (∂P_gen/∂x[off] = 1), not the distributed c_ref share.
+                P_gen = x[off]
+            else
+                c_ref = bus_slack_participation_factors[i]
+                P_slack_total = x[off] - P_net_set[i]
+                P_gen = P_net_set[i] + c_ref * P_slack_total
+            end
             Q_gen = x[off + 1]
             # |V| at REF is fixed at V_set; subtract the ZIP constant-current draw
             # so the recovered injection matches polar's `bus_active_power_injections`
@@ -310,6 +330,22 @@ function _update_rect_ci_residual_values!(
         _set_lcc_tail_residuals!(
             F, data, total_bus_state, time_step, e_state, f_state,
         )
+    end
+
+    # 7) VSC / DC-network tail: current injection at AC buses + control/DC-KCL rows.
+    dcn = get_dc_network(data)
+    if has_dc_network(dcn)
+        vsc_off = total_bus_state + 4 * n_lccs
+        _read_vsc_state!(dcn, x, vsc_off, time_step)
+        _apply_vsc_bus_injections_rect!(
+            F,
+            dcn,
+            e_state,
+            f_state,
+            bus_state_offset,
+            time_step,
+        )
+        _set_vsc_tail_residuals_rect!(F, dcn, e_state, f_state, vsc_off, time_step)
     end
     return
 end

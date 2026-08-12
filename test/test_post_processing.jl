@@ -6,10 +6,12 @@ function _count_branches(sys)
             sys,
         ),
     )
-    three_arc_branches =
-        length(get_components(get_available_primary, ThreeWindingTransformer, sys)) +
-        length(get_components(get_available_secondary, ThreeWindingTransformer, sys)) +
-        length(get_components(get_available_tertiary, ThreeWindingTransformer, sys))
+    # Availability is per-circuit, so count available circuits.
+    three_arc_branches = sum(
+        t -> count(get_available, get_circuits(t)),
+        get_components(ThreeWindingTransformer, sys);
+        init = 0,
+    )
     return two_arc_branches + three_arc_branches
 end
 
@@ -178,8 +180,8 @@ end
                     df_row = filter(row -> row.flow_name == name, flow_df)
                     @test size(df_row, 1) == 1
                     sys_branch = PSY.get_component(PSY.Branch, sys2, name)
-                    sys_P = PSY.get_active_power_flow(sys_branch, PSY.SU)
-                    sys_Q = PSY.get_reactive_power_flow(sys_branch, PSY.SU)
+                    sys_P = PSY.get_active_power_flow(flow_holder(sys_branch), PSY.SU)
+                    sys_Q = PSY.get_reactive_power_flow(flow_holder(sys_branch), PSY.SU)
                     @test isapprox(df_row[1, :P_from_to], sys_P * base_power; atol = 1e-3)
                     @test isapprox(df_row[1, :Q_from_to], sys_Q * base_power; atol = 1e-3)
                 end
@@ -189,8 +191,8 @@ end
                 df_row = filter(row -> row.flow_name == name, flow_df)
                 @test size(df_row, 1) == 1
                 sys_branch = PSY.get_component(PSY.Branch, sys2, name)
-                sys_P = PSY.get_active_power_flow(sys_branch, PSY.SU)
-                sys_Q = PSY.get_reactive_power_flow(sys_branch, PSY.SU)
+                sys_P = PSY.get_active_power_flow(flow_holder(sys_branch), PSY.SU)
+                sys_Q = PSY.get_reactive_power_flow(flow_holder(sys_branch), PSY.SU)
                 # DataFrame is in MW/MVAr, system is in p.u.
                 @test isapprox(df_row[1, :P_from_to], sys_P * base_power; atol = 1e-3)
                 @test isapprox(df_row[1, :Q_from_to], sys_Q * base_power; atol = 1e-3)

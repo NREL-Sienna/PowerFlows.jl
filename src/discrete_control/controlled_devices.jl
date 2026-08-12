@@ -1,0 +1,513 @@
+abstract type AbstractControlledDevice end
+abstract type AbstractBranchControl <: AbstractControlledDevice end
+abstract type AbstractShuntControl <: AbstractControlledDevice end
+
+"""Voltage-controlling tap transformer. `nz_offsets` are the 4 cached
+`nzval` linear indices of the (from,to)×(from,to) Y-bus block. The control
+orientation is NOT stored: it comes from the measured plant sensitivity dV/dp
+(see `_control_target`), which is correct for any wiring of the controlled bus."""
+mutable struct ControlledTap <: AbstractBranchControl
+    name::String
+    from_ix::Int
+    to_ix::Int
+    controlled_ix::Int
+    vset::Float64
+    vset_lo::Float64                 # VMI/VMA deadband: held anywhere inside
+    vset_hi::Float64
+    yt::ComplexF64                   # 1/(r+jx)
+    alpha::Float64                   # winding-group phase shift (PSY.get_α)
+    p_min::Float64
+    p_max::Float64
+    levels::Vector{Float64}          # discrete tap ratios
+    nz_offsets::NTuple{4, Int}       # nzval idx for Y11,Y12,Y21,Y22
+    initial::Float64                 # enrollment-time tap (reporting)
+    synced::Float64                  # tap reflected in the arc-admittance rows
+    current::Float64
+    # Write-back address. A regulating tap lives on a `PSY.TransformerCircuit`, and under psy6
+    # that circuit may belong to either arity, so `name` alone (which is suffixed per circuit
+    # for a 3W) cannot resolve it. `PSY.get_circuits(parent)[circuit_index]` can, for both.
+    device_name::String
+    circuit_index::Int
+end
+
+"""Voltage-controlling switched shunt, snapped onto the PSS/E cumulative
+block-activation chain (blocks switch on in listed order, off in reverse)."""
+mutable struct ControlledSwitchedShunt <: AbstractShuntControl
+    name::String
+    bus_ix::Int
+    controlled_ix::Int
+    vset::Float64
+    vset_lo::Float64                 # VSWLO/VSWHI deadband: held anywhere inside
+    vset_hi::Float64
+    g0::Float64                      # real(get_Y)
+    b0::Float64                      # fixed (non-switchable) susceptance base
+    block_steps::Vector{Int}         # number_of_steps per block
+    block_dB::Vector{Float64}        # imag(Y_increase) per block
+    b_min::Float64
+    b_max::Float64
+    block_n::Vector{Int}             # per-block step counts of the last snap (reporting)
+    continuous::Bool                 # MODSW==2 ⇒ continuous regulation (no discrete snap)
+    initial::Float64                 # enrollment-time susceptance (reporting)
+    current::Float64                 # current total susceptance b
+    psse_convention::Bool            # true ⇒ PSS/E parser convention (Y=BINIT total,
+    # initial_status zeroed); false ⇒ PSY API convention (Y is the fixed base,
+    # initial_status meaningful). Determines how write_device_settings! sources Y/status.
+end
+
+"""Continuous shunt SVC/STATCOM (`FACTSControlDevice`). Holds `vset` at `controlled_ix`
+(the regulated bus, possibly remote via FCREG) by varying a symmetric shunt susceptance
+`b ∈ [-b_lim, b_lim]` (negative = inductive, positive = capacitive); the injected reactive
+power is `b·|V|²`. Applied through the constant-Z reactive-withdrawal slot (never the
+Y-bus), so a step does not invalidate a fast-decoupled B″ factorization. `svc` selects the
+limit law (`_facts_b_limit`); `b_lim` is the current effective |b| bound, refreshed each
+outer iteration from the measured controlled-bus voltage. At a susceptance limit the clamp
+holds it there — the homotopy equivalent of the PV→PQ Q-limit release."""
+mutable struct ControlledFACTS <: AbstractShuntControl
+    name::String
+    bus_ix::Int
+    controlled_ix::Int
+    vset::Float64
+    svc::Bool          # true ⇒ SVC (susceptance-bounded); false ⇒ STATCOM (current-limited)
+    rating::Float64    # SHMX/base_mva: SVC susceptance-at-unity bound, STATCOM current limit
+    q_cap::Float64     # independent MVA ceiling/base_mva (get_max_reactive_power)
+    b_lim::Float64     # current effective |b| bound (refreshed per iteration)
+    base_mva::Float64  # system base, to report delivered Q (b·|V|²) in MVA
+    initial::Float64   # enrollment-time susceptance (reporting)
+    current::Float64   # current susceptance b
+    saturated::Bool    # post-solve classification: held at the V-dependent |b| bound, off setpoint
+end
+
+struct ControlledDeviceSet
+    taps::Vector{ControlledTap}
+    shunts::Vector{ControlledSwitchedShunt}
+    facts::Vector{ControlledFACTS}
+    # Per-time-step scalar state [device, ts]; `load_device_state!`/`save_device_state!` swap it
+    # in/out of the device scratch. Taps mutate the SHARED Y-bus, so their store is reconciled via
+    # `apply_parameter!` (reset to `d.initial` each step), not a scalar swap.
+    shunt_current::Matrix{Float64}
+    shunt_block_n::Matrix{Vector{Int}}
+    facts_current::Matrix{Float64}
+    facts_b_lim::Matrix{Float64}
+    facts_saturated::Matrix{Bool}
+    tap_current::Matrix{Float64}
+    # Perf counters for the last `_control_continuation!` (counts, not wall-clock; the regression
+    # harness). symbolic_factors stays O(1) per continuation with PolarNRCache reuse. See getters.
+    inner_solves::Base.RefValue{Int}
+    symbolic_factors::Base.RefValue{Int}
+    numeric_refactors::Base.RefValue{Int}
+end
+function ControlledDeviceSet(
+    taps::Vector{ControlledTap},
+    shunts::Vector{ControlledSwitchedShunt},
+    facts::Vector{ControlledFACTS},
+    n_time_steps::Int = 1,
+)
+    shunt_current = [d.current for d in shunts, _ in 1:n_time_steps]
+    shunt_block_n = [copy(d.block_n) for d in shunts, _ in 1:n_time_steps]
+    facts_current = [d.current for d in facts, _ in 1:n_time_steps]
+    facts_b_lim = [d.b_lim for d in facts, _ in 1:n_time_steps]
+    facts_saturated = [d.saturated for d in facts, _ in 1:n_time_steps]
+    tap_current = [d.current for d in taps, _ in 1:n_time_steps]
+    return ControlledDeviceSet(
+        taps,
+        shunts,
+        facts,
+        shunt_current,
+        shunt_block_n,
+        facts_current,
+        facts_b_lim,
+        facts_saturated,
+        tap_current,
+        Ref(0),
+        Ref(0),
+        Ref(0),
+    )
+end
+function Base.isempty(s::ControlledDeviceSet)
+    return isempty(s.taps) && isempty(s.shunts) && isempty(s.facts)
+end
+
+"""Load time step `ts`'s persisted state into the device scratch `_control_continuation!` mutates.
+Shunt/FACTS is a plain scalar swap; taps instead reset to their enrollment baseline (`d.initial`)
+via a Y-bus delta-update, since they mutate the shared Y-bus and every step must regulate from the
+same baseline network (reset-to-baseline design; a no-op on step 1)."""
+function load_device_state!(set::ControlledDeviceSet, data, ts::Int)
+    for (i, d) in enumerate(set.shunts)
+        d.current = set.shunt_current[i, ts]
+        d.block_n .= set.shunt_block_n[i, ts]
+    end
+    for (i, d) in enumerate(set.facts)
+        d.current = set.facts_current[i, ts]
+        d.b_lim = set.facts_b_lim[i, ts]
+        d.saturated = set.facts_saturated[i, ts]
+    end
+    for d in set.taps
+        apply_parameter!(d, data, d.initial, ts)
+    end
+    return
+end
+load_device_state!(::Nothing, data, ts::Int) = nothing
+
+"""Persist the device scratch for time step `ts` into the per-ts store after `_control_continuation!`
+runs for that step. Taps persist their converged position for reporting; the next `load_device_state!`
+resets the Y-bus to baseline before the next step regulates."""
+function save_device_state!(set::ControlledDeviceSet, data, ts::Int)
+    for (i, d) in enumerate(set.shunts)
+        set.shunt_current[i, ts] = d.current
+        set.shunt_block_n[i, ts] .= d.block_n
+    end
+    for (i, d) in enumerate(set.facts)
+        set.facts_current[i, ts] = d.current
+        set.facts_b_lim[i, ts] = d.b_lim
+        set.facts_saturated[i, ts] = d.saturated
+    end
+    for (i, d) in enumerate(set.taps)
+        set.tap_current[i, ts] = d.current
+    end
+    return
+end
+save_device_state!(::Nothing, data, ts::Int) = nothing
+
+"""Width (number of time steps) of the per-time-step device store; all store matrices share
+it by construction."""
+store_time_steps(set::ControlledDeviceSet) = size(set.shunt_current, 2)
+
+"""Guard the per-ts store width against the data horizon at the solve seam: without it a set built
+for a different horizon would only surface as a `BoundsError` deep inside the solve."""
+function validate_device_store_width(set::ControlledDeviceSet, n_time_steps::Int)
+    width = store_time_steps(set)
+    if width != n_time_steps
+        error(
+            "ControlledDeviceSet per-time-step store has width $width but the " *
+            "PowerFlowData horizon is $n_time_steps time steps. Rebuild the set with " *
+            "`build_controlled_device_set(...; n_time_steps = $n_time_steps)`.",
+        )
+    end
+    return
+end
+validate_device_store_width(::Nothing, ::Int) = nothing
+
+"""Number of inner `_solve_with_q_limits!` calls the last discrete-control continuation
+performed (0 when the data was built without discrete control)."""
+function get_control_inner_solve_count(data)
+    isnothing(data.controlled_devices) && return 0
+    return data.controlled_devices.inner_solves[]
+end
+
+"""Number of KLU/AA SYMBOLIC factorizations performed inside the last discrete-control
+continuation. With `PolarNRCache` symbolic reuse this stays O(1) per continuation even as
+`inner_solves` grows; without it, it tracks `inner_solves`. 0 when built without control."""
+function get_control_symbolic_factor_count(data)
+    isnothing(data.controlled_devices) && return 0
+    return data.controlled_devices.symbolic_factors[]
+end
+
+# Hot-path instrumentation. The `nothing` (non-control) case — every ordinary AC solve — is a
+# single branch and early return, mirroring `_ctrl_solve!`. Only the continuation path counts.
+@inline function _count_symbolic_factor!(data)
+    cd = data.controlled_devices
+    isnothing(cd) || (cd.symbolic_factors[] += 1)
+    return
+end
+@inline function _count_numeric_refactor!(data)
+    cd = data.controlled_devices
+    isnothing(cd) || (cd.numeric_refactors[] += 1)
+    return
+end
+
+"""Number of per-NR-iteration NUMERIC refactorizations performed inside the last
+discrete-control continuation. 0 when the data was built without discrete control."""
+function get_control_numeric_refactor_count(data)
+    isnothing(data.controlled_devices) && return 0
+    return data.controlled_devices.numeric_refactors[]
+end
+
+controlled_bus_ix(d::AbstractControlledDevice) = d.controlled_ix
+
+# Results reporting reads the PERSISTED per-ts store, not the live device scalar (which
+# reflects only the solve loop's last-processed time step once time_steps>1). Dispatch, not
+# an `isa` branch, over the mixed device loop.
+stored_current(set::ControlledDeviceSet, ::ControlledTap, i::Int, ts::Int) =
+    set.tap_current[i, ts]
+stored_current(set::ControlledDeviceSet, ::ControlledSwitchedShunt, i::Int, ts::Int) =
+    set.shunt_current[i, ts]
+stored_current(set::ControlledDeviceSet, ::ControlledFACTS, i::Int, ts::Int) =
+    set.facts_current[i, ts]
+
+# Result columns meaningful only for FACTS; taps/shunts report the neutral value so the
+# frame stays rectangular.
+stored_delivered_q_mvar(
+    ::ControlledDeviceSet,
+    ::AbstractControlledDevice,
+    ::Int,
+    data,
+    ::Int,
+) =
+    missing
+stored_delivered_q_mvar(
+    set::ControlledDeviceSet, d::ControlledFACTS, i::Int, data, ts::Int,
+) = delivered_q_mvar(set.facts_current[i, ts], data.bus_magnitude[d.bus_ix, ts], d.base_mva)
+stored_saturated(::ControlledDeviceSet, ::AbstractControlledDevice, ::Int, ::Int) = false
+stored_saturated(set::ControlledDeviceSet, ::ControlledFACTS, i::Int, ts::Int) =
+    set.facts_saturated[i, ts]
+
+# FACTS's |b| bound is voltage-dependent and refreshed per-ts (`b_lim`); taps/shunts have a
+# fixed parameter range, so their stored limits equal `parameter_limits(d)` regardless of ts.
+stored_parameter_limits(::ControlledDeviceSet, d::AbstractControlledDevice, ::Int, ::Int) =
+    parameter_limits(d)
+stored_parameter_limits(set::ControlledDeviceSet, ::ControlledFACTS, i::Int, ts::Int) =
+    (-set.facts_b_lim[i, ts], set.facts_b_lim[i, ts])
+
+voltage_setpoint(d::AbstractControlledDevice) = d.vset
+parameter_limits(d::ControlledTap) = (d.p_min, d.p_max)
+parameter_limits(d::ControlledSwitchedShunt) = (d.b_min, d.b_max)
+parameter_limits(d::ControlledFACTS) = (-d.b_lim, d.b_lim)
+current_parameter(d::AbstractControlledDevice) = d.current
+
+# The continuation drives `measured_value(d, data, ts)` toward `control_setpoint(d)`. Every
+# supported family regulates bus voltage, so these default to the controlled-bus magnitude and
+# `vset` on the supertype — the only quantity-specific seam, overridable per family for a future
+# non-voltage device; the rest of the continuation engine is agnostic to what is being regulated.
+measured_value(d::AbstractControlledDevice, data, ts::Int) =
+    data.bus_magnitude[controlled_bus_ix(d), ts]
+control_setpoint(d::AbstractControlledDevice) = voltage_setpoint(d)
+
+# Seam: future implicit embedding dispatches here. Never called by the outer loop.
+stamp_control!(d::AbstractControlledDevice, args...) =
+    error("implicit embedding not implemented for $(typeof(d))")
+
+# PSS/E deadband semantics: the device is held while the controlled voltage is anywhere INSIDE
+# its band — [VSWLO, VSWHI] for a switched shunt, [VMI, VMA] (the circuit's
+# `controlled_quantity_limits`) for a tap changer; only excursions outside trigger a move.
+# Families with a point setpoint and no parsed band always regulate.
+_in_deadband(::AbstractControlledDevice, ::Float64) = false
+_in_deadband(d::ControlledSwitchedShunt, y::Float64) = d.vset_lo <= y <= d.vset_hi
+_in_deadband(d::ControlledTap, y::Float64) = d.vset_lo <= y <= d.vset_hi
+
+function _nz_index(A::SparseArrays.SparseMatrixCSC, row::Int, col::Int)
+    @inbounds for k in SparseArrays.nzrange(A, col)
+        A.rowval[k] == row && return k
+    end
+    error("Ybus has no stored entry at ($row,$col); structural zero")
+end
+
+function _ybus_block_offsets(ybus, i::Int, j::Int)
+    A = ybus.data
+    return (
+        _nz_index(A, i, i),
+        _nz_index(A, i, j),
+        _nz_index(A, j, i),
+        _nz_index(A, j, j),
+    )
+end
+
+# Y11/Y12/Y21 are delta-updated (new−old) so parallel branches' contributions
+# in the shared nzval slots are preserved; Y22=Yt is tap-independent (zero delta,
+# even with parallels) so it is skipped. The nzval is single-precision ComplexF32;
+# correctness of the running sum relies on `old_tap` coming from `d.current`
+# (the last applied value), never read back from the lossy nzval.
+function apply_parameter!(d::ControlledTap, data, p::Float64, ::Int)
+    A = data.power_network_matrix.data
+    old_tap = d.current * cis(d.alpha)
+    new_tap = p * cis(d.alpha)
+    o = d.nz_offsets
+    @inbounds begin
+        A.nzval[o[1]] += d.yt / abs2(new_tap) - d.yt / abs2(old_tap)
+        A.nzval[o[2]] += -d.yt / conj(new_tap) - (-d.yt / conj(old_tap))
+        A.nzval[o[3]] += -d.yt / new_tap - (-d.yt / old_tap)
+        # Y22 = Yt is tap-independent; no update needed.
+    end
+    d.current = p
+    return
+end
+
+# Delta-update (`+=`, not `=`): `_get_withdrawals!` accumulates all constant-Z devices on
+# this bus into one slot, so overwriting would drop co-located contributions. Only
+# susceptance is controlled; g0 is constant and stays in the baseline. Raising the
+# (capacitive) susceptance lowers the bus's reactive withdrawal, injecting Q and raising the
+# voltage. Shared by switched shunts and FACTS shunt compensators.
+function apply_parameter!(d::AbstractShuntControl, data, b::Float64, ts::Int)
+    data.bus_reactive_power_constant_impedance_withdrawals[d.bus_ix, ts] +=
+        d.current - b
+    d.current = b
+    return
+end
+
+@inline function _sigmoid(lo::Float64, hi::Float64, S::Float64,
+    x::Float64, xset::Float64)
+    return (hi - lo) / (1.0 + exp(S * (x - xset))) + lo
+end
+
+function snap_to_discrete(d::ControlledTap, p::Float64)
+    pc = clamp(p, d.p_min, d.p_max)
+    best = d.levels[1]
+    @inbounds for lv in d.levels
+        abs(lv - pc) < abs(best - pc) && (best = lv)
+    end
+    return best
+end
+
+# PSS/E mixed banks: capacitor blocks (dB>0) switch on cumulatively in listed order,
+# reactor blocks (dB<0) likewise — two independent chains stepping away from the
+# all-off base, NOT one serial chain, so a mixed bank reaches both signs. Realizable
+# totals = b0 ∪ {b0 + capacitor prefixes} ∪ {b0 + reactor prefixes}. Same-sign banks
+# reduce to the previous single-chain walk. O(Σ steps), allocation-free.
+function snap_to_discrete(d::ControlledSwitchedShunt, b::Float64)
+    d.continuous && return clamp(b, d.b_min, d.b_max)
+    target = clamp(b, d.b_min, d.b_max)
+    best = d.b0
+    best_steps = 0
+    best_positive = true
+    @inbounds for positive in (true, false)
+        total = d.b0
+        steps_taken = 0
+        for k in eachindex(d.block_steps, d.block_dB)
+            dB = d.block_dB[k]
+            on_side = if positive
+                dB > 0.0
+            else
+                dB < 0.0
+            end
+            on_side || continue
+            for _ in 1:d.block_steps[k]
+                total += dB
+                steps_taken += 1
+                if abs(total - target) < abs(best - target)
+                    best = total
+                    best_steps = steps_taken
+                    best_positive = positive
+                end
+            end
+        end
+    end
+    # Record the winning side's prefix in block_n; the other side's blocks are 0.
+    fill!(d.block_n, 0)
+    remaining = best_steps
+    @inbounds for k in eachindex(d.block_steps)
+        dB = d.block_dB[k]
+        on_winning_side = if best_positive
+            dB > 0.0
+        else
+            dB < 0.0
+        end
+        if on_winning_side
+            n = min(remaining, d.block_steps[k])
+            d.block_n[k] = n
+            remaining -= n
+        end
+    end
+    return best
+end
+
+# Effective |b| bound at the measured controlled-bus voltage (Q = b·V²). SVC is
+# susceptance-bounded at `rating`, with an independent MVA ceiling `q_cap` that tightens the
+# bound as |Q|=b·V² approaches q_cap. STATCOM is current-limited (|Q|<=V·I_max => b<=I_max/V),
+# subject to the same MVA ceiling.
+function _facts_b_limit(d::ControlledFACTS, vmag::Float64)
+    v = max(vmag, 1e-3)
+    if d.svc
+        return min(d.rating, d.q_cap / v^2)
+    else
+        return min(d.rating / v, d.q_cap / v^2)
+    end
+end
+
+# Continuous devices: no discrete grid, just clamp into the refreshed voltage-dependent band.
+snap_to_discrete(d::ControlledFACTS, b::Float64) = clamp(b, -d.b_lim, d.b_lim)
+
+# Delivered reactive power Q = b·|V|² in MVA, evaluated at the device's own (sending) bus
+# voltage `vmag` — the susceptance sits there, not at the regulated bus (which may be remote).
+# The 3-arg form takes an explicit susceptance so results-reporting can read a stored
+# (possibly non-live, past-time-step) value without touching `d.current`.
+delivered_q_mvar(b::Float64, vmag::Float64, base_mva::Float64) = b * vmag^2 * base_mva
+delivered_q_mvar(d::ControlledFACTS, vmag::Float64) =
+    delivered_q_mvar(d.current, vmag, d.base_mva)
+
+# Post-solve classification of one FACTS endpoint against its final (voltage-dependent) bound
+# and setpoint. `saturated` = pinned at the |b| bound while off setpoint — the device cannot
+# supply the bus's reactive deficit (the homotopy analogue of a PV→PQ Q-limit release). A
+# device that reaches setpoint with headroom, or is at its limit AND at setpoint (exactly
+# enough), is not saturated. Mutates `d.saturated`; returns it. `@warn`s only on genuine
+# saturation so it stays quiet on the common regulating case.
+function classify_facts_saturation!(d::ControlledFACTS, vmag::Float64)
+    at_limit = abs(d.current) >= (1.0 - CONTROL_FACTS_LIMIT_RTOL) * d.b_lim
+    at_setpoint = abs(vmag - d.vset) <= CONTROL_FACTS_SETPOINT_BAND
+    d.saturated = at_limit && !at_setpoint
+    if d.saturated
+        law = d.svc ? "SVC" : "STATCOM"
+        @warn "ControlledFACTS \"$(d.name)\" saturated: |V−vset|=$(abs(vmag - d.vset)) at \
+            its $law susceptance limit (|b|=$(abs(d.current)) ≥ b_lim=$(d.b_lim)); the bus \
+            cannot be held to $(d.vset)."
+    end
+    return d.saturated
+end
+
+# The parameter-dependent from-side arc-admittance terms (ff, ft, tf) of a tap device;
+# the tt term (= yt) is tap-independent.
+@inline function _branch_terms(d::ControlledTap, p::Float64)
+    t = p * cis(d.alpha)
+    return (d.yt / abs2(t), -d.yt / conj(t), -d.yt / t)
+end
+
+# Delta-update the from/to arc-admittance rows to `d.current` (parallel branches sharing the arc
+# row are preserved; `d.synced` tracks the reflected value). Reported flows are computed from
+# these matrices right after each time step, so an unsynced branch would report flows at its
+# original tap.
+function _sync_branch_arc_rows!(
+    Yft::SparseArrays.SparseMatrixCSC,
+    Ytf::SparseArrays.SparseMatrixCSC,
+    d::ControlledTap,
+    arc_row::Dict{Tuple{Int, Int}, Int},
+    ix_to_number::Dict{Int, Int},
+)
+    d.current == d.synced && return
+    fb = ix_to_number[d.from_ix]
+    tb = ix_to_number[d.to_ix]
+    ff_new, ft_new, tf_new = _branch_terms(d, d.current)
+    ff_old, ft_old, tf_old = _branch_terms(d, d.synced)
+    r = get(arc_row, (fb, tb), 0)
+    if !iszero(r)
+        @inbounds begin
+            Yft.nzval[_nz_index(Yft, r, d.from_ix)] += ff_new - ff_old
+            Yft.nzval[_nz_index(Yft, r, d.to_ix)] += ft_new - ft_old
+            Ytf.nzval[_nz_index(Ytf, r, d.from_ix)] += tf_new - tf_old
+            # Ytf(r, to_ix) holds the tt term (= yt): parameter-independent, skipped.
+        end
+    else
+        # The branch may be stored under the reversed arc orientation; the from/to roles
+        # of the four terms swap accordingly (its "from side" is our to bus).
+        r = get(arc_row, (tb, fb), 0)
+        if iszero(r)
+            @warn "discrete control: arc ($fb, $tb) of device \"$(d.name)\" not found \
+                in the arc-admittance axes; reported flows on that branch reflect its \
+                original parameter." maxlog = 1
+            return
+        end
+        @inbounds begin
+            Yft.nzval[_nz_index(Yft, r, d.from_ix)] += tf_new - tf_old
+            Ytf.nzval[_nz_index(Ytf, r, d.to_ix)] += ft_new - ft_old
+            Ytf.nzval[_nz_index(Ytf, r, d.from_ix)] += ff_new - ff_old
+            # Yft(r, to_ix) is the reversed arc's from-side self term (= yt): skipped.
+        end
+    end
+    d.synced = d.current
+    return
+end
+
+"""One-shot post-continuation sync: bring the arc-admittance rows of every moved tap device
+in line with its final parameter so the branch flows reported by `solve_power_flow!` match
+the network the voltages were solved on. Shunt-side devices never touch the arc matrices.
+No-op when the arc admittance matrices were not built."""
+function _sync_arc_admittances!(data, set::ControlledDeviceSet)
+    Yft = data.power_network_matrix.arc_admittance_from_to
+    Ytf = data.power_network_matrix.arc_admittance_to_from
+    (isnothing(Yft) || isnothing(Ytf)) && return
+    isempty(set.taps) && return
+    bus_lookup = PNM.get_bus_lookup(Yft)
+    ix_to_number = Dict{Int, Int}(v => k for (k, v) in bus_lookup)
+    arc_row = get_arc_lookup(data)   # (from_no, to_no) => arc row index
+    for d in set.taps
+        _sync_branch_arc_rows!(Yft.data, Ytf.data, d, arc_row, ix_to_number)
+    end
+    return
+end

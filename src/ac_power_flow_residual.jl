@@ -5,7 +5,6 @@ A struct to keep track of the residuals in the Newton-Raphson AC power flow calc
 
 # Fields
 - `data::ACPowerFlowData`: The grid model data.
-- `Rf!::Function`: A function that updates the residuals based on the latest values stored in the grid at the given iteration.
 - `Rv::Vector{Float64}`: A vector of the values of the residuals.
 - `P_net::Vector{Float64}`: A vector of net active power injections.
 - `Q_net::Vector{Float64}`: A vector of net reactive power injections.
@@ -17,7 +16,6 @@ A struct to keep track of the residuals in the Newton-Raphson AC power flow calc
 """
 struct ACPowerFlowResidual
     data::ACPowerFlowData
-    Rf!::Function
     Rv::Vector{Float64}
     P_net::Vector{Float64}
     Q_net::Vector{Float64}
@@ -47,7 +45,6 @@ Create an instance of `ACPowerFlowResidual` for a given time step.
 """
 function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
     n_buses = first(size(data.bus_type))
-    n_lccs = size(data.lcc.p_set, 1)
     P_net = Vector{Float64}(undef, n_buses)
     Q_net = Vector{Float64}(undef, n_buses)
 
@@ -85,8 +82,8 @@ function ACPowerFlowResidual(data::ACPowerFlowData, time_step::Int64)
 
     return ACPowerFlowResidual(
         data,
-        _update_residual_values!,
-        Vector{Float64}(undef, 2 * n_buses + 4 * n_lccs),
+        Vector{Float64}(undef,
+            2 * n_buses + state_tail_length(data, get_dc_network(data))),
         P_net,
         Q_net,
         P_net_set,
@@ -121,7 +118,7 @@ function (Residual::ACPowerFlowResidual)(
     x::Vector{Float64},
     time_step::Int64,
 )
-    Residual.Rf!(
+    _update_residual_values!(
         Residual.Rv,
         x,
         Residual.P_net,
@@ -155,7 +152,7 @@ Calling the `ACPowerFlowResidual` will also update the values of P, Q, V, Θ in 
 - `time_step::Int64`: The current time step.
 """
 function (Residual::ACPowerFlowResidual)(x::Vector{Float64}, time_step::Int64)
-    Residual.Rf!(
+    _update_residual_values!(
         Residual.Rv,
         x,
         Residual.P_net,
@@ -215,7 +212,7 @@ function _set_state_variables_at_bus!(
     data::ACPowerFlowData,
     time_step::Int64,
     ::Val{PSY.ACBusTypes.PV})
-    # When bustype == PV PSY.ACACBus, state variables are Reactive Power Generated and Voltage Angle
+    # When bustype == PV, state variables are Reactive Power Generated and Voltage Angle
     # We still update both P and Q values in case the PV bus participates in distributed slack
     P_net[ix] = P_net_set[ix] + P_slack
     Q_net[ix] = StateVector[2 * ix - 1]
@@ -294,16 +291,31 @@ function _update_residual_values!(
     # update P_net, Q_net, data.bus_angles, data.bus_magnitude based on X
     Yb = data.power_network_matrix.data
     num_lcc = size(data.lcc.p_set, 1)
+    n_buses_total = first(size(data.bus_type))
+    dcn = get_dc_network(data)
+    vsc_off = 2 * n_buses_total + 4 * num_lcc
     bus_types = view(data.bus_type, :, time_step)
 
     for (ref_bus, subnetwork_buses) in subnetworks
         slack_scalar = x[2 * ref_bus - 1] - P_net_set[ref_bus]
         n_sub = length(subnetwork_buses)
+        # Multi-swing island: each swing self-balances at its own P-slot
+        # (P_net = x[2·ix−1]) instead of sharing one distributed island scalar;
+        # single-swing islands keep the distributed-slack path unchanged.
+        n_ref = 0
+        @inbounds for k in 1:n_sub
+            bus_types[subnetwork_buses[k]] == PSY.ACBusTypes.REF && (n_ref += 1)
+        end
+        multi_swing = n_ref > 1
         # Write per-bus slack into P_slack_buf[1:n_sub]. SparseVector indexed
         # by a Vector{Int} allocates a fresh Vector; iterate manually instead.
         @inbounds for k in 1:n_sub
             ix = subnetwork_buses[k]
-            P_slack_buf[k] = slack_scalar * bus_slack_participation_factors[ix]
+            if multi_swing && bus_types[ix] == PSY.ACBusTypes.REF
+                P_slack_buf[k] = x[2 * ix - 1] - P_net_set[ix]
+            else
+                P_slack_buf[k] = slack_scalar * bus_slack_participation_factors[ix]
+            end
         end
 
         @inbounds for k in 1:n_sub
@@ -334,11 +346,17 @@ function _update_residual_values!(
     end
 
     if num_lcc > 0
-        data.lcc.rectifier.tap[:, time_step] = x[(end - 4 * num_lcc + 1):4:end]
-        data.lcc.inverter.tap[:, time_step] = x[(end - 4 * num_lcc + 2):4:end]
-        data.lcc.rectifier.thyristor_angle[:, time_step] = x[(end - 4 * num_lcc + 3):4:end]
-        data.lcc.inverter.thyristor_angle[:, time_step] = x[(end - 4 * num_lcc + 4):4:end]
+        lcc_end = vsc_off
+        data.lcc.rectifier.tap[:, time_step] = x[(lcc_end - 4 * num_lcc + 1):4:lcc_end]
+        data.lcc.inverter.tap[:, time_step] = x[(lcc_end - 4 * num_lcc + 2):4:lcc_end]
+        data.lcc.rectifier.thyristor_angle[:, time_step] =
+            x[(lcc_end - 4 * num_lcc + 3):4:lcc_end]
+        data.lcc.inverter.thyristor_angle[:, time_step] =
+            x[(lcc_end - 4 * num_lcc + 4):4:lcc_end]
         _update_ybus_lcc!(data, time_step)
+    end
+    if has_dc_network(dcn)
+        _read_vsc_state!(dcn, x, vsc_off, time_step)
     end
 
     # compute active, reactive power balances using the just updated values.
@@ -391,8 +409,34 @@ function _update_residual_values!(
         F[2 * ix] -= Q_net[ix]
     end
 
+    # ΔP_a couples into the P-balance row at each area's slack bus. Applied directly to
+    # `F` (not folded into `P_net[ix]`) because `P_net[ix]` persists across calls once the
+    # slack bus is PQ (ZIP-load dispatch accumulates into it — see
+    # `_set_state_variables_at_bus!(::Val{PQ})`); adding ΔP there would double-count after
+    # a PV->PQ Q-limit flip. `F` is reset every call, so applying ΔP here is exactly-once,
+    # matching the Jacobian's constant `-1.0` stamp at this row.
+    if n_controlled_areas(data) > 0
+        area_off = area_tail_offset(data, dcn)
+        @inbounds for area in data.area_interchange.areas
+            ΔP = x[area_off + area.tail_ix]
+            # Mirror ΔP_a onto `data` (time_step-indexed, same seam as the LCC tap /
+            # VSC tail write-back) so a warm re-solve's `x0` recovers this time step's
+            # converged value without contaminating others.
+            data.area_interchange.delta_p[area.tail_ix, time_step] = ΔP
+            F[2 * area.slack_bus_ix - 1] -= ΔP
+        end
+    end
+
     if num_lcc > 0
-        _set_lcc_tail_residuals!(F, data, length(F) - 4 * num_lcc, time_step)
+        _set_lcc_tail_residuals!(F, data, vsc_off - 4 * num_lcc, time_step)
+    end
+    if has_dc_network(dcn)
+        _apply_vsc_bus_injections_polar!(F, dcn, time_step)
+        _set_vsc_tail_residuals!(F, dcn, Vm, vsc_off, time_step)
+    end
+    if n_controlled_areas(data) > 0
+        area_off = area_tail_offset(data, dcn)
+        _set_area_tail_residuals!(F, x, data, area_off, time_step)
     end
     return
 end
@@ -454,6 +498,25 @@ function _build_bus_slack_participation_factors(
         throw(ArgumentError("slack_participation_factors cannot be negative"))
     bus_slack_participation_factors = sparsevec(spf_idx, spf_val, n_buses)
     for subnetwork_buses in values(subnetworks)
+        # Multi-swing island: each swing carries its own slack (see
+        # `_update_residual_values!`); spreading slack onto non-swing buses is undefined
+        # there, so reject it.
+        n_ref_sub = count(ix -> bus_type[ix] == PSY.ACBusTypes.REF, subnetwork_buses)
+        if n_ref_sub > 1
+            any(
+                ix ->
+                    bus_type[ix] != PSY.ACBusTypes.REF &&
+                        bus_slack_participation_factors[ix] != 0.0,
+                subnetwork_buses,
+            ) && throw(
+                ArgumentError(
+                    "distributed slack (participation factors on non-swing buses) is not " *
+                    "supported in an island containing $n_ref_sub swing (REF) buses: each " *
+                    "swing carries its own slack. Reduce the island to a single swing or " *
+                    "remove the non-swing participation factors.",
+                ),
+            )
+        end
         bspf_subnetwork = view(bus_slack_participation_factors, subnetwork_buses)
         sum_bspf = sum(bspf_subnetwork)
         sum_bspf == 0.0 && throw(

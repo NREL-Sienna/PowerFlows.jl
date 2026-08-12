@@ -19,8 +19,7 @@ mutable struct LMWorkspace
     # Marquardt diagonal scaling (length n). All-ones ⇒ √λ·I.
     D::Vector{Float64}
     marquardt_scaling::Bool
-    # Per-iteration scratch: predicted-residual buffer (length m) and trial
-    # iterate (length n). Reused in-place each step.
+    # Per-iteration scratch: temp_x = Rv + J·Δx (m); x_trial = x + Δx (n).
     temp_x::Vector{Float64}
     x_trial::Vector{Float64}
 end
@@ -67,7 +66,7 @@ function LMWorkspace(
 
     ws = LMWorkspace(
         A, j_nzval_indices, λ_diag_indices, F, b, D, marquardt_scaling,
-        zeros(m), zeros(n))
+        Vector{Float64}(undef, m), Vector{Float64}(undef, n))
     if marquardt_scaling
         update_column_scale!(ws, Jv)
     end
@@ -250,11 +249,10 @@ function compute_error(
     m = length(residual.Rv)
     @assert m == length(ws.b) - size(J.Jv, 2) "residual/J size mismatch vs preallocated LM buffer (m=$m, buf=$(length(ws.b)), n=$(size(J.Jv, 2)))"
     @views ws.b[1:m] .= .-residual.Rv   # bottom n entries stay zero from construction
-    # SPQR's QRSparse exposes no in-place ldiv!, so the solve allocates Δx.
+    # Δx left allocating: SPQR has no in-place reuse, and the QR rebuild dominates anyway.
     Δx = ws.F \ ws.b
 
-    # temp_x = residual.Rv + J.Jv * Δx. mul! into the buffer, then add Rv; this
-    # must not alias residual.Rv because residual() may overwrite Rv below.
+    # temp_x = Rv + J·Δx
     LinearAlgebra.mul!(ws.temp_x, J.Jv, Δx)
     ws.temp_x .+= residual.Rv
 

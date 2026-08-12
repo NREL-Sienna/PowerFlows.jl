@@ -258,7 +258,7 @@ end
         solve_power_flow!(data)
 
         # The field should be populated after solve.
-        @test data.arc_active_power_losses !== nothing
+        @test !isnothing(data.arc_active_power_losses)
         losses = data.arc_active_power_losses
 
         # Recompute expected losses from resistances and flows.
@@ -268,6 +268,30 @@ end
 
         # Losses must be non-negative.
         @test all(losses .>= 0.0)
+    end
+end
+
+@testset "DC power flow: slack bus balances active power on imbalanced systems" begin
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    # Introduce a deliberate imbalance by scaling one load up.
+    load = first(get_components(PSY.PowerLoad, sys))
+    set_active_power!(load, 2.0 * get_active_power(load, PSY.SU) * PSY.SU)
+
+    for T in (DCPowerFlow, PTDFDCPowerFlow, vPTDFDCPowerFlow)
+        results =
+            solve_power_flow(T(; correct_bustypes = true), sys, PF.FlowReporting.ARC_FLOWS)
+        bus_results = results["1"]["bus_results"]
+        total_gen = sum(bus_results.P_gen)
+        total_load = sum(bus_results.P_load)
+        total_net = sum(bus_results.P_net)
+
+        # The slack bus should absorb the imbalance so total generation matches total load.
+        @test isapprox(total_gen, total_load; atol = 1e-6)
+        @test isapprox(total_net, 0.0; atol = 1e-6)
+
+        # The reference bus (bus 1 in c_sys14) P_gen must differ from the original setpoint.
+        ref_gen = bus_results[bus_results.bus_number .== 1, :P_gen][1]
+        @test !iszero(ref_gen)
     end
 end
 
@@ -290,5 +314,20 @@ end
 
         # Q_losses must be zero for DC.
         @test all(flow_df[!, :Q_losses] .== 0.0)
+    end
+end
+
+@testset "DC solve parity across barrier rewiring" begin
+    # Guards the function-barrier refactor (_run_aba_solve!/_run_ptdf_solve!/
+    # _run_vptdf_solve!): a repeated solve on the same `data` must reuse the
+    # cached factorization/scratch and reproduce the same flows. DC solves are
+    # FP-nondeterministic at ~1e-13, so compare with isapprox, never ==.
+    sys = PSB.build_system(PSB.PSITestSystems, "c_sys14"; add_forecasts = false)
+    for pf in (DCPowerFlow(), PTDFDCPowerFlow(), vPTDFDCPowerFlow())
+        data = PowerFlowData(pf, sys)
+        solve_power_flow!(data)
+        flows_before = copy(data.arc_active_power_flow_from_to)
+        solve_power_flow!(data)
+        @test isapprox(data.arc_active_power_flow_from_to, flows_before; atol = 1e-10)
     end
 end

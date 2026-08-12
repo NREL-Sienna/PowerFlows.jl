@@ -12,7 +12,6 @@ hot path is `O(N + n_LCC)`. Field roles are in the inline comments below.
 """
 struct ACMixedCPBJacobian
     data::ACPowerFlowData
-    Jf!::Function
     Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE}
     Y_bus_eff::SparseMatrixCSC{ComplexF64, Int}
     Y_diag::Vector{ComplexF64}     # cached Y_bus_eff diagonal; avoids O(log nnz) sparse access per iteration
@@ -26,6 +25,7 @@ struct ACMixedCPBJacobian
     Ii_acc::Vector{Float64}        # shared view into residual's Ii_acc (accumulated Im(I) per bus)
     bus_slack_participation_factors::SparseVector{Float64, Int}
     subnetworks::Dict{Int64, Vector{Int64}}
+    independent_ref::Set{Int}      # shared view into residual's independent_ref
     bus_state_offset::Vector{REC_INDEX_TYPE}
     bus_block_size::Vector{Int8}
     total_bus_state::Int
@@ -39,6 +39,7 @@ struct ACMixedCPBJacobian
     slack_nz_idx_f::Vector{Int}      # nzval index for Jv[k_off+1, ref_off]
     slack_c_k::Vector{Float64}       # c_k = bus_slack_participation_factors[bus_k]
     lcc_nz::Matrix{Int}              # 24 × n_lccs; nzval indices for the LCC entries
+    vsc_nz::VSCJacobianNZCache       # nzval indices for the VSC tail entries
 end
 
 function ACMixedCPBJacobian(
@@ -77,19 +78,24 @@ function ACMixedCPBJacobian(
             Jv0, residual.Y_bus_eff, residual.bus_state_offset,
             view(residual.data.bus_type, :, time_step),
         )
+    # REF status is fixed for the life of a solve; reuse the residual's
+    # already-computed set instead of reallocating it here.
     slack_nz_idx_e, slack_nz_idx_f, _, slack_c_k =
         _build_slack_nz_cache(
             Jv0, residual.bus_state_offset, residual.subnetworks,
-            residual.bus_slack_participation_factors,
+            residual.bus_slack_participation_factors, residual.independent_ref,
         )
     n_lccs = size(residual.data.lcc.p_set, 1)
     lcc_nz = _build_lcc_nz_cache(
         Jv0, residual.data, residual.bus_state_offset,
         residual.total_bus_state, n_lccs,
     )
+    vsc_nz = _build_vsc_nz_cache(
+        Jv0, get_dc_network(residual.data), residual.bus_state_offset,
+        residual.total_bus_state, n_lccs,
+    )
     J = ACMixedCPBJacobian(
         residual.data,
-        _update_mixed_cpb_jacobian_values!,
         Jv0,
         residual.Y_bus_eff,
         Y_diag,
@@ -103,6 +109,7 @@ function ACMixedCPBJacobian(
         residual.Ii_acc,
         residual.bus_slack_participation_factors,
         residual.subnetworks,
+        residual.independent_ref,
         residual.bus_state_offset,
         residual.bus_block_size,
         residual.total_bus_state,
@@ -115,20 +122,21 @@ function ACMixedCPBJacobian(
         slack_nz_idx_f,
         slack_c_k,
         lcc_nz,
+        vsc_nz,
     )
     J(time_step)  # populate state-dependent entries (diagonals, PV off-diag, slack, LCC tail)
     return J
 end
 
 function (J::ACMixedCPBJacobian)(time_step::Int64)
-    J.Jf!(J.Jv, J.data, J.Y_diag,
+    _update_mixed_cpb_jacobian_values!(J.Jv, J.data, J.Y_diag,
         J.e_state, J.f_state, J.P_eff_cache, J.Q_eff_cache,
         J.const_I_P, J.const_I_Q, J.Ir_acc, J.Ii_acc,
-        J.bus_slack_participation_factors,
+        J.bus_slack_participation_factors, J.independent_ref,
         J.bus_state_offset, J.total_bus_state,
         J.diag_base_nz, J.offdiag_pv_nz, J.offdiag_pv_i, J.offdiag_pv_k, J.offdiag_pv_y,
         J.slack_nz_idx_e, J.slack_nz_idx_f, J.slack_c_k,
-        J.lcc_nz, time_step)
+        J.lcc_nz, J.vsc_nz, time_step)
     return
 end
 
@@ -136,14 +144,14 @@ function (J::ACMixedCPBJacobian)(
     Jv::SparseMatrixCSC{Float64, J_INDEX_TYPE},
     time_step::Int64,
 )
-    J.Jf!(J.Jv, J.data, J.Y_diag,
+    _update_mixed_cpb_jacobian_values!(J.Jv, J.data, J.Y_diag,
         J.e_state, J.f_state, J.P_eff_cache, J.Q_eff_cache,
         J.const_I_P, J.const_I_Q, J.Ir_acc, J.Ii_acc,
-        J.bus_slack_participation_factors,
+        J.bus_slack_participation_factors, J.independent_ref,
         J.bus_state_offset, J.total_bus_state,
         J.diag_base_nz, J.offdiag_pv_nz, J.offdiag_pv_i, J.offdiag_pv_k, J.offdiag_pv_y,
         J.slack_nz_idx_e, J.slack_nz_idx_f, J.slack_c_k,
-        J.lcc_nz, time_step)
+        J.lcc_nz, J.vsc_nz, time_step)
     copyto!(Jv, J.Jv)
     return
 end
@@ -170,7 +178,8 @@ function _create_mixed_cpb_jacobian_structure(
     vals = Float64[]
     n_buses = first(size(data.bus_type))
     n_lccs = size(data.lcc.p_set, 1)
-    total_state = total_bus_state + 4 * n_lccs
+    dcn = get_dc_network(data)
+    total_state = total_bus_state + state_tail_length(data, dcn)
 
     sizehint!(rows, 4 * SparseArrays.nnz(Y_bus_eff) + 17 * n_lccs + 2 * n_buses)
     sizehint!(cols, 4 * SparseArrays.nnz(Y_bus_eff) + 17 * n_lccs + 2 * n_buses)
@@ -178,14 +187,30 @@ function _create_mixed_cpb_jacobian_structure(
 
     Yrows = SparseArrays.rowvals(Y_bus_eff)
     bus_types_at_t = view(data.bus_type, :, time_step)
+    independent_ref = _multi_swing_ref_indices(data.bus_type, subnetworks, time_step)
     @inbounds for col in 1:n_buses
         col_off = Int(bus_state_offset[col])
         col_bs = bus_block_size[col]
         is_ref_col = bus_types_at_t[col] == PSY.ACBusTypes.REF
+        # Diagonal block unconditionally: a bus whose Ybus column has NO stored
+        # diagonal (an AC-isolated swing, e.g. a DC-tie voltage holder with zero
+        # AC branches) still needs its own block — its rows/columns otherwise
+        # never enter the pattern and the value writers hit "missing entry".
+        for r in 0:(Int(col_bs) - 1)
+            for c in 0:(Int(col_bs) - 1)
+                push!(rows, J_INDEX_TYPE(col_off + r))
+                push!(cols, J_INDEX_TYPE(col_off + c))
+                push!(vals, 0.0)
+            end
+        end
         for j in SparseArrays.nzrange(Y_bus_eff, col)
             row = Yrows[j]
+            # Diagonal block already pushed above.
+            if row == col
+                continue
+            end
             # REF columns hold (P_gen, Q_gen); neighbors' rows don't depend on them.
-            if is_ref_col && row != col
+            if is_ref_col
                 continue
             end
             row_off = Int(bus_state_offset[row])
@@ -210,6 +235,10 @@ function _create_mixed_cpb_jacobian_structure(
     # yet in the pattern for any non-self bus_k — push it here (gated only on
     # `bus_k != ref_bus`, since the REF diagonal block covers `bus_k == ref_bus`).
     for (ref_bus, subnetwork_buses) in subnetworks
+        # Multi-swing island: each swing self-balances at its own P-slot; there is
+        # no single distributed scalar to couple, so no cross-terms are structural
+        # here (mirrors polar's / rect's independent-REF handling).
+        ref_bus in independent_ref && continue
         ref_off = Int(bus_state_offset[ref_bus])
         for bus_k in subnetwork_buses
             bus_slack_participation_factors[bus_k] == 0.0 && continue
@@ -230,6 +259,14 @@ function _create_mixed_cpb_jacobian_structure(
     if n_lccs > 0
         _create_rect_ci_lcc_structure!(
             rows, cols, vals, data, bus_state_offset, total_bus_state,
+        )
+    end
+
+    # VSC structural slots are identical to the rectangular layout (the imag-first swap affects
+    # values, not the (row, col) pattern), so the rect builder is reused directly.
+    if has_dc_network(dcn)
+        _create_rect_ci_vsc_structure!(
+            rows, cols, vals, dcn, bus_state_offset, total_bus_state, n_lccs,
         )
     end
 
@@ -397,6 +434,7 @@ function _update_mixed_cpb_jacobian_values!(
     Ir_acc::Vector{Float64},
     Ii_acc::Vector{Float64},
     bus_slack_participation_factors::SparseVector{Float64, Int},
+    independent_ref::Set{Int},
     bus_state_offset::Vector{REC_INDEX_TYPE},
     total_bus_state::Int,
     diag_base_nz::Matrix{Int},
@@ -408,6 +446,7 @@ function _update_mixed_cpb_jacobian_values!(
     slack_nz_idx_f::Vector{Int},
     slack_c_k::Vector{Float64},
     lcc_nz::Matrix{Int},
+    vsc_nz::VSCJacobianNZCache,
     time_step::Int64,
 )
     n_buses = first(size(data.bus_type))
@@ -427,8 +466,14 @@ function _update_mixed_cpb_jacobian_values!(
             _update_mixed_pv_diag_block!(Jvnz, diag_base_nz, i, e_i, f_i,
                 Y_diag[i], Ir_acc[i], Ii_acc[i], const_I_P[i])
         elseif bt == PSY.ACBusTypes.REF
-            c_ref = bus_slack_participation_factors[i]
-            _update_ref_diag_block!(Jvnz, diag_base_nz, i, e_i, f_i, c_ref)
+            if i in independent_ref
+                # Multi-swing island: this swing self-balances at its own P-slot
+                # (P_gen = x[off]), i.e. identity distribution (c_ref = 1.0).
+                _update_ref_diag_block!(Jvnz, diag_base_nz, i, e_i, f_i, 1.0)
+            else
+                c_ref = bus_slack_participation_factors[i]
+                _update_ref_diag_block!(Jvnz, diag_base_nz, i, e_i, f_i, c_ref)
+            end
         end
     end
 
@@ -463,6 +508,13 @@ function _update_mixed_cpb_jacobian_values!(
         _set_entries_for_lcc_mixed!(
             data, Jvnz, diag_base_nz, lcc_nz,
             e_state, f_state, bus_state_offset, time_step,
+        )
+    end
+    dcn = get_dc_network(data)
+    if has_dc_network(dcn)
+        _set_entries_for_vsc_rect_mcpb!(
+            Jvnz, diag_base_nz, vsc_nz, dcn, e_state, f_state,
+            view(data.bus_type, :, time_step), time_step, true,
         )
     end
     return
@@ -603,10 +655,12 @@ function _set_entries_for_lcc_mixed!(
         sin_phi_r = sin(phi_r)
         cos_phi_i = cos(phi_i)
         sin_phi_i = sin(phi_i)
+        # Inverter uses −xtr_i: its ϕ_i subtracts the commutation drop, so ∂ϕ_i/∂{V,t}
+        # (linear in x_t) has opposite sign to the rectifier form (see _lcc_utils).
         dphi_dV_fb = _dphi_dV_lcc(xtr_r, s.i_dc, Vm_fb, s.tap_r, phi_r)
-        dphi_dV_tb = _dphi_dV_lcc(xtr_i, s.i_dc, Vm_tb, s.tap_i, phi_i)
+        dphi_dV_tb = _dphi_dV_lcc(-xtr_i, s.i_dc, Vm_tb, s.tap_i, phi_i)
         dphi_dtap_r = _dphi_dt_lcc(xtr_r, s.i_dc, Vm_fb, s.tap_r, phi_r)
-        dphi_dtap_i = _dphi_dt_lcc(xtr_i, s.i_dc, Vm_tb, s.tap_i, phi_i)
+        dphi_dtap_i = _dphi_dt_lcc(-xtr_i, s.i_dc, Vm_tb, s.tap_i, phi_i)
         dphi_dα_r = _dphi_dα_lcc(alpha_r, phi_r)
         dphi_dα_i = -_dphi_dα_lcc(alpha_i, phi_i)
 
