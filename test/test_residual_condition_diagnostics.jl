@@ -43,6 +43,17 @@ function _solver_diagnostic_lines(pf, sys)
     return [r.message for r in tl.logs if occursin(r"iter \d+", r.message)]
 end
 
+# Assert `_describe_residual_entry` is TOTAL: every index of `residual.Rv` resolves to a
+# non-empty label, and nothing past the bus block is described as a bus.
+function _assert_describe_total(residual, data, n_bus_eqs::Int)
+    for ix in 1:length(residual.Rv)
+        label = PF._describe_residual_entry(residual, data, 1, ix)
+        @test label isa AbstractString
+        @test !isempty(label)
+        ix > n_bus_eqs && @test !startswith(label, "bus ")
+    end
+end
+
 @testset "Schur min-eigenvalue matches dense ground truth (no LCC)" begin
     sys = PSB.build_system(PSB.PSITestSystems, "c_sys14")
     pf = ACPowerFlow{NewtonRaphsonACPowerFlow}(; correct_bustypes = true)
@@ -163,4 +174,93 @@ end
         data = PowerFlowData(pf, sys)
         @test solve_power_flow!(data)
     end
+end
+
+# Residual-entry labelling. Only the leading 2·n_bus rows are bus quantities, so any index
+# arithmetic that treats the whole vector as bus data mislabels a tail row (LCC, VSC or area
+# interchange) and runs off the end of the bus axis once the tail outnumbers the buses ahead
+# of it. `improve_x0`'s large-residual warning shares this resolver for that reason.
+
+@testset "residual entry resolver is total over the polar area-interchange tail" begin
+    sys = _three_area_transfer_fixture(; slack_area3 = true)
+    data = PowerFlowData(ACPolarPowerFlow(; area_interchange_control = true), sys)
+    residual = PF.ACPowerFlowResidual(data, 1)
+    n_bus_eqs = 2 * size(data.bus_type, 1)
+
+    # The fixture must actually carry a tail, or this test proves nothing.
+    @test PF.n_controlled_areas(data) > 0
+    @test length(residual.Rv) > n_bus_eqs
+
+    _assert_describe_total(residual, data, n_bus_eqs)
+
+    # The final rows are the per-area ΔP equations.
+    @test occursin("NI−PDES", PF._describe_residual_entry(
+        residual, data, 1, length(residual.Rv)))
+    # The bus block is still labelled by bus number and P/Q.
+    @test startswith(PF._describe_residual_entry(residual, data, 1, 1), "bus ")
+    @test occursin("(P)", PF._describe_residual_entry(residual, data, 1, 1))
+    @test occursin("(Q)", PF._describe_residual_entry(residual, data, 1, 2))
+end
+
+@testset "residual entry resolver is total over the LCC tail" begin
+    sys, _ = simple_lcc_system()
+    data = PowerFlowData(ACPolarPowerFlow(), sys)
+    residual = PF.ACPowerFlowResidual(data, 1)
+    n_bus_eqs = 2 * size(data.bus_type, 1)
+
+    @test size(data.lcc.p_set, 1) > 0
+    @test length(residual.Rv) > n_bus_eqs
+    _assert_describe_total(residual, data, n_bus_eqs)
+    @test occursin("LCC", PF._describe_residual_entry(residual, data, 1, n_bus_eqs + 1))
+end
+
+@testset "residual entry resolver is total over the VSC tail" begin
+    sys = _build_vsc_pq_system()
+    data = PowerFlowData(ACPolarPowerFlow(), sys)
+    residual = PF.ACPowerFlowResidual(data, 1)
+    n_bus_eqs = 2 * size(data.bus_type, 1)
+    dcn = PF.get_dc_network(data)
+
+    @test PF.n_vsc_converters(dcn) > 0
+    @test length(residual.Rv) > n_bus_eqs
+    _assert_describe_total(residual, data, n_bus_eqs)
+    # First VSC row is a converter control row; the DC-node KCL rows follow the converters.
+    @test occursin("VSC converter",
+        PF._describe_residual_entry(residual, data, 1, n_bus_eqs + 1))
+    @test occursin("DC node", PF._describe_residual_entry(
+        residual, data, 1, n_bus_eqs + 2 * PF.n_vsc_converters(dcn) + 1))
+end
+
+@testset "improve_x0 warns rather than throwing when a tail row dominates" begin
+    sys = _three_area_transfer_fixture(; slack_area3 = true)
+    # An absurd schedule makes each area's NI−PDES row dwarf every bus mismatch, so the mean
+    # test trips AND the largest entry sits in the tail: the combination that used to abort
+    # the solve from inside the warning itself.
+    for ai in PSY.get_components(PSY.AreaInterchange, sys)
+        PSY.set_active_power_flow!(ai, 5.0e4 * PSY.SU)
+    end
+    pf = ACPolarPowerFlow(; area_interchange_control = true)
+    data = PowerFlowData(pf, sys)
+    residual = PF.ACPowerFlowResidual(data, 1)
+    n_bus_eqs = 2 * size(data.bus_type, 1)
+
+    # Both trigger conditions must hold, or this test would pass for the wrong reason.
+    x0 = PF.calculate_x0(data, 1)
+    residual(x0, 1)
+    @test sum(abs, residual.Rv) > PF.LARGE_RESIDUAL * length(residual.Rv)
+    @test argmax(abs.(residual.Rv)) > n_bus_eqs
+
+    logger = Test.TestLogger()
+    x0 = Logging.with_logger(logger) do
+        PF.improve_x0(pf, data, residual, 1)
+    end
+    @test length(x0) == length(residual.Rv)
+
+    warns = filter(
+        r -> r.level == Logging.Warn && occursin("large initial residual", r.message),
+        logger.logs)
+    @test length(warns) == 1
+    # The tail entry is named as an area row, not mislabelled as a bus.
+    @test occursin("area", first(warns).message)
+    @test !occursin("Largest residual at bus", first(warns).message)
 end
