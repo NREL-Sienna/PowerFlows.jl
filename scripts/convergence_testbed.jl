@@ -12,14 +12,22 @@
 #
 #   include("scripts/convergence_testbed.jl")
 #   base = build_base_system()                 # build once, deepcopy per scenario
-#   results = run_all(default_scenarios(base); base = base)
-#   print_summary(results)
+#   results = run_all(default_scenarios(base), base)
+#   print_summary(results)                     # convergence table + bottleneck tables
+#
+#   # Convergence table only (skip the per-failure bottleneck tables):
+#   print_summary(results; bottlenecks = false)
+#   print_bottlenecks(results; max_rows = 30)  # ...or just the bottlenecks, deeper
 #
 #   # Single scenario, with the per-iteration diagnostics turned on:
 #   r = run_scenario(scale_all_loads(1.4), base; log_diagnostics = true)
 #
 #   # Roll your own:
 #   run_scenario(generator_outage(; n = 3), base)
+#
+# Failed scenarios are localized by default (`localize = true`): each failure gets a
+# second, fold-bailing diagnostic solve, and `print_summary` renders the resulting
+# pocket / cutset / binding tables. Pass `localize = false` to skip that extra pass.
 #
 # Every scenario runs against a fresh deepcopy of `base`, so they're independent
 # and order doesn't matter.
@@ -364,12 +372,17 @@ voltage-collapse signature) rather than grinding to max iterations. This also
 leaves `data` sitting at the *fold iterate* — the operating point where the
 collapse mode is meaningful.
 
-`localize = true` runs `PF.localize_bottleneck` on a failed scenario and returns it
-as `bottleneck`. It forces `bail_on_fold = true`, because the localization is only
-meaningful at the fold iterate — left to grind for 50 iterations the solver ends at
-a blown-up point whose smallest singular value is a structural artifact, not the
-scenario's collapse mode. `bottleneck` is `nothing` when the scenario converged or
-`localize = false`.
+`localize = true` (the default) localizes the bottleneck of a **failed** scenario
+into `bottleneck`; it is `nothing` for a scenario that converged. Localization is
+only meaningful at the *fold iterate*, so it needs `stop_at_fold` — but turning that
+on for the verdict solve would let it abandon a solve that might still have
+recovered, changing the `converged` column this testbed exists to report. So a
+failure triggers a **second, separate diagnostic solve** with the bail-out on, and
+the bottleneck is taken there; `diag_data` is that pass's data (`nothing` when no
+diagnostic pass ran). The verdict solve is left exactly as configured.
+
+The extra pass costs one more solve, and only ever on scenarios that already failed.
+Set `localize = false` to skip it.
 """
 function run_scenario(
     scn::Scenario,
@@ -377,9 +390,8 @@ function run_scenario(
     solver = NewtonRaphsonACPowerFlow,
     log_diagnostics::Bool = false,
     bail_on_fold::Bool = false,
-    localize::Bool = false,
+    localize::Bool = true,
 )
-    bail_on_fold = bail_on_fold || localize   # localization needs the fold iterate
     sys = deepcopy(base)
     detail = ""
     try
@@ -404,12 +416,25 @@ function run_scenario(
         @warn "solve threw" scenario = scn.name exception = err
     end
 
-    bottleneck = nothing
+    # Diagnostic pass: a fresh solve that bails at the fold, so `diag_data` sits at
+    # the fold iterate rather than wherever the verdict solve gave up. Skipped
+    # entirely when the verdict solve already bailed at the fold (`bail_on_fold`),
+    # since its `data` is already at the right iterate.
+    bottleneck, diag_data = nothing, nothing
     if localize && !converged
-        try
-            bottleneck = PF.localize_bottleneck(data, sys)
-        catch err
-            @warn "localize_bottleneck failed" scenario = scn.name exception = err
+        diag_data = if bail_on_fold
+            data
+        else
+            _fold_iterate_data(scn, sys, solver, log_diagnostics)
+        end
+        if diag_data !== nothing
+            try
+                # verbose = false: the tables print once, from `print_summary` /
+                # `print_bottlenecks`, at that call site's row cap.
+                bottleneck = PF.localize_bottleneck(diag_data, sys; verbose = false)
+            catch err
+                @warn "localize_bottleneck failed" scenario = scn.name exception = err
+            end
         end
     end
 
@@ -420,8 +445,32 @@ function run_scenario(
         init_resid_inf = init_resid,
         bottleneck = bottleneck,
         data = data,
+        diag_data = diag_data,
         sys = sys,
     )
+end
+
+# Re-solve `sys` with the fold bail-out on, and hand back the data sitting at the
+# fold iterate. The solve is expected to fail — its return value is discarded; only
+# the iterate it stops at matters. Returns `nothing` if the pass itself throws.
+function _fold_iterate_data(scn::Scenario, sys::PSY.System, solver, log_diagnostics::Bool)
+    return try
+        pf = ACPowerFlow{solver}(;
+            correct_bustypes = true,
+            log_solver_diagnostics = log_diagnostics,
+            solver_settings = Dict{Symbol, Any}(:stop_at_fold => true),
+        )
+        d = PF.PowerFlowData(pf, sys)
+        try
+            PF.solve_power_flow!(d)
+        catch err
+            @warn "diagnostic solve threw" scenario = scn.name exception = err
+        end
+        d
+    catch err
+        @warn "diagnostic pass setup failed" scenario = scn.name exception = err
+        nothing
+    end
 end
 
 """Run a list of scenarios against the same base system. See `run_scenario`."""
@@ -431,7 +480,7 @@ function run_all(
     solver = NewtonRaphsonACPowerFlow,
     log_diagnostics::Bool = false,
     bail_on_fold::Bool = false,
-    localize::Bool = false,
+    localize::Bool = true,
 )
     results = NamedTuple[]
     for scn in scenarios
@@ -450,19 +499,72 @@ function run_all(
     return results
 end
 
-"""Pretty-print the convergence outcome of a `run_all` result set."""
-function print_summary(results)
-    println("\n", "="^78)
-    println(rpad("scenario", 26), rpad("converged", 11), rpad("‖F(x0)‖∞", 13), "detail")
-    println("-"^78)
+"""
+    print_summary(results; bottlenecks = true, max_rows = 12)
+
+Pretty-print the convergence outcome of a `run_all` result set, then — unless
+`bottlenecks = false` — the localized bottleneck tables for each failed scenario
+(see [`print_bottlenecks`](@ref)).
+
+The `bneck` column says whether a bottleneck is available: `yes`, `—` for a
+converged scenario (nothing to localize), or `none` for a failure that has no
+bottleneck, which means either `localize = false` was passed or the localization
+itself threw. That distinction is why the column exists — a blank report should
+never be ambiguous between "nothing wrong" and "never looked".
+"""
+function print_summary(results; bottlenecks::Bool = true, max_rows::Int = 12)
+    println("\n", "="^86)
+    println(rpad("scenario", 26), rpad("converged", 11), rpad("‖F(x0)‖∞", 13),
+        rpad("bneck", 7), "detail")
+    println("-"^86)
     for r in results
         flag = r.converged ? "yes" : "NO"
         ir =
             isnan(r.init_resid_inf) ? "n/a" : string(round(r.init_resid_inf; sigdigits = 4))
-        println(rpad(r.name, 26), rpad(flag, 11), rpad(ir, 13), _detail_str(r.detail))
+        bn = r.converged ? "—" : (r.bottleneck === nothing ? "none" : "yes")
+        println(rpad(r.name, 26), rpad(flag, 11), rpad(ir, 13), rpad(bn, 7),
+            _detail_str(r.detail))
     end
-    println("="^78)
+    println("="^86)
     n_conv = count(r -> r.converged, results)
-    println("$n_conv / $(length(results)) scenarios converged.\n")
+    println("$n_conv / $(length(results)) scenarios converged.")
+
+    n_unlocalized = count(r -> !r.converged && r.bottleneck === nothing, results)
+    if n_unlocalized > 0
+        println("NOTE: $n_unlocalized failed scenario(s) have no bottleneck — pass " *
+                "`localize = true` to run_all, or check the warnings above for a " *
+                "localization that threw.")
+    end
+    println()
+    bottlenecks && print_bottlenecks(results; max_rows)
+    return
+end
+
+"""
+    print_bottlenecks(results; max_rows = 12)
+
+Render the bottleneck tables for every failed scenario in a `run_all` result set,
+via `PF._report_bottleneck` — the same tables the in-package
+`localize_bottleneck(...; verbose = true)` path emits.
+
+Each is preceded by a scenario banner, since a multi-scenario sweep otherwise
+produces several identical-looking table blocks with nothing tying them to the run
+that produced them.
+"""
+function print_bottlenecks(results; max_rows::Int = 12)
+    failed = [r for r in results if r.bottleneck !== nothing]
+    if isempty(failed)
+        return
+    end
+    println("#"^86)
+    println("# Bottleneck localization — $(length(failed)) scenario(s)")
+    println("#"^86)
+    for r in failed
+        println("\n", "#"^86)
+        println("# scenario: ", r.name, "  —  ", _detail_str(r.detail))
+        println("#"^86)
+        PF._report_bottleneck(r.bottleneck; max_rows)
+    end
+    println()
     return
 end
