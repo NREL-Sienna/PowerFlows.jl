@@ -659,42 +659,6 @@ function _build_controlled_devices(
     return set
 end
 
-# Build the controlled-device set for a solve, or `nothing` when discrete control is off or the
-# system has no enrollable devices. LCC HVDC is rejected: the continuation's rollback does not yet
-# cover the per-time-step LCC state. Taps support time_steps>1 via reset-to-baseline
-# (`load_device_state!` resets the shared Y-bus to `d.initial` before each step).
-function _build_controlled_devices(
-    pf::AbstractACPowerFlow,
-    sys::PSY.System,
-    power_network_matrix,
-)
-    if !get_control_discrete_devices(pf)
-        return nothing
-    end
-    if !isempty(PSY.get_available_components(PSY.TwoTerminalLCCLine, sys))
-        throw(
-            ArgumentError(
-                "control_discrete_devices=true is not supported on systems with " *
-                "LCC HVDC lines: the continuation's rollback does not yet cover " *
-                "the per-time-step LCC state.",
-            ),
-        )
-    end
-    n_time_steps = get_time_steps(pf)
-    nrd = PNM.get_network_reduction_data(power_network_matrix)
-    set = build_controlled_device_set(
-        sys,
-        PNM.get_bus_lookup(power_network_matrix),
-        power_network_matrix;
-        reverse_bus_search_map = PNM.get_reverse_bus_search_map(nrd),
-        n_time_steps = n_time_steps,
-    )
-    if isempty(set)
-        return nothing
-    end
-    return set
-end
-
 """
     PowerFlowData(
         pf::AbstractACPowerFlow{<:ACPowerFlowSolverType},
@@ -726,19 +690,16 @@ function PowerFlowData(
 )
     network_reductions = get_network_reductions(pf)
     network_reduction_message(network_reductions, pf)
-    reductions, zero_impedance_reduction =
-        PNM.split_zero_impedance_reduction(network_reductions)
     # Converter AC terminals are ALWAYS irreducible — independent of `model_dc_network`. Reducing a
     # VSC/IC bus away would lose the converter (silently drop it from the joint model, or mishandle
     # its injection when DC modeling is off), so the protection must not depend on the solve mode.
     irreducible_buses = _dc_converter_ac_buses(sys)
     power_network_matrix = PNM.Ybus(
         sys;
-        network_reductions = reductions,
+        network_reductions = network_reductions,
         irreducible_buses = irreducible_buses,
         make_arc_admittance_matrices = true,
         include_constant_impedance_loads = false,
-        zero_impedance_reduction = zero_impedance_reduction,
     )
     neighbors = _calculate_neighbors(power_network_matrix)
 
@@ -791,14 +752,11 @@ function PowerFlowData(
 )
     network_reductions = get_network_reductions(pf)
     network_reduction_message(network_reductions, pf)
-    reductions, zero_impedance_reduction =
-        PNM.split_zero_impedance_reduction(network_reductions)
     ybus = PNM.Ybus(
         sys;
-        network_reductions = reductions,
+        network_reductions = network_reductions,
         irreducible_buses = _dc_converter_ac_buses(sys),
         make_arc_admittance_matrices = pf.lossy_flows,
-        zero_impedance_reduction = zero_impedance_reduction,
     )
     power_network_matrix = PNM.ABA_Matrix(ybus; factorize = true)
     aux_network_matrix = PNM.BA_Matrix(ybus)
@@ -862,13 +820,10 @@ function PowerFlowData(
 )
     network_reductions = get_network_reductions(pf)
     network_reduction_message(network_reductions, pf)
-    reductions, zero_impedance_reduction =
-        PNM.split_zero_impedance_reduction(network_reductions)
     # get the network matrices
     ybus = PNM.Ybus(sys;
-        network_reductions = reductions,
-        irreducible_buses = _dc_converter_ac_buses(sys),
-        zero_impedance_reduction = zero_impedance_reduction)
+        network_reductions = network_reductions,
+        irreducible_buses = _dc_converter_ac_buses(sys))
     power_network_matrix = PNM.PTDF(ybus)
     aux_network_matrix = PNM.ABA_Matrix(ybus; factorize = true)
     # `get_arc_axis(data)`/`get_bus_lookup(data)` read the PTDF (metadata) matrix for this method.
@@ -915,14 +870,11 @@ function PowerFlowData(
 )
     network_reductions = get_network_reductions(pf)
     network_reduction_message(network_reductions, pf)
-    reductions, zero_impedance_reduction =
-        PNM.split_zero_impedance_reduction(network_reductions)
 
     # get the network matrices
     ybus = PNM.Ybus(sys;
-        network_reductions = reductions,
-        irreducible_buses = _dc_converter_ac_buses(sys),
-        zero_impedance_reduction = zero_impedance_reduction)
+        network_reductions = network_reductions,
+        irreducible_buses = _dc_converter_ac_buses(sys))
     power_network_matrix = PNM.VirtualPTDF(ybus) # evaluates an empty virtual PTDF
     aux_network_matrix = PNM.ABA_Matrix(ybus; factorize = true)
 
