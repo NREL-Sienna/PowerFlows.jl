@@ -702,9 +702,11 @@ function _make_svc_system(;
         bus = b2,
         control_mode = control_mode,
         voltage_setpoint = 1.0,
-        max_shunt_current = max_shunt_current,
         reactive_power_required = 100.0,
     )
+    # `max_shunt_current` is stored in device base; the constructor kwarg takes a raw DU
+    # value, so set it through the units-aware setter to honor the caller's MVA input.
+    set_max_shunt_current!(svc, max_shunt_current * MVA)
     add_component!(sys, svc)
     return sys
 end
@@ -885,10 +887,12 @@ function _make_multiperiod_facts_system()
         bus = b2,
         control_mode = PSY.FACTSOperationModes.NML,
         voltage_setpoint = 1.0,
-        max_shunt_current = 100.0,
         shunt_control_type = PSY.FACTSShuntControlType.SVC,
         reactive_power_required = 100.0,
     )
+    # `max_shunt_current` is stored in device base; the constructor kwarg takes a raw DU
+    # value, so set it through the units-aware setter to honor the MVA input.
+    set_max_shunt_current!(svc, 100.0 * MVA)
     add_component!(sys, svc)
     return sys
 end
@@ -1045,9 +1049,11 @@ function _add_facts_shunt!(
         bus = b,
         control_mode = PSY.FACTSOperationModes.NML,
         voltage_setpoint = voltage_setpoint,
-        max_shunt_current = max_shunt_current,
         reactive_power_required = 100.0,
     )
+    # `max_shunt_current` is stored in device base; the constructor kwarg takes a raw DU
+    # value, so set it through the units-aware setter to honor the caller's MVA input.
+    set_max_shunt_current!(facts, max_shunt_current * MVA)
     add_component!(sys, facts)
     return facts
 end

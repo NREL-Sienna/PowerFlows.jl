@@ -48,11 +48,14 @@ function build_ieee14_facts_system(;
         bus = get_bus(sys, 14),
         control_mode = PSY.FACTSOperationModes.NML,
         voltage_setpoint = vset,
-        max_shunt_current = shmx_mva,
-        max_reactive_power = mva_cap,
         shunt_control_type = shunt_control_type,
         regulated_bus_number = regulated_bus_number,
     )
+    # `max_shunt_current`/`max_reactive_power` are stored in device base; the constructor
+    # kwargs take a raw DU value, so set them through the units-aware setters to honor the
+    # caller's MVA input.
+    set_max_shunt_current!(facts, shmx_mva * MVA)
+    set_max_reactive_power!(facts, mva_cap * MVA)
     add_component!(sys, facts)
     return sys
 end

@@ -374,8 +374,8 @@ function _enroll_facts!(
         end
         # `rating` (SHMX) is MVA at unity voltage ⇒ the SVC susceptance-at-unity bound or
         # the STATCOM current limit, on system base. `q_cap` is an independent MVA ceiling.
-        rating = PSY.get_max_shunt_current(fd) / base_mva
-        q_cap = PSY.get_max_reactive_power(fd) / base_mva
+        rating = PSY.get_max_shunt_current(fd, PSY.SU)
+        q_cap = PSY.get_max_reactive_power(fd, PSY.SU)
         svc = PSY.get_shunt_control_type(fd) == PSY.FACTSShuntControlType.SVC
         if rating <= 0.0
             @warn "ControlledFACTS \"$name\": max_shunt_current must be positive \

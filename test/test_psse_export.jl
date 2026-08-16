@@ -577,11 +577,13 @@ end
         bus = b1,
         control_mode = PSY.FACTSOperationModes.NML,
         voltage_setpoint = 1.0,
-        max_shunt_current = 100.0,
         regulated_bus_number = 7,
         reactive_power_required = 42.0,  # solved output; must NOT be written as RMPCT
         ext = Dict{String, Any}("RMPCT" => 55.0),  # stale ext; the exporter must ignore it
     )
+    # `max_shunt_current` is stored in device base; the constructor kwarg takes a raw DU
+    # value, so set it through the units-aware setter to honor the MVA input.
+    PSY.set_max_shunt_current!(facts, 100.0 * PSY.MVA)
     PSY.add_component!(sys, facts)
 
     export_location = joinpath(test_psse_export_dir, "v33", "facts_rmpct_fcreg")
