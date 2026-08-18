@@ -2776,7 +2776,7 @@ function write_to_buffers!(
         PDES = PSSE_DEFAULT
         QDES = PSSE_DEFAULT
         VSET = PSY.get_voltage_setpoint(facts)
-        SHMX = PSY.get_max_shunt_current(facts)
+        SHMX = PSY.get_max_shunt_current(facts, PSY.NU)
         TRMX = PSSE_INFINITY
         VTMX = PSSE_DEFAULT
         VTMN = PSSE_DEFAULT
