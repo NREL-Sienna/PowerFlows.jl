@@ -1752,10 +1752,12 @@ function _write_discrete_branch_record!(
     R = PSY.get_r(branch, PSY.SU)
     X = PSY.get_x(branch, PSY.SU)
     B = 0.0
-    GI = PSSE_DEFAULT
-    BI = PSSE_DEFAULT
-    GJ = PSSE_DEFAULT
-    BJ = PSSE_DEFAULT
+    # Emit numeric zeros instead of PSSE_DEFAULT blanks because the parser checks these fields
+    # with iszero, and blank values are represented as SubString{String}.
+    GI = 0.0
+    BI = 0.0
+    GJ = 0.0
+    BJ = 0.0
 
     RATEA = _value_or_default(PSY.get_rating(branch, PSY.NU), PSSE_DEFAULT)
     RATEB = 0.0
@@ -2212,9 +2214,9 @@ function _compute_dcline_common_fields(
     NAME = _is_valid_psse_name(dcline_name) ? dcline_name : last(dcline_name, 12)
     NAME = _psse_quote_string(NAME)
     MDC = Int(PSY.get_power_mode(dcline))
-    # FIXME HVDC getters like `get_transfer_setpoint` aren't using units. Did they ever
-    # use units? should they use units?
-    SETVL = PSY.get_transfer_setpoint(dcline)
+    # PSS/E stores SETVL in MW, while the PSY value is in system-base per unit.
+    SETVL =
+        PSY.get_transfer_setpoint(dcline) * PSY.get_base_power(exporter.system, PSY.NU)
     VSCHD = PSY.get_scheduled_dc_voltage(dcline)
     # RDC is a DC-circuit resistance: PSY per-unitizes it against the DC base (VSCHD^2 /
     # baseMVA), not the rectifier AC commutating base, so the inverse conversion must use
@@ -2777,7 +2779,7 @@ function write_to_buffers!(
         QDES = PSSE_DEFAULT
         VSET = PSY.get_voltage_setpoint(facts)
         SHMX = PSY.get_max_shunt_current(facts, PSY.NU)
-        TRMX = PSSE_INFINITY
+        TRMX = PSY.get_max_reactive_power(facts, PSY.NU)
         VTMX = PSSE_DEFAULT
         VTMN = PSSE_DEFAULT
         VSMX = PSSE_DEFAULT

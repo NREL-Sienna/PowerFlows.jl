@@ -177,6 +177,18 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
             :rating,  # TODO why don't ratings match?
             :control_objective,  # same UNDEFINED→FIXED mapping; see the 2W note above
         ]),
+        # PSS/E's two-terminal DC records do not contain PSY's active/reactive power limit
+        # tuples, so those fields cannot be recovered by a raw-file round trip.
+        PSY.TwoTerminalLCCLine => Set([
+            :active_power_limits_from,
+            :active_power_limits_to,
+            :reactive_power_limits_from,
+            :reactive_power_limits_to,
+            :transfer_setpoint,
+        ]),
+        # PowerFlowFileParser does not preserve the v33 FACTS SHMX/TRMX fields during
+        # re-import; both PSY fields are reconstructed from the parser's 9999.0 default.
+        PSY.FACTSControlDevice => Set([:max_shunt_current, :max_reactive_power]),
     ),
     generator_comparison_fns = [  # TODO rating
         PSY.get_name,
@@ -195,8 +207,8 @@ function compare_systems_loosely(sys1::PSY.System, sys2::PSY.System;
             filter(!=(PSY.get_reactive_power), generator_comparison_fns)
     end
 
-    # Compare everything about the systems except the actual components
-    result &= IS.compare_values(sys1, sys2; exclude = [:data])
+    # Compare system-level metadata here; components are compared below.
+    result &= IS.compare_values(sys1, sys2; exclude = [:data, :internal])
 
     # Compare the components by concrete type
     for my_type in include_types
