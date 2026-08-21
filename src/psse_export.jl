@@ -916,7 +916,7 @@ function _write_2w_transformer_record3_winding1!(
     NOD1 = PSSE_DEFAULT
     CONT1 = PSY.get_regulated_bus_number(circuit)
 
-    supp_attr = PSY.get_supplemental_attributes(transformer)
+    supp_attr = PSY.get_supplemental_attributes(PSY.ImpedanceCorrectionData, transformer)
     TAB1 = !isempty(supp_attr) ? PSY.get_table_number(supp_attr[1]) : 0
     CR1 = PSSE_DEFAULT
     CX1 = PSSE_DEFAULT
@@ -924,9 +924,15 @@ function _write_2w_transformer_record3_winding1!(
 
     if exporter.psse_version == :v35
         # Using 0.0 as default for rating exporter, since PSSEv35 does not allow blank values
-        RATA1 = _value_or_default(PSY.get_rating(circuit, PSY.NU), 0.0)
-        RATB1 = _value_or_default(PSY.get_rating_b(circuit, PSY.NU), 0.0)
-        RATC1 = _value_or_default(PSY.get_rating_c(circuit, PSY.NU), 0.0)
+        RATA1 = _fix_3w_transformer_rating(
+            _value_or_default(PSY.get_rating(circuit, PSY.NU), 0.0),
+        )
+        RATB1 = _fix_3w_transformer_rating(
+            _value_or_default(PSY.get_rating_b(circuit, PSY.NU), 0.0),
+        )
+        RATC1 = _fix_3w_transformer_rating(
+            _value_or_default(PSY.get_rating_c(circuit, PSY.NU), 0.0),
+        )
 
         rates_1 = [RATA1, RATB1, RATC1]
         for _ in 4:12
@@ -1015,9 +1021,15 @@ function _collect_3w_winding_data(
         if exporter.psse_version == :v35
             # Using 0.0 as default for rating exporter, since PSSEv35 does not allow blank values
             rates = [
-                _value_or_default(PSY.get_rating(circuit, PSY.NU), 0.0),
-                _value_or_default(PSY.get_rating_b(circuit, PSY.NU), 0.0),
-                _value_or_default(PSY.get_rating_c(circuit, PSY.NU), 0.0),
+                _fix_3w_transformer_rating(
+                    _value_or_default(PSY.get_rating(circuit, PSY.NU), 0.0),
+                ),
+                _fix_3w_transformer_rating(
+                    _value_or_default(PSY.get_rating_b(circuit, PSY.NU), 0.0),
+                ),
+                _fix_3w_transformer_rating(
+                    _value_or_default(PSY.get_rating_c(circuit, PSY.NU), 0.0),
+                ),
             ]
             for _ in 4:12
                 push!(rates, 0.0)
@@ -1044,10 +1056,11 @@ function _collect_3w_winding_data(
         VMI = controlled_quantity_limits.min
         NTP = PSY.get_number_of_tap_positions(circuit)
         TAB = 0
-        supp_attr = PSY.get_supplemental_attributes(transformer)
+        supp_attr =
+            PSY.get_supplemental_attributes(PSY.ImpedanceCorrectionData, transformer)
         for icd_tr in supp_attr
             if PSY.get_transformer_winding(icd_tr) == category
-                TAB = !isempty(supp_attr) ? PSY.get_table_number(icd_tr) : 0
+                TAB = PSY.get_table_number(icd_tr)
             end
         end
         CR = PSSE_DEFAULT
