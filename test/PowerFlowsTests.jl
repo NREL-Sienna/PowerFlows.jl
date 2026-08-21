@@ -71,8 +71,6 @@ const AC_SOLVERS_TO_TEST = (
 
 for filename in readdir(joinpath(BASE_DIR, "test"))
     if startswith(filename, "test_") && endswith(filename, ".jl")
-        # temporary measure to bypass broken exporter for testing purposes.
-        # filename == "test_psse_export.jl" && continue
         include(filename)
     end
 end
