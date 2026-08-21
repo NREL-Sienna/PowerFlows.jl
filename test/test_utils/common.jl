@@ -1410,6 +1410,7 @@ function _build_mtdc_system()
             available = true,
             active_power_flow = 0.0,
             arc = arc,
+            base_current = 100.0,
             r = 0.01,
             l = 0.0,
             c = 0.0,
