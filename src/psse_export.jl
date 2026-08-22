@@ -210,6 +210,10 @@ PowerSystems.jl to perform a round trip with the names restored.
 """
 mutable struct PSSEExporter <: SystemPowerFlowContainer
     system::PSY.System
+    # Identity of the system passed at construction. `system` is a `fast_deepcopy_system`,
+    # which mints a fresh metadata UUID, so its own UUID cannot serve as the identity to
+    # validate later `update_exporter!` calls against.
+    base_system_uuid::Base.UUID
     psse_version::Symbol
     export_dir::String
     name::String
@@ -241,6 +245,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
         mkpath(export_dir)
         new(
             system,
+            PSY.get_system_uuid(base_system),
             psse_version,
             String(export_dir),
             String(name),
@@ -282,8 +287,8 @@ function update_version_group(psse_version::Symbol)
     return groups
 end
 
-function _validate_same_system(sys1::PSY.System, sys2::PSY.System)
-    return IS.get_uuid(PSY.get_internal(sys1)) == IS.get_uuid(PSY.get_internal(sys2))
+function _validate_same_system(exporter::PSSEExporter, sys::PSY.System)
+    return exporter.base_system_uuid == PSY.get_system_uuid(sys)
 end
 
 """
@@ -323,7 +328,7 @@ Update the `PSSEExporter` with new `data`.
     exhaustively verify it.
 """
 function update_exporter!(exporter::PSSEExporter, data::PSY.System)
-    _validate_same_system(exporter.system, data) || throw(
+    _validate_same_system(exporter, data) || throw(
         ArgumentError(
             "System passed to update_exporter must be the same system as the one with which the exporter was constructed, just with different values",
         ),
