@@ -245,7 +245,7 @@ mutable struct PSSEExporter <: SystemPowerFlowContainer
         mkpath(export_dir)
         new(
             system,
-            PSY.get_system_uuid(base_system),
+            IS.get_uuid(base_system),
             psse_version,
             String(export_dir),
             String(name),
@@ -288,7 +288,7 @@ function update_version_group(psse_version::Symbol)
 end
 
 function _validate_same_system(exporter::PSSEExporter, sys::PSY.System)
-    return exporter.base_system_uuid == PSY.get_system_uuid(sys)
+    return exporter.base_system_uuid == IS.get_uuid(sys)
 end
 
 """
