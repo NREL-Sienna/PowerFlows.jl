@@ -100,16 +100,16 @@ end
             if supported
                 arc_flows = results["flow_results"]
                 # Look up 3WT winding flows by bus_from/bus_to (arc endpoints).
-                temp_nrd = PNM.get_network_reduction_data(
+                # The branch index exists because the matrix exists; no populate step.
+                temp_catalog = PNM.get_branch_catalog(
                     PNM.Ybus(sys; network_reductions = deepcopy(v)))
-                PNM.populate_branch_maps_by_type!(temp_nrd)
                 test_trf =
                     first(collect(PSY.get_components(PSY.ThreeWindingTransformer, sys)))
                 trf_arc_flows = zeros(ComplexF32, 3)
                 # 3WT circuits share the direct branch map with ordinary branches; select the
                 # per-type bucket rather than filtering the merged map.
                 for (arc, winding) in PNM.get_typed_direct_branch_map(
-                    PNM.get_all_branch_maps_by_type(temp_nrd),
+                    PNM.get_all_branch_maps_by_type(temp_catalog),
                     PSY.ThreeWindingTransformer,
                 )
                     PNM.get_transformer(winding) !== test_trf && continue
