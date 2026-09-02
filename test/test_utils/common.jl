@@ -292,7 +292,7 @@ function _add_simple_thermal_standard!(
     gen = ThermalStandard(;
         name = _check_name(sys, "thermal_standard_$(get_number(bus))", ThermalStandard),
         available = true,
-        status = true,
+        status = OperationalStates.ONLINE,
         bus = bus,
         active_power = Float64(active_power),
         reactive_power = Float64(reactive_power),

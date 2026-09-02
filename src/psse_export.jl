@@ -1391,7 +1391,7 @@ function _make_gens_from_hvdc(
     return PSY.ThermalStandard(;
         name = "$(PSY.get_name(hvdc_line))_$suffix",
         available = PSY.get_available(hvdc_line) ? 1 : 0,
-        status = true,
+        status = PSY.OperationalStates.ONLINE,
         bus = bus,
         active_power = active_power,
         reactive_power = 0.0,
@@ -1427,7 +1427,11 @@ function _update_gens_from_hvdc!(
             PSY.get_to(PSY.get_arc(hvdc_line))
         end
         gen.available = PSY.get_available(hvdc_line) ? 1 : 0
-        gen.status = gen.available == 1
+        if gen.available == 1
+            gen.status = PSY.OperationalStates.ONLINE
+        else
+            gen.status = PSY.OperationalStates.OFFLINE
+        end
         gen.bus = bus
         gen.active_power = PSY.get_active_power_flow(hvdc_line, PSY.SU)
         gen.rating = if suffix == "FR"
