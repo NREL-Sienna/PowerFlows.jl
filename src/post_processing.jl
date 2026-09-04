@@ -477,7 +477,9 @@ end
     _segment_flow_entry(segment, V_from, V_to)
 
 Compute a `BranchFlowEntry` for a single segment given its endpoint voltages. Returns the
-from-to and to-from complex power flows, plus losses.
+from-to and to-from complex power flows, plus losses. For non-line segments, the
+reactive loss is the sum of the terminal reactive powers from the complete branch
+admittance model.
 """
 function _segment_flow_entry(
     segment::PSY.ACTransmission,
@@ -498,6 +500,38 @@ function _segment_flow_entry(
         imag(S_ft),
         imag(S_tf),
         imag(S_ft) + imag(S_tf),
+    ))
+end
+
+"""
+    _segment_flow_entry(segment::PSY.Line, V_from, V_to)
+
+Compute a `BranchFlowEntry` for a transmission line using its endpoint voltages.
+Terminal active and reactive powers use the complete line admittance model. Active
+losses and reactive losses are reported from the series element, excluding line
+charging and line-connected shunt contributions.
+"""
+function _segment_flow_entry(
+    segment::PSY.Line,
+    V_from::ComplexF64,
+    V_to::ComplexF64,
+)
+    (y11, y12, y21, y22) = PNM.ybus_branch_entries(segment)
+    S_ft = V_from * conj(y11 * V_from + y12 * V_to)
+    S_tf = V_to * conj(y21 * V_from + y22 * V_to)
+    S_ft_series = V_from * conj(y12 * (V_to - V_from))
+    S_tf_series = V_to * conj(y21 * (V_from - V_to))
+    arc_tuple = PNM.get_arc_tuple(segment)
+    return BranchFlowEntry((
+        PNM.get_name(segment),
+        arc_tuple[1],
+        arc_tuple[2],
+        real(S_ft),
+        real(S_tf),
+        real(S_ft) + real(S_tf),
+        imag(S_ft),
+        imag(S_tf),
+        imag(S_ft_series) + imag(S_tf_series),
     ))
 end
 
